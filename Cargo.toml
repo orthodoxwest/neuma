@@ -1,0 +1,17 @@
+[workspace]
+resolver = "3"
+members = ["crates/neuma", "crates/neuma-cli", "crates/neuma-metrics"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.94"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/orthodoxwest/neuma"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_debug_implementations = "warn"
+
+[workspace.lints.clippy]
+wildcard_enum_match_arm = "allow"

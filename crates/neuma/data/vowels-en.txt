@@ -1,0 +1,18 @@
+# English vowel rules for neuma, in the vowel-file format GregorioRef documents.
+alias [english] to [en];
+alias [English] to [en];
+alias [eng] to [en];
+language [en];
+vowel aàáâAÀÁÂ;
+vowel eèéêëEÈÉÊË;
+vowel iìíîIÌÍÎ;
+vowel oòóôOÒÓÔ;
+vowel uùúûUÙÚÛ;
+vowel yỳýYỲÝ;
+vowel æǽÆǼœŒ;
+# "qu" and "gu" before a vowel, and a leading y, are consonants: queen, guest, yes.
+prefix qu Qu qU QU gu Gu gU GU y Y;
+# A w after the vowel belongs to its sound: new, flower.
+suffix w W we We wE WE;
+# With no vowel at all, a w carries the syllable.
+secondary w W;

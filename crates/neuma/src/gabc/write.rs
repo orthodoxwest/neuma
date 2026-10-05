@@ -1,0 +1,315 @@
+//! Writes a [`Score`] back out as GABC.
+
+use std::fmt::Write as _;
+
+use crate::score::{
+    AlterationKind, BarKind, ClefKind, CustosRule, Figure, Liquescent, Lyric, NoteShape, Placement, Score, Space, TextStyle,
+    position_letter,
+};
+
+/// GABC for `score`. Parsing the result gives back an equal score, apart from source spans.
+pub fn to_gabc(score: &Score) -> String {
+    let mut out = String::new();
+    for (name, value) in &score.header.fields {
+        if value.contains('\n') || value.contains(';') {
+            let _ = writeln!(out, "{name}: {value};;");
+        } else {
+            let _ = writeln!(out, "{name}: {value};");
+        }
+    }
+    out.push_str("%%\n");
+    let mut style = TextStyle::REGULAR;
+    let mut nlba = false;
+    let mut eu = false;
+    for (i, syl) in score.syllables.iter().enumerate() {
+        // `<nlba>` spans the syllables that may not break apart, so it opens before the
+        // syllable ahead of the first forbidden break and closes once the run ends.
+        if nlba && !syl.no_break_before {
+            out.push_str("</nlba>");
+            nlba = false;
+        }
+        if i > 0 && syl.word_start {
+            out.push(' ');
+        }
+        if !nlba && score.syllables.get(i + 1).is_some_and(|n| n.no_break_before) {
+            out.push_str("<nlba>");
+            nlba = true;
+        }
+        if syl.euouae != eu {
+            out.push_str(if syl.euouae { "<eu>" } else { "</eu>" });
+            eu = syl.euouae;
+        }
+        write_lyric(&mut out, &syl.text, &mut style);
+        out.push('(');
+        for f in &syl.notation {
+            write_figure(&mut out, f);
+        }
+        out.push(')');
+    }
+    close_style(&mut out, &mut style, TextStyle::REGULAR);
+    if eu {
+        out.push_str("</eu>");
+    }
+    if nlba {
+        out.push_str("</nlba>");
+    }
+    out.push('\n');
+    out
+}
+
+fn close_style(out: &mut String, cur: &mut TextStyle, want: TextStyle) {
+    // Close in reverse of the opening order below, then open.
+    if cur.underline && !want.underline {
+        out.push_str("</ul>");
+    }
+    if cur.small_caps && !want.small_caps {
+        out.push_str("</sc>");
+    }
+    if cur.rubric && !want.rubric {
+        out.push_str("</c>");
+    }
+    if cur.bold && !want.bold {
+        out.push_str("</b>");
+    }
+    if cur.italic && !want.italic {
+        out.push_str("</i>");
+    }
+    if want.italic && !cur.italic {
+        out.push_str("<i>");
+    }
+    if want.bold && !cur.bold {
+        out.push_str("<b>");
+    }
+    if want.rubric && !cur.rubric {
+        out.push_str("<c>");
+    }
+    if want.small_caps && !cur.small_caps {
+        out.push_str("<sc>");
+    }
+    if want.underline && !cur.underline {
+        out.push_str("<ul>");
+    }
+    *cur = want;
+}
+
+fn special_source(c: char) -> Option<&'static str> {
+    Some(match c {
+        '℣' => "V/",
+        '℟' => "R/",
+        '†' => "+",
+        'æ' => "ae",
+        'œ' => "oe",
+        'ǽ' => "'ae",
+        _ => return None,
+    })
+}
+
+fn write_lyric(out: &mut String, lyric: &Lyric, style: &mut TextStyle) {
+    let mut index = 0;
+    for run in &lyric.runs {
+        // Special characters were parsed as rubric consonant runs; write them back as `<sp>`.
+        let mut run_style = run.style;
+        let is_special = run.consonant
+            && run
+                .text
+                .chars()
+                .all(|c| special_source(c).is_some() || c == '*' || c == '\u{0336}' || c == '\u{0301}' || c == 'A');
+        if is_special && matches!(run.text.as_str(), "℣" | "℟" | "*" | "†" | "A\u{0336}") {
+            run_style.rubric = false;
+        }
+        if run.consonant && !is_special {
+            run_style.italic = false;
+        }
+        close_style(out, style, run_style);
+        if run.consonant && !is_special {
+            out.push_str("<e>");
+        }
+        let mut chars = run.text.chars().peekable();
+        while let Some(c) = chars.next() {
+            if lyric.center.as_ref().is_some_and(|r| r.start == index) {
+                out.push('{');
+            }
+            if is_special {
+                if c == 'A' && chars.peek() == Some(&'\u{0336}') {
+                    chars.next();
+                    out.push_str("<sp>A/</sp>");
+                    index += 2;
+                    continue;
+                }
+                if c == 'œ' && chars.peek() == Some(&'\u{0301}') {
+                    chars.next();
+                    out.push_str("<sp>'oe</sp>");
+                    index += 2;
+                    continue;
+                }
+                if c == '*' {
+                    out.push_str("<sp>*</sp>");
+                } else if let Some(s) = special_source(c) {
+                    let _ = write!(out, "<sp>{s}</sp>");
+                }
+            } else {
+                match c {
+                    '(' | ')' | '$' | '{' | '}' | '[' | ']' | '<' | '>' | '%' | '~' => {
+                        out.push('$');
+                        out.push(c);
+                    }
+                    _ => out.push(c),
+                }
+            }
+            index += 1;
+            if lyric.center.as_ref().is_some_and(|r| r.end == index) {
+                out.push('}');
+            }
+        }
+        if run.consonant && !is_special {
+            out.push_str("</e>");
+        }
+    }
+}
+
+fn placement_digit(p: Placement) -> &'static str {
+    match p {
+        Placement::Auto => "",
+        Placement::Below => "0",
+        Placement::Above => "1",
+    }
+}
+
+fn letter(position: i8) -> char {
+    position_letter(position).unwrap_or('g')
+}
+
+fn write_figure(out: &mut String, f: &Figure) {
+    match f {
+        Figure::Clef(c) => {
+            out.push(if c.kind == ClefKind::Do { 'c' } else { 'f' });
+            if c.flat {
+                out.push('b');
+            }
+            let _ = write!(out, "{}", c.line);
+        }
+        Figure::Note(n) => {
+            if n.initio_debilis {
+                out.push('-');
+            }
+            let l = letter(n.position);
+            out.push(if n.shape == NoteShape::Inclinatum {
+                l.to_ascii_uppercase()
+            } else {
+                l
+            });
+            if let Some(lean) = n.lean {
+                let _ = write!(out, "{lean}");
+            }
+            match n.shape {
+                NoteShape::Virga => out.push('v'),
+                NoteShape::VirgaReversa => out.push('V'),
+                NoteShape::Stropha => out.push('s'),
+                NoteShape::Quilisma => out.push(if n.quadratum { 'W' } else { 'w' }),
+                NoteShape::Oriscus | NoteShape::OriscusScapus => {
+                    out.push(if n.shape == NoteShape::Oriscus { 'o' } else { 'O' });
+                    if let Some(up) = n.orientation {
+                        out.push(if up { '1' } else { '0' });
+                    }
+                }
+                NoteShape::Punctum | NoteShape::Inclinatum => {}
+            }
+            if n.quadratum && n.shape != NoteShape::Quilisma {
+                out.push('q');
+            }
+            if n.cavum {
+                out.push('r');
+            }
+            if let Some(s) = n.above_sign {
+                let _ = write!(out, "r{s}");
+            }
+            match n.liquescent {
+                Liquescent::None => {}
+                Liquescent::Deminutus => out.push('~'),
+                Liquescent::Augmented => out.push('<'),
+                Liquescent::Diminished => out.push('>'),
+            }
+            if let Some(e) = n.episema {
+                out.push('_');
+                out.push_str(placement_digit(e.placement));
+                if e.no_bridge {
+                    out.push('2');
+                }
+                if let Some(s) = e.small {
+                    let _ = write!(out, "{s}");
+                }
+            }
+            if let Some(p) = n.ictus {
+                out.push('\'');
+                out.push_str(placement_digit(p));
+            }
+            for k in 0..n.morae {
+                out.push('.');
+                if k + 1 == n.morae {
+                    out.push_str(placement_digit(n.mora_placement));
+                }
+            }
+        }
+        Figure::Alteration(a) => {
+            out.push(letter(a.position));
+            out.push_str(match (a.kind, a.soft) {
+                (AlterationKind::Flat, false) => "x",
+                (AlterationKind::Flat, true) => "X",
+                (AlterationKind::Natural, false) => "y",
+                (AlterationKind::Natural, true) => "Y",
+                (AlterationKind::Sharp, false) => "#",
+                (AlterationKind::Sharp, true) => "##",
+            });
+            if a.parenthesized {
+                out.push('?');
+            }
+        }
+        Figure::Space(s) => match s {
+            Space::Zero => out.push('!'),
+            Space::Tiny => out.push_str("/!"),
+            Space::Half => out.push_str("/0"),
+            Space::Small => out.push('/'),
+            Space::Medium => out.push_str("//"),
+            Space::Large => out.push(' '),
+            Space::LargeNoBreak => out.push_str("! "),
+            Space::Scaled(f) => {
+                let _ = write!(out, "/[{f}]");
+            }
+        },
+        Figure::Bar(b) => {
+            let mark = match b.kind {
+                BarKind::Virgula => "`",
+                BarKind::Minimis => "^",
+                BarKind::Minima => ",",
+                BarKind::Minor => ";",
+                BarKind::Maior => ":",
+                BarKind::DottedMaior => ":?",
+                BarKind::Finalis => "::",
+                BarKind::Dominican(n) => {
+                    let _ = write!(out, ";{n}");
+                    ""
+                }
+            };
+            out.push_str(mark);
+            if b.high {
+                out.push('0');
+            }
+        }
+        Figure::Break(b) => {
+            out.push(if b.justify { 'z' } else { 'Z' });
+            match b.custos {
+                CustosRule::Default => {}
+                CustosRule::Force => out.push('+'),
+                CustosRule::Suppress => out.push('-'),
+            }
+        }
+        Figure::Custos { position, .. } => match position {
+            Some(p) => {
+                out.push(letter(*p));
+                out.push('+');
+            }
+            None => out.push_str("z0"),
+        },
+        Figure::NoCustos => out.push_str("[nocustos]"),
+    }
+}

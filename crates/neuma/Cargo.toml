@@ -1,0 +1,15 @@
+[package]
+name = "neuma"
+description = "Engraves Gregorian chant (square notation) from GABC for any front end"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = ["svg"]
+svg = []
+
+[lints]
+workspace = true
