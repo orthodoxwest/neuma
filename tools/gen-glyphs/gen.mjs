@@ -239,6 +239,16 @@ for (const n of names) {
   const holes = neg.map((sp) => (Math.sign(signedArea(sp)) === outerSign ? reverse(sp) : sp));
   const d = write([...pos, ...holes]);
   const subpaths = pos.length + holes.length;
+  // Ink box from the outline's points (control points included, so it never undershoots).
+  const pts = [...pos, ...holes].flatMap((sp) => [sp.start, ...sp.segs.flatMap((sg) => {
+    const out = [];
+    for (let i = 0; i < sg.pts.length; i += 2) out.push([sg.pts[i], sg.pts[i + 1]]);
+    return out;
+  })]);
+  const ink = [
+    Math.min(...pts.map((q) => q[0])), Math.min(...pts.map((q) => q[1])),
+    Math.max(...pts.map((q) => q[0])), Math.max(...pts.map((q) => q[1])),
+  ];
   out += `    GlyphData {
         d: ${JSON.stringify(d)},
         subpaths: ${subpaths},
@@ -247,6 +257,7 @@ for (const n of names) {
         origin_x: ${num(g.origin.x)},
         origin_y: ${num(g.origin.y)},
         align: Align::${g.align === "right" ? "Right" : "Left"},
+        ink: [${ink.map(num).join(", ")}],
     },
 `;
 }

@@ -33,12 +33,20 @@ pub(super) fn parse(text: &str, offset: usize, state: &mut LyricState, sink: &mu
                 // Translation text (E2): skipped for now.
                 let end = text[i..].find(']').map_or(text.len(), |n| i + n + 1);
                 if &text[i..end] != "[/]" {
-                    sink.info(offset + i..offset + end, "gabc::translation-ignored", "translation text isn't drawn yet");
+                    sink.info(
+                        offset + i..offset + end,
+                        "gabc::translation-ignored",
+                        "translation text isn't drawn yet",
+                    );
                 }
                 i = end;
             }
             '~' => {
-                sink.info(offset + i..offset + i + 1, "gabc::lyric-tie", "lyric ties are drawn as a space for now");
+                sink.info(
+                    offset + i..offset + i + 1,
+                    "gabc::lyric-tie",
+                    "lyric ties are drawn as a space for now",
+                );
                 out.push(' ', style(state), false);
                 i += 1;
             }
@@ -64,7 +72,11 @@ pub(super) fn parse(text: &str, offset: usize, state: &mut LyricState, sink: &mu
                     "e" => bump(&mut state.elision, after),
                     "/e" => drop(&mut state.elision, after),
                     "tt" | "/tt" => {
-                        sink.info(offset + i..offset + after, "gabc::teletype", "teletype text is set in the lyric face");
+                        sink.info(
+                            offset + i..offset + after,
+                            "gabc::teletype",
+                            "teletype text is set in the lyric face",
+                        );
                         after
                     }
                     "eu" => {
@@ -116,11 +128,19 @@ pub(super) fn parse(text: &str, offset: usize, state: &mut LyricState, sink: &mu
                     }
                     "alt" => {
                         let end = text[after..].find("</alt>").map_or(text.len(), |n| after + n);
-                        sink.info(offset + i..offset + end, "gabc::above-lines-text", "above-lines text isn't drawn yet");
+                        sink.info(
+                            offset + i..offset + end,
+                            "gabc::above-lines-text",
+                            "above-lines text isn't drawn yet",
+                        );
                         (end + "</alt>".len()).min(text.len())
                     }
                     _ => {
-                        sink.warn(offset + i..offset + after, "gabc::unknown-tag", format!("unknown tag `<{tag}>` is set as text"));
+                        sink.warn(
+                            offset + i..offset + after,
+                            "gabc::unknown-tag",
+                            format!("unknown tag `<{tag}>` is set as text"),
+                        );
                         for ch in text[i..after].chars() {
                             out.push(ch, style(state), false);
                         }
@@ -190,7 +210,11 @@ impl Builder {
     fn push(&mut self, c: char, style: TextStyle, consonant: bool) {
         match self.runs.last_mut() {
             Some(last) if last.style == style && last.consonant == consonant => last.text.push(c),
-            _ => self.runs.push(LyricRun { text: c.to_string(), style, consonant }),
+            _ => self.runs.push(LyricRun {
+                text: c.to_string(),
+                style,
+                consonant,
+            }),
         }
         self.chars += 1;
     }

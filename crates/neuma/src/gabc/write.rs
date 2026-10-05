@@ -109,7 +109,11 @@ fn write_lyric(out: &mut String, lyric: &Lyric, style: &mut TextStyle) {
     for run in &lyric.runs {
         // Special characters were parsed as rubric consonant runs; write them back as `<sp>`.
         let mut run_style = run.style;
-        let is_special = run.consonant && run.text.chars().all(|c| special_source(c).is_some() || c == '*' || c == '\u{0336}' || c == '\u{0301}' || c == 'A');
+        let is_special = run.consonant
+            && run
+                .text
+                .chars()
+                .all(|c| special_source(c).is_some() || c == '*' || c == '\u{0336}' || c == '\u{0301}' || c == 'A');
         if is_special && matches!(run.text.as_str(), "℣" | "℟" | "*" | "†" | "A\u{0336}") {
             run_style.rubric = false;
         }
@@ -189,7 +193,11 @@ fn write_figure(out: &mut String, f: &Figure) {
                 out.push('-');
             }
             let l = letter(n.position);
-            out.push(if n.shape == NoteShape::Inclinatum { l.to_ascii_uppercase() } else { l });
+            out.push(if n.shape == NoteShape::Inclinatum {
+                l.to_ascii_uppercase()
+            } else {
+                l
+            });
             if let Some(lean) = n.lean {
                 let _ = write!(out, "{lean}");
             }

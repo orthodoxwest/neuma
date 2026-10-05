@@ -12,12 +12,18 @@ pub struct Header {
 impl Header {
     /// The first value for `name`.
     pub fn get(&self, name: &str) -> Option<&str> {
-        self.fields.iter().find(|(n, _)| n.eq_ignore_ascii_case(name)).map(|(_, v)| v.as_str())
+        self.fields
+            .iter()
+            .find(|(n, _)| n.eq_ignore_ascii_case(name))
+            .map(|(_, v)| v.as_str())
     }
 
     /// Every value for `name`, in order (`annotation` may appear twice).
     pub fn get_all<'a>(&'a self, name: &'a str) -> impl Iterator<Item = &'a str> + 'a {
-        self.fields.iter().filter(move |(n, _)| n.eq_ignore_ascii_case(name)).map(|(_, v)| v.as_str())
+        self.fields
+            .iter()
+            .filter(move |(n, _)| n.eq_ignore_ascii_case(name))
+            .map(|(_, v)| v.as_str())
     }
 }
 
@@ -64,7 +70,14 @@ impl Lyric {
         if text.is_empty() {
             return Lyric::default();
         }
-        Lyric { runs: vec![LyricRun { text: text.to_string(), style: TextStyle::default(), consonant: false }], center: None }
+        Lyric {
+            runs: vec![LyricRun {
+                text: text.to_string(),
+                style: TextStyle::default(),
+                consonant: false,
+            }],
+            center: None,
+        }
     }
 }
 
@@ -88,7 +101,13 @@ pub struct TextStyle {
 }
 
 impl TextStyle {
-    pub const REGULAR: TextStyle = TextStyle { italic: false, bold: false, small_caps: false, underline: false, rubric: false };
+    pub const REGULAR: TextStyle = TextStyle {
+        italic: false,
+        bold: false,
+        small_caps: false,
+        underline: false,
+        rubric: false,
+    };
 
     /// The font face this style is drawn in (rubric and underline don't change the face).
     pub fn face(self) -> Face {
@@ -120,7 +139,10 @@ pub enum Figure {
     /// `z`/`Z`: a forced line break.
     Break(LineBreak),
     /// `g+` (a custos at that pitch) or `z0` (pitch of the next note).
-    Custos { position: Option<i8>, span: Range<usize> },
+    Custos {
+        position: Option<i8>,
+        span: Range<usize>,
+    },
     /// `[nocustos]`: no custos if the line breaks here.
     NoCustos,
 }
@@ -367,22 +389,47 @@ impl ScoreBuilder {
 
     /// Adds a syllable. `word_start` is true for the first syllable of each word.
     pub fn syllable(mut self, text: Lyric, word_start: bool, notation: Vec<Figure>) -> ScoreBuilder {
-        self.score.syllables.push(Syllable { text, word_start, notation, ..Syllable::default() });
+        self.score.syllables.push(Syllable {
+            text,
+            word_start,
+            notation,
+            ..Syllable::default()
+        });
         self
     }
 
     /// Adds a syllable of plain text sung on single puncta at `positions`.
     pub fn sung(self, text: &str, word_start: bool, positions: &[StaffPosition]) -> ScoreBuilder {
-        let notation = positions.iter().map(|&p| Figure::Note(Note::new(p, NoteShape::Punctum, 0..0))).collect();
+        let notation = positions
+            .iter()
+            .map(|&p| Figure::Note(Note::new(p, NoteShape::Punctum, 0..0)))
+            .collect();
         self.syllable(Lyric::from_plain(text), word_start, notation)
     }
 
     pub fn clef(self, kind: ClefKind, line: u8) -> ScoreBuilder {
-        self.syllable(Lyric::default(), true, vec![Figure::Clef(Clef { kind, line, flat: false, span: 0..0 })])
+        self.syllable(
+            Lyric::default(),
+            true,
+            vec![Figure::Clef(Clef {
+                kind,
+                line,
+                flat: false,
+                span: 0..0,
+            })],
+        )
     }
 
     pub fn bar(self, kind: BarKind) -> ScoreBuilder {
-        self.syllable(Lyric::default(), true, vec![Figure::Bar(Bar { kind, high: false, span: 0..0 })])
+        self.syllable(
+            Lyric::default(),
+            true,
+            vec![Figure::Bar(Bar {
+                kind,
+                high: false,
+                span: 0..0,
+            })],
+        )
     }
 
     pub fn build(self) -> Score {

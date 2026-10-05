@@ -1,0 +1,15 @@
+# Latin vowel rules for neuma, in the vowel-file format GregorioRef documents.
+# These match Gregorio's built-in Latin behaviour: any vowel run is the nucleus,
+# except that i and u before another vowel are consonants (iam, quae, eius).
+alias [latin] to [la];
+alias [Latin] to [la];
+alias [lat] to [la];
+language [la];
+vowel aàáâăąåAÀÁÂĂĄÅ;
+vowel eèéêëěęEÈÉÊËĚĘ;
+vowel iìíîIÌÍÎ;
+vowel oòóôơőøOÒÓÔƠŐØ;
+vowel uùúûưůűUÙÚÛƯŮŰ;
+vowel yỳýYỲÝ;
+vowel æǽÆǼœŒ;
+prefix i I u U;

@@ -31,7 +31,11 @@ impl fmt::Display for Diagnostic {
             Severity::Warning => "warning",
             Severity::Error => "error",
         };
-        write!(f, "{level}[{}] at {}..{}: {}", self.code, self.span.start, self.span.end, self.message)
+        write!(
+            f,
+            "{level}[{}] at {}..{}: {}",
+            self.code, self.span.start, self.span.end, self.message
+        )
     }
 }
 
@@ -43,7 +47,12 @@ pub(crate) struct Sink {
 
 impl Sink {
     pub fn push(&mut self, severity: Severity, span: Range<usize>, code: &'static str, message: impl Into<String>) {
-        self.items.push(Diagnostic { severity, span, code, message: message.into() });
+        self.items.push(Diagnostic {
+            severity,
+            span,
+            code,
+            message: message.into(),
+        });
     }
     pub fn info(&mut self, span: Range<usize>, code: &'static str, message: impl Into<String>) {
         self.push(Severity::Info, span, code, message);

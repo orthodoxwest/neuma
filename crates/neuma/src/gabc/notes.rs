@@ -10,7 +10,15 @@ use crate::score::{
 /// Parses `src`, the text inside one pair of parentheses. `offset` is its byte offset in the
 /// whole source.
 pub(super) fn parse(src: &str, offset: usize, sink: &mut Sink) -> Vec<Figure> {
-    let mut p = Parser { s: src.as_bytes(), src, i: 0, offset, out: Vec::new(), sink, initio: false };
+    let mut p = Parser {
+        s: src.as_bytes(),
+        src,
+        i: 0,
+        offset,
+        out: Vec::new(),
+        sink,
+        initio: false,
+    };
     p.run();
     p.out
 }
@@ -71,7 +79,11 @@ impl Parser<'_, '_> {
                     if self.peek() == Some(b'[') {
                         self.i += 1;
                     }
-                    self.sink.info(self.span(start), "gabc::fusion", "neume fusion isn't drawn yet; the notes are drawn unfused");
+                    self.sink.info(
+                        self.span(start),
+                        "gabc::fusion",
+                        "neume fusion isn't drawn yet; the notes are drawn unfused",
+                    );
                 }
                 b']' => {
                     // The end of an `@[…]` group.
@@ -118,7 +130,10 @@ impl Parser<'_, '_> {
                 b'z' | b'Z' => {
                     self.i += 1;
                     if c == b'z' && self.take(b'0') {
-                        self.out.push(Figure::Custos { position: None, span: self.span(start) });
+                        self.out.push(Figure::Custos {
+                            position: None,
+                            span: self.span(start),
+                        });
                     } else {
                         let custos = if self.take(b'+') {
                             CustosRule::Force
@@ -127,7 +142,11 @@ impl Parser<'_, '_> {
                         } else {
                             CustosRule::Default
                         };
-                        self.out.push(Figure::Break(LineBreak { justify: c == b'z', custos, span: self.span(start) }));
+                        self.out.push(Figure::Break(LineBreak {
+                            justify: c == b'z',
+                            custos,
+                            span: self.span(start),
+                        }));
                     }
                 }
                 b'[' => self.bracket(),
@@ -137,7 +156,11 @@ impl Parser<'_, '_> {
                 }
                 b'|' => {
                     // NABC follows; skip to the end of the notes.
-                    self.sink.warn(self.offset + start..self.offset + self.s.len(), "gabc::nabc", "NABC notation isn't supported and is skipped");
+                    self.sink.warn(
+                        self.offset + start..self.offset + self.s.len(),
+                        "gabc::nabc",
+                        "NABC notation isn't supported and is skipped",
+                    );
                     self.i = self.s.len();
                 }
                 b'c' | b'f' if self.is_clef() => self.clef(),
@@ -145,7 +168,11 @@ impl Parser<'_, '_> {
                 _ => {
                     let ch = self.src[self.i..].chars().next().unwrap_or('\0');
                     self.i += ch.len_utf8().max(1);
-                    self.sink.warn(self.span(start), "gabc::unknown-notation", format!("`{ch}` isn't GABC notation and is skipped"));
+                    self.sink.warn(
+                        self.span(start),
+                        "gabc::unknown-notation",
+                        format!("`{ch}` isn't GABC notation and is skipped"),
+                    );
                 }
             }
         }
@@ -164,12 +191,21 @@ impl Parser<'_, '_> {
         // Bar suffixes: `'` (episema) and `_` (brace) aren't supported.
         while let Some(b'\'' | b'_') = self.peek() {
             self.i += 1;
-            self.sink.warn(self.span(start), "gabc::bar-sign", "signs on bars aren't supported and are skipped");
+            self.sink
+                .warn(self.span(start), "gabc::bar-sign", "signs on bars aren't supported and are skipped");
         }
         if let BarKind::Dominican(_) = kind {
-            self.sink.info(self.span(start), "gabc::dominican-bar", "Dominican bars are drawn as a minor bar for now");
+            self.sink.info(
+                self.span(start),
+                "gabc::dominican-bar",
+                "Dominican bars are drawn as a minor bar for now",
+            );
         }
-        self.out.push(Figure::Bar(Bar { kind, high, span: self.span(start) }));
+        self.out.push(Figure::Bar(Bar {
+            kind,
+            high,
+            span: self.span(start),
+        }));
     }
 
     fn slash(&mut self) {
@@ -195,7 +231,8 @@ impl Parser<'_, '_> {
                 match factor {
                     Ok(f) if f.is_finite() => Space::Scaled(f),
                     _ => {
-                        self.sink.warn(self.span(start), "gabc::bad-space", "`/[…]` needs a number; using a small space");
+                        self.sink
+                            .warn(self.span(start), "gabc::bad-space", "`/[…]` needs a number; using a small space");
                         Space::Small
                     }
                 }
@@ -214,7 +251,11 @@ impl Parser<'_, '_> {
             self.out.push(Figure::NoCustos);
         } else {
             let name = inner.split(':').next().unwrap_or(inner);
-            self.sink.warn(self.span(start), "gabc::unsupported-tag", format!("`[{name}:…]` isn't supported and is skipped"));
+            self.sink.warn(
+                self.span(start),
+                "gabc::unsupported-tag",
+                format!("`[{name}:…]` isn't supported and is skipped"),
+            );
         }
     }
 
@@ -237,16 +278,29 @@ impl Parser<'_, '_> {
         let line = if (1..=4).contains(&line) {
             line
         } else {
-            self.sink.warn(self.span(start), "gabc::clef-line", format!("a four-line staff has no clef line {line}; using line 3"));
+            self.sink.warn(
+                self.span(start),
+                "gabc::clef-line",
+                format!("a four-line staff has no clef line {line}; using line 3"),
+            );
             3
         };
-        let clef = Clef { kind, line, flat, span: self.span(start) };
+        let clef = Clef {
+            kind,
+            line,
+            flat,
+            span: self.span(start),
+        };
         if self.peek() == Some(b'@') && matches!(self.peek_at(1), Some(b'c' | b'f')) {
             let second = self.i;
             self.i += 2;
             self.take(b'b');
             self.i += 1;
-            self.sink.warn(self.span(second), "gabc::double-clef", "double clefs aren't supported; the first clef is used");
+            self.sink.warn(
+                self.span(second),
+                "gabc::double-clef",
+                "double clefs aren't supported; the first clef is used",
+            );
         }
         self.out.push(Figure::Clef(clef));
     }
@@ -257,7 +311,11 @@ impl Parser<'_, '_> {
         self.i += 1;
         let Some(position) = pitch_position(c as char) else { return };
         if position > 6 {
-            self.sink.warn(self.span(start), "gabc::pitch-range", format!("`{}` is above a four-line staff", c as char));
+            self.sink.warn(
+                self.span(start),
+                "gabc::pitch-range",
+                format!("`{}` is above a four-line staff", c as char),
+            );
         }
 
         // Alterations and custodes are figures of their own, at this pitch.
@@ -276,18 +334,31 @@ impl Parser<'_, '_> {
                     soft = true;
                 }
                 let parenthesized = self.take(b'?');
-                self.out.push(Figure::Alteration(Alteration { position, kind, soft, parenthesized, span: self.span(start) }));
+                self.out.push(Figure::Alteration(Alteration {
+                    position,
+                    kind,
+                    soft,
+                    parenthesized,
+                    span: self.span(start),
+                }));
                 return;
             }
             Some(b'+') => {
                 self.i += 1;
-                self.out.push(Figure::Custos { position: Some(position), span: self.span(start) });
+                self.out.push(Figure::Custos {
+                    position: Some(position),
+                    span: self.span(start),
+                });
                 return;
             }
             _ => {}
         }
 
-        let shape = if c.is_ascii_uppercase() { NoteShape::Inclinatum } else { NoteShape::Punctum };
+        let shape = if c.is_ascii_uppercase() {
+            NoteShape::Inclinatum
+        } else {
+            NoteShape::Punctum
+        };
         let mut note = Note::new(position, shape, start..start);
         note.initio_debilis = std::mem::take(&mut self.initio);
         // Notes already finished by a repetition (`vv`, `ss`); signs after it go to the new note.
@@ -356,23 +427,33 @@ impl Parser<'_, '_> {
                         Some(d @ b'1'..=b'8') => {
                             self.i += 1;
                             note.above_sign = Some(d - b'0');
-                            self.sink.info(self.span(start), "gabc::above-sign", "signs above the staff aren't drawn yet");
+                            self.sink
+                                .info(self.span(start), "gabc::above-sign", "signs above the staff aren't drawn yet");
                         }
                         Some(b'0') => {
                             self.i += 1;
                             note.cavum = true;
-                            self.sink.warn(self.span(start), "gabc::lined-note", "notes surrounded by lines are drawn without the lines");
+                            self.sink.warn(
+                                self.span(start),
+                                "gabc::lined-note",
+                                "notes surrounded by lines are drawn without the lines",
+                            );
                         }
                         _ => note.cavum = true,
                     }
                 }
                 Some(b'R') => {
                     self.i += 1;
-                    self.sink.warn(self.span(start), "gabc::lined-note", "notes surrounded by lines are drawn without the lines");
+                    self.sink.warn(
+                        self.span(start),
+                        "gabc::lined-note",
+                        "notes surrounded by lines are drawn without the lines",
+                    );
                 }
                 Some(b'=') => {
                     self.i += 1;
-                    self.sink.warn(self.span(start), "gabc::linea", "the linea isn't supported; drawn as a punctum");
+                    self.sink
+                        .warn(self.span(start), "gabc::linea", "the linea isn't supported; drawn as a punctum");
                 }
                 Some(b'~') => {
                     self.i += 1;

@@ -32,7 +32,10 @@ fn pitches_and_positions() {
 #[test]
 fn note_signs() {
     let f = notes("(gv. h_0 i'1 Jw ko1 -f~ gr g..1)");
-    let ns: Vec<&Note> = f.iter().filter_map(|f| if let Figure::Note(n) = f { Some(n) } else { None }).collect();
+    let ns: Vec<&Note> = f
+        .iter()
+        .filter_map(|f| if let Figure::Note(n) = f { Some(n) } else { None })
+        .collect();
     assert_eq!(ns[0].shape, NoteShape::Virga);
     assert_eq!(ns[0].morae, 1);
     assert_eq!(ns[1].episema.unwrap().placement, Placement::Below);
@@ -49,7 +52,10 @@ fn note_signs() {
 #[test]
 fn repeated_strophae_and_virgae() {
     let f = notes("(gsss hvv.)");
-    let ns: Vec<&Note> = f.iter().filter_map(|f| if let Figure::Note(n) = f { Some(n) } else { None }).collect();
+    let ns: Vec<&Note> = f
+        .iter()
+        .filter_map(|f| if let Figure::Note(n) = f { Some(n) } else { None })
+        .collect();
     assert_eq!(ns.len(), 5);
     assert!(ns[..3].iter().all(|n| n.shape == NoteShape::Stropha));
     assert!(ns[3..].iter().all(|n| n.shape == NoteShape::Virga));
@@ -59,10 +65,35 @@ fn repeated_strophae_and_virgae() {
 #[test]
 fn clefs_alterations_custos() {
     let f = notes("(cb3 f4 c1@c4 ix iX i## gy? g+ z0)");
-    assert!(matches!(&f[0], Figure::Clef(Clef { kind: ClefKind::Do, line: 3, flat: true, .. })));
-    assert!(matches!(&f[2], Figure::Clef(Clef { kind: ClefKind::Fa, line: 4, .. })));
-    assert!(matches!(&f[4], Figure::Clef(Clef { kind: ClefKind::Do, line: 1, .. })));
-    let alts: Vec<&Alteration> = f.iter().filter_map(|f| if let Figure::Alteration(a) = f { Some(a) } else { None }).collect();
+    assert!(matches!(
+        &f[0],
+        Figure::Clef(Clef {
+            kind: ClefKind::Do,
+            line: 3,
+            flat: true,
+            ..
+        })
+    ));
+    assert!(matches!(
+        &f[2],
+        Figure::Clef(Clef {
+            kind: ClefKind::Fa,
+            line: 4,
+            ..
+        })
+    ));
+    assert!(matches!(
+        &f[4],
+        Figure::Clef(Clef {
+            kind: ClefKind::Do,
+            line: 1,
+            ..
+        })
+    ));
+    let alts: Vec<&Alteration> = f
+        .iter()
+        .filter_map(|f| if let Figure::Alteration(a) = f { Some(a) } else { None })
+        .collect();
     assert_eq!(alts.len(), 4);
     assert_eq!((alts[0].kind, alts[0].soft), (AlterationKind::Flat, false));
     assert_eq!((alts[1].kind, alts[1].soft), (AlterationKind::Flat, true));
@@ -75,7 +106,10 @@ fn clefs_alterations_custos() {
 #[test]
 fn bars_breaks_spaces() {
     let f = notes("(` `0 ^ , ,0 ; ;3 : :? :: z Z+ z- g/h//i/0j/!k!l! m/[2.5]g)");
-    let bars: Vec<BarKind> = f.iter().filter_map(|f| if let Figure::Bar(b) = f { Some(b.kind) } else { None }).collect();
+    let bars: Vec<BarKind> = f
+        .iter()
+        .filter_map(|f| if let Figure::Bar(b) = f { Some(b.kind) } else { None })
+        .collect();
     assert_eq!(
         bars,
         [
@@ -91,10 +125,41 @@ fn bars_breaks_spaces() {
             BarKind::Finalis
         ]
     );
-    let breaks: Vec<(bool, CustosRule)> = f.iter().filter_map(|f| if let Figure::Break(b) = f { Some((b.justify, b.custos)) } else { None }).collect();
-    assert_eq!(breaks, [(true, CustosRule::Default), (false, CustosRule::Force), (true, CustosRule::Suppress)]);
-    let spaces: Vec<Space> = f.iter().filter_map(|f| if let Figure::Space(s) = f { Some(*s) } else { None }).filter(|s| *s != Space::Large).collect();
-    assert_eq!(spaces, [Space::Small, Space::Medium, Space::Half, Space::Tiny, Space::Zero, Space::LargeNoBreak, Space::Scaled(2.5)]);
+    let breaks: Vec<(bool, CustosRule)> = f
+        .iter()
+        .filter_map(|f| {
+            if let Figure::Break(b) = f {
+                Some((b.justify, b.custos))
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert_eq!(
+        breaks,
+        [
+            (true, CustosRule::Default),
+            (false, CustosRule::Force),
+            (true, CustosRule::Suppress)
+        ]
+    );
+    let spaces: Vec<Space> = f
+        .iter()
+        .filter_map(|f| if let Figure::Space(s) = f { Some(*s) } else { None })
+        .filter(|s| *s != Space::Large)
+        .collect();
+    assert_eq!(
+        spaces,
+        [
+            Space::Small,
+            Space::Medium,
+            Space::Half,
+            Space::Tiny,
+            Space::Zero,
+            Space::LargeNoBreak,
+            Space::Scaled(2.5)
+        ]
+    );
 }
 
 #[test]

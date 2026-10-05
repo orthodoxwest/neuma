@@ -22,7 +22,10 @@ pub fn parse(src: &str) -> Parsed {
     let mut sink = Sink::default();
     let (header, body_start) = parse_header(src, &mut sink);
     let syllables = parse_body(src, body_start, &mut sink);
-    Parsed { score: Score { header, syllables }, diagnostics: sink.items }
+    Parsed {
+        score: Score { header, syllables },
+        diagnostics: sink.items,
+    }
 }
 
 /// Finds the `%%` line that ends the header. Returns its byte offset and the offset after it.
@@ -79,7 +82,11 @@ fn parse_header(src: &str, sink: &mut Sink) -> (Header, usize) {
             continue;
         }
         let Some(colon) = line.find(':') else {
-            sink.warn(line_start..line_start + line.len(), "gabc::bad-header", format!("header line has no `:`: {}", line.trim()));
+            sink.warn(
+                line_start..line_start + line.len(),
+                "gabc::bad-header",
+                format!("header line has no `:`: {}", line.trim()),
+            );
             continue;
         };
         let name = line[..colon].trim().to_string();
@@ -91,17 +98,33 @@ fn parse_header(src: &str, sink: &mut Sink) -> (Header, usize) {
         }
     }
     if let Some((name, value, start)) = pending {
-        sink.warn(start..sep, "gabc::unterminated-header", format!("header `{name}` has no closing `;` or `;;`"));
+        sink.warn(
+            start..sep,
+            "gabc::unterminated-header",
+            format!("header `{name}` has no closing `;` or `;;`"),
+        );
         header.fields.push((name, value.trim().to_string()));
     }
     for (name, value) in &header.fields {
         let lower = name.to_ascii_lowercase();
         if lower.starts_with("def-m") {
-            sink.info(0..0, "gabc::macro-ignored", format!("`{name}` defines TeX, which neuma doesn't run"));
+            sink.info(
+                0..0,
+                "gabc::macro-ignored",
+                format!("`{name}` defines TeX, which neuma doesn't run"),
+            );
         } else if lower == "oriscus-orientation" && value == "legacy" {
-            sink.warn(0..0, "gabc::legacy-oriscus", "legacy oriscus orientation isn't supported; using the default rules");
+            sink.warn(
+                0..0,
+                "gabc::legacy-oriscus",
+                "legacy oriscus orientation isn't supported; using the default rules",
+            );
         } else if lower == "staff-lines" && value.trim() != "4" {
-            sink.warn(0..0, "gabc::staff-lines", format!("only four-line staves are supported; `staff-lines: {value}` is drawn on four lines"));
+            sink.warn(
+                0..0,
+                "gabc::staff-lines",
+                format!("only four-line staves are supported; `staff-lines: {value}` is drawn on four lines"),
+            );
         } else if lower == "nabc-lines" {
             sink.warn(0..0, "gabc::nabc", "NABC notation isn't supported and is skipped");
         }
@@ -171,7 +194,11 @@ fn parse_body(src: &str, start: usize, sink: &mut Sink) -> Vec<Syllable> {
                 let lyric = lyric::parse(&trimmed, text_offset, &mut state, sink);
                 let notation = notes::parse(notes_src, start + i + 1, sink);
                 if close >= body.len() {
-                    sink.error(start + i..start + body.len(), "gabc::unclosed-notes", "notes opened with `(` never close");
+                    sink.error(
+                        start + i..start + body.len(),
+                        "gabc::unclosed-notes",
+                        "notes opened with `(` never close",
+                    );
                 }
                 let word_start = saw_space || syllables.is_empty();
                 syllables.push(Syllable {
@@ -207,7 +234,11 @@ fn parse_body(src: &str, start: usize, sink: &mut Sink) -> Vec<Syllable> {
         }
     }
     if !text.trim().is_empty() {
-        sink.warn(start + text_start..start + body.len(), "gabc::trailing-text", format!("text `{}` has no notes after it and is dropped", text.trim()));
+        sink.warn(
+            start + text_start..start + body.len(),
+            "gabc::trailing-text",
+            format!("text `{}` has no notes after it and is dropped", text.trim()),
+        );
     }
     syllables
 }
