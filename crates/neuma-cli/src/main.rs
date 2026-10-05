@@ -3,7 +3,10 @@
 use std::io::Read as _;
 use std::process::ExitCode;
 
-use neuma::{ApproxMeasure, LayoutOptions, Severity, StyleOptions, SvgOptions, Weights};
+use neuma::{LayoutOptions, MetricsTable, Severity, StyleOptions, SvgOptions, Weights};
+
+/// Metrics for EB Garamond 12, the lyric face the SVG output asks for.
+const EB_GARAMOND: &[u8] = include_bytes!("../../neuma-metrics/tables/eb-garamond-12.bin");
 
 const USAGE: &str = "usage: neuma <render|check|notes> [--width PX] [--scale PX] [FILE|-]
 
@@ -50,7 +53,14 @@ fn main() -> ExitCode {
         },
     };
     let parsed = neuma::parse(&src);
-    let engraving = parsed.score.engrave(&ApproxMeasure, &StyleOptions::default());
+    let metrics = match MetricsTable::from_bytes(EB_GARAMOND) {
+        Ok(m) => m,
+        Err(e) => {
+            eprintln!("neuma: built-in metrics: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let engraving = parsed.score.engrave(&metrics, &StyleOptions::default());
     let layout = engraving.layout(
         width,
         &LayoutOptions {

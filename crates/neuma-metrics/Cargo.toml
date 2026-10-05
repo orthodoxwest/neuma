@@ -1,0 +1,16 @@
+[package]
+name = "neuma-metrics"
+description = "Builds neuma's font metrics tables from OpenType fonts."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+neuma = { path = "../neuma", default-features = false }
+rustybuzz = "0.20"
+sha2 = "0.10"
+
+[lints]
+workspace = true

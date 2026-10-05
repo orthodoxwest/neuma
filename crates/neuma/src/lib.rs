@@ -11,6 +11,7 @@ pub mod engrave;
 pub mod gabc;
 pub mod glyphs;
 pub mod layout;
+pub mod metrics;
 pub mod notes;
 pub mod score;
 #[cfg(feature = "svg")]
@@ -24,6 +25,7 @@ pub use engrave::{AlterationScope, CustosPolicy, Engraving, Ink, StyleOptions};
 pub use gabc::{Parsed, parse, to_gabc};
 pub use glyphs::{GlyphOutline, glyph_outline};
 pub use layout::{LastLine, Layout, LayoutOptions};
+pub use metrics::MetricsTable;
 pub use notes::{MappedNote, NoteMap, Pause, Weights};
 pub use score::{Score, ScoreBuilder};
 #[cfg(feature = "svg")]
