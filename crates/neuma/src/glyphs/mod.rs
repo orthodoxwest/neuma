@@ -1,0 +1,110 @@
+//! Glyph outlines, from exsurge's table (see NOTICE), in glyph units: a punctum is 100 units
+//! wide, which is one staff space.
+
+mod table;
+
+pub use table::{GlyphId, SOURCE_SHA256};
+
+/// Which edge of a glyph sits at its x position.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Align {
+    Left,
+    Right,
+}
+
+#[derive(Debug)]
+pub(crate) struct GlyphData {
+    /// Absolute M/L/C/Z path data; holes are reverse-wound subpaths for a nonzero fill.
+    pub d: &'static str,
+    pub subpaths: u8,
+    pub width: f32,
+    pub height: f32,
+    pub origin_x: f32,
+    pub origin_y: f32,
+    pub align: Align,
+}
+
+/// Glyph units per staff space.
+pub const UNITS_PER_SPACE: f32 = 100.0;
+
+impl GlyphId {
+    pub(crate) fn data(self) -> &'static GlyphData {
+        &table::TABLE[self as usize]
+    }
+
+    /// The glyph's stable id across bindings.
+    pub const fn id(self) -> u16 {
+        self as u16
+    }
+
+    pub fn from_id(id: u16) -> Option<GlyphId> {
+        GlyphId::ALL.get(id as usize).copied()
+    }
+
+    /// Absolute M/L/C/Z path data in glyph units, origin at the note's anchor.
+    pub fn path(self) -> &'static str {
+        self.data().d
+    }
+
+    /// Width in staff spaces.
+    pub fn width(self) -> f32 {
+        self.data().width / UNITS_PER_SPACE
+    }
+
+    /// Height in staff spaces.
+    pub fn height(self) -> f32 {
+        self.data().height / UNITS_PER_SPACE
+    }
+
+    /// Distance from the glyph's left edge to its anchor, in staff spaces.
+    pub fn origin_x(self) -> f32 {
+        self.data().origin_x / UNITS_PER_SPACE
+    }
+
+    pub fn align(self) -> Align {
+        self.data().align
+    }
+
+    /// Number of closed subpaths in [`GlyphId::path`].
+    pub fn subpaths(self) -> u8 {
+        self.data().subpaths
+    }
+}
+
+/// A glyph's outline for a consumer to cache, by stable id.
+#[derive(Clone, Debug, PartialEq)]
+pub struct GlyphOutline {
+    /// Absolute M/L/C/Z path data in glyph units, nonzero fill.
+    pub d: String,
+    /// Width in staff spaces.
+    pub width: f32,
+}
+
+/// The outline for a stable glyph id, or `None` for an unknown id.
+pub fn glyph_outline(id: u16) -> Option<GlyphOutline> {
+    GlyphId::from_id(id).map(|g| GlyphOutline { d: g.path().to_string(), width: g.width() })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ids_round_trip_and_paths_are_normalized() {
+        for (i, g) in GlyphId::ALL.iter().enumerate() {
+            assert_eq!(g.id() as usize, i);
+            assert_eq!(GlyphId::from_id(g.id()), Some(*g));
+            let d = g.path();
+            assert!(d.starts_with('M'), "{}", g.name());
+            assert!(d.chars().all(|c| "MLCZ0123456789.- ".contains(c)), "{} has a non-normalized command", g.name());
+            assert_eq!(d.matches('M').count(), g.subpaths() as usize, "{}", g.name());
+        }
+        assert!(GlyphId::from_id(GlyphId::ALL.len() as u16).is_none());
+    }
+
+    #[test]
+    fn punctum_is_one_staff_space_wide() {
+        assert_eq!(GlyphId::PunctumQuadratum.width(), 1.0);
+        assert_eq!(GlyphId::PunctumCavum.subpaths(), 2);
+    }
+}
