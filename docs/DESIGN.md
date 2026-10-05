@@ -1,7 +1,6 @@
 # Neuma: design proposal
 
-Status: approved v3.1, 2026-10-05. Revised for reviews 1 to 3
-(`REVIEW-1.md`, `REVIEW-2.md`, `REVIEW-3.md`; review 3 approved); section 18 maps each finding to its fix. Proposed repository:
+Status: approved, 2026-10-05; M1 implemented. Repository:
 `orthodoxwest/neuma`.
 
 Neuma is a Rust engine that turns GABC, or pointed psalm text plus a psalm
@@ -55,7 +54,7 @@ without closing the door on Latin.
 | Office web client | Browser; `app.js` is a classic deferred script | Relayout at the real column width, swapping SVG in place. WebAssembly loaded by dynamic `import()` only on pages with chant, and precached by `sw.js`. |
 | Office iOS/Android | `mobile-ffi` (UniFFI) | A display list at the device's width and text size, through a per-score handle. Glyph outlines once each, as absolute `M/L/C/Z` path data, because iOS's `SVG.swift` parses only `M L H V C A Z` and silently stops at anything else. |
 | Practice or playback tool | Browser (WebAssembly) | The same SVG, plus a note map: pitch, weight, x/y, line and source span per note, and which SVG element is which note, for highlighting. |
-| Psalm-tone pointer | Library, CLI and browser | Pointed text in a parish psalter's markup plus a tone, turned into a score. Writes the same markup back out for print. |
+| Psalm-tone pointer | Library, CLI and browser | Pointed psalm text plus a tone, turned into a score. Writes the same markup back out for print. |
 | Tooling (CLI, CI) | Native | Lint GABC (hyphens inside syllables, as in Psalm 134), render SVG/PNG for review, dump note maps as JSON. |
 
 ## 3. Package layout
@@ -409,7 +408,7 @@ pub struct TextRun { pub text: String, pub style: TextStyle }   // italic, bold,
   Latin and English rules exactly as Gabc.tex documents them, and the
   `language:` header picks one. The English rules have prefixes `qu` and `y`
   and suffixes `w` and `we`, so "yes" centers on *e* and "new" includes the
-  *w*. If a choir director prefers different conventions, an AWRV variant is another
+  *w*. If a choir prefers different conventions, an AWRV variant is another
   file, not code.
 - **Hyphens.** The engine draws them itself: one centered between each pair
   of syllables in a word, and one after the last syllable on a line when a
@@ -525,8 +524,7 @@ input would lock in whatever the first implementation does.
 | Source | What | Licence check |
 |---|---|---|
 | Office `data/texts/chant/` | Psalm 134, after its hyphen fix | Office repo |
-| A parish's pointed psalter | About 337 pointed psalm settings across 10 psalms and the tones they use. This is the test set for `neuma-tones`: apply, then diff against the choir director's pointing. | Needs the parish's permission; kept out of the public repo until granted |
-| The same psalter's antiphons and hymns | Meinrad-font scores converted to GABC by a draft-then-check tool that reads the source document's runs (Meinrad private-use glyphs, U+EA22–U+EC75) rather than OCR, reviewed by the choir director | As above; M2 onward |
+| A hand-pointed English psalter | Pointed psalm settings in several tones. This is the test set for `neuma-tones`: apply, then diff against the hand pointing. | Private test data, kept out of this repository |
 | GregoBase | Only pieces whose `gabc-copyright` header is CC0 or a public-domain statement, chosen from the Latin-derived repertoire the AWRV sings | Per-file header |
 | Per-token fixtures | One small GABC fixture per row in section 6, written by us | Ours (MIT) |
 
@@ -563,24 +561,22 @@ also runs a **pointed-markup survey** of the psalter (section 15.1).
 
 ## 15. Psalm tones and pointed text
 
-The parish psalter points psalms by accent, with preparatory syllables.
+Anglican-style psalters point psalms by accent, with preparatory syllables.
 Each psalm is pointed again by hand for each tone and ending, so the model
 accepts **pointed text plus a tone** directly and doesn't need hand-written
 GABC.
 
 ### 15.1 Pointed-markup survey (M0)
 
-Review 2 counted the psalter's markup and found it richer than the summary
-v2 was written from:
+A count of a real psalter's markup found it richer than a simple accent model:
 
 - **The cadence dot `·` falls inside words** as well as between them
   ("peo·ple", "re·joice", "e·ver befóre"), so it is also a syllable boundary.
-- **Most cadence words aren't hyphenated.** For example, 5,062 accented words
-  with one syllable after the accent are unhyphenated, against 392
-  hyphenated.
+- **Most cadence words aren't hyphenated.** Accented words with one syllable
+  after the accent are unhyphenated far more often than not.
 - **The en dash has several uses:** a note with no new syllable in two-accent
   cadences ("thou · árt – mý God"), verse-initial use ("7 – · God shall
-  bléss us"), and sung-syllable splits in the Meinrad underlay
+  bléss us"), and sung-syllable splits in notated underlay
   ("Al–le–lu–ia").
 - **A circumflex marks reading-tone cadences** ("côme: †", "thŷ protection")
   in collects and chapters.
@@ -601,7 +597,7 @@ The provisional meanings below are what the survey has to confirm or correct.
 | acute on a vowel | That syllable takes an accent slot. |
 | `–` between words (pointed psalms) | A cadence note with no new syllable: the previous syllable is held. |
 | `–` at the start of a verse | To be determined by the survey. |
-| `–` inside a word (notated pieces) | A syllable split. It belongs to the Meinrad underlay importer, not to the pointed grammar. |
+| `–` inside a word (notated pieces) | A syllable split. It belongs to an underlay importer, not to the pointed grammar. |
 | `-` inside a word | A sung-syllable split, unless the word is hyphenated in the base text (below). |
 | `*` | Mediant. The same meaning as the Office psalter's `*` (`RunStyle::Mediant`). |
 | `†` (with the italic syllable before it) | Flex; the italic marks the flex syllable. |
@@ -625,10 +621,10 @@ most cadence words in the psalter aren't hyphenated. So English
 syllabification is an **M2b requirement**, not an M5 addition:
 
 - **Splits come from three sources, in priority order:** the markup's own
-  splits (`-`, in-word `·`), an exception list, then hyphenation patterns. The
-  psalter's 559 hand-hyphenated cadence words and its in-word `·` splits are
+  splits (`-`, in-word `·`), an exception list, then hyphenation patterns. A
+  psalter's hand-hyphenated cadence words and its in-word `·` splits are
   the first test set.
-- **The patterns are TeX's `hyph-en-us`** (Gerard Kuiken's ushyphmax, which
+- **The patterns are TeX's `hyph-en-us`** (the ushyphmax patterns, which
   has a permissive notice that allows modification), vendored with that
   notice in NOTICE once the vendored file is confirmed to match.
 - **Sung syllables differ from typographic hyphenation**, because patterns
@@ -638,7 +634,7 @@ syllabification is an **M2b requirement**, not an M5 addition:
   exception list covers Coverdale's sung forms ("judg-ed", "bless-ed").
   Machine splits are reviewed grouped by word frequency.
 - **Each split records its source** (markup, exception or pattern), so a
-  review tool can show the choir director only the machine-made splits that affect notes.
+  review tool can show a reviewer only the machine-made splits that affect notes.
 
 ### 15.3 What the engine adds
 
@@ -663,12 +659,10 @@ syllabification is an **M2b requirement**, not an M5 addition:
     (15.2).
   - **`apply(tone, pointed_psalm, options) -> Score`**, with options for
     intoning every verse or only the first, adding the Gloria Patri, and the
-    continuation policy. Testing it against the choir director's pointing alone would be
-    circular, because that pointing is the input. Each of the psalter's 427
-    psalm headings carries the tone formula in Meinrad's ASCII-letter
-    encoding, so M0 decodes those formulas into tone data, and the test
-    checks `apply`'s notes for each first verse against the psalter's
-    formula.
+    continuation policy. Testing it against a hand pointing alone would be
+    circular, because that pointing is the input, so the test also checks
+    `apply`'s notes for each first verse against the tone formula printed
+    with the psalm.
   - **Scope.** Psalm and canticle tones are in. Reading tones (collects and
     chapters, the circumflex marks) are parsed and preserved losslessly, but
     applying them is out of scope until M6.
@@ -740,58 +734,12 @@ syllabification is an **M2b requirement**, not an M5 addition:
 6. **M5, automatic pointing.**
 7. **M6, reading tones** (collects and chapters).
 
-## 18. Review findings and fixes
-
-### Review 1
-
-| Review item | Fix in this draft |
-|---|---|
-| B1: the coverage table misstated `Z`, `;N` and macros, and missed many tokens | §6 rebuilt row by row from Gabc.tex. `z`/`Z` corrected; `<nlba>` and `!` are the only ways to forbid a break; macros dropped |
-| B2: fictional headers, `language:` and `staff-lines:` ignored, English vowel rules wrong | §6.1 and §10: `language:` picks vowel data in Gregorio's file format, with the documented tables; `staff-lines` handled |
-| B3: accidental scope presented as part of GABC | §6.4: the `AlterationScope` option drives drawing, `semitones` and redisplay; `cb` semantics stated |
-| B4: the iOS parser can't draw exsurge's paths | §8: the generator normalizes to absolute M/L/C/Z with reverse-wound holes; iOS round-trip test |
-| B5: measurement ignored ligatures, small caps and the missing bold | §11: ligatures off for lyrics everywhere, smcp in the table, face fallback, font hashes, conformance test |
-| B6: no repertoire | §14 and M0: a corpus with provenance comes before engraving code, and the tiers are sized to it |
-| B7: the recitation unit couldn't break, and its syllables had no source | §15: word sub-units sharing one notehead, a continuation policy, and syllables from the markup's hyphens |
-| N1: glyph facts | §7, §8 and NOTICE |
-| N2: greciliae licensing | §8: dropped as a source |
-| N3: determinism | §13 |
-| N4: first-paint layout shift | §16.2 |
-| N5: wasm loading | §16.3 |
-| N6: UniFFI shape | §5: u16 glyph ids, owned strings, handles, cached same-width relayout |
-| N7: note map | §12: pauses keyed by position, named weight tables, source spans |
-| N8: hyphen lint | §10 |
-| N9: markup escaping, mediant reconciliation, tone data licence | §15 |
-| N10: milestones | §17: minimal note map and optimal-fit breaking in M1 |
-| N11: tests | §14: round-trip and differential tests |
-| N12: "no allocation" | §5: "buffers reused across relayouts" |
-
-
-### Review 2
-
-| Review item | Fix in this draft |
-|---|---|
-| B1: the pointed-text model doesn't match the psalter | §15.1: an M0 markup survey derives the grammar (in-word `·`, the uses of `–`, the circumflex, orthographic hyphens via a base text). §15.2: English syllabification moves into M2b. Reading tones scoped to M6 |
-| N1: first-paint shift | §16.2: the server lays out at its best width guess and reserves `min-height`; `aspect-ratio` only for no-JS and print |
-| N2: Android syntax, iOS `.kern` | §11 |
-| N3: `staff_space` on the engrave side | §4 and §5: `LayoutOptions::scale`; a text-size change is a relayout |
-| N4: note map lacks vowel and syllable text | §12 |
-| N5: FFI types | §5 (binding layer) and §12 (`before_note`) |
-| N6: hole winding | §8: signed area per glyph, plus a pixel comparison in the generator |
-| N7: `<eu>` | §6.2: a penalty, not unbreakable |
-| N8: overlay anchoring | §15.3: verse number and word index, checked by `make validate` |
-| N9: `powf` and rounding | §13 |
-| N10: the source document, not the PDF | §14 |
-| N11: `staff-lines` recovery | §6.1 |
-
-## 19. Open questions
+## 18. Open questions
 
 1. Repository name and owner: `orthodoxwest/neuma` (free on crates.io as of
    2026-10-05; npm not checked). The maintainers to create it.
 2. Publish to crates.io and npm, or use git dependencies only at first?
-3. May the psalter's pointed psalms go into the public repo as test data, or
-   should they stay private?
-4. Does the choir director prefer different English vowel centering from Gregorio's
+3. Do English choirs want different vowel centering from Gregorio's
    English rules?
-5. Do we want an SVG mode that draws text as paths, for exports that must
+4. Do we want an SVG mode that draws text as paths, for exports that must
    look identical without the font installed?
