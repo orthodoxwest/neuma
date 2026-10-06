@@ -5,7 +5,7 @@
 set -eu
 cd "$(dirname "$0")/../.."
 out=target/neuma-mobile-bindings
-cargo build -q -p neuma-mobile
+cargo rustc -q -p neuma-mobile --lib --crate-type cdylib
 case "$(uname)" in
   Darwin) lib=target/debug/libneuma_mobile.dylib ;;
   *) lib=target/debug/libneuma_mobile.so ;;

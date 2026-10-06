@@ -1,4 +1,4 @@
-// Calls neuma through its generated Kotlin bindings on the JVM, as the Android app would.
+// Calls neuma through its generated Kotlin bindings on the JVM, as an Android app would.
 // test.sh compiles and runs it when NEUMA_KOTLINC and NEUMA_JNA are set.
 
 import org.orthodoxwest.neuma.*

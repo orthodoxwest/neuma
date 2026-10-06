@@ -1,4 +1,5 @@
-"""Calls neuma through its generated Python bindings, as the Swift and Kotlin apps would.
+"""Calls neuma through its generated Python bindings: the same calls the Swift and Kotlin
+bindings make.
 
 Run by test.sh, which builds the library and generates `neuma.py` next to it.
 """

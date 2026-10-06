@@ -1,4 +1,4 @@
-// Calls neuma through its generated Swift bindings, as the iOS app would. test.sh compiles
+// Calls neuma through its generated Swift bindings, as an iOS app would. test.sh compiles
 // it with Neuma.swift into one executable on macOS.
 
 func check(_ ok: Bool, _ what: String) {

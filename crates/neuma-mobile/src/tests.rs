@@ -88,7 +88,7 @@ fn bad_options_keep_defaults() {
             initial: 9,
             annotation: false,
             lyric_size: f32::NAN,
-            font: Font::Google,
+            font: LyricFont::Google,
         },
     );
     let mut opts = options();

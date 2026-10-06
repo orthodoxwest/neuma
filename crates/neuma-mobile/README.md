@@ -3,24 +3,33 @@
 UniFFI bindings for neuma (namespace `neuma`, UniFFI 0.32). A `Chant` engraves a score
 once. `layout(width, options)` returns a `Page`, which holds what to draw (glyphs,
 rectangles and text) and the playback timeline. Every call is synchronous, and a `Chant`
-can be shared across threads.
+can be shared across threads. `noteAt` answers for that Chant's most recent layout, so
+give each view that lays the score out at its own width its own `Chant`.
 
 ## Build
 
+The crate is a plain Rust library; build the native library each platform loads with
+`cargo rustc`:
+
 ```sh
-cargo build -p neuma-mobile --release --target aarch64-apple-ios      # libneuma_mobile.a
-cargo build -p neuma-mobile --release --target aarch64-linux-android  # libneuma_mobile.so
+# iOS: a static library per target, then an XCFramework as usual.
+cargo rustc -p neuma-mobile --lib --release --target aarch64-apple-ios --crate-type staticlib
+# Android: a shared library per ABI. Linking needs the NDK, e.g. through cargo-ndk.
+cargo ndk -t arm64-v8a rustc -p neuma-mobile --lib --release --crate-type cdylib
+# Bindings, from any host build of the shared library (.so on Linux, .dylib on macOS).
+cargo rustc -p neuma-mobile --lib --crate-type cdylib
 cargo run -p neuma-mobile --features bindgen --bin uniffi-bindgen -- \
-  generate --library target/release/libneuma_mobile.so --language kotlin --out-dir out
+  generate --library target/debug/libneuma_mobile.so --language kotlin --out-dir out
 ```
 
 Generate Swift bindings with `--language swift`. Bindgen writes `Neuma.swift` plus the
-`NeumaFFI` header and module map.
+`NeumaFFI` header and module map. The Kotlin bindings load the library through JNA, so an
+Android app also depends on `net.java.dev.jna:jna:5.14.0@aar`.
 
 If an app already has its own UniFFI crate, make that crate depend on `neuma-mobile` and
-generate bindings from the app's library in library mode. Bindgen then writes both crates'
-bindings, and the app ships one native library. The two crates must use the same UniFFI
-version.
+reference it so the linker keeps its exports (`use neuma_mobile as _;`). Then generate
+bindings from the app's library in library mode: bindgen writes both crates' bindings, and
+the app ships one native library. The two crates must use the same UniFFI version.
 
 `crates/neuma-mobile/test.sh` runs one smoke test through each language it can on the
 machine: the Python bindings everywhere, Kotlin on the JVM, and Swift on macOS. CI runs all
@@ -57,9 +66,9 @@ chant.close()                 // or let the cleaner free it
   translated to (x, y) and scaled by the item's `scale`.
 - **Rectangles** are staff lines, ledger lines, stems, bars and episemata.
 - **Text.** Draw lyrics with EB Garamond at the item's x, baseline and size, ligatures off,
-  and without the app's own tracking. `ChantOptions.font` says which EB Garamond the app
-  bundles, so lyrics are measured the way they will be drawn. The default is EB Garamond
-  12; use `google` for the Google Fonts build.
+  and without the app's own tracking. `ChantOptions.font` (a `LyricFont`) says which EB
+  Garamond the app bundles, so lyrics are measured the way they will be drawn. The default
+  is EB Garamond 12; use `google` for the Google Fonts build.
 - **Highlighting.** `notes` lists the notes a piece of ink draws. A porrectus swash draws
   two. Every role (`Ink`, `TextRole`) can take its own color.
 - **Accessibility.** `page.altText` is the plain lyric text.
@@ -75,9 +84,10 @@ chant.close()                 // or let the cleaner free it
 - the syllable and word.
 - flags for `accent`, `newSyllable` and `recitation`.
 - `verse` and `half`.
-- the source byte span.
+- the source span, in UTF-8 bytes like the diagnostics' `start` and `end`. Swift and
+  Kotlin strings index in UTF-16, so convert before highlighting source text.
 
 `page.pauses` have kinds that include the mediant `*` and the flex `†`. A mark is the whole
 pause at its bar, so a bar right after one has weight 0. `Weights` are the relative
-durations, and any field left out keeps its default. `noteAt(x, y)` hit-tests the last
-layout.
+durations, and any field left out keeps its default. `virgula` also times the minimis bar,
+and `half` the Dominican bars. `noteAt(x, y)` hit-tests the last layout.

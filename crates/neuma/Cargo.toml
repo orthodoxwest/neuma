@@ -10,7 +10,7 @@ repository.workspace = true
 [features]
 default = ["svg", "fonts"]
 svg = []
-# The built-in EB Garamond metrics tables (about 150 KB).
+# The built-in EB Garamond metrics tables (about 100 KB).
 fonts = []
 
 [lints]

@@ -1,9 +1,10 @@
-//! neuma for iOS and Android: a [`Chant`] engraves a score once and lays it out at any
+//! neuma for iOS and Android: a `Chant` engraves a score once and lays it out at any
 //! width, returning a display list to draw natively and the playback timeline.
 //!
-//! The bindings are UniFFI (namespace `neuma`). An app links this crate on its own, or
-//! depends on it from its own UniFFI crate and generates bindings for both in library mode.
-//! Glyphs cross as `u16` ids: fetch each outline once with [`glyph_outline`] and draw it at
+//! The bindings are UniFFI (namespace `neuma`). An app builds this crate as its native
+//! library, or depends on it from its own UniFFI crate and generates bindings for both in
+//! library mode.
+//! Glyphs cross as `u16` ids: fetch each outline once with `glyph_outline` and draw it at
 //! an item's position and scale. Lyrics are drawn with the app's EB Garamond, ligatures off.
 
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -14,7 +15,7 @@ uniffi::setup_scaffolding!("neuma");
 
 /// Which EB Garamond the app draws lyrics with, so they are measured as drawn.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, uniffi::Enum)]
-pub enum Font {
+pub enum LyricFont {
     /// The EB Garamond 12 release (the OTFs most apps bundle).
     #[default]
     Garamond12,
@@ -22,11 +23,11 @@ pub enum Font {
     Google,
 }
 
-impl From<Font> for EngineFont {
-    fn from(f: Font) -> EngineFont {
+impl From<LyricFont> for EngineFont {
+    fn from(f: LyricFont) -> EngineFont {
         match f {
-            Font::Garamond12 => EngineFont::Garamond12,
-            Font::Google => EngineFont::Google,
+            LyricFont::Garamond12 => EngineFont::Garamond12,
+            LyricFont::Google => EngineFont::Google,
         }
     }
 }
@@ -42,7 +43,7 @@ pub struct ChantOptions {
     /// Lyric size in staff spaces; 0 or less keeps the default (2.7).
     #[uniffi(default = 0.0)]
     pub lyric_size: f32,
-    pub font: Font,
+    pub font: LyricFont,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
@@ -52,7 +53,9 @@ pub enum LastLine {
 }
 
 /// Relative durations per sign, in the timeline's weight units. Not beats: the app picks
-/// the tempo. [`default_weights`] gives one pulse a note and pauses that grow with the bar.
+/// the tempo. `default_weights` gives one pulse a note and pauses that grow with the bar.
+/// `virgula` also times the minimis bar (`^`), and `half` the Dominican bars. Negative or
+/// non-finite values keep the default; values are capped at 1000.
 #[derive(Clone, Copy, Debug, PartialEq, uniffi::Record)]
 pub struct Weights {
     #[uniffi(default = 1.0)]
@@ -81,7 +84,7 @@ pub struct Weights {
 impl From<Weights> for neuma::Weights {
     fn from(w: Weights) -> neuma::Weights {
         let d = neuma::Weights::SOLESMES;
-        let keep = |v: f32, default: f32| if v.is_finite() && v >= 0.0 { v } else { default };
+        let keep = |v: f32, default: f32| if v.is_finite() && v >= 0.0 { v.min(1000.0) } else { default };
         neuma::Weights {
             note: keep(w.note, d.note),
             mora: keep(w.mora, d.mora),
@@ -131,7 +134,7 @@ pub fn default_chant_options() -> ChantOptions {
         initial: 1,
         annotation: true,
         lyric_size: 0.0,
-        font: Font::Garamond12,
+        font: LyricFont::Garamond12,
     }
 }
 
@@ -156,7 +159,7 @@ pub enum Severity {
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
 pub struct Diagnostic {
     pub severity: Severity,
-    /// UTF-8 byte range in the source.
+    /// UTF-8 byte range in the source (not UTF-16 string indices).
     pub start: u64,
     pub end: u64,
     /// A stable code such as `gabc::hyphen-in-syllable`.
@@ -203,7 +206,7 @@ pub struct TextRun {
 /// One thing to draw, in output units with y down.
 #[derive(Clone, Debug, PartialEq, uniffi::Enum)]
 pub enum Item {
-    /// The outline [`glyph_outline`] returns for `glyph`, drawn with its origin at (x, y)
+    /// The outline `glyph_outline` returns for `glyph`, drawn with its origin at (x, y)
     /// and scaled by `scale`.
     Glyph {
         glyph: u16,
@@ -260,7 +263,7 @@ pub enum NoteShape {
 /// One note of the timeline, in singing order.
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]
 pub struct Note {
-    /// Stable across layouts of one [`Chant`].
+    /// Stable across layouts of one `Chant`.
     pub id: u32,
     pub syllable: u32,
     pub word: u32,
@@ -351,18 +354,19 @@ pub struct GlyphOutline {
     pub width: f32,
 }
 
-/// The outline for an [`Item::Glyph`]'s id, or `None` for an unknown id.
+/// The outline for an glyph item's id, or `None` for an unknown id.
 #[uniffi::export]
 pub fn glyph_outline(id: u16) -> Option<GlyphOutline> {
     neuma::glyph_outline(id).map(|g| GlyphOutline { path: g.d, width: g.width })
 }
 
-/// One score: engraved once, laid out on demand. Safe to share across threads.
+/// One score: engraved once, laid out on demand. Safe to share across threads, but
+/// `note_at` answers for this Chant's most recent layout, so give each view its own Chant.
 #[derive(Debug, uniffi::Object)]
 pub struct Chant {
     engraving: Engraving,
     diagnostics: Vec<Diagnostic>,
-    /// The last layout's timeline, for [`Chant::note_at`].
+    /// The last layout's timeline, for `note_at`.
     last: Mutex<Option<neuma::NoteMap>>,
 }
 
