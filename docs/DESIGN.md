@@ -287,8 +287,10 @@ tokens real AWRV material uses and moves rows between E1 and E2.
 | Item | Treatment |
 |---|---|
 | Space inside notes (large separation, breakable) | E1 |
-| `/` `//` `/0` `/!` `/[f]` (a negative `f` is a backspace) | E1 |
+| `/` `//` `/0` `/!` `/[f]` (a negative `f` is a backspace; `//[f]` is `/` then `/[f]`) | E1 |
 | `!` alone (zero-width split) and `!` before a space (non-breaking) | E1 |
+| `<nlba>…</nlba>` inside notes (its spaces don't break) | E1 |
+| `{…}` zero-width notes | A (drawn with their own width) |
 | `@` manual fusion, `@[…]` auto fusion | E2 |
 | `` ` `` `` `0 `` `^` `^0` `,` `,0` `;` `:` `:?` `::` | E1 |
 | `;1`–`;8` Dominican bars | E2 |

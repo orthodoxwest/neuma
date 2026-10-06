@@ -323,3 +323,27 @@ fn header_missing_semicolon_ends_at_next_field() {
     assert_eq!(p.score.header.get("mode"), Some("1"));
     assert!(p.diagnostics.is_empty(), "{:?}", p.diagnostics);
 }
+
+#[test]
+fn notes_with_gregorio_6_syntax() {
+    // `//[-0.5]` is a cut and then a scaled space, not a medium space and a tag.
+    let f = notes("(c4) a(jH0//[-0.5]{ix}F0hi)");
+    let spaces: Vec<Space> = f
+        .iter()
+        .filter_map(|f| if let Figure::Space(s) = f { Some(*s) } else { None })
+        .collect();
+    assert_eq!(spaces, [Space::Small, Space::Scaled(-0.5)]);
+    // `<nlba>` inside notes keeps its notes on one line and adds none.
+    let p = parse("(c4) a(f.___</nlba>) b(<nlba>g h</nlba> i)\n");
+    let count = |s: &Syllable| s.notation.iter().filter(|f| matches!(f, Figure::Note(_))).count();
+    assert_eq!(count(&p.score.syllables[1]), 1);
+    assert_eq!(count(&p.score.syllables[2]), 3);
+    assert!(matches!(&p.score.syllables[1].notation[0], Figure::Note(n) if n.liquescent == Liquescent::None));
+    let spaces: Vec<&Figure> = p.score.syllables[2]
+        .notation
+        .iter()
+        .filter(|f| matches!(f, Figure::Space(_)))
+        .collect();
+    assert_eq!(spaces, [&Figure::Space(Space::LargeNoBreak), &Figure::Space(Space::Large)]);
+    assert!(p.diagnostics.is_empty(), "{:?}", p.diagnostics);
+}
