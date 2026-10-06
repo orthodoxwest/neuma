@@ -39,7 +39,8 @@ const CUSTOS_GAP: f32 = INTRA;
 const HYPHEN_PAD: f32 = 0.25;
 /// How far each gap may stretch before a line counts as loose, in staff spaces.
 const STRETCH: f32 = 1.5;
-/// The widest column laid out, in output units; wider requests are clamped to it.
+/// The widest column laid out, in output units and in staff spaces; wider requests are
+/// clamped to it.
 const MAX_WIDTH: f32 = 1.0e6;
 /// Space between stacked lines, in staff spaces.
 const LINE_GAP: f32 = 1.0;
@@ -224,7 +225,7 @@ impl Engraving {
         // A non-finite or negative width can't be laid out; treat it as the narrowest or the
         // widest column so the output stays finite.
         let width = if width.is_nan() { 0.0 } else { width.clamp(0.0, MAX_WIDTH) };
-        let target = width / scale;
+        let target = (width / scale).min(MAX_WIDTH);
         let n = self.segments.len();
         if n == 0 {
             return Layout {
@@ -270,7 +271,9 @@ impl Engraving {
                         end_of_score && opts.last_line == LastLine::Ragged || matches!(seg.after, Break::Forced { justify: false, .. });
                     let badness = if over {
                         if last == first { 10000.0 } else { f32::INFINITY }
-                    } else if ragged {
+                    } else if ragged || forced {
+                        // A written break fixes where this line ends, so how loose it is says
+                        // nothing about the breaks before it.
                         0.0
                     } else if gaps == 0.0 {
                         if target - natural > 0.5 { 5000.0 } else { 0.0 }

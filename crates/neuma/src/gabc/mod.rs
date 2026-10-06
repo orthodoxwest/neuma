@@ -20,7 +20,11 @@ pub struct Parsed {
 /// Parses GABC source. Never fails.
 pub fn parse(src: &str) -> Parsed {
     let mut sink = Sink::default();
-    let (header, body_start) = parse_header(src, &mut sink);
+    let (header, mut body_start) = parse_header(src, &mut sink);
+    // A byte-order mark isn't text; spans still count it, so they index `src`.
+    if src[body_start..].starts_with('\u{feff}') {
+        body_start += '\u{feff}'.len_utf8();
+    }
     let syllables = parse_body(src, body_start, &mut sink);
     Parsed {
         score: Score { header, syllables },
@@ -32,7 +36,7 @@ pub fn parse(src: &str) -> Parsed {
 fn find_separator(src: &str) -> Option<(usize, usize)> {
     let mut offset = 0;
     for line in src.split_inclusive('\n') {
-        if line.trim_end_matches(['\r', '\n']).trim() == "%%" {
+        if line.trim_end_matches(['\r', '\n']).trim_start_matches('\u{feff}').trim() == "%%" {
             return Some((offset, offset + line.len()));
         }
         offset += line.len();

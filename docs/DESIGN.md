@@ -524,12 +524,12 @@ input would lock in whatever the first implementation does.
 | Source | What | Licence check |
 |---|---|---|
 | Office `data/texts/chant/` | Psalm 134, after its hyphen fix | Office repo |
-| A hand-pointed English psalter | Pointed psalm settings in several tones. This is the test set for `neuma-tones`: apply, then diff against the hand pointing. | Private test data, kept out of this repository |
+| A hand-pointed English psalter (the test psalter) | Pointed psalm settings in several tones. This is the test set for `neuma-tones`: apply, then diff against the hand pointing. | Private test data, kept out of this repository |
 | GregoBase | Only pieces whose `gabc-copyright` header is CC0 or a public-domain statement, chosen from the Latin-derived repertoire the AWRV sings | Per-file header |
 | Per-token fixtures | One small GABC fixture per row in section 6, written by us | Ours (MIT) |
 
 M0 then counts which tokens the corpus uses and retiers section 6 to fit. It
-also runs a **pointed-markup survey** of the psalter (section 15.1).
+also runs a **pointed-markup survey** of the test psalter (section 15.1).
 
 **Tests**
 
@@ -568,7 +568,7 @@ GABC.
 
 ### 15.1 Pointed-markup survey (M0)
 
-A count of a real psalter's markup found it richer than a simple accent model:
+A count of the test psalter's markup found it richer than a simple accent model:
 
 - **The cadence dot `·` falls inside words** as well as between them
   ("peo·ple", "re·joice", "e·ver befóre"), so it is also a syllable boundary.
@@ -617,7 +617,7 @@ byte-identical for the text form.
 ### 15.2 Syllabification ships with the tones (M2b)
 
 `apply` has to place termination notes on the syllables after an accent, and
-most cadence words in the psalter aren't hyphenated. So English
+most cadence words in the test psalter aren't hyphenated. So English
 syllabification is an **M2b requirement**, not an M5 addition:
 
 - **Splits come from three sources, in priority order:** the markup's own
@@ -654,7 +654,7 @@ syllabification is an **M2b requirement**, not an M5 addition:
     the intonation, tenor, flex, mediant and termination as accent slots,
     preparatory slots and fixed notes, with `source:` and `licence:` fields.
     It starts with the eight tones and the tonus peregrinus, in the endings
-    the psalter uses (viii.1, vii.2, i.b.2 and so on).
+    the test psalter uses (viii.1, vii.2, i.b.2 and so on).
   - **The pointed-markup parser and writer** (15.1) and the syllabifier
     (15.2).
   - **`apply(tone, pointed_psalm, options) -> Score`**, with options for
@@ -667,7 +667,7 @@ syllabification is an **M2b requirement**, not an M5 addition:
     chapters, the circumflex marks) are parsed and preserved losslessly, but
     applying them is out of scope until M6.
   - **Automatic pointing (M5):** `point(text, tone) -> Pointed`, from a
-    stress dictionary with manual overrides, tested against the psalter.
+    stress dictionary with manual overrides, tested against the test psalter.
 - **Office tie-in.** The Office psalter's `*` already marks the mediant, so
   the pointer reads the Office text as it is. Accents, `·` and `†` are kept
   as a pointing overlay per psalm and tone, anchored by **verse number and
@@ -713,7 +713,7 @@ syllabification is an **M2b requirement**, not an M5 addition:
    - Glyph normalization and its iOS check.
    - Build the EB Garamond metrics table, and verify the woff2 subsets against
      the OTFs.
-   - Survey the psalter's pointed markup (section 15.1), and check the
+   - Survey the test psalter's pointed markup (section 15.1), and check the
      hyphenation patterns' licence (section 15.2).
 1. **M1, core.**
    - Parser (every token in section 6 tokenizes, and E1 rows engrave),
@@ -727,7 +727,7 @@ syllabification is an **M2b requirement**, not an M5 addition:
    the text conformance test, and the differential test against exsurge.
 3. **M2b, tones.** `neuma-tones`: the markup parser and writer (with the
    grammar from the M0 survey), English syllabification, tone data and
-   `apply`, tested against the psalter's pointings.
+   `apply`, tested against the test psalter's pointings.
 4. **M3, bindings.** The WebAssembly build, npm package and DOM helper, with
    wasm tests. Practice tools can switch over from exsurge.
 5. **M4, Office.** Section 16, behind a flag.

@@ -742,20 +742,18 @@ impl Score {
             // A break written in its own syllable applies after the previous segment.
             if let Some(brk) = pending_break.take() {
                 let k = seg_ids[0];
-                let break_only = syl
-                    .notation
-                    .iter()
-                    .all(|f| matches!(f, Figure::Break(_) | Figure::Space(_) | Figure::NoCustos));
+                // A syllable with text keeps its segment, and the break follows it.
+                let break_only = syl.text.is_empty()
+                    && syl
+                        .notation
+                        .iter()
+                        .all(|f| matches!(f, Figure::Break(_) | Figure::Space(_) | Figure::NoCustos));
                 if break_only && k > 0 {
                     e.segments[k - 1].after = brk;
-                    if syl.text.is_empty() {
-                        e.segments.truncate(k);
-                        continue;
-                    }
-                    // The syllable's text still needs its segment, at the start of the new line.
-                } else {
-                    e.segments[*seg_ids.last().unwrap_or(&k)].after = brk;
+                    e.segments.truncate(k);
+                    continue;
                 }
+                e.segments[*seg_ids.last().unwrap_or(&k)].after = brk;
             }
             if nocustos {
                 if let Some(k) = seg_ids.last() {

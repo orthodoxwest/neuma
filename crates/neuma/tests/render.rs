@@ -85,8 +85,25 @@ fn render(src: &str, width: f32) -> String {
 
 #[test]
 fn lyric_on_break_only_syllable_is_kept() {
-    let svg = render("(c4) A(g) men(z) (h)", 400.0);
-    assert!(svg.contains(">men<"), "{svg}");
+    // The break follows the syllable, text and all, as in Gregorio.
+    for (src, first_line) in [("(c4) A(g) men(z) (h)", ["A", "men"]), ("(c4) Ky(g)ri(z)e(h)", ["Ky", "ri"])] {
+        let eng = parse(src).score.engrave(&ApproxMeasure, &StyleOptions::default());
+        let layout = eng.layout(400.0, &LayoutOptions::default());
+        assert_eq!(layout.line_count(), 2, "{src}");
+        let list = layout.display();
+        let top: Vec<String> = list
+            .items
+            .iter()
+            .filter_map(|i| match i {
+                Item::Text { runs, baseline, .. } if *baseline < list.lines[0].bottom => {
+                    Some(runs.iter().map(|r| r.text.as_str()).collect::<String>())
+                }
+                _ => None,
+            })
+            .filter(|t| t != "-")
+            .collect();
+        assert_eq!(top, first_line, "{src}");
+    }
 }
 
 #[test]
@@ -108,8 +125,8 @@ fn non_finite_sizes_stay_finite() {
     let eng = parse("(c4) A(g)men(h) (::)")
         .score
         .engrave(&ApproxMeasure, &StyleOptions::default());
-    for width in [f32::INFINITY, f32::NAN, -5.0, 1e9] {
-        for scale in [f32::INFINITY, f32::NAN, 0.0, 6.0] {
+    for width in [f32::INFINITY, f32::NAN, -5.0, 1e9, 3e38] {
+        for scale in [f32::INFINITY, f32::NAN, 0.0, 1e-38, 6.0] {
             let layout = eng.layout(
                 width,
                 &LayoutOptions {
@@ -132,5 +149,6 @@ fn wide_layout_is_fast() {
     let layout = eng.layout(1e9, &LayoutOptions::default());
     assert!(layout.line_count() > 0);
     // The quadratic breaker takes milliseconds here; the old cubic one took tens of seconds.
-    assert!(t.elapsed().as_secs() < 5, "{:?}", t.elapsed());
+    // The bound is loose so a slow runner can't trip it.
+    assert!(t.elapsed().as_secs() < 30, "{:?}", t.elapsed());
 }

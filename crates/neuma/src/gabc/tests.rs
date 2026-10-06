@@ -248,4 +248,11 @@ fn round_trip() {
 fn header_bom_and_semicolons() {
     let p = parse("\u{feff}name: a; b;;\n%%\n(c4) A(g)\n");
     assert_eq!(p.score.header.get("name"), Some("a; b"));
+    let p = parse("\u{feff}(c4) A(g)");
+    assert_eq!(
+        p.score.syllables[0].text.runs.iter().map(|r| r.text.as_str()).collect::<String>(),
+        ""
+    );
+    let p = parse("name: a;\n\u{feff}%%\n(c4) A(g)");
+    assert_eq!(p.score.header.get("name"), Some("a"));
 }
