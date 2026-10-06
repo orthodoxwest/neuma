@@ -1,6 +1,6 @@
 # The Solesmes psalm tones with their usual endings, as in the Liber Usualis (1961).
-# Transcribed from the tone table of jgabc by Benjamin Bloomfield, which is in the public
-# domain (Unlicense): https://github.com/bbloomf/jgabc
+# Transcribed from the public-domain (Unlicense) tone table of jgabc:
+# https://github.com/bbloomf/jgabc
 #
 # Each tone is a block: `name:`, `clef:`, `mediant:` and `termination:`, optionally `flex:`,
 # separated by blank lines. A formula lists one GABC neume per syllable. The first `r` neume

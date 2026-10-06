@@ -13,21 +13,43 @@
 /// Where a word splits into sung syllables: byte offsets into the word, in order, each a
 /// boundary between two syllables.
 pub fn split_points(word: &str) -> Vec<usize> {
-    let chars: Vec<(usize, char)> = word.char_indices().collect();
-    // Letters only, folded to plain lower-case ASCII where possible, with their byte offsets.
-    let letters: Vec<(usize, char)> = chars
-        .iter()
-        .filter(|(_, c)| c.is_alphabetic())
-        .map(|&(i, c)| (i, fold(c)))
-        .collect();
+    // Letters only, as plain lower-case ASCII with the byte offset of the character they came
+    // from: accents dropped, ligatures spelt out ("ﬁ" → "fi"), and any other letter read as a
+    // consonant, so the rules below can index letters as bytes.
+    let mut letters: Vec<(usize, u8)> = Vec::with_capacity(word.len());
+    for (i, c) in word.char_indices().filter(|(_, c)| c.is_alphabetic()) {
+        let f = fold(c);
+        let spelt: &str = match f {
+            'a'..='z' => {
+                letters.push((i, f as u8));
+                continue;
+            }
+            'æ' | 'œ' => "e",
+            'ß' => "ss",
+            'ﬁ' => "fi",
+            'ﬂ' => "fl",
+            'ﬀ' => "ff",
+            'ﬃ' => "ffi",
+            'ﬄ' => "ffl",
+            'ﬅ' | 'ﬆ' => "st",
+            'ç' | 'Ç' => "c",
+            'ñ' | 'Ñ' => "n",
+            'þ' | 'Þ' | 'ð' | 'Ð' => "th",
+            _ => "b",
+        };
+        letters.extend(spelt.bytes().map(|b| (i, b)));
+    }
     if letters.len() < 2 {
         return Vec::new();
     }
-    let folded: String = letters.iter().map(|&(_, c)| c).collect();
-    letter_points(&folded)
+    let folded: String = letters.iter().map(|&(_, c)| c as char).collect();
+    let mut points: Vec<usize> = letter_points(&folded)
         .into_iter()
         .filter_map(|k| letters.get(k).map(|&(i, _)| i))
-        .collect()
+        .filter(|&i| i > 0)
+        .collect();
+    points.dedup();
+    points
 }
 
 /// [`split_points`] as letter indices into a folded word.
@@ -500,11 +522,38 @@ mod tests {
             ("angels", "an-gels"),
             ("bringeth", "bring-eth"),
             ("Misael", "Mi-sa-el"),
+            ("deﬁled", "de-ﬁled"),
+            ("fulﬁlled", "ful-ﬁlled"),
+            ("Señora", "Se-ño-ra"),
+            ("conﬂict", "con-ﬂict"),
+            ("aßtra", "a-ßtra"),
+            ("oþra", "o-þra"),
+            ("Cæsar", "Cæ-sar"),
         ] {
             if split(w) != want {
                 bad.push(format!("{w}: {} (want {want})", split(w)));
             }
         }
         assert!(bad.is_empty(), "{bad:#?}");
+    }
+
+    #[test]
+    fn any_letters_split_on_char_boundaries() {
+        let odd = [
+            "ﬁ", "ﬂ", "ß", "ñ", "þ", "ð", "ç", "æ", "œ", "é", "e\u{301}", "α", "я", "ש", "中", "😀", "'", "1",
+        ];
+        let plain = ["a", "e", "str", "n", "o", "w", "y", "ck"];
+        for x in odd {
+            for y in odd {
+                for p in plain {
+                    for w in [format!("{p}{x}{p}{y}{p}"), format!("{x}{y}"), format!("{x}{p}{x}"), x.repeat(5)] {
+                        let pts = split_points(&w);
+                        assert!(pts.windows(2).all(|p| p[0] < p[1]), "{w}");
+                        assert!(pts.iter().all(|&i| i > 0 && i < w.len() && w.is_char_boundary(i)), "{w}");
+                        assert_eq!(syllables(&w).concat(), w);
+                    }
+                }
+            }
+        }
     }
 }

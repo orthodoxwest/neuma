@@ -5,7 +5,7 @@ use std::ops::Range;
 use neuma::score::{Bar, BarKind, Clef, Figure, Lyric};
 use neuma::{Diagnostic, Score, ScoreBuilder, Severity};
 
-use crate::pointed::{self, Part, PartKind, Pointed};
+use crate::pointed::{self, Part, PartKind, Pointed, Syllable};
 use crate::syllable::fold;
 use crate::tone::{Cadence, Slot, Tone};
 
@@ -87,6 +87,9 @@ pub fn apply(tone: &Tone, pointed: &Pointed, options: &Options) -> Setting {
     b = b.clef(tone.clef, tone.clef_line);
     let mut notes = Vec::new();
     let mut diags = Vec::new();
+    if text.verses.is_empty() {
+        warn(&mut diags, Severity::Warning, 0..0, "apply::empty", "there is no verse to sing");
+    }
     let mut figures = Figures::default();
     let last_verse = text.verses.len().saturating_sub(1);
     for (vi, verse) in text.verses.iter().enumerate() {
@@ -209,6 +212,43 @@ fn warn(diags: &mut Vec<Diagnostic>, severity: Severity, span: Range<usize>, cod
 
 /// The neumes each syllable of `part` takes.
 fn set_part(part: &Part, cadence: &Cadence, lead: &[String], diags: &mut Vec<Diagnostic>) -> Sung {
+    let n = part.syllables.len();
+    let mut out = if part.held_end > 0 && n > 0 {
+        // Dashes after the last syllable stand for notes it holds: set them as syllables of
+        // their own, the first ones taking any accents the marks leave, then give their notes
+        // to the last real syllable ("Dá-vid, – – *").
+        let mut ext = part.clone();
+        ext.held_end = 0;
+        let start = part.syllables.iter().rposition(|s| s.cadence).unwrap_or(0);
+        let marked = part.syllables[start..].iter().filter(|s| s.accent).count();
+        let missing = if marked > 0 { cadence.accents().saturating_sub(marked) } else { 0 };
+        let end = part.syllables[n - 1].span.end;
+        for k in 0..part.held_end {
+            ext.syllables.push(Syllable {
+                span: end..end,
+                accent: k < missing,
+                ..Syllable::default()
+            });
+        }
+        let mut sung = set_cadence(&ext, cadence, lead, diags);
+        let held: Vec<(String, Role)> = sung.drain(n..).flatten().collect();
+        sung[n - 1].extend(held);
+        sung
+    } else {
+        set_cadence(part, cadence, lead, diags)
+    };
+    // Every syllable sings something: one left without a note takes the note before it.
+    for i in 0..out.len() {
+        if out[i].is_empty() {
+            let prev = if i > 0 { out[i - 1].last().cloned() } else { None };
+            out[i].push(prev.unwrap_or_else(|| (cadence.tenor.clone(), Role::Tenor)));
+        }
+    }
+    out
+}
+
+/// [`set_part`] for a half without trailing dashes.
+fn set_cadence(part: &Part, cadence: &Cadence, lead: &[String], diags: &mut Vec<Diagnostic>) -> Sung {
     let syls = &part.syllables;
     let n = syls.len();
     let mut out: Sung = vec![Vec::new(); n];
@@ -235,6 +275,10 @@ fn set_part(part: &Part, cadence: &Cadence, lead: &[String], diags: &mut Vec<Dia
         k = end;
     }
     let wanted = units.len();
+    if wanted == 0 {
+        // A formula with no accent (only a hand-built tone can have one): recite it all.
+        return vec![vec![(cadence.tenor.clone(), Role::Tenor)]; n];
+    }
 
     // Where the cadence starts and which syllables carry its accents.
     let start = syls.iter().rposition(|s| s.cadence);
@@ -439,8 +483,9 @@ fn fill(syls: &mut [Vec<(String, Role)>], slots: &[Slot], role: Role) {
         }
     }
     if !has_open && extra > 0 {
-        // Repeat the last note on the extra syllables.
-        let last = syls[i.min(k) - 1].last().cloned();
+        // Repeat the last note on the extra syllables (none yet: the caller fills them).
+        let Some(prev) = i.min(k).checked_sub(1) else { return };
+        let last = syls[prev].last().cloned();
         if let Some(note) = last {
             for s in syls.iter_mut().skip(i) {
                 s.push(note.clone());
@@ -537,6 +582,30 @@ mod tests {
         assert_eq!(v2[0].number, Some(5));
         // The verse ends on a full bar and the psalm on a double bar.
         assert!(s.gabc.contains("(:)") && s.gabc.trim_end().ends_with("(::)"), "{}", s.gabc);
+    }
+
+    #[test]
+    fn trailing_dashes_and_odd_tones() {
+        // The dashes after "Dá-vid," hold its last syllable for the second accent and the end.
+        let tone = Tone::named("7.a").unwrap();
+        let held = apply_text(tone, "Lord, remember · Dávid, – – * and · áll his tróu-ble.", &Options::default());
+        assert!(held.diagnostics.is_empty(), "{:?}", held.diagnostics);
+        let plain = apply_text(tone, "Lord, remember · Dávid, * and · áll his tróu-ble.", &Options::default());
+        assert_ne!(held.gabc, plain.gabc);
+        assert!(held.gabc.contains("vid,(jij)") || held.gabc.contains("vid,(j)"), "{}", held.gabc);
+        // A hand-built tone ending on its accent still gives every syllable a note.
+        let t = Tone::parse("name: x\nmediant: jr 'k\ntermination: jr 'k 'j").unwrap();
+        let s = apply_text(&t, "The Lord is · Kíng and · glad * and · práise him", &Options::default());
+        assert!(!s.gabc.split("()").any(|x| x.ends_with(char::is_alphabetic)), "{}", s.gabc);
+        let eng = neuma::parse(&s.gabc).score.engrave(&ApproxMeasure, &StyleOptions::default());
+        let map = eng.layout(800.0, &Default::default()).notes(&Default::default());
+        assert_eq!(map.notes.len(), s.notes.len());
+        assert!(
+            apply_text(tone, "", &Options::default())
+                .diagnostics
+                .iter()
+                .any(|d| d.code == "apply::empty")
+        );
     }
 
     #[test]

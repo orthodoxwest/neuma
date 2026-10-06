@@ -59,7 +59,10 @@ impl Cadence {
                 Some(rest) => (true, rest),
                 None => (false, w),
             };
-            if w.is_empty() || !w.starts_with(|c: char| c.is_ascii_alphabetic()) {
+            // A neume starts with a pitch (`a`–`m`, capitals for inclinata) and holds only
+            // GABC note characters.
+            let note_chars = |c: char| c.is_ascii_graphic() && !"()[]{};:".contains(c);
+            if !w.starts_with(|c: char| matches!(c.to_ascii_lowercase(), 'a'..='m')) || !w.chars().all(note_chars) {
                 return Err(ToneError(format!("`{formula}`: `{w}` is not a neume")));
             }
             let open = w.len() >= 2 && w.ends_with('r') && !accent;
@@ -138,6 +141,7 @@ impl Tone {
         let mut mediant = None;
         let mut termination = None;
         let mut flex = None;
+        let mut seen = std::collections::HashSet::new();
         for line in block.lines() {
             let line = line.trim();
             if line.is_empty() || line.starts_with('#') {
@@ -147,7 +151,11 @@ impl Tone {
                 return Err(ToneError(format!("`{line}`: expected `key: value`")));
             };
             let value = value.trim();
-            match key.trim() {
+            let key = key.trim();
+            if !seen.insert(key.to_string()) {
+                return Err(ToneError(format!("`{key}:` is given twice")));
+            }
+            match key {
                 "name" => name = Some(value.to_string()),
                 "clef" => clef = Some(parse_clef(value)?),
                 "mediant" => mediant = Some(Cadence::parse(value)?),
@@ -160,13 +168,14 @@ impl Tone {
         let (kind, line) = clef.unwrap_or((ClefKind::Do, 4));
         let mediant = mediant.ok_or_else(|| ToneError(format!("{name}: no `mediant:`")))?;
         let termination = termination.ok_or_else(|| ToneError(format!("{name}: no `termination:`")))?;
-        if mediant.accents() == 0 || termination.accents() == 0 {
-            return Err(ToneError(format!("{name}: each half needs at least one accent `'`")));
-        }
         let flex = match flex {
             Some(f) => f,
-            None => default_flex(&mediant.tenor, kind, line),
+            None => default_flex(&mediant.tenor, kind, line)
+                .ok_or_else(|| ToneError(format!("{name}: the tenor is too low for the usual flex; give a `flex:`")))?,
         };
+        if mediant.accents() == 0 || termination.accents() == 0 || flex.accents() == 0 {
+            return Err(ToneError(format!("{name}: each half and the flex need at least one accent `'`")));
+        }
         Ok(Tone {
             name,
             clef: kind,
@@ -208,6 +217,12 @@ impl Tone {
         Tone::builtin().iter().find(|t| normalize(&t.name) == want)
     }
 
+    /// A tone from `tones` by name, matched as [`Tone::named`] matches.
+    pub fn find<'a>(tones: &'a [Tone], name: &str) -> Option<&'a Tone> {
+        let want = normalize(name);
+        tones.iter().find(|t| normalize(&t.name) == want)
+    }
+
     /// The clef as GABC (`c4`).
     pub fn clef_gabc(&self) -> String {
         let k = match self.clef {
@@ -244,15 +259,16 @@ fn degree(letter: char, kind: ClefKind, line: u8) -> i32 {
 }
 
 /// A flex a step below the tenor, or a minor third below do and fa.
-fn default_flex(tenor: &str, kind: ClefKind, line: u8) -> Cadence {
-    let t = tenor.chars().last().unwrap_or('h');
+fn default_flex(tenor: &str, kind: ClefKind, line: u8) -> Option<Cadence> {
+    let t = tenor.chars().rev().find(|c| matches!(c, 'a'..='m'))?;
     let drop = if matches!(degree(t, kind, line), 0 | 3) { 2 } else { 1 };
-    let f = ((t as u8).saturating_sub(drop) as char).to_string();
-    Cadence {
+    let f = (t as u8).checked_sub(drop).filter(|&p| p >= b'a')?;
+    let f = (f as char).to_string();
+    Some(Cadence {
         lead: Vec::new(),
         tenor: tenor.to_string(),
         slots: vec![Slot::Accent(tenor.to_string()), Slot::Open(f.clone()), Slot::Fixed(f)],
-    }
+    })
 }
 
 /// `VIII.g`, `viii g`, `8g`, `Tone 8.G` → `8.g`.
@@ -328,6 +344,14 @@ mod tests {
         assert!(Tone::parse("name: x\nmediant: jr k\ntermination: jr 'k j").is_err());
         assert!(Tone::parse("name: x\nclef: c5\nmediant: jr 'k\ntermination: jr 'k j").is_err());
         assert!(Tone::parse("mediant: jr 'k\ntermination: jr 'k j").is_err());
+        // Not neumes, a key twice, a flex with no accent, and a tenor too low for a flex.
+        assert!(Tone::parse("name: x\nmediant: a)x(r 'k j\ntermination: jr 'k j").is_err());
+        assert!(Tone::parse("name: x\nmediant: hér 'k j\ntermination: jr 'k j").is_err());
+        assert!(Tone::parse("name: x\nmediant: jr 'z j\ntermination: jr 'k j").is_err());
+        assert!(Tone::parse("name: x\nname: y\nmediant: jr 'k j\ntermination: jr 'k j").is_err());
+        assert!(Tone::parse("name: x\nmediant: jr 'k j\ntermination: jr 'k j\nflex: jr j").is_err());
+        assert!(Tone::parse("name: x\nmediant: ar 'b a\ntermination: ar 'b a").is_err());
+        assert!(Tone::find(Tone::builtin(), "viii g").is_some_and(|t| t.name == "8.G"));
         let t = Tone::parse("name: mine\nclef: c4\nmediant: f g hr 'g hr h\ntermination: hr g f 'g hr h\nflex: hr 'h hr h").unwrap();
         assert_eq!(
             t.flex.slots,

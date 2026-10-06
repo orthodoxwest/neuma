@@ -119,7 +119,8 @@ export function summarize(gabc) {
  */
 export function psalm(text, tone, { intone = "first" } = {}) {
   return guarded((w) => {
-    const custom = String(tone).includes("\n") ? 1 : 0;
+    // A tone block always has `key: value` lines; a tone name never has a colon.
+    const custom = String(tone).includes(":") ? 1 : 0;
     putInput(String(tone) + "\0" + String(text));
     w.neuma_psalm(custom, intone === "every" ? 1 : intone === "never" ? 2 : 0);
     const out = JSON.parse(takeOutput());

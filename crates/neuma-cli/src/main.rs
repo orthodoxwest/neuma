@@ -212,8 +212,9 @@ fn psalm_command(path: &str, name: Option<String>, file: Option<String>, options
                     return ExitCode::from(2);
                 }
             };
+            // A name not in the file falls back to the built-in tones.
             let found = match &name {
-                Some(n) => custom.iter().find(|t| t.name.eq_ignore_ascii_case(n)),
+                Some(n) => neuma_tones::Tone::find(&custom, n).or_else(|| neuma_tones::Tone::named(n)),
                 None => custom.first(),
             };
             match found {

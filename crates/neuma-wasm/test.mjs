@@ -97,8 +97,9 @@ assert.equal(psNotes[accent].syllableText, "pá");
 assert.equal(new TextDecoder().decode(new TextEncoder().encode(text).slice(ps.notes[accent].start, ps.notes[accent].end)), "pá");
 assert.ok(ps.notes.some((n) => n.verse === 1 && n.number === 2 && n.part === "termination"));
 assert.throws(() => psalm(text, "9.z"), /no built-in tone/);
-const own = psalm(text, "name: mine\nclef: c4\nmediant: f g hr 'g hr h\ntermination: hr g f 'g hr h");
-assert.ok(own.gabc.includes("(c4)"));
+const ownTone = psalm(text, "name: mine\nclef: c4\nmediant: f g hr 'g hr h\ntermination: hr g f 'g hr h");
+assert.ok(ownTone.gabc.includes("(c4)"));
+assert.equal(psalm(text, "8.G\n").gabc, psalm(text, "8.G").gabc);
 psChant.free();
 
 assert.equal(DEFAULT_WEIGHTS.note, 1);
