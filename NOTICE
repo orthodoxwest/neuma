@@ -32,9 +32,9 @@ exsurge
   THE SOFTWARE.
 
 EB Garamond 12
-  crates/neuma-metrics/tables/eb-garamond-12.bin holds glyph advances and kerning
+  crates/neuma/fonts/eb-garamond-12.bin holds glyph advances and kerning
   measured from the EB Garamond 12 fonts, which are licensed under the SIL Open
   Font License 1.1. The table contains no outlines.
-  crates/neuma-metrics/tables/eb-garamond-google.bin holds the same measurements of
+  crates/neuma/fonts/eb-garamond-google.bin holds the same measurements of
   the EB Garamond fonts served by Google Fonts (version 33, regular and italic),
   also under the SIL Open Font License 1.1, with no outlines.
