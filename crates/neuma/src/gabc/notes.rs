@@ -160,8 +160,10 @@ impl Parser<'_, '_> {
                     }
                 }
                 b'[' => self.bracket(),
-                b'{' | b'}' => {
-                    // Gregorio sets notes inside braces in a zero-width box, to overlap what follows.
+                b'}' => self.i += 1,
+                b'{' => {
+                    // Gregorio sets notes inside braces in a zero-width box, to overlap what
+                    // follows. One note per group, at its opening brace.
                     self.i += 1;
                     self.sink.info(
                         self.span(start),

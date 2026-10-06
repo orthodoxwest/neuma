@@ -454,4 +454,11 @@ fn zero_width_notes_are_reported_once() {
     let p = parse("(c4) a(gF0/[-0.5]{ix}F0hi) b(h/[-0.5]{iy}hg)\n");
     let n = p.diagnostics.iter().filter(|d| d.code == "gabc::zero-width").count();
     assert_eq!(n, 1, "{:?}", p.diagnostics);
+    let d = p.diagnostics.iter().find(|d| d.code == "gabc::zero-width").unwrap();
+    assert!(d.message.ends_with("in all 2 groups"), "{}", d.message);
+    // A single group is one diagnostic, worded for that group alone.
+    let p = parse("(c4) a(gF0/[-0.5]{ix}F0hi)\n");
+    let zw: Vec<_> = p.diagnostics.iter().filter(|d| d.code == "gabc::zero-width").collect();
+    assert_eq!(zw.len(), 1, "{:?}", p.diagnostics);
+    assert_eq!(zw[0].message, "notes in `{…}` are drawn with their own width");
 }
