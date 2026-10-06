@@ -66,6 +66,9 @@ assert.equal(entry.mode.number, 7);
 assert.equal(entry.incipit, "Puer natus est");
 assert.deepEqual(new Chant(puer).summary, entry);
 assert.equal(summarize("").notes, 0);
+const own = summarize("name: Versicle;\noffice-part: R. br.;\nsource: Vespers, p. 7;\n%%\n(c4) A(g) (::)");
+assert.equal(own.kind, "short-responsory");
+assert.deepEqual(own.otherHeaders, [{ name: "source", value: "Vespers, p. 7" }]);
 
 // A one-line preview keeps the first line as broken for the whole score.
 const long = new Chant(puer.replace("(::)", "(;) " + "a(g) ".repeat(40) + "(::)"), { initial: 0 });

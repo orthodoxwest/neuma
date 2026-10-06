@@ -87,7 +87,8 @@ markup is removed.
   `scoreCopyright`, `commentary`, `annotations`: the headers as written. `occasion` is a
   short label; keep the full list of days a piece is sung in a calendar.
 - `otherHeaders`: every other header as `{ name, value }`, in source order, so a library can
-  keep its own fields (`source`, `translation-of`) in the score file.
+  keep its own fields (`source`, `translation-of`) in the score file. Values are only trimmed:
+  TeX markup and empty values are kept.
 - `kind`: what `officePart` names, in Latin or English, spelled out or abbreviated:
   `antiphon`, `introit`, `gradual`, `alleluia`, `tract`, `sequence`, `offertory`,
   `communion`, `hymn`, `responsory`, `short-responsory`, `versicle`, `chapter`, `collect`,

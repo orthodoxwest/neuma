@@ -25,8 +25,9 @@ pub struct Summary {
     pub score_copyright: Option<String>,
     pub commentary: Option<String>,
     pub annotations: Vec<String>,
-    /// Every other header, as written and in source order, so a library can keep its own
-    /// fields (`source`, `translation-of`) in the score file.
+    /// Every other header in source order, so a library can keep its own fields (`source`,
+    /// `translation-of`) in the score file. These are raw: values are only trimmed, so TeX
+    /// markup and empty values are kept.
     pub other_headers: Vec<(String, String)>,
     /// The opening words: up to the first bar (other than a virgula) at or after the end of
     /// the second word, at most eight. An opening word in capitals (for the initial) is
@@ -82,22 +83,30 @@ pub enum OfficePart {
 impl OfficePart {
     pub fn parse(value: &str) -> OfficePart {
         use OfficePart as P;
-        let lower = value.to_lowercase();
+        // The response and versicle signs abbreviate the words they stand for.
+        let lower = value.to_lowercase().replace('℟', "r ").replace('℣', "v ");
         let mut words = lower.split(|c: char| !c.is_alphabetic()).filter(|w| !w.is_empty());
         let word = words.next().unwrap_or("");
         match word {
             // The lesser doxology, not the Gloria of the Mass.
             "gloria" if words.next() == Some("patri") => P::Other,
-            "responsorium" | "responsoria" | "responsory" | "resp" | "r"
-                if words.next().is_some_and(|w| matches!(w, "breve" | "brevia" | "br" | "brev")) =>
+            "responsorium" | "responsoria" | "responsory" | "resp" | "re" | "r"
+                if words
+                    .next()
+                    .is_some_and(|w| matches!(w, "breve" | "brevia" | "brevis" | "br" | "brev")) =>
             {
                 P::ShortResponsory
             }
-            "short" if lower.contains("respons") => P::ShortResponsory,
+            "short" if lower.contains("resp") => P::ShortResponsory,
             "rb" => P::ShortResponsory,
-            "versiculus" | "versicle" | "versicles" | "vers" | "v" => P::Versicle,
-            "capitulum" | "chapter" | "cap" => P::Chapter,
-            "oratio" | "collect" | "collecta" | "or" => P::Collect,
+            // `V` alone is also the numeral five ("V. Ant."), so a kind named after it wins.
+            "v" => match OfficePart::parse(&lower[lower.find('v').map_or(0, |i| i + 1)..]) {
+                P::Other => P::Versicle,
+                other => other,
+            },
+            "versiculus" | "versiculi" | "versicle" | "versicles" => P::Versicle,
+            "capitulum" | "capitula" | "chapter" | "chapters" | "cap" => P::Chapter,
+            "oratio" | "orationes" | "collect" | "collects" | "collecta" | "collectae" | "or" => P::Collect,
             "antiphona" | "antiphonae" | "antiphon" | "antiphons" | "ant" | "an" => P::Antiphon,
             "introitus" | "introit" | "intr" | "in" => P::Introit,
             "graduale" | "gradual" | "grad" | "gr" => P::Gradual,
@@ -398,6 +407,18 @@ mod tests {
             ("Psalmi", OfficePart::Psalm),
             ("Gloria", OfficePart::Gloria),
             ("Gloria Patri", OfficePart::Other),
+            ("V. Ant.", OfficePart::Antiphon),
+            ("V Antiphona", OfficePart::Antiphon),
+            ("℣.", OfficePart::Versicle),
+            ("℟. br.", OfficePart::ShortResponsory),
+            ("Re. br.", OfficePart::ShortResponsory),
+            ("Short Resp.", OfficePart::ShortResponsory),
+            ("Responsorium brevis", OfficePart::ShortResponsory),
+            ("Versiculi", OfficePart::Versicle),
+            ("Capitula", OfficePart::Chapter),
+            ("Orationes", OfficePart::Collect),
+            ("Collects", OfficePart::Collect),
+            ("Versus", OfficePart::Other),
         ] {
             assert_eq!(OfficePart::parse(v), k, "{v}");
         }
