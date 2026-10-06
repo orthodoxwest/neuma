@@ -5,7 +5,7 @@
 //! limited to add, subtract, multiply, divide and comparison (DESIGN section 13).
 
 use crate::engrave::neume::INTRA;
-use crate::engrave::{Break, CAP_HEIGHT, Engraving, SYLLABLE_GAP, Segment, WORD_GAP, clef_pieces, custos_piece};
+use crate::engrave::{Break, CAP_HEIGHT, Engraving, Segment, clef_pieces, custos_piece};
 use crate::score::{Clef, CustosRule};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -36,6 +36,11 @@ impl Default for LayoutOptions {
     }
 }
 
+/// The least space between the notes of two syllables, and of two words: GregorioTeX's
+/// `intersyllablespacenotes` (0.24 cm) and `interwordspacenotes` (0.29 cm) on its default
+/// staff, whose interline is 0.288 cm.
+const NOTES_SYLLABLE_GAP: f32 = 1.67;
+const NOTES_WORD_GAP: f32 = 2.0;
 /// Gap after the line-start clef.
 const CLEF_GAP: f32 = INTRA * 2.0;
 /// Gap between the first staff line and the lowest annotation's baseline.
@@ -141,7 +146,7 @@ fn place(cur: &Cursor, seg: &Segment, hyphen: f32, word_space: f32, line_start: 
     match (cur.ink_right, seg.ink) {
         (Some(r), Some((l, _))) => {
             let gap = if seg.first {
-                SYLLABLE_GAP + if seg.word_start { WORD_GAP } else { 0.0 }
+                if seg.word_start { NOTES_WORD_GAP } else { NOTES_SYLLABLE_GAP }
             } else {
                 seg.space_before
             };

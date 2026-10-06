@@ -282,10 +282,9 @@ pub struct Engraving {
     pub diagnostics: Vec<Diagnostic>,
 }
 
-/// Gap between the notation of neighbouring syllables (exsurge's `interSyllabicMultiplier`).
+/// Gap between a clef, bar or accidental and the notes beside it in one syllable (exsurge's
+/// `interSyllabicMultiplier`). Layout sets the gaps between syllables.
 pub(crate) const SYLLABLE_GAP: f32 = INTRA * 2.5;
-/// Extra gap between words.
-pub(crate) const WORD_GAP: f32 = INTRA;
 const ACCIDENTAL_GAP: f32 = INTRA * 2.0;
 /// GregorioTeX's default `\gresetunbreakablesyllablenotes{10}{4}{4}`: a syllable of at least
 /// this many notes may break between its note groups, but not within this many of either end.

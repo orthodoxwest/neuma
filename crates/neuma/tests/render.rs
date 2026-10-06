@@ -639,3 +639,18 @@ fn words_keep_gregorios_space_between_them() {
         assert!(w[1].1 - right >= 0.48 * w[0].2 - 0.01, "{t:?}");
     }
 }
+
+#[test]
+fn notes_keep_gregorios_space_between_syllables_and_words() {
+    // GregorioTeX's intersyllablespacenotes and interwordspacenotes: 0.24 cm and 0.29 cm on a
+    // staff whose interline is 0.288 cm, so 1.67 and 2 staff spaces between noteheads.
+    let gaps = |src: &str| {
+        let eng = parse(src).score.engrave(&ApproxMeasure, &NO_INITIAL);
+        let opts = LayoutOptions::default();
+        let map = eng.layout(2000.0, &opts).notes(&Weights::default());
+        let n = &map.notes;
+        (n[1].x - n[0].x - n[0].w) / opts.scale
+    };
+    assert!((gaps("(c4) i(g)i(g)") - 1.67).abs() < 0.01);
+    assert!((gaps("(c4) i(g) i(g)") - 2.0).abs() < 0.01);
+}
