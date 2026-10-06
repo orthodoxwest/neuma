@@ -117,6 +117,8 @@ pub struct Line {
     pub height: f32,
     /// The baseline, from the line's top.
     pub baseline: f32,
+    /// How far a drop cap beside this line pushes it right (0 for none).
+    pub hang: f32,
 }
 
 struct Word {
@@ -236,7 +238,12 @@ pub fn set(fonts: &Fonts, para: &Para, width: f32) -> Vec<Line> {
                 x += adv;
             }
         }
-        lines.push(Line { ops, height, baseline });
+        lines.push(Line {
+            ops,
+            height,
+            baseline,
+            hang: if has_drop && n < 2 { drop_w } else { 0.0 },
+        });
     }
     // A drop cap on a one-line paragraph still needs its second line.
     if has_drop && lines.len() == 1 {
@@ -244,6 +251,7 @@ pub fn set(fonts: &Fonts, para: &Para, width: f32) -> Vec<Line> {
             ops: Vec::new(),
             height,
             baseline,
+            hang: drop_w,
         });
     }
     lines

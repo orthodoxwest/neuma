@@ -156,17 +156,31 @@ pub fn blocks(book: &Book, fonts: &Fonts) -> (Vec<Block>, Vec<Problem>) {
                 };
                 for (k, paragraph) in text.split("\n\n").filter(|p| !p.trim().is_empty()).enumerate() {
                     if *lines {
-                        // Verse: each line its own, the stanza kept together.
-                        let start = out.len();
+                        // Verse: each line its own, the stanza kept together. A drop cap
+                        // spans the stanza's first two lines, not a line and a blank.
+                        let mut set_lines: Vec<text::Line> = Vec::new();
+                        let mut hang = 0.0;
                         for (j, l) in paragraph.lines().enumerate() {
                             let mut p = para(fonts, l, Style::default(), size, align, s.leading);
                             p.dropcap = *dropcap && k == 0 && j == 0;
-                            p.first = 0.0;
-                            push_lines(&mut out, fonts, &p, m.width, if j == 0 { size * 0.6 } else { 0.0 }, usize::MAX);
+                            p.first = hang;
+                            let mut ls = text::set(fonts, &p, m.width);
+                            hang = 0.0;
+                            if p.dropcap && ls.len() == 2 && ls[1].ops.is_empty() && paragraph.lines().nth(1).is_some() {
+                                hang = ls[1].hang;
+                                ls.pop();
+                            }
+                            set_lines.extend(ls);
                         }
-                        let n = out.len();
-                        for b in &mut out[start..n.saturating_sub(1)] {
-                            b.keep_with_next = true;
+                        let n = set_lines.len();
+                        for (j, l) in set_lines.into_iter().enumerate() {
+                            out.push(Block {
+                                height: l.height,
+                                space_before: if j == 0 { size * 0.6 } else { 0.0 },
+                                ops: l.ops,
+                                keep_with_next: j + 1 < n,
+                                kind: Kind::Content,
+                            });
                         }
                     } else {
                         let mut p = para(fonts, paragraph, Style::default(), size, align, s.leading);
@@ -744,6 +758,27 @@ mod tests {
         assert_eq!(problems.len(), 1, "{problems:?}");
         assert_eq!(problems[0].piece, 0);
         assert_eq!(problems[0].diagnostic.code, "book::overflow");
+    }
+
+    /// In verse, the drop cap sits beside the stanza's first two lines, with no blank line.
+    #[test]
+    fn verse_dropcap_spans_two_lines() {
+        let fonts = Fonts::standard();
+        let book = Book::parse("text lines dropcap:\n    Before the ending of the day,\n    Creator of the world, we pray\n").unwrap();
+        let (blocks, _) = blocks(&book, &fonts);
+        assert_eq!(blocks.len(), 2);
+        let left = |b: &Block| {
+            b.ops
+                .iter()
+                .filter_map(|o| match o {
+                    Op::Text { x, size, .. } if *size < 12.0 => Some(*x),
+                    _ => None,
+                })
+                .fold(f32::MAX, f32::min)
+        };
+        assert!(blocks.iter().all(|b| !b.ops.is_empty()));
+        assert!(left(&blocks[1]) > 10.0, "the second line clears the cap");
+        assert!((left(&blocks[0]) - left(&blocks[1])).abs() < 0.01);
     }
 
     #[test]
