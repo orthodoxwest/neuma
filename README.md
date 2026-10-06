@@ -14,6 +14,9 @@ It is in early development.
   durations) for practice and playback tools.
 - Produce identical output on every platform.
 - Set psalm tones from pointed text.
+- Print booklets: a list of scores, psalms, rubrics and text set on pages as PDF and SVG
+  (`neuma book`, see [crates/neuma-book](crates/neuma-book/README.md) and the example in
+  [examples/compline](examples/compline/compline.book)).
 
 ## License
 

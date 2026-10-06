@@ -1,0 +1,86 @@
+# Compline: the night office, in English, for a choir.
+#
+# Texts: the Book of Common Prayer (1662), its Coverdale psalter, the Authorized Version,
+# and an 1851 translation of the hymn, all in the public domain. The antiphons
+# and the hymn are sung to the plainsong melodies of their Latin originals, adapted.
+#
+# Make it with:  neuma book examples/compline/compline.book -o compline.pdf
+
+page: a5
+margins: 16mm 14mm 18mm 14mm
+text-size: 11pt
+staff-size: 6.5mm
+initial: 1
+
+title: Compline
+rubric: The Reader begins.
+text:
+    Brethren, be sober, be vigilant; because your adversary the devil, as a roaring lion,
+    walketh about, seeking whom he may devour: whom resist stedfast in the faith.
+text lines:
+    V/ But thou, O Lord, have mercy upon us.
+    R/ Thanks be to God.
+text lines:
+    V/ Our help is in the name of the Lord.
+    R/ Who hath made heaven and earth.
+rubric: Then all say the confession, the Lord’s Prayer and the absolution, as appointed.
+text lines:
+    V/ Turn us, O God our Saviour.
+    R/ And let thine anger cease from us.
+text lines:
+    V/ O God, make speed to save us.
+    R/ O Lord, make haste to help us.
+text:
+    Glory be to the Father, and to the Son, and to the Holy Ghost;
+    as it was in the beginning, is now, and ever shall be, world without end. Amen. Alleluia.
+
+heading: The Psalms
+rubric: The antiphon is begun by a cantor; the choir sings the psalms in alternate verses.
+score: have-mercy.gabc
+psalm tone=8.G gloria: psalm-4.txt
+rubric: Psalm 91.
+psalm tone=8.G gloria: psalm-91.txt
+rubric: Psalm 134.
+psalm tone=8.G gloria: psalm-134.txt
+rubric: The antiphon is repeated.
+score: have-mercy.gabc
+
+heading: Hymn
+score: before-the-ending.gabc
+text center lines:
+    From all ill dreams defend our eyes,
+    From nightly fears and fantasies;
+    Tread under foot our ghostly foe,
+    That no pollution we may know.
+text center lines:
+    O Father, that we ask be done,
+    Through Jesus Christ thine only Son,
+    Who, with the Holy Ghost and thee,
+    Doth live and reign eternally. Amen.
+
+heading: Chapter
+text:
+    Thou, O Lord, art in the midst of us, and we are called by thy Name; leave us not,
+    O Lord our God. <r>R/</r> Thanks be to God.
+text lines:
+    V/ Into thy hands, O Lord, I commend my spirit.
+    R/ For thou hast redeemed me, O Lord, thou God of truth.
+text lines:
+    V/ Keep us, O Lord, as the apple of an eye.
+    R/ Hide us under the shadow of thy wings.
+
+heading: Nunc dimittis
+score: preserve-us.gabc
+psalm tone=3.a intone=every set=chant gloria: nunc-dimittis.txt
+score: preserve-us.gabc
+
+heading: The Prayers
+rubric: All kneel.
+text dropcap:
+    Lighten our darkness, we beseech thee, O Lord; and by thy great mercy defend us from
+    all perils and dangers of this night; for the love of thy only Son, our Saviour,
+    Jesus Christ. Amen.
+text lines:
+    V/ The almighty and merciful Lord, the Father, the Son, and the Holy Ghost, bless and
+    preserve us.
+    R/ Amen.

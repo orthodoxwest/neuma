@@ -378,6 +378,7 @@ name = "neuma-cli"
 version = "0.1.0"
 dependencies = [
  "neuma",
+ "neuma-book",
  "neuma-tones",
  "neuma-wasm",
 ]

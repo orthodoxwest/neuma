@@ -1,4 +1,4 @@
-//! `neuma render | check | notes | info | psalm | point | tones`: the engine from the command line.
+//! `neuma render | check | notes | info | psalm | point | tones | book`: the engine from the command line.
 
 use std::io::{Read as _, Write as _};
 use std::process::ExitCode;
@@ -12,6 +12,7 @@ const USAGE: &str = "usage: neuma <render|check|notes> [--width PX] [--scale PX]
        neuma psalm --tone TONE [--tone-file FILE] [--intone first|every|never] [--name NAME] [--no-point] [FILE|-]
        neuma point --tone TONE [--tone-file FILE] [FILE|-]
        neuma tones
+       neuma book FILE.book [-o OUT.pdf] [--svg DIR] [--text-as-paths]
 
   render   write SVG to stdout
   check    print diagnostics; exit 1 on errors
@@ -24,6 +25,9 @@ const USAGE: &str = "usage: neuma <render|check|notes> [--width PX] [--scale PX]
   point    print the text with pointing marks added for the tone; half-verses the pointer
            is unsure of are listed on stderr
   tones    list the built-in psalm tones
+  book     set a booklet (an ordered list of scores, psalms, rubrics and text; see
+           crates/neuma-book/README.md) on pages, and write a PDF (-o, default FILE.pdf)
+           and, with --svg DIR, one SVG per page. Problems go to stderr.
 
   --initial LINES   drop-cap height in staves, 0 to 4; 0 for none (default 1)
   --max-lines N     keep only the first N lines, as broken for the whole score (an incipit);
@@ -103,6 +107,9 @@ fn main() -> ExitCode {
             },
             f => files.push(f.to_string()),
         }
+    }
+    if cmd == "book" {
+        return book_command(&args[1..]);
     }
     if cmd == "tones" {
         for t in neuma_tones::Tone::builtin() {
@@ -278,6 +285,91 @@ fn point_command(src: &str, tone: &neuma_tones::Tone) -> ExitCode {
         eprintln!("{line}: check the {part}: {:.0}% sure", h.confidence * 100.0);
     }
     out!("{}", p.text().trim_end());
+    if errors { ExitCode::FAILURE } else { ExitCode::SUCCESS }
+}
+
+/// `neuma book`: a `.book` file to a PDF and, optionally, SVG pages.
+fn book_command(args: &[String]) -> ExitCode {
+    let mut file = None;
+    let mut pdf_out = None;
+    let mut svg_dir = None;
+    let mut paths = false;
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "-o" | "--output" => pdf_out = it.next().cloned(),
+            "--svg" => svg_dir = it.next().cloned(),
+            "--text-as-paths" => paths = true,
+            f if file.is_none() && !f.starts_with('-') => file = Some(f.to_string()),
+            other => {
+                eprintln!("neuma: book: unexpected `{other}`\n{USAGE}");
+                return ExitCode::from(2);
+            }
+        }
+    }
+    let Some(file) = file else {
+        eprintln!("neuma: book needs a .book file\n{USAGE}");
+        return ExitCode::from(2);
+    };
+    let Some(src) = read(&file) else { return ExitCode::from(2) };
+    let path = std::path::Path::new(&file);
+    let mut book = match neuma_book::Book::parse(&src) {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!("{file}: {e}");
+            return ExitCode::from(2);
+        }
+    };
+    if let Err(e) = book.resolve(path.parent().unwrap_or(std::path::Path::new("."))) {
+        eprintln!("{file}: {e}");
+        return ExitCode::from(2);
+    }
+    let files = match neuma_book::font_files(&book.settings) {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("neuma: {e}");
+            return ExitCode::from(2);
+        }
+    };
+    let fonts = neuma_book::Fonts::new(&files);
+    if fonts.is_standard() {
+        eprintln!(
+            "neuma: no text font: set `font:` in the book, or install EB Garamond 12; using the PDF's standard Times, \
+             measured approximately"
+        );
+    }
+    let mut doc = neuma_book::typeset(&book, &fonts);
+    if paths {
+        doc.set_text_as_paths(true);
+    }
+    let mut errors = false;
+    for p in &doc.problems {
+        let d = &p.diagnostic;
+        errors |= d.severity == Severity::Error;
+        if d.severity != Severity::Info || d.code == "point::unsure" {
+            eprintln!("{file}: piece {}: {d}", p.piece + 1);
+        }
+    }
+    let pdf_out = pdf_out.unwrap_or_else(|| path.with_extension("pdf").to_string_lossy().into_owned());
+    if let Err(e) = std::fs::write(&pdf_out, doc.pdf(&fonts)) {
+        eprintln!("neuma: {pdf_out}: {e}");
+        return ExitCode::FAILURE;
+    }
+    if let Some(dir) = svg_dir {
+        let dir = std::path::Path::new(&dir);
+        if let Err(e) = std::fs::create_dir_all(dir) {
+            eprintln!("neuma: {}: {e}", dir.display());
+            return ExitCode::FAILURE;
+        }
+        for i in 0..doc.pages.len() {
+            let out = dir.join(format!("page-{:03}.svg", i + 1));
+            if let Err(e) = std::fs::write(&out, doc.svg(i, &fonts).unwrap_or_default()) {
+                eprintln!("neuma: {}: {e}", out.display());
+                return ExitCode::FAILURE;
+            }
+        }
+    }
+    eprintln!("{pdf_out}: {} pages", doc.pages.len());
     if errors { ExitCode::FAILURE } else { ExitCode::SUCCESS }
 }
 
