@@ -586,7 +586,7 @@ fn psalm_blocks(ps: &Psalm, s: &Settings, fonts: &Fonts, m: &Metrics, diags: &mu
             });
         }
         let nsize = size * 0.9;
-        let number_w = fonts.width("00", fonts.resolve(false, false), false) * nsize + size * 0.45;
+        let number_w = fonts.width("000", fonts.resolve(false, false), false) * nsize + size * 0.45;
         let pointed = pointing.text();
         for (k, line) in pointed.lines().enumerate() {
             let line = line.replace("\\-", "-");
@@ -779,6 +779,35 @@ mod tests {
         assert!(blocks.iter().all(|b| !b.ops.is_empty()));
         assert!(left(&blocks[1]) > 10.0, "the second line clears the cap");
         assert!((left(&blocks[0]) - left(&blocks[1])).abs() < 0.01);
+    }
+
+    /// Psalm 119 has 176 verses: three-digit numbers fit their column.
+    #[test]
+    fn three_digit_verse_numbers_fit() {
+        let fonts = Fonts::standard();
+        let book = Book::parse("psalm tone=8.G:\n    176 I have gone astray like a sheep that is lost * O seek thy servant.\n").unwrap();
+        let (blocks, _) = blocks(&book, &fonts);
+        let verse = blocks
+            .iter()
+            .find(|b| {
+                b.ops
+                    .iter()
+                    .any(|o| matches!(o, Op::Text { color: Color::Red, run, .. } if run.glyphs.len() == 3))
+            })
+            .unwrap();
+        let (mut num, mut text) = (None, f32::MAX);
+        for o in &verse.ops {
+            if let Op::Text { x, run, size, color, .. } = o {
+                if *color == Color::Red && run.glyphs.len() == 3 {
+                    num = Some((*x, x + run.width * size));
+                } else if *color == Color::Black {
+                    text = text.min(*x);
+                }
+            }
+        }
+        let (l, r) = num.unwrap();
+        assert!(l >= 0.0, "the number starts in the margin at {l}");
+        assert!(r < text, "the number runs into the text");
     }
 
     #[test]
