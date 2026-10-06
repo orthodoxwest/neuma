@@ -190,18 +190,12 @@ impl Layout<'_> {
                 push(&mut items, &piece, 0.0, line.staff, s);
             }
         }
-        if let (Some(init), Some(first)) = (&eng.initial, self.lines.first()) {
-            let column = init.column();
-            // The capital's baseline is the last spanned staff's bottom line.
-            let last = init.lines - 1;
-            let baseline = match self.lines.get(last) {
-                Some(l) => l.staff + 3.0,
-                None => first.staff + 3.0 + init.line_pitch * last as f32,
-            };
+        if let (Some(init), Some(placed), Some(first)) = (&eng.initial, &self.initial, self.lines.first()) {
+            let column = placed.column;
             items.push(Item::Text {
-                x: (column - init.width) / 2.0 * s,
-                baseline: baseline * s,
-                size: init.size * s,
+                x: placed.x * s,
+                baseline: placed.baseline * s,
+                size: placed.size * s,
                 runs: vec![TextRun {
                     text: init.text.clone(),
                     style: TextStyle::REGULAR,
@@ -214,7 +208,7 @@ impl Layout<'_> {
                 let above = (count - 1 - i) as f32 * init.annotation_size * 1.1;
                 items.push(Item::Text {
                     x: (column - w) / 2.0 * s,
-                    baseline: (first.staff - 3.0 - ANNOTATION_GAP - above) * s,
+                    baseline: (first.staff - 3.0 - init.accent_room - ANNOTATION_GAP - above) * s,
                     size: init.annotation_size * s,
                     runs: vec![TextRun {
                         text: text.clone(),

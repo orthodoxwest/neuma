@@ -2,12 +2,20 @@
 
 use crate::score::{Header, Lyric};
 
+/// The tallest initial, in staves.
+pub(crate) const MAX_LINES: u8 = 4;
+
+/// Cap height of the lyric face, in ems (EB Garamond's is 0.65). It sizes the initial so its
+/// capital spans the staves.
+pub(crate) const CAP_HEIGHT: f32 = 0.65;
+
 /// Whether to set the score's first letter as a drop cap, and how many staves tall.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Initial {
     None,
-    /// The initial spans this many staves: its cap height runs from the top line of the
-    /// first staff to the bottom line of the last, as in GregorioTeX.
+    /// The initial spans this many staves (at most 4, and no more than the layout has): its
+    /// cap height runs from the top line of the first staff to the bottom line of the last,
+    /// as in GregorioTeX.
     Lines(u8),
 }
 

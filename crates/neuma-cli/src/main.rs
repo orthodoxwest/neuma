@@ -15,7 +15,7 @@ const USAGE: &str = "usage: neuma <render|check|notes> [--width PX] [--scale PX]
   check    print diagnostics; exit 1 on errors
   notes    print the layout and playback timeline as JSON, as the browser package does
 
-  --initial LINES   drop-cap height in staves; 0 for none (default 1)";
+  --initial LINES   drop-cap height in staves, 0 to 4; 0 for none (default 1)";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -33,12 +33,16 @@ fn main() -> ExitCode {
         match a.as_str() {
             "--width" => width = it.next().and_then(|v| v.parse().ok()).unwrap_or(width),
             "--scale" => scale = it.next().and_then(|v| v.parse().ok()).unwrap_or(scale),
-            "--initial" => {
-                if let Some(n) = it.next().and_then(|v| v.parse::<u8>().ok()) {
+            "--initial" => match it.next().and_then(|v| v.parse::<u8>().ok()).filter(|n| *n <= 4) {
+                Some(n) => {
                     initial_lines = n;
                     style.initial = if n == 0 { Initial::None } else { Initial::Lines(n) };
                 }
-            }
+                None => {
+                    eprintln!("neuma: --initial takes a number of staves from 0 to 4\n{USAGE}");
+                    return ExitCode::from(2);
+                }
+            },
             "-h" | "--help" => {
                 println!("{USAGE}");
                 return ExitCode::SUCCESS;
