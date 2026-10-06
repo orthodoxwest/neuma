@@ -170,6 +170,9 @@ pub(crate) struct LyricBox {
     pub word_end: bool,
     /// The text ends with a hyphen of its own (`Giê-(f)su(g)`), so none is added after it.
     pub hyphenated: bool,
+    /// Not the syllable's text but the hyphen GregorioTeX sets under a first syllable the
+    /// initial took whole.
+    pub lead_hyphen: bool,
     pub syllable: u32,
 }
 
@@ -1022,6 +1025,33 @@ impl Score {
                     width,
                     word_end: next_word,
                     hyphenated: text.plain().ends_with(['-', '\u{2010}']),
+                    lead_hyphen: false,
+                    syllable: si,
+                });
+            } else if first_lyric.as_ref().is_some_and(|(i, _)| *i == si as usize)
+                && self.syllables.get(si as usize + 1).is_some_and(|s| !s.word_start)
+            {
+                // The initial took the whole first syllable of a longer word (`E(f)o(g)dem`):
+                // GregorioTeX sets a hyphen under its notes, so the line doesn't seem to start
+                // a new word.
+                let k = seg_ids[0];
+                let width = hyphen;
+                let seg = &e.segments[k];
+                let anchor = match seg.heads.first() {
+                    Some(h) => h.x,
+                    None => seg.ink.map_or(0.0, |(l, r)| (l + r) / 2.0),
+                };
+                e.segments[k].lyric = Some(LyricBox {
+                    runs: vec![LyricRun {
+                        text: "-".into(),
+                        style: TextStyle::REGULAR,
+                        consonant: true,
+                    }],
+                    left: anchor - width / 2.0,
+                    width,
+                    word_end: false,
+                    hyphenated: true,
+                    lead_hyphen: true,
                     syllable: si,
                 });
             }

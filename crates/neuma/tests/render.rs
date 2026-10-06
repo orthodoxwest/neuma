@@ -798,3 +798,29 @@ fn versicle_signs_are_drawn_heavier() {
     assert!(svg.contains(r#"class="neuma-rubric neuma-sign">℟"#), "{svg}");
     assert!(svg.contains(".neuma .neuma-sign{stroke:currentColor;stroke-width:.04em}"));
 }
+
+#[test]
+fn a_first_syllable_taken_by_the_initial_leaves_a_hyphen() {
+    // GregorioTeX's "E -O-dem": the initial took the whole first syllable of the word.
+    let roles = |src: &str| -> Vec<(TextRole, String, f32)> {
+        let eng = parse(src).score.engrave(&ApproxMeasure, &StyleOptions::default());
+        eng.layout(600.0, &LayoutOptions::default())
+            .display()
+            .items
+            .iter()
+            .filter_map(|i| match i {
+                Item::Text { role, runs, x, .. } => Some((*role, runs.iter().map(|r| r.text.as_str()).collect(), *x)),
+                _ => None,
+            })
+            .collect()
+    };
+    let t = roles("(c4) E(f)o(g)dem(h) ve(g)ro(h)");
+    let lead = t.iter().find(|t| t.0 == TextRole::Hyphen).expect("a hyphen");
+    let o = t.iter().find(|t| t.1 == "o").unwrap();
+    assert!(lead.2 < o.2, "{t:?}");
+    // Not when the initial's syllable is a word of its own, or keeps some text.
+    assert!(roles("(c4) A(f) ve(g)").iter().all(|t| t.0 != TextRole::Hyphen));
+    let t = roles("(c4) Ky(f)ri(g)e(h)");
+    let y = t.iter().find(|t| t.1 == "y").unwrap();
+    assert!(t.iter().all(|h| h.0 != TextRole::Hyphen || h.2 > y.2), "{t:?}");
+}

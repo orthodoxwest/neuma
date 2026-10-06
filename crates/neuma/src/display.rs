@@ -151,7 +151,18 @@ impl Layout<'_> {
                 for p in &seg.pieces {
                     push(&mut items, p, x, line.staff, s);
                 }
-                if let Some(t) = &seg.lyric {
+                if let Some(t) = &seg.lyric
+                    && t.lead_hyphen
+                {
+                    items.push(Item::Text {
+                        x: (x + t.left) * s,
+                        baseline: line.baseline * s,
+                        size,
+                        runs: runs(&t.runs),
+                        role: TextRole::Hyphen,
+                        syllable: None,
+                    });
+                } else if let Some(t) = &seg.lyric {
                     let role = if t.runs.iter().all(|r| r.style.rubric) {
                         TextRole::Rubric
                     } else {
