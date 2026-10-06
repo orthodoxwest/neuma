@@ -457,3 +457,32 @@ fn max_lines_keeps_the_first_lines_as_broken() {
         }
     }
 }
+
+#[test]
+fn clefs_fit_their_lines() {
+    // A do clef on the top line rises above the staff; its line makes room for it.
+    for src in ["(c4) a(f) b(g)"] {
+        let eng = parse(src).score.engrave(&ApproxMeasure, &NO_INITIAL);
+        let list = eng.layout(300.0, &LayoutOptions::default()).display();
+        assert_eq!(list.lines.len(), 1, "{src}");
+        let line = list.lines[0];
+        let mut clefs = 0;
+        for item in &list.items {
+            if let Item::Glyph {
+                glyph,
+                y,
+                scale,
+                role: neuma::Ink::Clef,
+                ..
+            } = item
+            {
+                let (_, top, _, bottom) = neuma::glyphs::GlyphId::from_id(*glyph).unwrap().ink();
+                let unit = scale * neuma::glyphs::UNITS_PER_SPACE;
+                assert!(y + top * unit >= line.top - 0.01, "{src}: {item:?} {line:?}");
+                assert!(y + bottom * unit <= line.bottom + 0.01, "{src}: {item:?} {line:?}");
+                clefs += 1;
+            }
+        }
+        assert_eq!(clefs, 1, "{src}");
+    }
+}

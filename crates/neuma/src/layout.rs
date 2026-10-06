@@ -433,6 +433,14 @@ impl Engraving {
             // Vertical extent.
             let mut ink_top = -3.0f32;
             let mut ink_bottom = 3.0f32;
+            // A clef on the top line rises above the staff. Later lines leave that to the gap
+            // under the line above, as Gregorio does, but the first must not be clipped.
+            let clef_ink = clef.as_ref().filter(|_| li == 0).map(|c| clef_pieces(c, 0.0).0).unwrap_or_default();
+            for p in &clef_ink {
+                let (a, b) = p.y_extent();
+                ink_top = ink_top.min(a);
+                ink_bottom = ink_bottom.max(b);
+            }
             for s in &self.segments[first..=last] {
                 for p in &s.pieces {
                     let (a, b) = p.y_extent();
