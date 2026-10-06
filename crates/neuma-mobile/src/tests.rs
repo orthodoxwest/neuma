@@ -98,6 +98,9 @@ fn bad_options_keep_defaults() {
     let page = c.layout(f32::NAN, opts);
     assert_eq!(page.staff_space, 6.0);
     assert!(page.notes.iter().all(|n| n.duration == 1.0));
+    let mut huge = default_layout_options();
+    huge.weights.note = f32::MAX;
+    assert!(c.layout(400.0, huge).notes.iter().all(|n| n.duration == 1000.0));
     assert!(page.width.is_finite() && page.height.is_finite());
 }
 

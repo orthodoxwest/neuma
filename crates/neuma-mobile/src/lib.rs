@@ -354,7 +354,7 @@ pub struct GlyphOutline {
     pub width: f32,
 }
 
-/// The outline for an glyph item's id, or `None` for an unknown id.
+/// The outline for a glyph item's id, or `None` for an unknown id.
 #[uniffi::export]
 pub fn glyph_outline(id: u16) -> Option<GlyphOutline> {
     neuma::glyph_outline(id).map(|g| GlyphOutline { path: g.d, width: g.width })
