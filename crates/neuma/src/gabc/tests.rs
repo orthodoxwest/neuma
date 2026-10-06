@@ -365,6 +365,16 @@ fn verbatim_stars_and_crosses_print() {
 }
 
 #[test]
+fn verbatim_sign_names_need_a_backslash() {
+    // Without the backslash, TeX prints the word, not the sign.
+    let p = parse("(c4) a<v>star</v>(g) b<v>{dag}</v>(h) c<v>$\\star$</v>(g)");
+    let s = &p.score.syllables;
+    assert_eq!(s[1].text.plain(), "astar");
+    assert!(!s[2].text.plain().contains('†'));
+    assert_eq!(s[3].text.plain(), "c*");
+}
+
+#[test]
 fn comma_digit_is_a_dominican_bar() {
     let bars: Vec<BarKind> = notes("(c4) a(f;3 f,4 f,0)")
         .iter()
