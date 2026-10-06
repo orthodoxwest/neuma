@@ -421,9 +421,11 @@ fn bar_pieces(kind: BarKind, high: bool, left: f32) -> (Vec<Piece>, f32) {
             )
         }
         BarKind::Dominican(n) => {
-            // `;1`–`;8`: a short bar through line (n+1)/2 for odd n, the space for even n.
-            let base = n as StaffPosition - 5;
-            (vec![bar(base + 2, base - 1)], STEM)
+            // `;1`–`;8`: a bar an interline and a half long, as GregorioTeX draws them. An odd
+            // one rises from line (n+1)/2; an even one hangs from line n/2.
+            let n = n as StaffPosition;
+            let (top, bottom) = if n % 2 == 1 { (n - 1, n - 4) } else { (n - 3, n - 6) };
+            (vec![bar(top, bottom)], STEM)
         }
     }
 }
@@ -1045,4 +1047,27 @@ fn prefix_advance(runs: &[LyricRun], chars: usize, measure: &dyn TextMeasure) ->
         }
     }
     w
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The staff positions a bar spans, top first.
+    fn span(kind: BarKind) -> (f32, f32) {
+        let (pieces, _) = bar_pieces(kind, false, 0.0);
+        let (top, bottom) = pieces[0].y_extent();
+        (-top, -bottom)
+    }
+
+    #[test]
+    fn dominican_bars_match_gregoriotex() {
+        // Measured from GregorioTeX's output on a four-line staff (lines at -3, -1, 1, 3).
+        assert_eq!(span(BarKind::Dominican(1)), (0.0, -3.0));
+        assert_eq!(span(BarKind::Dominican(2)), (-1.0, -4.0));
+        assert_eq!(span(BarKind::Dominican(3)), (2.0, -1.0));
+        assert_eq!(span(BarKind::Dominican(4)), (1.0, -2.0));
+        assert_eq!(span(BarKind::Dominican(5)), (4.0, 1.0));
+        assert_eq!(span(BarKind::Dominican(6)), (3.0, 0.0));
+    }
 }

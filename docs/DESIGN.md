@@ -293,7 +293,7 @@ tokens real AWRV material uses and moves rows between E1 and E2.
 | `{…}` zero-width notes | A (drawn with their own width) |
 | `@` manual fusion, `@[…]` auto fusion | E2 |
 | `` ` `` `` `0 `` `^` `^0` `,` `,0` `;` `:` `:?` `::` | E1 |
-| `;1`–`;8` Dominican bars | E2 |
+| `;1`–`;8` Dominican bars (also `,1`–`,8`, as Gregorio reads them) | E1 |
 | Bar suffixes `'` (episema) and `_` (brace) | U |
 | `c1`–`c4`, `f1`–`f4`, `cb1`–`cb4`, mid-line clef changes | E1 |
 | Double clefs `c1@c4` | U (first clef used) |

@@ -363,3 +363,15 @@ fn verbatim_stars_and_crosses_print() {
     assert_eq!(again.score.syllables[4].text, s[4].text);
     assert_eq!(again.score.syllables[5].text, s[5].text);
 }
+
+#[test]
+fn comma_digit_is_a_dominican_bar() {
+    let bars: Vec<BarKind> = notes("(c4) a(f;3 f,4 f,0)")
+        .iter()
+        .filter_map(|f| if let Figure::Bar(b) = f { Some(b.kind) } else { None })
+        .collect();
+    assert_eq!(bars, [BarKind::Dominican(3), BarKind::Dominican(4), BarKind::Minima]);
+    let p = parse("(c4) a(f;8)");
+    assert!(p.diagnostics.iter().any(|d| d.code == "gabc::dominican-bar"));
+    assert!(parse("(c4) a(f;3)").diagnostics.is_empty());
+}

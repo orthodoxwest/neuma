@@ -110,11 +110,13 @@ impl Parser<'_, '_> {
                 b',' => {
                     self.i += 1;
                     let high = self.take(b'0');
-                    // `,1`–`,8` appear in some sources; treat as a plain minima.
-                    if self.peek().is_some_and(|d| (b'1'..=b'8').contains(&d)) {
+                    // Gregorio reads `,1`–`,8` as Dominican bars too.
+                    if !high && let Some(d) = self.peek().filter(|d| (b'1'..=b'8').contains(d)) {
                         self.i += 1;
+                        self.bar(BarKind::Dominican(d - b'0'), false, start);
+                    } else {
+                        self.bar(BarKind::Minima, high, start);
                     }
-                    self.bar(BarKind::Minima, high, start);
                 }
                 b';' => {
                     self.i += 1;
@@ -220,11 +222,11 @@ impl Parser<'_, '_> {
             self.sink
                 .warn(self.span(start), "gabc::bar-sign", "signs on bars aren't supported and are skipped");
         }
-        if let BarKind::Dominican(_) = kind {
-            self.sink.info(
+        if let BarKind::Dominican(n @ 7..) = kind {
+            self.sink.warn(
                 self.span(start),
                 "gabc::dominican-bar",
-                "Dominican bars are drawn as a minor bar for now",
+                format!("a four-line staff has no Dominican bar {n}; it is drawn above the staff"),
             );
         }
         self.out.push(Figure::Bar(Bar {
