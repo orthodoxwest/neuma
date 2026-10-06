@@ -18,7 +18,7 @@ import { init, Chant } from "./neuma.mjs";
 
 await init();                      // once; everything after is synchronous
 const chant = new Chant(gabc, { initial: 1, annotation: true });
-chant.diagnostics;                 // [{ severity, start, end, code, message }], in UTF-8 bytes
+chant.diagnostics;                 // [{ severity, start, end, from, to, code, message, fix }]
 
 const page = chant.layout(host.clientWidth, {
   scale: 6,                        // SVG units per staff space
@@ -62,9 +62,15 @@ widths the layout planned for.
   `baseline` (the lyrics).
 - **`timeline.duration`**: the total length.
 
-Byte offsets (`spanStart`, `spanEnd` and the diagnostics' `start` and `end`) count UTF-8
-bytes of the source, not JavaScript string indices. Convert with
-`new TextDecoder().decode(new TextEncoder().encode(gabc).subarray(0, offset)).length`.
+Offsets named `start` and `end` (and the timeline's `spanStart` and `spanEnd`) count UTF-8
+bytes of the source, as the engine does. Offsets named `from` and `to`, and the carets the
+editor calls take, count UTF-16 code units: JavaScript string indices, as `textarea` and
+CodeMirror use. They differ once the source has a character outside ASCII (`é`, `℣`).
+
+Each diagnostic has a `code` that stays stable across versions (see
+[docs/diagnostics.md](../../docs/diagnostics.md) for the list), a `message` for people, and a
+`fix` that is `null` or the one edit that fixes it: `{ start, end, from, to, insert, title }`,
+replacing `from`..`to` with `insert`.
 
 `chant.noteAt(x, y)` returns the note under a point in the last layout, or the nearest note
 on that line, or `null`. `chant.free()` releases the score; using a freed `Chant` throws.
@@ -75,6 +81,79 @@ that grow with the bar. Any key you pass with a number overrides its default.
 If the engine ever stops on an internal error, that call throws and so does every later one
 until you call `init()` again, which starts a fresh engine. Make the `Chant`s again after
 that.
+
+## Editors
+
+A `Chant` can back a GABC editor with a live preview: update it on each change, lay it out,
+and link the source and the score both ways.
+
+```js
+const chant = new Chant(textarea.value, { initial: 1 });
+textarea.addEventListener("input", () => {
+  chant.update(textarea.value);    // keeps the options; diagnostics follow the new source
+  const page = chant.layout(host.clientWidth, { timeline: false, svg: "lines", ids: false });
+  // page.svgParts: { head, defs, rest, lines: [{ top, svg }] }
+});
+host.addEventListener("click", (e) => {
+  const hit = chant.sourceAt(e.offsetX, e.offsetY);   // { kind, index, from, to, x, y, w, h, … }
+  if (hit) textarea.setSelectionRange(hit.from, hit.to);
+});
+const lit = chant.elementsAt(textarea.selectionStart); // what to highlight for the caret
+```
+
+- **`chant.update(gabc)`** replaces the score, keeping the options. Lay it out again to see it.
+- **`layout(width, { timeline: false })`** skips the playback timeline, which on a long score
+  is most of the layout's cost. `page.timeline` is then absent.
+- **`layout(width, { svg: "lines" })`** returns `page.svgParts` instead of `page.svg`:
+  `head` (the `<svg>` start tag and style), `defs` (the glyph `<path>`s, for a `<defs>`),
+  `rest` (the initial and its annotations) and `lines`, each `{ top, svg }` with the line's
+  elements positioned relative to its top. Wrap each in
+  `<g transform="translate(0 top)">`. A line that only moved keeps its `svg` string, and with
+  `ids: false` (no `data-note` or `data-syllable`) so does a line after notes added above it,
+  so an editor can replace only the lines whose string changed. On a long score, replacing
+  the whole SVG costs the browser far more than the engine's work.
+- **`chant.sourceAt(x, y)`** returns what is under a point of the last layout, most specific
+  first: a notehead, a bar (within half a staff space), a syllable's box, or the nearest
+  syllable on that line; `null` outside the lines. The result is
+  `{ kind: "note"|"bar"|"syllable", index, start, end, from, to, line, x, y, w, h }`:
+  `from`..`to` is the source to select, and `x`, `y`, `w`, `h` the box drawn (a syllable's
+  box spans its line's height, across its notes and lyric). `index` is the note id, or the
+  bar's or syllable's index in the score.
+- **`chant.elementsAt(caret)`** returns what to highlight for a caret: the notes and bar
+  whose source holds it, then a box per line for its syllable. A caret just after a note,
+  as after typing it, counts as on it. Pass `{ units: "utf8" }` to give a byte offset.
+
+### CodeMirror 6
+
+The same calls fit CodeMirror's lint extension, which draws the underlines, shows each
+message on hover and offers the fixes as actions; positions are already UTF-16:
+
+```js
+import { linter } from "@codemirror/lint";
+import { EditorView } from "@codemirror/view";
+
+const gabcLint = linter((view) => {
+  chant.update(view.state.doc.toString());
+  return chant.diagnostics.map((d) => ({
+    from: d.from,
+    to: d.to,
+    severity: d.severity,          // "error" | "warning" | "info"
+    message: d.message,
+    source: d.code,
+    actions: d.fix ? [{
+      name: d.fix.title,
+      apply: (v) => v.dispatch({ changes: { from: d.fix.from, to: d.fix.to, insert: d.fix.insert } }),
+    }] : [],
+  }));
+}, { delay: 0 });
+
+// Highlight the caret's note, bar and syllable in the preview.
+const follow = EditorView.updateListener.of((u) => {
+  if (u.selectionSet || u.docChanged) highlight(chant.elementsAt(u.state.selection.main.head));
+});
+```
+
+`highlight` draws the returned boxes over the preview, as the example page does.
 
 ## Library entries
 

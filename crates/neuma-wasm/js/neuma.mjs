@@ -10,6 +10,11 @@
 // Note ids are stable across layouts of one Chant, so per-note state survives a resize.
 // Every note's SVG ink carries its id in `data-note`; select it with `[data-note~="<id>"]`,
 // since a porrectus swash lists both notes it draws. Positions are in SVG user units.
+//
+// For an editor: `chant.update(gabc)` on each change, `layout(w, { timeline: false,
+// svg: "lines" })` to patch only the lines that changed, `sourceAt(x, y)` for a click and
+// `elementsAt(caret)` for the caret. Offsets named `start`/`end` count UTF-8 bytes; those
+// named `from`/`to`, and carets, count UTF-16 units (JavaScript string indices).
 
 /*__NEUMA_WASM__*/
 const WASM_GZIP_BASE64 = "";
@@ -189,9 +194,29 @@ export class Chant {
     return this.#handle;
   }
 
-  /** Problems found while reading the score: `{ severity, start, end, code, message }`. */
+  /**
+   * Problems found while reading the score: `{ severity, start, end, from, to, code,
+   * message, fix }`. `start`/`end` count UTF-8 bytes of the source and `from`/`to` UTF-16
+   * units (string indices). `fix` is null, or an edit that fixes the problem:
+   * `{ start, end, from, to, insert, title }` (replace `from`..`to` with `insert`).
+   */
   get diagnostics() {
     return this.#diagnostics;
+  }
+
+  /**
+   * Replaces the score with `gabc`, keeping this Chant's options, as an editor does on each
+   * change. Lay it out again to see it; `diagnostics` and `summary` follow the new source.
+   * @param {string} gabc
+   */
+  update(gabc) {
+    const handle = this.#live();
+    guarded((w) => {
+      putInput(String(gabc));
+      if (!w.chant_update(handle)) throw new Error("neuma: this Chant was freed");
+    });
+    this.#diagnostics = JSON.parse(takeOutput());
+    this.#summary = undefined;
   }
 
   /** The score's catalogue entry, as `summarize` returns it. */
@@ -209,15 +234,20 @@ export class Chant {
   /**
    * Lays the score out at `width` SVG units.
    * @param {number} width
-   * @param {{ scale?: number, lastLine?: "ragged"|"justified", maxLines?: number, weights?: object, prefix?: string }} [options]
+   * @param {{ scale?: number, lastLine?: "ragged"|"justified", maxLines?: number, weights?: object, prefix?: string,
+   *   timeline?: boolean, svg?: "whole"|"lines", ids?: boolean }} [options]
    *   scale: units per staff space (default 6). maxLines: keep only the first lines, as
    *   broken for the whole score, for a preview such as an incipit (default 0, all). weights: any of DEFAULT_WEIGHTS's keys; a
    *   missing, null or non-numeric value keeps the default.
    *   prefix: class and id prefix for the SVG (default "neuma").
-   * @returns {{ width: number, height: number, svg: string, timeline: object }}
+   *   timeline: false leaves the timeline out, which on a long score is most of the work.
+   *   svg: "lines" returns `svgParts` instead of `svg` (see the README), to patch a page
+   *   line by line. ids: false leaves out `data-note` and `data-syllable`, so a line's SVG
+   *   doesn't change when notes are added or removed above it.
+   * @returns {{ width: number, height: number, svg?: string, svgParts?: object, timeline?: object }}
    *   timeline: `{ notes, pauses, lines, duration }`, with times in weight units.
    */
-  layout(width, { scale = 6, lastLine = "ragged", maxLines = 0, weights = {}, prefix = "" } = {}) {
+  layout(width, { scale = 6, lastLine = "ragged", maxLines = 0, weights = {}, prefix = "", timeline = true, svg = "whole", ids = true } = {}) {
     const handle = this.#live();
     if (!(scale > 0 && Number.isFinite(scale))) scale = 6;
     const values = WEIGHTS.map((k) => {
@@ -226,13 +256,52 @@ export class Chant {
     });
     return guarded((w) => {
       putInput(prefix);
-      if (!w.chant_layout(handle, width, scale, lastLine === "justified" ? 1 : 0, maxLines >>> 0, ...values)) {
+      const flags = (timeline ? 0 : 1) | (svg === "lines" ? 2 : 0) | (ids ? 0 : 4);
+      if (!w.chant_layout(handle, width, scale, lastLine === "justified" ? 1 : 0, maxLines >>> 0, ...values, flags)) {
         throw new Error("neuma: this Chant was freed");
       }
       const page = JSON.parse(takeOutput());
       w.chant_svg(handle);
-      page.svg = takeOutput();
+      if (svg === "lines") {
+        const [head, defs, rest, ...tail] = takeOutput().split("\0");
+        const lines = [];
+        for (let i = 0; i + 1 < tail.length; i += 2) lines.push({ top: Number(tail[i]), svg: tail[i + 1] });
+        page.svgParts = { head, defs, rest, lines };
+      } else {
+        page.svg = takeOutput();
+      }
       return page;
+    });
+  }
+
+  /**
+   * The note, bar or syllable under (`x`, `y`) in the last layout: a notehead, else a bar,
+   * else a syllable's box, else the nearest syllable on that line; null outside the lines.
+   * @returns {{ kind: "note"|"bar"|"syllable", index: number, start: number, end: number,
+   *   from: number, to: number, line: number, x: number, y: number, w: number, h: number } | null}
+   *   `from`..`to` is the source to select (UTF-16 units); `x`, `y`, `w`, `h` the box drawn.
+   */
+  sourceAt(x, y) {
+    const handle = this.#live();
+    return guarded((w) => {
+      w.chant_source_at(handle, x, y);
+      return JSON.parse(takeOutput());
+    });
+  }
+
+  /**
+   * What to highlight for a caret in the source, in the last layout: the notes and the bar
+   * whose source holds it, then each box of its syllable (one per line it spans), most
+   * specific first. A caret just after a note, as after typing it, counts as on it.
+   * @param {number} caret a string index (UTF-16 units), such as `textarea.selectionStart`
+   * @param {{ units?: "utf16"|"utf8" }} [options] `units: "utf8"` takes a byte offset instead.
+   * @returns {Array<object>} elements as `sourceAt` returns them
+   */
+  elementsAt(caret, { units = "utf16" } = {}) {
+    const handle = this.#live();
+    return guarded((w) => {
+      w.chant_elements_at(handle, Math.max(0, caret) >>> 0, units === "utf8" ? 0 : 1);
+      return JSON.parse(takeOutput());
     });
   }
 
