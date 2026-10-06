@@ -41,6 +41,9 @@ impl Default for LayoutOptions {
 /// staff, whose interline is 0.288 cm.
 const NOTES_SYLLABLE_GAP: f32 = 1.67;
 const NOTES_WORD_GAP: f32 = 2.0;
+/// The space either side of a bar standing in a syllable of its own, as measured from
+/// GregorioTeX's output (its bar spacing, `bar@minor` and the like, is 0.18 cm plus glue).
+const BAR_GAP: f32 = 1.6;
 /// Gap after the line-start clef.
 const CLEF_GAP: f32 = INTRA * 2.0;
 /// Gap between the first staff line and the lowest annotation's baseline.
@@ -148,6 +151,8 @@ struct Cursor {
     word_continues: bool,
     /// The last text ends with a hyphen of its own.
     own_hyphen: bool,
+    /// The last segment is a bar standing alone.
+    after_bar: bool,
     x: f32,
 }
 
@@ -166,7 +171,13 @@ fn place(cur: &Cursor, seg: &Segment, hyphen: f32, word_space: f32, line_start: 
     match (cur.ink_right, seg.ink) {
         (Some(r), Some((l, _))) => {
             let gap = if seg.first {
-                if seg.word_start { NOTES_WORD_GAP } else { NOTES_SYLLABLE_GAP }
+                if seg.is_bar() || cur.after_bar {
+                    BAR_GAP
+                } else if seg.word_start {
+                    NOTES_WORD_GAP
+                } else {
+                    NOTES_SYLLABLE_GAP
+                }
             } else {
                 seg.space_before
             };
@@ -216,6 +227,9 @@ fn place(cur: &Cursor, seg: &Segment, hyphen: f32, word_space: f32, line_start: 
 fn advance(cur: &Cursor, seg: &Segment, x: f32) -> Cursor {
     let mut next = *cur;
     next.x = x;
+    if seg.ink.is_some() {
+        next.after_bar = seg.is_bar();
+    }
     if let Some((_, r)) = seg.ink {
         next.ink_right = Some(x + r);
     }
@@ -276,6 +290,7 @@ impl Engraving {
             lyric_right: None,
             word_continues: false,
             own_hyphen: false,
+            after_bar: false,
             x: start,
         };
         let mut xs = Vec::with_capacity(last - first + 1);
@@ -398,6 +413,7 @@ impl Engraving {
                     lyric_right: None,
                     word_continues: false,
                     own_hyphen: false,
+                    after_bar: false,
                     x: start,
                 };
                 let mut right = 0.0f32;

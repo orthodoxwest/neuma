@@ -209,6 +209,11 @@ pub(crate) struct Segment {
 }
 
 impl Segment {
+    /// A bar standing in a syllable of its own, with no text.
+    pub(crate) fn is_bar(&self) -> bool {
+        self.lyric.is_none() && !self.pieces.is_empty() && self.pieces.iter().all(|p| p.role == Ink::Bar)
+    }
+
     pub(crate) fn right(&self) -> f32 {
         let r = self.ink.map_or(0.0, |(_, r)| r);
         match &self.lyric {

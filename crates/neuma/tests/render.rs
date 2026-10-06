@@ -840,3 +840,29 @@ fn spaces_inside_notes_are_gregorios() {
     assert!((gap("f//f") - 0.76).abs() < 0.01, "{}", gap("f//f"));
     assert!((gap("f f") - 1.52).abs() < 0.01, "{}", gap("f f"));
 }
+
+#[test]
+fn a_bar_keeps_gregorios_space_either_side() {
+    let eng = parse("(c4) a(g) (;) b(g)").score.engrave(&ApproxMeasure, &NO_INITIAL);
+    let opts = LayoutOptions::default();
+    let layout = eng.layout(2000.0, &opts);
+    let map = layout.notes(&Weights::default());
+    let bar = layout
+        .display()
+        .items
+        .iter()
+        .find_map(|i| match i {
+            Item::Rect {
+                x,
+                w,
+                role: neuma::Ink::Bar,
+                ..
+            } => Some((*x, *w)),
+            _ => None,
+        })
+        .unwrap();
+    let (a, b) = (&map.notes[0], &map.notes[1]);
+    let before = (bar.0 - (a.x + a.w / 2.0)) / opts.scale;
+    let after = (b.x - b.w / 2.0 - (bar.0 + bar.1)) / opts.scale;
+    assert!((before - 1.6).abs() < 0.01 && (after - 1.6).abs() < 0.01, "{before} {after}");
+}
