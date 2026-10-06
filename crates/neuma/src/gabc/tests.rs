@@ -433,3 +433,10 @@ fn double_slash_before_a_tag_is_the_larger_space() {
     let once = p.score.to_gabc();
     assert_eq!(parse(&once).score.to_gabc(), once);
 }
+
+#[test]
+fn zero_width_notes_are_reported_once() {
+    let p = parse("(c4) a(gF0/[-0.5]{ix}F0hi) b(h/[-0.5]{iy}hg)\n");
+    let n = p.diagnostics.iter().filter(|d| d.code == "gabc::zero-width").count();
+    assert_eq!(n, 1, "{:?}", p.diagnostics);
+}

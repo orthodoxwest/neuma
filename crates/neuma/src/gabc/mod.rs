@@ -26,12 +26,21 @@ pub fn parse(src: &str) -> Parsed {
         body_start += '\u{feff}'.len_utf8();
     }
     let syllables = parse_body(src, body_start, &mut sink);
-    // An NABC score has NABC in nearly every syllable; one diagnostic says it.
-    if sink.items.iter().filter(|d| d.code == "gabc::nabc").count() > 1 {
-        let mut seen = false;
-        sink.items.retain(|d| d.code != "gabc::nabc" || !std::mem::replace(&mut seen, true));
-        if let Some(d) = sink.items.iter_mut().find(|d| d.code == "gabc::nabc") {
-            d.message = "NABC notation isn't supported and is skipped throughout the score".into();
+    // An NABC score has NABC in nearly every syllable, and a score that uses zero-width notes
+    // uses them throughout; one diagnostic says each.
+    for (code, all) in [
+        ("gabc::nabc", "NABC notation isn't supported and is skipped throughout the score"),
+        (
+            "gabc::zero-width",
+            "notes in `{…}` are drawn with their own width throughout the score",
+        ),
+    ] {
+        if sink.items.iter().filter(|d| d.code == code).count() > 1 {
+            let mut seen = false;
+            sink.items.retain(|d| d.code != code || !std::mem::replace(&mut seen, true));
+            if let Some(d) = sink.items.iter_mut().find(|d| d.code == code) {
+                d.message = all.into();
+            }
         }
     }
     Parsed {
