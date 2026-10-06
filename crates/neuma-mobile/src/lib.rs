@@ -643,14 +643,14 @@ pub enum ToneError {
     /// No built-in tone has that name.
     Unknown { name: String },
     /// The tone block can't be read.
-    Invalid { message: String },
+    Invalid { reason: String },
 }
 
 impl std::fmt::Display for ToneError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ToneError::Unknown { name } => write!(f, "no built-in tone {name}"),
-            ToneError::Invalid { message } => f.write_str(message),
+            ToneError::Invalid { reason } => f.write_str(reason),
         }
     }
 }
@@ -669,7 +669,7 @@ pub fn psalm(text: String, tone: String, intone: Intone) -> Result<PsalmSetting,
 /// `mediant:` and `termination:` lines).
 #[uniffi::export]
 pub fn psalm_with_tone(text: String, tone: String, intone: Intone) -> Result<PsalmSetting, ToneError> {
-    let t = neuma_tones::Tone::parse(&tone).map_err(|e| ToneError::Invalid { message: e.to_string() })?;
+    let t = neuma_tones::Tone::parse(&tone).map_err(|e| ToneError::Invalid { reason: e.to_string() })?;
     Ok(setting(&t, &text, intone))
 }
 
