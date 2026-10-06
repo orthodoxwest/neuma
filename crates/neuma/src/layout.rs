@@ -65,6 +65,9 @@ const HYPHEN_MIN_GAP: f32 = 0.01;
 /// inside a syllable (between note groups of a melisma) barely stretches, and syllables whose
 /// texts touch stay together, as in GregorioTeX, where only those gaps lack stretchable glue.
 const STRETCH_IN_SYLLABLE: f32 = 0.25;
+/// How far the space between two words may shrink to fit a line: GregorioTeX's
+/// interwordspacetext and interwordspacenotes give 0.05 cm.
+const SHRINK: f32 = 0.35;
 /// How far each gap may stretch before a line counts as loose, in staff spaces.
 const STRETCH: f32 = 1.5;
 /// The widest column laid out, in output units and in staff spaces; wider requests are
@@ -164,6 +167,8 @@ struct Spot {
     hyphen: bool,
     /// How much the gap before this segment stretches (see [`STRETCH_IN_SYLLABLE`]).
     weight: f32,
+    /// How far the gap before this segment may shrink, in staff spaces.
+    shrink: f32,
 }
 
 fn place(cur: &Cursor, seg: &Segment, hyphen: f32, word_space: f32, line_start: f32) -> Spot {
@@ -217,10 +222,16 @@ fn place(cur: &Cursor, seg: &Segment, hyphen: f32, word_space: f32, line_start: 
     } else {
         1.0
     };
+    let shrink = if seg.first && seg.word_start && !seg.is_bar() && !cur.after_bar {
+        SHRINK
+    } else {
+        0.0
+    };
     Spot {
         x,
         hyphen: shows_hyphen,
         weight,
+        shrink,
     }
 }
 
@@ -246,6 +257,7 @@ struct Trial {
     /// Per segment: a hyphen before its text, and how much the gap before it stretches.
     hyphens: Vec<bool>,
     weights: Vec<f32>,
+    shrinks: Vec<f32>,
     natural: f32,
     /// Ink right and lyric right ends, for justification and the custos.
     ink_end: f32,
@@ -296,6 +308,7 @@ impl Engraving {
         let mut xs = Vec::with_capacity(last - first + 1);
         let mut hyphens = Vec::with_capacity(last - first + 1);
         let mut weights = Vec::with_capacity(last - first + 1);
+        let mut shrinks = Vec::with_capacity(last - first + 1);
         let mut right = 0.0f32;
         let mut ink_end = start;
         for seg in &self.segments[first..=last] {
@@ -304,6 +317,7 @@ impl Engraving {
             xs.push(x);
             hyphens.push(spot.hyphen);
             weights.push(if xs.len() == 1 { 0.0 } else { spot.weight });
+            shrinks.push(if xs.len() == 1 { 0.0 } else { spot.shrink });
             cur = advance(&cur, seg, x);
             right = right.max(x + seg.right());
             if let Some((_, r)) = seg.ink {
@@ -314,6 +328,7 @@ impl Engraving {
             xs,
             hyphens,
             weights,
+            shrinks,
             natural: self.natural(&cur, right, ink_end, last),
             ink_end,
         }
@@ -420,6 +435,8 @@ impl Engraving {
                 let mut ink_end = start;
                 // How far the line's gaps stretch together, relative to a gap between words.
                 let mut stretch_weight = 0.0f32;
+                // How far its word gaps may shrink together.
+                let mut shrink = 0.0f32;
                 // Whether this line has passed a boundary where it may end.
                 let mut breakable_seen = false;
                 for last in first..n {
@@ -431,6 +448,7 @@ impl Engraving {
                     let x = spot.x;
                     if last > first {
                         stretch_weight += spot.weight;
+                        shrink += spot.shrink;
                     }
                     cur = advance(&cur, seg, x);
                     right = right.max(x + seg.right());
@@ -438,7 +456,10 @@ impl Engraving {
                         ink_end = ink_end.max(x + r);
                     }
                     let natural = self.natural(&cur, right, ink_end, last);
-                    let over = natural > target;
+                    // A line may be a little wider than the column: its word gaps shrink, as
+                    // GregorioTeX's glue does.
+                    let over = natural > target + shrink;
+                    let squeezed = natural > target && !over;
                     // Past the width with only forbidden breaks behind it, as in an unclosed
                     // `<nlba>`: the line ends at the last of them, or after this segment when it
                     // alone is too wide, rather than nowhere, which left the walk back to set every
@@ -451,6 +472,9 @@ impl Engraving {
                         let (ragged, break_cost) = self.line_end(end, opts);
                         let badness = if over {
                             if last == first || stuck { 10000.0 } else { f32::INFINITY }
+                        } else if squeezed {
+                            let r = (natural - target) / shrink;
+                            (100.0 * r * r * r).min(10000.0)
                         } else if ragged {
                             0.0
                         } else if gaps == 0.0 {
@@ -528,6 +552,18 @@ impl Engraving {
                     *x += stretch;
                 }
             }
+            if gaps > 0 && trial.natural > target {
+                // Too wide by no more than its word gaps can give: they shrink alike.
+                let total: f32 = trial.shrinks.iter().sum();
+                if total > 0.0 {
+                    let part = (trial.natural - target).min(total) / total;
+                    for (i, x) in xs.iter_mut().enumerate().skip(1) {
+                        stretch -= part * trial.shrinks[i];
+                        *x += stretch;
+                    }
+                }
+            }
+            let natural = trial.natural + stretch.min(0.0);
             let ink_end = trial.ink_end + stretch;
             let custos = if last + 1 < self.segments.len() {
                 self.custos_for(last).map(|p| (p, ink_end + CUSTOS_GAP))
@@ -624,7 +660,7 @@ impl Engraving {
             }
             prev_baseline = has_lyrics.then_some(baseline);
             let bottom = baseline + if has_lyrics { self.descent * size } else { 0.5 };
-            let right = line_indent + if ragged { trial.natural } else { target.max(trial.natural) };
+            let right = line_indent + if ragged { natural } else { target.max(natural) };
             rights.push(right);
             lines.push(PlacedLine {
                 first,
@@ -692,7 +728,9 @@ impl Engraving {
         // out of a preview count too, so its staves are drawn as in the whole score.
         for &(first, last) in ranges.iter().skip(placed) {
             let (_, start) = self.line_start(first);
-            let natural = self.trial(first, last, start).natural;
+            let trial = self.trial(first, last, start);
+            let shrink: f32 = trial.shrinks.iter().sum();
+            let natural = trial.natural - (trial.natural - target).clamp(0.0, shrink);
             let (ragged, _) = self.line_end(last, opts);
             rights.push(if ragged { natural } else { target.max(natural) });
         }

@@ -866,3 +866,26 @@ fn a_bar_keeps_gregorios_space_either_side() {
     let after = (b.x - b.w / 2.0 - (bar.0 + bar.1)) / opts.scale;
     assert!((before - 1.6).abs() < 0.01 && (after - 1.6).abs() < 0.01, "{before} {after}");
 }
+
+#[test]
+fn a_line_a_little_too_wide_shrinks_its_word_gaps() {
+    use neuma::TextMeasure;
+    // GregorioTeX's word spaces may shrink by 0.05 cm (0.35 staff spaces) to fit a line.
+    let src = format!("(c4) {}", ["mum(g)"; 10].join(" "));
+    let eng = parse(&src).score.engrave(&ApproxMeasure, &NO_INITIAL);
+    let opts = LayoutOptions::default();
+    // The narrowest column that holds the score on one line.
+    let mut w = 2000.0;
+    while eng.layout(w - 1.0, &opts).line_count() == 1 {
+        w -= 1.0;
+    }
+    let t = texts(&src, w, &opts);
+    let gaps: Vec<f32> = t
+        .windows(2)
+        .map(|p| (p[1].1 - p[0].1 - ApproxMeasure.advance(&p[0].0, Default::default()) * p[0].2) / opts.scale)
+        .collect();
+    let space = 0.48 * StyleOptions::default().lyric_size;
+    // Every word gap gave up the same part of its shrink, and none more than 0.35.
+    assert!(gaps.iter().all(|g| *g < space - 0.05 && *g >= space - 0.35 - 0.01), "{gaps:?}");
+    assert!(gaps.iter().all(|g| (g - gaps[0]).abs() < 0.01), "{gaps:?}");
+}
