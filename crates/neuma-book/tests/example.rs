@@ -55,6 +55,22 @@ fn check(doc: &Document, book: &Book) {
     // The title page has no running header; later pages do.
     assert_eq!(texts(&doc.pages[0]).iter().filter(|t| *t == "Compline").count(), 1);
     assert!(texts(&doc.pages[1]).iter().any(|t| t == "Compline"));
+    // The blessing is one verse line that wraps where it must, not two source lines.
+    let last = doc.pages.last().unwrap();
+    let at = |word: &str| {
+        last.ops.iter().find_map(|o| match o {
+            Op::Text { x, baseline, run, .. } if run.glyphs.iter().map(|g| g.text.as_str()).collect::<String>() == word => {
+                Some((*x, *baseline))
+            }
+            _ => None,
+        })
+    };
+    let (px, pb) = at("preserve").unwrap();
+    let starts_line = last
+        .ops
+        .iter()
+        .all(|o| !matches!(o, Op::Text { x, baseline, .. } if (*baseline - pb).abs() < 0.01 && *x < px));
+    assert!(!starts_line, "`preserve us.` is a line of its own");
     // Page numbers.
     assert!(texts(&doc.pages[1]).iter().any(|t| t == "2"));
     let pdf = doc.pdf_for_test();
