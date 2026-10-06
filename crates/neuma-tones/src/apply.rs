@@ -1,6 +1,5 @@
 //! Sets pointed text to a psalm tone.
 
-use std::collections::HashMap;
 use std::ops::Range;
 
 use neuma::score::{Bar, BarKind, Clef, Figure, Lyric};
@@ -159,23 +158,23 @@ pub fn apply(tone: &Tone, pointed: &Pointed, options: &Options) -> Setting {
 
 /// GABC neumes parsed into figures, once each.
 #[derive(Default)]
-struct Figures(HashMap<String, Vec<Figure>>);
+struct Figures(Vec<(String, Vec<Figure>)>);
 
 impl Figures {
     fn get(&mut self, neume: &str) -> Vec<Figure> {
-        self.0
-            .entry(neume.to_string())
-            .or_insert_with(|| {
-                let parsed = neuma::parse(&format!("(c4) a({neume})"));
-                parsed
-                    .score
-                    .syllables
-                    .into_iter()
-                    .last()
-                    .map(|s| s.notation.into_iter().filter(|f| !matches!(f, Figure::Clef(Clef { .. }))).collect())
-                    .unwrap_or_default()
-            })
-            .clone()
+        if let Some((_, f)) = self.0.iter().find(|(n, _)| n == neume) {
+            return f.clone();
+        }
+        let parsed = neuma::parse(&format!("(c4) a({neume})"));
+        let f: Vec<Figure> = parsed
+            .score
+            .syllables
+            .into_iter()
+            .last()
+            .map(|s| s.notation.into_iter().filter(|f| !matches!(f, Figure::Clef(Clef { .. }))).collect())
+            .unwrap_or_default();
+        self.0.push((neume.to_string(), f.clone()));
+        f
     }
 }
 
