@@ -312,14 +312,17 @@ const DEFAULT_CLEF: Clef = Clef {
     span: 0..0,
 };
 
+/// The spaces written inside notes. `/`, `//` and a space are GregorioTeX's
+/// interelementspace (0.069 cm), largerspace (0.109 cm) and glyphspace (0.219 cm) on its
+/// default staff, whose interline is 0.288 cm.
 fn space_width(s: Space) -> f32 {
     match s {
         Space::Zero => 0.0,
         Space::Tiny => INTRA * 0.5,
         Space::Half => INTRA * 0.5,
-        Space::Small => INTRA,
-        Space::Medium => INTRA * 2.0,
-        Space::Large | Space::LargeNoBreak => INTRA * 2.0,
+        Space::Small => 0.48,
+        Space::Medium => 0.76,
+        Space::Large | Space::LargeNoBreak => 1.52,
         Space::Scaled(f) => INTRA * f,
     }
 }

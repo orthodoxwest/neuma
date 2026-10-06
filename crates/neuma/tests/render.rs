@@ -213,7 +213,7 @@ fn long_melismas_break_between_note_groups() {
     assert_eq!(lines("(c4) A(ghg/hgh/ghg)"), 1);
     assert_eq!(lines("(c4) A(gh/hg/gh/hg/gh)"), 3);
     // Inside `<nlba>` the melisma stays whole, even past the width.
-    let src = "(c4) <nlba>To(ixdh//gih//ivGF;ggf//gg//f/gh//jjg;hhg//hvGF;4hiHG//ixhi)ta(h)</nlba> (::)";
+    let src = "(c4) <nlba>To(ixdh//gih//ivGF;ggf//gg//f/gh//jjg;hhg//hvGF;4hiHG//ixhi//ixdh//gih//ivGF)ta(h)</nlba> (::)";
     let eng = parse(src).score.engrave(&ApproxMeasure, &NO_INITIAL);
     assert!(eng.layout(300.0, &LayoutOptions::default()).size().0 > 300.0);
 }
@@ -823,4 +823,20 @@ fn a_first_syllable_taken_by_the_initial_leaves_a_hyphen() {
     let t = roles("(c4) Ky(f)ri(g)e(h)");
     let y = t.iter().find(|t| t.1 == "y").unwrap();
     assert!(t.iter().all(|h| h.0 != TextRole::Hyphen || h.2 > y.2), "{t:?}");
+}
+
+#[test]
+fn spaces_inside_notes_are_gregorios() {
+    // `/`, `//` and a space between note groups: GregorioTeX's interelementspace, largerspace
+    // and glyphspace, 0.48, 0.76 and 1.52 staff spaces.
+    let gap = |notes: &str| {
+        let eng = parse(&format!("(c4) a({notes})")).score.engrave(&ApproxMeasure, &NO_INITIAL);
+        let opts = LayoutOptions::default();
+        let map = eng.layout(2000.0, &opts).notes(&Weights::default());
+        let n = &map.notes;
+        (n[1].x - n[1].w / 2.0 - (n[0].x + n[0].w / 2.0)) / opts.scale
+    };
+    assert!((gap("f/f") - 0.48).abs() < 0.01, "{}", gap("f/f"));
+    assert!((gap("f//f") - 0.76).abs() < 0.01, "{}", gap("f//f"));
+    assert!((gap("f f") - 1.52).abs() < 0.01, "{}", gap("f f"));
 }
