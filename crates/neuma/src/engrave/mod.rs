@@ -562,7 +562,9 @@ impl Engraver<'_> {
             after: Break::Allowed,
             space_before,
             clef: self.clef.clone(),
-            starts_with_clef: open.starts_with_clef,
+            // The score's opening clef is drawn at the start of the first line even when a clef
+            // change follows it at once, as in `(c4) (c3)`: Gregorio shows both.
+            starts_with_clef: open.starts_with_clef && !(self.segments.is_empty() && self.initial_clef.is_some()),
             first_note: open.first_note,
             suppress_custos: false,
         });

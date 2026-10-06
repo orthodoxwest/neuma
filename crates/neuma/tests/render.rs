@@ -510,3 +510,28 @@ fn clefs_fit_their_lines() {
         assert_eq!(clefs, 1, "{src}");
     }
 }
+
+#[test]
+fn a_clef_change_right_after_the_opening_clef_shows_both() {
+    let clefs = |src: &str| {
+        let eng = parse(src).score.engrave(&ApproxMeasure, &NO_INITIAL);
+        let list = eng.layout(400.0, &LayoutOptions::default()).display();
+        list.items
+            .iter()
+            .filter(|i| {
+                matches!(
+                    i,
+                    Item::Glyph {
+                        role: neuma::Ink::Clef,
+                        ..
+                    }
+                )
+            })
+            .count()
+    };
+    assert_eq!(clefs("(c4) (c3)"), 2);
+    assert_eq!(clefs("(c4) (c3) a(g)"), 2);
+    assert_eq!(clefs("(c4)"), 1);
+    assert_eq!(clefs("(c4) a(g)"), 1);
+    assert_eq!(clefs("a(c4g)"), 1);
+}
