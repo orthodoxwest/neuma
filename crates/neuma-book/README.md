@@ -10,7 +10,9 @@ neuma book examples/compline/compline.book -o compline.pdf --svg pages/
 
 `-o` names the PDF (by default the book's name with `.pdf`), `--svg DIR` also writes
 `page-001.svg` … , and `--text-as-paths` draws all text as outlines. Problems in the pieces
-(GABC diagnostics, unknown tones, pointing the automatic pointer is unsure of) go to stderr;
+(GABC diagnostics, unknown tones, pointing the automatic pointer is unsure of, named by
+verse, and anything that runs past the right margin) go to stderr, as do characters the text
+face has no glyph for;
 the command fails only on errors.
 
 From Rust:
