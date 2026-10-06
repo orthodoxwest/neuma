@@ -259,15 +259,18 @@ fn initial_and_annotations() {
     assert!(lefts[0] > 0.0 && lefts[1] == lefts[0] && lefts[2] == 0.0, "{lefts:?}");
 }
 
-fn initial_item(list: &neuma::DisplayList) -> Option<(f32, f32, f32)> {
+/// The initial's x, baseline, font size and width (as `ApproxMeasure` measures it).
+fn initial_item(list: &neuma::DisplayList) -> Option<(f32, f32, f32, f32)> {
+    use neuma::TextMeasure;
     list.items.iter().find_map(|i| match i {
         Item::Text {
             role: TextRole::Initial,
             x,
             baseline,
             size,
+            runs,
             ..
-        } => Some((*x, *baseline, *size)),
+        } => Some((*x, *baseline, *size, ApproxMeasure.advance(&runs[0].text, runs[0].style) * size)),
         _ => None,
     })
 }
@@ -295,14 +298,28 @@ fn tall_initials_fit_the_staves_they_span() {
     for (src, width) in cases {
         let eng = parse(src).score.engrave(&ApproxMeasure, &style);
         let list = eng.layout(width, &LayoutOptions::default()).display();
-        let (_, baseline, size) = initial_item(&list).unwrap();
+        assert_initial_clear_of_staff(&list, src);
+        let (_, baseline, size, width) = initial_item(&list).unwrap();
         let span = list.lines.len().min(2);
         let first = &list.lines[0];
         let last = &list.lines[span - 1];
         let sp = list.staff_space;
         assert!((baseline - (last.staff + 3.0 * sp)).abs() < 0.01, "{src}");
-        // Cap height 0.65 em: the capital's top is the first staff's top line.
-        assert!((baseline - 0.65 * size - (first.staff - 3.0 * sp)).abs() < 0.01, "{src}");
+        // Cap height 0.65 em: the capital's top is the first staff's top line, or a little
+        // lower when the capital had to narrow to fit its column.
+        let top = baseline - 0.65 * size;
+        let column_bound = (list.items.iter().find_map(|i| match i {
+            Item::Rect {
+                x,
+                role: neuma::Ink::Staff,
+                ..
+            } => Some(*x),
+            _ => None,
+        }))
+        .unwrap();
+        let narrowed = width >= column_bound - 2.0 * sp;
+        assert!(top >= first.staff - 3.0 * sp - 0.01, "{src}");
+        assert!(narrowed || (top - (first.staff - 3.0 * sp)).abs() < 0.01, "{src}");
         assert!(baseline <= list.height, "{src}");
         for a in list.items.iter().filter_map(|i| match i {
             Item::Text {
@@ -326,6 +343,40 @@ fn initial_only_from_the_opening_syllable() {
     // A capital with a tail still fits inside the layout.
     let eng = parse("(c4) Q(g)").score.engrave(&ApproxMeasure, &StyleOptions::default());
     let list = eng.layout(500.0, &LayoutOptions::default()).display();
-    let (_, baseline, size) = initial_item(&list).unwrap();
+    let (_, baseline, size, _) = initial_item(&list).unwrap();
     assert!(baseline + 0.25 * size <= list.height + 0.01);
+}
+
+/// The capital ends left of where the indented staves start.
+fn assert_initial_clear_of_staff(list: &neuma::DisplayList, src: &str) {
+    let Some((x, _, _, width)) = initial_item(list) else { return };
+    let staff_left = list
+        .items
+        .iter()
+        .find_map(|i| match i {
+            Item::Rect {
+                x,
+                role: neuma::Ink::Staff,
+                ..
+            } => Some(*x),
+            _ => None,
+        })
+        .unwrap();
+    assert!(x >= -0.01 && x + width <= staff_left + 0.01, "{src}: {x} + {width} vs {staff_left}");
+}
+
+#[test]
+fn tall_initials_never_cover_the_clef() {
+    // High notes and breaks that land on the spanned lines only after the second pass.
+    let src = "%%\n(c4) Wglo(ghgh) glori(ahvhv)menmi(,)(goz)Ky(ijz,)men(h.g_)e()(,) mi(,)";
+    for lines in 2..=4 {
+        let style = StyleOptions {
+            initial: Initial::Lines(lines),
+            ..StyleOptions::default()
+        };
+        let eng = parse(src).score.engrave(&ApproxMeasure, &style);
+        for width in [200.0, 240.0, 320.0] {
+            assert_initial_clear_of_staff(&eng.layout(width, &LayoutOptions::default()).display(), src);
+        }
+    }
 }
