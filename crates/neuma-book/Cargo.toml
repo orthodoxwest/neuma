@@ -1,0 +1,15 @@
+[package]
+name = "neuma-book"
+description = "Print booklets for neuma: chant, pointed psalms, rubrics and text paginated into SVG pages and PDF"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+neuma = { path = "../neuma" }
+neuma-tones = { path = "../neuma-tones" }
+
+[lints]
+workspace = true

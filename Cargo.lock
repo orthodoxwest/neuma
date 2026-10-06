@@ -365,6 +365,14 @@ name = "neuma"
 version = "0.1.0"
 
 [[package]]
+name = "neuma-book"
+version = "0.1.0"
+dependencies = [
+ "neuma",
+ "neuma-tones",
+]
+
+[[package]]
 name = "neuma-cli"
 version = "0.1.0"
 dependencies = [
