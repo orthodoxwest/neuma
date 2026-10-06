@@ -411,3 +411,9 @@ fn unclosed_verbatim_tags_parse_in_linear_time() {
     // seconds in a release build. The bound is loose so a slow runner can't trip it.
     assert!(t.elapsed().as_secs() < 20, "{:?}", t.elapsed());
 }
+
+#[test]
+fn plain_verbatim_text_collapses_spaces() {
+    let p = parse("(c4) A<v>(non\n   repetitur)  </v>b(g)\n");
+    assert_eq!(p.score.syllables[1].text.plain(), "A(non repetitur) b");
+}

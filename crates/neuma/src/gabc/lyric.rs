@@ -129,9 +129,21 @@ pub(super) fn parse(text: &str, offset: usize, state: &mut LyricState, sink: &mu
                                 out.push(ch, st, ch != '‡');
                             }
                         } else if !inner.contains(['\\', '{', '}', '$', '~', '^', '_', '%', '&', '#']) {
-                            // No TeX in it, so TeX would print it as it stands: `<v>(</v>`.
+                            // No TeX in it, so TeX would print it as it stands: `<v>(</v>`, with
+                            // any run of spaces and line ends as one space.
+                            let mut space = false;
                             for ch in inner.chars() {
+                                if ch.is_whitespace() {
+                                    space = true;
+                                    continue;
+                                }
+                                if std::mem::take(&mut space) {
+                                    out.push(' ', style(state), state.elision > 0);
+                                }
                                 out.push(ch, style(state), state.elision > 0);
+                            }
+                            if space {
+                                out.push(' ', style(state), state.elision > 0);
                             }
                         } else if inner.chars().any(char::is_alphanumeric) {
                             sink.warn(offset + i..offset + end, "gabc::verbatim-dropped", "verbatim TeX is dropped");
