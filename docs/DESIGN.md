@@ -303,7 +303,9 @@ tokens real AWRV material uses and moves rows between E1 and E2.
 **Line-breaking inputs.** `z` and `Z` both force a break. `z` justifies the
 line it ends, and `Z` leaves that line ragged. A `+` or `-` suffix forces or
 suppresses that break's custos. The only ways to forbid a break are `<nlba>`
-regions and `!` before a space. (v1's claim that `Z` forbids a break was
+regions and `!` before a space. A line that can't end anywhere else within the
+width, as after an unclosed `<nlba>`, ends at its last forbidden break rather
+than running past the width. (v1's claim that `Z` forbids a break was
 wrong.)
 
 **Alteration scope.** GABC itself only says where an alteration sign is drawn.
