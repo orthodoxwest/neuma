@@ -1,0 +1,35 @@
+[package]
+name = "neuma-mobile"
+description = "UniFFI bindings for neuma, for iOS and Android apps"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lib]
+name = "neuma_mobile"
+# cdylib for Android's JNI loader, staticlib for iOS, lib for apps that wrap it in their
+# own UniFFI crate (and for the tests).
+crate-type = ["cdylib", "staticlib", "lib"]
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "src/bin/uniffi-bindgen.rs"
+required-features = ["bindgen"]
+
+[features]
+bindgen = ["uniffi/cli"]
+
+[dependencies]
+neuma = { path = "../neuma" }
+uniffi = "0.32"
+
+# No workspace lint table: UniFFI's generated scaffolding is `unsafe` FFI glue, which the
+# workspace's `unsafe_code = "forbid"` would reject. This crate's own code stays safe.
+[lints.rust]
+missing_debug_implementations = "warn"
+
+[lints.clippy]
+wildcard_enum_match_arm = "deny"

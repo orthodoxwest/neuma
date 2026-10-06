@@ -4,7 +4,7 @@
 use neuma::score::TextStyle;
 use neuma::{MetricsTable, TextMeasure};
 
-const TABLE: &[u8] = include_bytes!("../tables/eb-garamond-12.bin");
+const TABLE: &[u8] = include_bytes!("../../neuma/fonts/eb-garamond-12.bin");
 
 #[test]
 fn matches_chromium() {
@@ -32,7 +32,7 @@ fn matches_chromium() {
 }
 
 /// The Google Fonts EB Garamond (v33, static 400 instances), which web pages load.
-const GOOGLE: &[u8] = include_bytes!("../tables/eb-garamond-google.bin");
+const GOOGLE: &[u8] = include_bytes!("../../neuma/fonts/eb-garamond-google.bin");
 
 #[test]
 fn google_table_matches_chromium() {

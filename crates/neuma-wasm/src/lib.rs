@@ -5,37 +5,9 @@
 
 pub mod json;
 
-use neuma::{Engraving, Initial, LastLine, LayoutOptions, MetricsTable, NoteMap, NoteRef, StyleOptions, SvgOptions, Weights, parse};
+use neuma::{Engraving, Initial, LastLine, LayoutOptions, NoteMap, NoteRef, StyleOptions, SvgOptions, Weights, parse};
 
-/// Metrics for the lyric face the SVG names (EB Garamond): the version Google Fonts serves,
-/// and the EB Garamond 12 release. They differ by about 1% in places.
-const EB_GARAMOND_GOOGLE: &[u8] = include_bytes!("../../neuma-metrics/tables/eb-garamond-google.bin");
-const EB_GARAMOND_12: &[u8] = include_bytes!("../../neuma-metrics/tables/eb-garamond-12.bin");
-
-thread_local! {
-    static GOOGLE: MetricsTable = MetricsTable::from_bytes(EB_GARAMOND_GOOGLE).unwrap_or_default();
-    static BUNDLED: MetricsTable = MetricsTable::from_bytes(EB_GARAMOND_12).unwrap_or_default();
-}
-
-/// Which EB Garamond the page loads, so lyrics are measured as they will be drawn.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum Font {
-    /// From Google Fonts.
-    #[default]
-    Google,
-    /// The EB Garamond 12 files.
-    Garamond12,
-}
-
-impl Font {
-    /// The metrics table for this font, in the format [`MetricsTable::from_bytes`] reads.
-    pub fn table_bytes(self) -> &'static [u8] {
-        match self {
-            Font::Google => EB_GARAMOND_GOOGLE,
-            Font::Garamond12 => EB_GARAMOND_12,
-        }
-    }
-}
+pub use neuma::Font;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ChantOptions {
@@ -87,10 +59,7 @@ impl Chant {
             },
             ..StyleOptions::default()
         };
-        let engraving = match opts.font {
-            Font::Google => GOOGLE.with(|m| parsed.score.engrave(m, &style)),
-            Font::Garamond12 => BUNDLED.with(|m| parsed.score.engrave(m, &style)),
-        };
+        let engraving = parsed.score.engrave(opts.font.table(), &style);
         let mut all = parsed.diagnostics;
         all.extend(engraving.diagnostics.iter().cloned());
         let mut diagnostics = String::new();

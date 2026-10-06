@@ -1,0 +1,5 @@
+[bindings.kotlin]
+package_name = "org.orthodoxwest.neuma"
+
+[bindings.swift]
+module_name = "Neuma"
