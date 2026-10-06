@@ -1110,3 +1110,35 @@ fn a_score_takes_as_few_lines_as_gregorio_would() {
         assert!(gap < space - 0.3, "{gap}");
     }
 }
+
+#[test]
+fn source_map_links_every_note_both_ways() {
+    for (name, src) in corpus() {
+        let eng = parse(&src).score.engrave(&ApproxMeasure, &StyleOptions::default());
+        let layout = eng.layout(500.0, &LayoutOptions::default());
+        let map = layout.source_map();
+        let notes = layout.notes(&Weights::SOLESMES);
+        assert_eq!(map.notes.len(), notes.notes.len(), "{name}");
+        for (e, n) in map.notes.iter().zip(&notes.notes) {
+            assert_eq!((e.index, &e.span), (n.id, &n.span), "{name}");
+            // Score to source: the notehead's center is a note.
+            let hit = map.source_at(n.x, n.y).unwrap();
+            assert_eq!(hit.kind, neuma::ElementKind::Note, "{name}: note {}", n.id);
+            // Source to score: a caret on the note highlights it and its syllable.
+            let at = map.at(e.span.start);
+            assert!(
+                at.iter().any(|a| a.kind == neuma::ElementKind::Note && a.index == n.id),
+                "{name}: note {}",
+                n.id
+            );
+            assert!(
+                at.iter()
+                    .any(|a| a.kind == neuma::ElementKind::Syllable && a.span.start <= e.span.start && e.span.end <= a.span.end),
+                "{name}"
+            );
+        }
+        for b in &map.bars {
+            assert!(src.get(b.span.clone()).is_some_and(|t| !t.is_empty()), "{name}: bar {}", b.index);
+        }
+    }
+}

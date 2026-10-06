@@ -17,6 +17,7 @@ pub mod layout;
 pub mod metrics;
 pub mod notes;
 pub mod score;
+pub mod source;
 pub mod summary;
 #[cfg(feature = "svg")]
 pub mod svg;
@@ -34,6 +35,7 @@ pub use layout::{LastLine, Layout, LayoutOptions};
 pub use metrics::MetricsTable;
 pub use notes::{MappedNote, NoteMap, Pause, PauseKind, Weights};
 pub use score::{Score, ScoreBuilder};
+pub use source::{Element, ElementKind, SourceMap, Utf16Index};
 pub use summary::{Mode, OfficePart, Summary, summarize};
 #[cfg(feature = "svg")]
 pub use svg::SvgOptions;

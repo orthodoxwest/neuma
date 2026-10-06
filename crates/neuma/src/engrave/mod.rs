@@ -186,6 +186,16 @@ pub(crate) struct HeadBox {
     pub h: f32,
 }
 
+/// A bar in a segment, for the source map: its score-wide index and ink box.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct BarBox {
+    pub bar: u32,
+    pub x: f32,
+    pub w: f32,
+    pub top: f32,
+    pub bottom: f32,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Segment {
     pub syllable: u32,
@@ -194,6 +204,7 @@ pub(crate) struct Segment {
     pub word_start: bool,
     pub pieces: Vec<Piece>,
     pub heads: Vec<HeadBox>,
+    pub bars: Vec<BarBox>,
     /// Horizontal extent of the notation, if there is any.
     pub ink: Option<(f32, f32)>,
     pub lyric: Option<LyricBox>,
@@ -279,6 +290,9 @@ pub struct Engraving {
     pub(crate) notes: Vec<NoteInfo>,
     pub(crate) syllable_text: Vec<String>,
     pub(crate) syllable_word: Vec<u32>,
+    /// Each syllable's source span, and each bar's, in source order.
+    pub(crate) syllable_spans: Vec<std::ops::Range<usize>>,
+    pub(crate) bar_spans: Vec<std::ops::Range<usize>>,
     pub(crate) lyric_size: f32,
     pub(crate) hyphen: f32,
     pub(crate) word_space: f32,
@@ -470,6 +484,7 @@ struct Engraver<'a> {
 struct Open {
     pieces: Vec<Piece>,
     heads: Vec<HeadBox>,
+    bars: Vec<BarBox>,
     x: f32,
     gap: Option<f32>,
     starts_with_clef: bool,
@@ -482,6 +497,7 @@ impl Open {
         Open {
             pieces: Vec::new(),
             heads: Vec::new(),
+            bars: Vec::new(),
             x: 0.0,
             gap: None,
             starts_with_clef: false,
@@ -588,6 +604,7 @@ impl Engraver<'_> {
             word_start,
             pieces: open.pieces,
             heads: open.heads,
+            bars: open.bars,
             ink,
             lyric: None,
             after: Break::Allowed,
@@ -731,6 +748,8 @@ impl Score {
             first_lyric = Some((si, rest));
         }
         let mut syllable_text = Vec::new();
+        let mut syllable_spans = Vec::with_capacity(self.syllables.len());
+        let mut bar_spans = Vec::new();
         let mut syllable_word = Vec::new();
         let mut alt_text = String::new();
         let mut word = 0u32;
@@ -752,6 +771,7 @@ impl Score {
                 alt_text.push_str(&plain);
             }
             syllable_text.push(plain);
+            syllable_spans.push(syl.span.clone());
             e.reset_alterations(syl.word_start, false);
             let pauses_before = e.pauses.len();
             // This syllable's notes are the ones pushed from here on.
@@ -872,6 +892,18 @@ impl Score {
                         e.reset_alterations(false, true);
                         let x = open.advance(SYLLABLE_GAP);
                         let (pieces, w) = bar_pieces(b.kind, b.high, x);
+                        let (top, bottom) = pieces
+                            .iter()
+                            .map(Piece::y_extent)
+                            .fold((f32::MAX, f32::MIN), |(t, b), (pt, pb)| (t.min(pt), b.max(pb)));
+                        open.bars.push(BarBox {
+                            bar: bar_spans.len() as u32,
+                            x,
+                            w,
+                            top,
+                            bottom,
+                        });
+                        bar_spans.push(b.span.clone());
                         open.pieces.extend(pieces);
                         open.x = x + w;
                         e.pauses.push((e.notes.len() as u32, PauseKind::Bar(b.kind)));
@@ -1095,6 +1127,8 @@ impl Score {
             clef: e.initial_clef.unwrap_or(DEFAULT_CLEF),
             notes: e.notes,
             syllable_text,
+            syllable_spans,
+            bar_spans,
             syllable_word,
             lyric_size: size,
             hyphen,
