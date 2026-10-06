@@ -19,6 +19,8 @@ pub struct SvgOptions {
     pub prefix: String,
     /// Include the default `<style>` block.
     pub style: bool,
+    /// Mark each note's ink with `data-note` and each lyric with `data-syllable`.
+    pub ids: bool,
 }
 
 impl Default for SvgOptions {
@@ -27,6 +29,7 @@ impl Default for SvgOptions {
             font_family: "'EB Garamond', serif".into(),
             prefix: "neuma".into(),
             style: true,
+            ids: true,
         }
     }
 }
@@ -69,176 +72,310 @@ impl Layout<'_> {
     pub fn svg(&self, opts: &SvgOptions) -> String {
         self.display().svg(opts)
     }
+
+    /// The SVG in parts, for an editor that patches its page rather than replacing it: each
+    /// line's SVG is positioned relative to the line's top, so a line that only moves up or
+    /// down keeps the same string. With `opts.ids` off, a line also keeps its string when
+    /// notes are added or removed before it.
+    pub fn svg_parts(&self, opts: &SvgOptions) -> SvgParts {
+        let p = prefix(opts);
+        let s = self.scale;
+        let one = |line: crate::layout::PlacedLine, initial| Layout {
+            eng: self.eng,
+            lines: vec![line],
+            initial,
+            width: self.width,
+            height: self.height,
+            scale: self.scale,
+        };
+        let mut used = BTreeSet::new();
+        let mut glyph_scale = None;
+        let mut lines = Vec::with_capacity(self.lines.len());
+        for line in &self.lines {
+            let top = line.top;
+            let mut shifted = line.clone();
+            shifted.top = 0.0;
+            shifted.staff -= top;
+            shifted.baseline -= top;
+            shifted.bottom -= top;
+            let items = one(shifted, None).display().items;
+            note_glyphs(&items, &mut used, &mut glyph_scale);
+            let mut svg = String::with_capacity(items.len() * 96);
+            write_items(&mut svg, &items, &p, opts.ids);
+            lines.push(SvgLine { top: top * s, svg });
+        }
+        // The initial and annotations, which hang beside the first lines.
+        let mut rest = String::new();
+        if let Some(first) = self.lines.first()
+            && self.initial.is_some()
+        {
+            let on_line = one(first.clone(), None).display().items.len();
+            let items = one(first.clone(), self.initial).display().items;
+            let items = &items[on_line.min(items.len())..];
+            note_glyphs(items, &mut used, &mut glyph_scale);
+            write_items(&mut rest, items, &p, opts.ids);
+        }
+        let (width, height) = self.size();
+        let mut head = String::new();
+        write_head(&mut head, width, height, &self.eng.alt_text, &p, opts);
+        let mut defs = String::new();
+        write_defs(&mut defs, &used, glyph_scale.unwrap_or(1.0), &p);
+        SvgParts {
+            width,
+            height,
+            head,
+            defs,
+            lines,
+            rest,
+        }
+    }
+}
+
+/// A layout's SVG in parts (see [`Layout::svg_parts`]).
+#[derive(Clone, Debug, PartialEq)]
+pub struct SvgParts {
+    pub width: f32,
+    pub height: f32,
+    /// The `<svg>` start tag, with its size, class and label, and the `<style>` element if
+    /// asked for.
+    pub head: String,
+    /// The `<path>` elements of the glyphs the score uses, to go inside a `<defs>` element.
+    pub defs: String,
+    pub lines: Vec<SvgLine>,
+    /// Everything that isn't on a line (the initial and its annotations), in page
+    /// coordinates.
+    pub rest: String,
+}
+
+/// One line of a score's SVG.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SvgLine {
+    /// Where the line's top falls on the page, in output units.
+    pub top: f32,
+    /// The line's elements, positioned relative to its top: draw them translated down by
+    /// `top`.
+    pub svg: String,
+}
+
+impl SvgParts {
+    /// The parts put together as one SVG document, each line in a translated `<g>`.
+    pub fn to_svg(&self) -> String {
+        let mut out = String::with_capacity(self.head.len() + self.defs.len() + self.lines.iter().map(|l| l.svg.len() + 40).sum::<usize>());
+        out.push_str(&self.head);
+        if !self.defs.is_empty() {
+            out.push_str("<defs>");
+            out.push_str(&self.defs);
+            out.push_str("</defs>");
+        }
+        for line in &self.lines {
+            out.push_str("<g transform=\"translate(0 ");
+            push_n(&mut out, line.top);
+            out.push_str(")\">");
+            out.push_str(&line.svg);
+            out.push_str("</g>");
+        }
+        out.push_str(&self.rest);
+        out.push_str("</svg>");
+        out
+    }
+}
+
+/// The class and id prefix, sanitized.
+fn prefix(opts: &SvgOptions) -> String {
+    let p: String = opts
+        .prefix
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_'))
+        .collect();
+    if p.is_empty() { "neuma".into() } else { p }
+}
+
+/// Adds the glyphs `items` use to `used`, and notes their scale.
+fn note_glyphs(items: &[Item], used: &mut BTreeSet<u16>, scale: &mut Option<f32>) {
+    for i in items {
+        if let Item::Glyph { glyph, scale: s, .. } = i {
+            used.insert(*glyph);
+            scale.get_or_insert(*s);
+        }
+    }
+}
+
+fn write_head(out: &mut String, width: f32, height: f32, alt_text: &str, p: &str, opts: &SvgOptions) {
+    let _ = write!(
+        out,
+        r#"<svg xmlns="http://www.w3.org/2000/svg" class="{p}" width="{w}" height="{h}" viewBox="0 0 {w} {h}" role="img" aria-label=""#,
+        w = n(width),
+        h = n(height)
+    );
+    escape(alt_text, out);
+    out.push_str("\">");
+    if opts.style {
+        let _ = write!(
+            out,
+            "<style>.{p}{{fill:currentColor}}.{p} text{{font-family:{f};font-variant-ligatures:none;font-kerning:normal}}.{p} .{p}-rubric{{fill:var(--{p}-rubric,#a3211c)}}.{p} .{p}-sign{{stroke:currentColor;stroke-width:.04em}}.{p} .{p}-rubric.{p}-sign,.{p} .{p}-rubric .{p}-sign{{stroke:var(--{p}-rubric,#a3211c)}}</style>",
+            f = opts
+                .font_family
+                .chars()
+                .filter(|&c| xml_char(c) && !c.is_control() && !matches!(c, '<' | '>' | '&' | '{' | '}' | ';'))
+                .collect::<String>()
+        );
+    }
+}
+
+fn write_defs(out: &mut String, used: &BTreeSet<u16>, scale: f32, p: &str) {
+    for id in used {
+        if let Some(g) = GlyphId::from_id(*id) {
+            let _ = write!(
+                out,
+                r#"<path id="{p}-g{id}" transform="scale({})" d="{}"/>"#,
+                format_scale(scale),
+                g.path()
+            );
+        }
+    }
 }
 
 impl DisplayList {
     pub fn svg(&self, opts: &SvgOptions) -> String {
-        let p: String = opts
-            .prefix
-            .chars()
-            .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_'))
-            .collect();
-        let p = if p.is_empty() { "neuma" } else { p.as_str() };
+        let p = prefix(opts);
         let mut out = String::with_capacity(1024 + self.items.len() * 96);
-        let _ = write!(
-            out,
-            r#"<svg xmlns="http://www.w3.org/2000/svg" class="{p}" width="{w}" height="{h}" viewBox="0 0 {w} {h}" role="img" aria-label=""#,
-            w = n(self.width),
-            h = n(self.height)
-        );
-        escape(&self.alt_text, &mut out);
-        out.push_str("\">");
-        if opts.style {
-            let _ = write!(
-                out,
-                "<style>.{p}{{fill:currentColor}}.{p} text{{font-family:{f};font-variant-ligatures:none;font-kerning:normal}}.{p} .{p}-rubric{{fill:var(--{p}-rubric,#a3211c)}}.{p} .{p}-sign{{stroke:currentColor;stroke-width:.04em}}.{p} .{p}-rubric.{p}-sign,.{p} .{p}-rubric .{p}-sign{{stroke:var(--{p}-rubric,#a3211c)}}</style>",
-                f = opts
-                    .font_family
-                    .chars()
-                    .filter(|&c| xml_char(c) && !c.is_control() && !matches!(c, '<' | '>' | '&' | '{' | '}' | ';'))
-                    .collect::<String>()
-            );
-        }
-        let used: BTreeSet<u16> = self
-            .items
-            .iter()
-            .filter_map(|i| if let Item::Glyph { glyph, .. } = i { Some(*glyph) } else { None })
-            .collect();
-        let scale = self
-            .items
-            .iter()
-            .find_map(|i| if let Item::Glyph { scale, .. } = i { Some(*scale) } else { None })
-            .unwrap_or(1.0);
+        write_head(&mut out, self.width, self.height, &self.alt_text, &p, opts);
+        let mut used = BTreeSet::new();
+        let mut scale = None;
+        note_glyphs(&self.items, &mut used, &mut scale);
         if !used.is_empty() {
             out.push_str("<defs>");
-            for id in &used {
-                if let Some(g) = GlyphId::from_id(*id) {
-                    let _ = write!(
-                        out,
-                        r#"<path id="{p}-g{id}" transform="scale({})" d="{}"/>"#,
-                        format_scale(scale),
-                        g.path()
-                    );
-                }
-            }
+            write_defs(&mut out, &used, scale.unwrap_or(1.0), &p);
             out.push_str("</defs>");
         }
-        for item in &self.items {
-            match item {
-                Item::Glyph {
-                    glyph,
-                    x,
-                    y,
-                    role,
-                    note,
-                    through,
-                    ..
-                } => {
-                    out.push_str("<use href=\"#");
-                    out.push_str(p);
-                    out.push_str("-g");
-                    crate::decimal::push_u64(&mut out, *glyph as u64);
-                    out.push_str("\" x=\"");
-                    push_n(&mut out, *x);
-                    out.push_str("\" y=\"");
-                    push_n(&mut out, *y);
-                    push_class(&mut out, p, role.class());
-                    data_note(&mut out, *note, *through);
-                    out.push_str("/>");
-                }
-                Item::Rect {
-                    x,
-                    y,
-                    w,
-                    h,
-                    role,
-                    note,
-                    through,
-                } => {
-                    out.push_str("<rect x=\"");
-                    push_n(&mut out, *x);
-                    out.push_str("\" y=\"");
-                    push_n(&mut out, *y);
-                    out.push_str("\" width=\"");
-                    push_n(&mut out, *w);
-                    out.push_str("\" height=\"");
-                    push_n(&mut out, *h);
-                    push_class(&mut out, p, role.class());
-                    data_note(&mut out, *note, *through);
-                    out.push_str("/>");
-                }
-                Item::Text {
-                    x,
-                    baseline,
-                    size,
-                    runs,
-                    role,
-                    syllable,
-                } => {
-                    let class = match role {
-                        TextRole::Lyric => "lyric",
-                        TextRole::Hyphen => "hyphen",
-                        TextRole::Initial => "initial",
-                        TextRole::Annotation => "annotation",
-                        TextRole::Rubric => "rubric",
-                    };
-                    out.push_str("<text x=\"");
-                    push_n(&mut out, *x);
-                    out.push_str("\" y=\"");
-                    push_n(&mut out, *baseline);
-                    out.push_str("\" font-size=\"");
-                    push_n(&mut out, *size);
-                    push_class(&mut out, p, class);
-                    if let Some(s) = syllable {
-                        out.push_str(" data-syllable=\"");
-                        crate::decimal::push_u64(&mut out, *s as u64);
-                        out.push('"');
-                    }
-                    out.push('>');
-                    for r in runs {
-                        let st = r.style;
-                        let mut attrs = String::new();
-                        if st.italic {
-                            attrs.push_str(r#" font-style="italic""#);
-                        }
-                        if st.bold {
-                            attrs.push_str(r#" font-weight="bold""#);
-                        }
-                        if st.small_caps {
-                            attrs.push_str(r#" font-variant="small-caps""#);
-                        }
-                        if st.underline {
-                            attrs.push_str(r#" text-decoration="underline""#);
-                        }
-                        // ℣ and ℟ are thin in text faces; GregorioTeX's are heavier, so the style
-                        // block strokes them.
-                        let sign = r.text.contains(['℣', '℟']);
-                        match (st.rubric && *role != TextRole::Rubric, sign) {
-                            (true, true) => {
-                                let _ = write!(attrs, r#" class="{p}-rubric {p}-sign""#);
-                            }
-                            (true, false) => {
-                                let _ = write!(attrs, r#" class="{p}-rubric""#);
-                            }
-                            (false, true) => {
-                                let _ = write!(attrs, r#" class="{p}-sign""#);
-                            }
-                            (false, false) => {}
-                        }
-                        if attrs.is_empty() {
-                            escape(&r.text, &mut out);
-                        } else {
-                            let _ = write!(out, "<tspan{attrs}>");
-                            escape(&r.text, &mut out);
-                            out.push_str("</tspan>");
-                        }
-                    }
-                    out.push_str("</text>");
-                }
-            }
-        }
+        write_items(&mut out, &self.items, &p, opts.ids);
         out.push_str("</svg>");
         out
+    }
+}
+
+/// Writes the elements for `items`; `ids` adds the `data-note` and `data-syllable`
+/// attributes.
+fn write_items(out: &mut String, items: &[Item], p: &str, ids: bool) {
+    for item in items {
+        match item {
+            Item::Glyph {
+                glyph,
+                x,
+                y,
+                role,
+                note,
+                through,
+                ..
+            } => {
+                out.push_str("<use href=\"#");
+                out.push_str(p);
+                out.push_str("-g");
+                crate::decimal::push_u64(out, *glyph as u64);
+                out.push_str("\" x=\"");
+                push_n(out, *x);
+                out.push_str("\" y=\"");
+                push_n(out, *y);
+                push_class(out, p, role.class());
+                if ids {
+                    data_note(out, *note, *through);
+                }
+                out.push_str("/>");
+            }
+            Item::Rect {
+                x,
+                y,
+                w,
+                h,
+                role,
+                note,
+                through,
+            } => {
+                out.push_str("<rect x=\"");
+                push_n(out, *x);
+                out.push_str("\" y=\"");
+                push_n(out, *y);
+                out.push_str("\" width=\"");
+                push_n(out, *w);
+                out.push_str("\" height=\"");
+                push_n(out, *h);
+                push_class(out, p, role.class());
+                if ids {
+                    data_note(out, *note, *through);
+                }
+                out.push_str("/>");
+            }
+            Item::Text {
+                x,
+                baseline,
+                size,
+                runs,
+                role,
+                syllable,
+            } => {
+                let class = match role {
+                    TextRole::Lyric => "lyric",
+                    TextRole::Hyphen => "hyphen",
+                    TextRole::Initial => "initial",
+                    TextRole::Annotation => "annotation",
+                    TextRole::Rubric => "rubric",
+                };
+                out.push_str("<text x=\"");
+                push_n(out, *x);
+                out.push_str("\" y=\"");
+                push_n(out, *baseline);
+                out.push_str("\" font-size=\"");
+                push_n(out, *size);
+                push_class(out, p, class);
+                if let Some(s) = syllable
+                    && ids
+                {
+                    out.push_str(" data-syllable=\"");
+                    crate::decimal::push_u64(out, *s as u64);
+                    out.push('"');
+                }
+                out.push('>');
+                for r in runs {
+                    let st = r.style;
+                    let mut attrs = String::new();
+                    if st.italic {
+                        attrs.push_str(r#" font-style="italic""#);
+                    }
+                    if st.bold {
+                        attrs.push_str(r#" font-weight="bold""#);
+                    }
+                    if st.small_caps {
+                        attrs.push_str(r#" font-variant="small-caps""#);
+                    }
+                    if st.underline {
+                        attrs.push_str(r#" text-decoration="underline""#);
+                    }
+                    // ℣ and ℟ are thin in text faces; GregorioTeX's are heavier, so the style
+                    // block strokes them.
+                    let sign = r.text.contains(['℣', '℟']);
+                    match (st.rubric && *role != TextRole::Rubric, sign) {
+                        (true, true) => {
+                            let _ = write!(attrs, r#" class="{p}-rubric {p}-sign""#);
+                        }
+                        (true, false) => {
+                            let _ = write!(attrs, r#" class="{p}-rubric""#);
+                        }
+                        (false, true) => {
+                            let _ = write!(attrs, r#" class="{p}-sign""#);
+                        }
+                        (false, false) => {}
+                    }
+                    if attrs.is_empty() {
+                        escape(&r.text, out);
+                    } else {
+                        let _ = write!(out, "<tspan{attrs}>");
+                        escape(&r.text, out);
+                        out.push_str("</tspan>");
+                    }
+                }
+                out.push_str("</text>");
+            }
+        }
     }
 }
 
