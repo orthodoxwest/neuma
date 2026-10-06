@@ -121,7 +121,14 @@ pub(super) fn parse(text: &str, offset: usize, state: &mut LyricState, sink: &mu
                     "v" => {
                         let end = text[after..].find("</v>").map_or(text.len(), |n| after + n);
                         let inner = &text[after..end];
-                        if !inner.contains(['\\', '{', '}', '$', '~', '^', '_', '%', '&', '#']) {
+                        if let Some(sign) = tex_sign(inner) {
+                            let mut st = style(state);
+                            st.rubric = true;
+                            // As consonants, like `<sp>` characters; `‡` has no `<sp>` form.
+                            for ch in sign.chars() {
+                                out.push(ch, st, ch != '‡');
+                            }
+                        } else if !inner.contains(['\\', '{', '}', '$', '~', '^', '_', '%', '&', '#']) {
                             // No TeX in it, so TeX would print it as it stands: `<v>(</v>`.
                             for ch in inner.chars() {
                                 out.push(ch, style(state), state.elision > 0);
@@ -180,6 +187,19 @@ fn style(state: &LyricState) -> TextStyle {
         underline: state.underline > 0,
         rubric: state.color > 0,
     }
+}
+
+/// The sign a common verbatim star or cross macro draws, as the matching `<sp>` character.
+fn tex_sign(inner: &str) -> Option<&'static str> {
+    let name: String = inner.chars().filter(|c| !matches!(c, ' ' | '{' | '}' | '$')).collect();
+    let name = name.trim_matches('\\');
+    Some(match name {
+        // GregorioTeX's eight- and six-pointed stars, set where the books print an asterisk.
+        "greheightstar" | "gresixstar" | "GreStar" | "star" => "*",
+        "grecross" | "grealtcross" | "GreDagger" | "gredagger" | "dag" | "dagger" => "†",
+        "ddag" | "ddagger" => "‡",
+        _ => return None,
+    })
 }
 
 /// Gregorio's default special characters.

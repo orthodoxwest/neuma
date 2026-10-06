@@ -254,7 +254,7 @@ tokens real AWRV material uses and moves rows between E1 and E2.
 | `<pr>`, `<pr:n>` | A |
 | `<alt>…</alt>` above-lines text | E2 |
 | `[…]` and `[/]` translations | E2 |
-| `<v>…</v>` verbatim TeX | A (printed as it stands when it holds no TeX, as `<v>(</v>`; otherwise dropped, with a warning when it held visible text) |
+| `<v>…</v>` verbatim TeX | A (printed as it stands when it holds no TeX, as `<v>(</v>`; GregorioTeX's stars and crosses, as `\greheightstar`, print as `*`, `†` or `‡`; otherwise dropped, with a warning when it held visible text) |
 
 ### 6.3 Notes, shapes and signs
 

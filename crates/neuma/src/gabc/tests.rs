@@ -347,3 +347,19 @@ fn notes_with_gregorio_6_syntax() {
     assert_eq!(spaces, [&Figure::Space(Space::LargeNoBreak), &Figure::Space(Space::Large)]);
     assert!(p.diagnostics.is_empty(), "{:?}", p.diagnostics);
 }
+
+#[test]
+fn verbatim_stars_and_crosses_print() {
+    // From GregoBase: `<v>\greheightstar</v>` is the asterisk after the intonation.
+    let p = parse(r"(c4) Ec(g)ce <v>\greheightstar</v>(h) quam(g) <v>\ \GreDagger</v>(g) bo<v>\ddag\ </v>(h)");
+    let s = &p.score.syllables;
+    assert_eq!(s[2].text.plain(), "ce *");
+    assert_eq!(s[4].text.plain(), "†");
+    assert_eq!(s[5].text.plain(), "bo‡");
+    assert!(s[2].text.runs.iter().any(|r| r.text == "*" && r.style.rubric));
+    assert!(p.diagnostics.is_empty(), "{:?}", p.diagnostics);
+    let again = parse(&p.score.to_gabc());
+    assert_eq!(again.score.syllables[2].text, s[2].text);
+    assert_eq!(again.score.syllables[4].text, s[4].text);
+    assert_eq!(again.score.syllables[5].text, s[5].text);
+}
