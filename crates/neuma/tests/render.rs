@@ -299,27 +299,16 @@ fn tall_initials_fit_the_staves_they_span() {
         let eng = parse(src).score.engrave(&ApproxMeasure, &style);
         let list = eng.layout(width, &LayoutOptions::default()).display();
         assert_initial_clear_of_staff(&list, src);
-        let (_, baseline, size, width) = initial_item(&list).unwrap();
+        let (_, baseline, size, _) = initial_item(&list).unwrap();
         let span = list.lines.len().min(2);
         let first = &list.lines[0];
         let last = &list.lines[span - 1];
         let sp = list.staff_space;
         assert!((baseline - (last.staff + 3.0 * sp)).abs() < 0.01, "{src}");
-        // Cap height 0.65 em: the capital's top is the first staff's top line, or a little
-        // lower when the capital had to narrow to fit its column.
+        // Cap height 0.65 em: the capital's top is the first staff's top line, since the
+        // breaker widens the column rather than narrowing the capital.
         let top = baseline - 0.65 * size;
-        let column_bound = (list.items.iter().find_map(|i| match i {
-            Item::Rect {
-                x,
-                role: neuma::Ink::Staff,
-                ..
-            } => Some(*x),
-            _ => None,
-        }))
-        .unwrap();
-        let narrowed = width >= column_bound - 2.0 * sp;
-        assert!(top >= first.staff - 3.0 * sp - 0.01, "{src}");
-        assert!(narrowed || (top - (first.staff - 3.0 * sp)).abs() < 0.01, "{src}");
+        assert!((top - (first.staff - 3.0 * sp)).abs() < 0.01, "{src}");
         assert!(baseline <= list.height, "{src}");
         for a in list.items.iter().filter_map(|i| match i {
             Item::Text {

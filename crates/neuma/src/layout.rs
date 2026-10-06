@@ -78,6 +78,8 @@ pub(crate) struct PlacedInitial {
     pub size: f32,
     /// Width of the column the initial and annotations share.
     pub column: f32,
+    /// Width the capital would take to span its staves, before narrowing to the column.
+    pub natural_width: f32,
 }
 
 /// A layout at one width.
@@ -234,15 +236,19 @@ impl Engraving {
 
     /// Lays the engraving out at `width` output units.
     pub fn layout(&self, width: f32, opts: &LayoutOptions) -> Layout<'_> {
-        let first = self.layout_with(width, opts, None);
+        let mut layout = self.layout_with(width, opts, None);
         // A capital spanning staves farther apart than the nominal pitch is wider than the
-        // column the breaker left for it; break again with room for it.
-        match (&self.initial, &first.initial) {
-            (Some(init), Some(placed)) if placed.size * init.advance_em > placed.column + 0.01 => {
-                self.layout_with(width, opts, Some(placed.size * init.advance_em))
+        // column the breaker left for it; break again with room for it. A new break can
+        // change the span, so allow one more try before narrowing the capital to fit.
+        for _ in 0..2 {
+            match layout.initial {
+                Some(placed) if placed.natural_width > placed.column + 0.01 => {
+                    layout = self.layout_with(width, opts, Some(placed.natural_width));
+                }
+                _ => break,
             }
-            _ => first,
         }
+        layout
     }
 
     fn layout_with(&self, width: f32, opts: &LayoutOptions, column: Option<f32>) -> Layout<'_> {
@@ -452,7 +458,8 @@ impl Engraving {
             let first = lines.first()?;
             let last = &lines[init.lines.min(lines.len()) - 1];
             let cap = (last.staff + 3.0) - (first.staff - 3.0);
-            let mut size = cap / CAP_HEIGHT;
+            let natural = cap / CAP_HEIGHT;
+            let mut size = natural;
             if init.advance_em > 0.0 {
                 size = size.min(column / init.advance_em);
             }
@@ -464,6 +471,7 @@ impl Engraving {
                 baseline,
                 size,
                 column,
+                natural_width: init.advance_em * natural,
             })
         });
         Layout {
