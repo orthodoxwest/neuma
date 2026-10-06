@@ -10,6 +10,9 @@ repository.workspace = true
 [dependencies]
 neuma = { path = "../neuma" }
 neuma-tones = { path = "../neuma-tones" }
+# Shapes text with the booklet's font (kerning, small caps) and reads its outlines, so measured
+# and drawn text agree. Already in the workspace through neuma-metrics.
+rustybuzz = "0.20"
 
 [lints]
 workspace = true
