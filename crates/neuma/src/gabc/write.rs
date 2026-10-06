@@ -8,6 +8,7 @@ use crate::score::{
 };
 
 /// GABC for `score`. Parsing the result gives back an equal score, apart from source spans.
+/// GABC can't express a `%` in a header value (it starts a comment), so one is lost.
 pub fn to_gabc(score: &Score) -> String {
     let mut out = String::new();
     for (name, value) in &score.header.fields {
@@ -104,16 +105,30 @@ fn special_source(c: char) -> Option<&'static str> {
     })
 }
 
+/// Whether `text` is made only of characters that `<sp>` produces: a bare `A` counts only
+/// as part of `A\u{0336}`, and an acute only after `œ`.
+fn all_special(text: &str) -> bool {
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        let ok = match c {
+            'A' => chars.next_if_eq(&'\u{0336}').is_some(),
+            'œ' => chars.next_if_eq(&'\u{0301}').is_some() || special_source(c).is_some(),
+            '*' => true,
+            _ => special_source(c).is_some(),
+        };
+        if !ok {
+            return false;
+        }
+    }
+    true
+}
+
 fn write_lyric(out: &mut String, lyric: &Lyric, style: &mut TextStyle) {
     let mut index = 0;
     for run in &lyric.runs {
         // Special characters were parsed as rubric consonant runs; write them back as `<sp>`.
         let mut run_style = run.style;
-        let is_special = run.consonant
-            && run
-                .text
-                .chars()
-                .all(|c| special_source(c).is_some() || c == '*' || c == '\u{0336}' || c == '\u{0301}' || c == 'A');
+        let is_special = run.consonant && all_special(&run.text);
         if is_special && matches!(run.text.as_str(), "℣" | "℟" | "*" | "†" | "A\u{0336}") {
             run_style.rubric = false;
         }

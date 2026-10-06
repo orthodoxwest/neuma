@@ -39,6 +39,9 @@ const CUSTOS_GAP: f32 = INTRA;
 const HYPHEN_PAD: f32 = 0.25;
 /// How far each gap may stretch before a line counts as loose, in staff spaces.
 const STRETCH: f32 = 1.5;
+/// The widest column laid out, in output units and in staff spaces; wider requests are
+/// clamped to it.
+const MAX_WIDTH: f32 = 1.0e6;
 /// Space between stacked lines, in staff spaces.
 const LINE_GAP: f32 = 1.0;
 
@@ -188,6 +191,16 @@ impl Engraving {
                 ink_end = ink_end.max(x + r);
             }
         }
+        Trial {
+            xs,
+            natural: self.natural(&cur, right, ink_end, last),
+            ink_end,
+        }
+    }
+
+    /// The width a line ending at `last` needs: its segments, plus a trailing hyphen and the
+    /// custos.
+    fn natural(&self, cur: &Cursor, mut right: f32, ink_end: f32, last: usize) -> f32 {
         if cur.word_continues
             && let Some(r) = cur.lyric_right
         {
@@ -199,17 +212,20 @@ impl Engraving {
             let (_, w) = custos_piece(p, 0.0);
             right = right.max(ink_end + CUSTOS_GAP + w);
         }
-        Trial {
-            xs,
-            natural: right,
-            ink_end,
-        }
+        right
     }
 
     /// Lays the engraving out at `width` output units.
     pub fn layout(&self, width: f32, opts: &LayoutOptions) -> Layout<'_> {
-        let scale = if opts.scale > 0.0 { opts.scale } else { 1.0 };
-        let target = width / scale;
+        let scale = if opts.scale > 0.0 && opts.scale.is_finite() {
+            opts.scale
+        } else {
+            1.0
+        };
+        // A non-finite or negative width can't be laid out; treat it as the narrowest or the
+        // widest column so the output stays finite.
+        let width = if width.is_nan() { 0.0 } else { width.clamp(0.0, MAX_WIDTH) };
+        let target = (width / scale).min(MAX_WIDTH);
         let n = self.segments.len();
         if n == 0 {
             return Layout {
@@ -226,13 +242,29 @@ impl Engraving {
         for first in 0..n {
             let Some((base, _)) = best[first] else { continue };
             let (_, start) = self.line_start(first);
+            // Packs the line one segment at a time, as `trial` does, so each candidate costs
+            // one step instead of a repack.
+            let mut cur = Cursor {
+                ink_right: None,
+                lyric_right: None,
+                word_continues: false,
+                x: start,
+            };
+            let mut right = 0.0f32;
+            let mut ink_end = start;
             for last in first..n {
                 let seg = &self.segments[last];
                 let end_of_score = last + 1 == n;
                 let forced = matches!(seg.after, Break::Forced { .. });
                 let breakable = end_of_score || forced || seg.after == Break::Allowed;
-                let trial = self.trial(first, last, start);
-                let over = trial.natural > target;
+                let x = place(&cur, seg, self.hyphen, self.word_space, start);
+                cur = advance(&cur, seg, x);
+                right = right.max(x + seg.right());
+                if let Some((_, r)) = seg.ink {
+                    ink_end = ink_end.max(x + r);
+                }
+                let natural = self.natural(&cur, right, ink_end, last);
+                let over = natural > target;
                 if breakable {
                     let gaps = (last - first) as f32;
                     let ragged =
@@ -242,9 +274,11 @@ impl Engraving {
                     } else if ragged {
                         0.0
                     } else if gaps == 0.0 {
-                        if target - trial.natural > 0.5 { 5000.0 } else { 0.0 }
+                        // As bad as the loosest line with gaps, so splitting a loose line
+                        // into one-segment lines never looks cheaper.
+                        if target - natural > 0.5 { 10000.0 } else { 0.0 }
                     } else {
-                        let r = (target - trial.natural) / (gaps * STRETCH);
+                        let r = (target - natural) / (gaps * STRETCH);
                         (100.0 * r * r * r).min(10000.0)
                     };
                     if badness.is_finite() {
