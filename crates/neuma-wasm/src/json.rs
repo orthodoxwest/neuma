@@ -1,6 +1,5 @@
 //! The JSON the browser package returns, written by hand so the module stays small. The CLI
-//! prints the same shapes (`neuma notes`), so recordings can be aligned offline against the
-//! note ids a page uses.
+//! prints the same shapes (`neuma notes`), with the same note ids.
 
 use std::fmt::Write as _;
 

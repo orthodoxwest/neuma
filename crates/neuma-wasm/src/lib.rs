@@ -8,7 +8,7 @@ pub mod json;
 use neuma::{Engraving, Initial, LastLine, LayoutOptions, MetricsTable, NoteMap, NoteRef, StyleOptions, SvgOptions, Weights, parse};
 
 /// Metrics for the lyric face the SVG names (EB Garamond): the version Google Fonts serves,
-/// and the EB Garamond 12 release that apps bundle. They differ by about 1% in places.
+/// and the EB Garamond 12 release. They differ by about 1% in places.
 const EB_GARAMOND_GOOGLE: &[u8] = include_bytes!("../../neuma-metrics/tables/eb-garamond-google.bin");
 const EB_GARAMOND_12: &[u8] = include_bytes!("../../neuma-metrics/tables/eb-garamond-12.bin");
 
@@ -23,8 +23,18 @@ pub enum Font {
     /// From Google Fonts.
     #[default]
     Google,
-    /// The EB Garamond 12 files, as the apps bundle them.
+    /// The EB Garamond 12 files.
     Garamond12,
+}
+
+impl Font {
+    /// The metrics table for this font, in the format [`MetricsTable::from_bytes`] reads.
+    pub fn table_bytes(self) -> &'static [u8] {
+        match self {
+            Font::Google => EB_GARAMOND_GOOGLE,
+            Font::Garamond12 => EB_GARAMOND_12,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

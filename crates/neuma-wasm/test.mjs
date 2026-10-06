@@ -32,6 +32,23 @@ const t = verse.layout(600).timeline;
 assert.deepEqual(t.pauses.map((p) => p.kind), ["mediant", "full", "flex", "quarter", "double"]);
 assert.deepEqual(t.notes.map((n) => n.half).join(""), "000001111111");
 assert.ok(t.notes[0].recitation && t.notes[2].accent);
+// The mediant is the whole pause at its bar.
+assert.deepEqual(t.pauses.slice(0, 2).map((p) => p.weight), [DEFAULT_WEIGHTS.mediant, 0]);
+// Recitation doesn't run across a bar.
+const runs = new Chant("(c4) a(h) (::) b(h) (::) c(h)", { initial: 0 }).layout(400).timeline.notes;
+assert.ok(runs.every((n) => !n.recitation));
+
+// A porrectus swash carries both of the notes it draws.
+const porrectus = new Chant("(c4) a(hgh)", { initial: 0 });
+const svg = porrectus.layout(400).svg;
+for (const id of [0, 1, 2]) assert.match(svg, new RegExp(`data-note="[0-9 ]*\\b${id}\\b`));
+assert.match(svg, /data-note="0 1"/);
+
+// A freed Chant throws rather than reaching another score's handle.
+porrectus.free();
+assert.throws(() => porrectus.layout(400), /freed/);
+assert.throws(() => porrectus.noteAt(0, 0), /freed/);
+assert.equal(verse.layout(600, { weights: { note: null } }).timeline.notes[1].duration, 1);
 verse.free();
 
 // Hit testing finds the note whose box holds the point.

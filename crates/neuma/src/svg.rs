@@ -116,7 +116,13 @@ impl DisplayList {
         for item in &self.items {
             match item {
                 Item::Glyph {
-                    glyph, x, y, role, note, ..
+                    glyph,
+                    x,
+                    y,
+                    role,
+                    note,
+                    through,
+                    ..
                 } => {
                     let _ = write!(
                         out,
@@ -125,12 +131,18 @@ impl DisplayList {
                         n(*y),
                         role.class()
                     );
-                    if let Some(id) = note {
-                        let _ = write!(out, r#" data-note="{id}""#);
-                    }
+                    data_note(&mut out, *note, *through);
                     out.push_str("/>");
                 }
-                Item::Rect { x, y, w, h, role, note } => {
+                Item::Rect {
+                    x,
+                    y,
+                    w,
+                    h,
+                    role,
+                    note,
+                    through,
+                } => {
                     let _ = write!(
                         out,
                         r#"<rect x="{}" y="{}" width="{}" height="{}" class="{p}-{}""#,
@@ -140,9 +152,7 @@ impl DisplayList {
                         n(*h),
                         role.class()
                     );
-                    if let Some(id) = note {
-                        let _ = write!(out, r#" data-note="{id}""#);
-                    }
+                    data_note(&mut out, *note, *through);
                     out.push_str("/>");
                 }
                 Item::Text {
@@ -211,4 +221,15 @@ fn format_scale(s: f32) -> String {
     let t = format!("{:.5}", s);
     let t = t.trim_end_matches('0');
     t.trim_end_matches('.').to_string()
+}
+
+/// `data-note` lists every note the ink draws, so `[data-note~="3"]` finds note 3 whether it
+/// has a glyph of its own or shares a porrectus swash.
+fn data_note(out: &mut String, note: Option<u32>, through: Option<u32>) {
+    let Some(first) = note else { return };
+    let _ = write!(out, r#" data-note="{first}"#);
+    for id in first + 1..=through.unwrap_or(first) {
+        let _ = write!(out, " {id}");
+    }
+    out.push('"');
 }

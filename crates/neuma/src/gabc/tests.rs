@@ -271,4 +271,22 @@ fn repeated_underscores_extend_the_episema() {
     // A space ends the group.
     assert_eq!(marked("(c4) a(f/gf___)"), [false, true, true]);
     assert_eq!(marked("(c4) a(fg_0f_)"), [false, true, true]);
+    // `!` joins notes into one glyph without ending the group.
+    assert_eq!(marked("(c4) a(f!g__)"), [true, true]);
+    // An accidental isn't a note, so the run stops at it.
+    assert_eq!(marked("(c4) a(fgxg___)"), [false, true]);
+    // Digits after the run modify its episema, on every note it covers.
+    let below = |src: &str| -> Vec<bool> {
+        notes(src)
+            .into_iter()
+            .filter_map(|f| {
+                if let Figure::Note(n) = f {
+                    Some(n.episema.is_some_and(|e| e.placement == Placement::Below))
+                } else {
+                    None
+                }
+            })
+            .collect()
+    };
+    assert_eq!(below("(c4) a(fgf__0)"), [false, true, true]);
 }

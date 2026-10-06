@@ -201,7 +201,8 @@ impl Layout<'_> {
                 half: 0,
             });
         }
-        mark_recitations(&mut notes);
+        let paused: Vec<u32> = eng.pauses.iter().map(|&(before, _)| before).collect();
+        mark_recitations(&mut notes, &paused);
 
         // Lay notes and pauses end to end, and count phrases.
         let mut pauses: Vec<Pause> = eng
@@ -214,6 +215,13 @@ impl Layout<'_> {
                 start: 0.0,
             })
             .collect();
+        // A mediant or flex is the pause at its bar: the bar after it adds no time.
+        for i in 1..pauses.len() {
+            let mark = matches!(pauses[i - 1].kind, PauseKind::Mediant | PauseKind::Flex);
+            if mark && matches!(pauses[i].kind, PauseKind::Bar(_)) && pauses[i - 1].before_note == pauses[i].before_note {
+                pauses[i].weight = 0.0;
+            }
+        }
         let mut t = 0.0f32;
         let mut verse = 0u32;
         let mut half = 0u8;
@@ -262,13 +270,18 @@ impl Layout<'_> {
     }
 }
 
-/// Marks runs of three or more consecutive single-note syllables on one pitch.
-fn mark_recitations(notes: &mut [MappedNote]) {
+/// Marks runs of three or more consecutive single-note syllables on one pitch, not counting
+/// across a pause (`paused` holds the note ids pauses come before, in order).
+fn mark_recitations(notes: &mut [MappedNote], paused: &[u32]) {
     let single = |i: usize, notes: &[MappedNote]| notes[i].new_syllable && notes.get(i + 1).is_none_or(|n| n.new_syllable);
     let mut i = 0;
     while i < notes.len() {
         let mut j = i;
-        while j < notes.len() && single(j, notes) && notes[j].semitones == notes[i].semitones {
+        while j < notes.len()
+            && single(j, notes)
+            && notes[j].semitones == notes[i].semitones
+            && (j == i || paused.binary_search(&notes[j].id).is_err())
+        {
             j += 1;
         }
         if j - i >= 3 {

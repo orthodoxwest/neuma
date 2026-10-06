@@ -8,28 +8,41 @@
 //   chant.noteAt(x, y);                   // note id under a point, or null
 //
 // Note ids are stable across layouts of one Chant, so per-note state survives a resize.
-// Every note's SVG elements carry `data-note="<id>"`. Positions are in SVG user units.
+// Every note's SVG ink carries its id in `data-note`; select it with `[data-note~="<id>"]`,
+// since a porrectus swash lists both notes it draws. Positions are in SVG user units.
 
 /*__NEUMA_WASM__*/
 const WASM_GZIP_BASE64 = "";
 
+let module = null;
 let wasm = null;
+// Bumped on each new instance, so a Chant made before a restart can't reach a new one.
+let generation = 0;
+let crashed = null;
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
-function instantiate(bytes) {
-  const module = new WebAssembly.Module(bytes);
+function instantiate() {
   wasm = new WebAssembly.Instance(module, {}).exports;
+  generation += 1;
+  crashed = null;
 }
 
-/** Initializes synchronously from the raw (uncompressed) `.wasm` bytes. */
+/**
+ * Initializes synchronously from the raw (uncompressed) `.wasm` bytes. After the engine
+ * stops on an internal error, calling it (or `init`) again starts a fresh engine; Chants
+ * made before that must be made again.
+ */
 export function initSync(bytes) {
-  if (!wasm) instantiate(bytes);
+  if (wasm) return;
+  if (!module) module = new WebAssembly.Module(bytes);
+  instantiate();
 }
 
 /** Initializes from the module's inlined copy, or from `bytes` if given. */
 export async function init(bytes) {
   if (wasm) return;
+  if (module) return instantiate();
   if (bytes) return initSync(bytes);
   const packed = Uint8Array.from(atob(WASM_GZIP_BASE64), (c) => c.charCodeAt(0));
   const stream = new Blob([packed]).stream().pipeThrough(new DecompressionStream("gzip"));
@@ -37,8 +50,23 @@ export async function init(bytes) {
 }
 
 function ready() {
+  if (crashed) throw new Error("neuma: the engine stopped on an internal error; call init() again", { cause: crashed });
   if (!wasm) throw new Error("neuma: call init() first");
   return wasm;
+}
+
+/** Runs `f` against the engine. A trap leaves the instance unusable, so it is dropped. */
+function guarded(f) {
+  const w = ready();
+  try {
+    return f(w);
+  } catch (e) {
+    if (e instanceof WebAssembly.RuntimeError) {
+      wasm = null;
+      crashed = e;
+    }
+    throw e;
+  }
 }
 
 function putInput(text) {
@@ -65,6 +93,7 @@ export const DEFAULT_WEIGHTS = Object.freeze({
 
 export class Chant {
   #handle;
+  #generation;
   #diagnostics;
 
   /**
@@ -77,9 +106,18 @@ export class Chant {
    *   "eb-garamond-12" (the EB Garamond 12 files), so lyrics are spaced for it.
    */
   constructor(gabc, { initial = 1, annotation = true, lyricSize = 2.7, font = "google" } = {}) {
-    putInput(String(gabc));
-    this.#handle = ready().chant_new(initial >>> 0, annotation ? 1 : 0, lyricSize, font === "eb-garamond-12" ? 1 : 0);
+    this.#handle = guarded((w) => {
+      putInput(String(gabc));
+      return w.chant_new(initial >>> 0, annotation ? 1 : 0, lyricSize, font === "eb-garamond-12" ? 1 : 0);
+    });
+    this.#generation = generation;
     this.#diagnostics = JSON.parse(takeOutput());
+  }
+
+  #live() {
+    if (this.#handle === undefined) throw new Error("neuma: this Chant was freed");
+    if (this.#generation !== generation) throw new Error("neuma: this Chant belongs to an engine that stopped");
+    return this.#handle;
   }
 
   /** Problems found while reading the score: `{ severity, start, end, code, message }`. */
@@ -91,33 +129,41 @@ export class Chant {
    * Lays the score out at `width` SVG units.
    * @param {number} width
    * @param {{ scale?: number, lastLine?: "ragged"|"justified", weights?: object, prefix?: string }} [options]
-   *   scale: units per staff space (default 6). weights: any of DEFAULT_WEIGHTS's keys.
+   *   scale: units per staff space (default 6). weights: any of DEFAULT_WEIGHTS's keys; a
+   *   missing, null or non-numeric value keeps the default.
    *   prefix: class and id prefix for the SVG (default "neuma").
    * @returns {{ width: number, height: number, svg: string, timeline: object }}
    *   timeline: `{ notes, pauses, lines, duration }`, with times in weight units.
    */
   layout(width, { scale = 6, lastLine = "ragged", weights = {}, prefix = "" } = {}) {
-    const w = ready();
-    putInput(prefix);
-    const values = WEIGHTS.map((k) => (k in weights ? Number(weights[k]) : NaN));
-    if (!w.chant_layout(this.#handle, width, scale, lastLine === "justified" ? 1 : 0, ...values)) {
-      throw new Error("neuma: this Chant was freed");
-    }
-    const page = JSON.parse(takeOutput());
-    w.chant_svg(this.#handle);
-    page.svg = takeOutput();
-    return page;
+    const handle = this.#live();
+    if (!(scale > 0 && Number.isFinite(scale))) scale = 6;
+    const values = WEIGHTS.map((k) => {
+      const v = weights[k];
+      return typeof v === "number" ? v : NaN;
+    });
+    return guarded((w) => {
+      putInput(prefix);
+      if (!w.chant_layout(handle, width, scale, lastLine === "justified" ? 1 : 0, ...values)) {
+        throw new Error("neuma: this Chant was freed");
+      }
+      const page = JSON.parse(takeOutput());
+      w.chant_svg(handle);
+      page.svg = takeOutput();
+      return page;
+    });
   }
 
   /** The id of the note under (`x`, `y`) in the last layout, or the nearest on that line. */
   noteAt(x, y) {
-    const id = ready().chant_note_at(this.#handle, x, y);
+    const handle = this.#live();
+    const id = guarded((w) => w.chant_note_at(handle, x, y));
     return id < 0 ? null : id;
   }
 
   /** Releases the engraving. */
   free() {
-    if (this.#handle !== undefined) ready().chant_free(this.#handle);
+    if (this.#handle !== undefined && this.#generation === generation && wasm) wasm.chant_free(this.#handle);
     this.#handle = undefined;
   }
 }

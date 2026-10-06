@@ -75,6 +75,8 @@ pub(crate) struct Piece {
     pub role: Ink,
     /// Score-wide index of the note this ink belongs to.
     pub note: Option<u32>,
+    /// For ink that draws several notes at once (a porrectus swash), the last of them.
+    pub through: Option<u32>,
 }
 
 impl Piece {
@@ -306,6 +308,7 @@ fn ink_at(glyph: G, left: f32, y: f32, role: Ink, note: Option<u32>) -> (Piece, 
             mark: Mark::Glyph { glyph, x: left - a, y },
             role,
             note,
+            through: None,
         },
         c - a,
     )
@@ -322,6 +325,7 @@ fn rect(x: f32, top: StaffPosition, bottom: StaffPosition, role: Ink) -> Piece {
         },
         role,
         note: None,
+        through: None,
     }
 }
 
@@ -382,6 +386,7 @@ fn bar_pieces(kind: BarKind, high: bool, left: f32) -> (Vec<Piece>, f32) {
                     },
                     role: Ink::Bar,
                     note: None,
+                    through: None,
                 });
                 y += 1.0;
             }
@@ -496,12 +501,13 @@ impl Engraver<'_> {
             }
             for h in &built.heads {
                 let y = -(h.position as f32);
+                let (w, height) = h.size();
                 open.heads.push(HeadBox {
                     note: base + h.index as u32,
                     x: h.center() + x,
                     y,
-                    w: h.w.max(0.5),
-                    h: h.bottom - h.top,
+                    w,
+                    h: height,
                 });
             }
             if open.first_note.is_none() {

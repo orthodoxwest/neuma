@@ -410,6 +410,14 @@ impl Head {
             _ => self.x + self.w / 2.0,
         }
     }
+    /// Width and height of the note's own box: a punctum's worth at either end of a
+    /// porrectus swash, else the glyph's.
+    pub fn size(&self) -> (f32, f32) {
+        match self.glyph {
+            Some(G::Porrectus1 | G::Porrectus2 | G::Porrectus3 | G::Porrectus4) | None => (1.0, 1.0),
+            _ => (self.w.max(0.5), self.bottom - self.top),
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -448,6 +456,7 @@ impl Builder {
             mark: Mark::Rect { x, y, w: STEM, h },
             role: Ink::Stem,
             note,
+            through: None,
         });
     }
 
@@ -524,6 +533,7 @@ impl Builder {
             },
             role: Ink::Note,
             note: Some(self.note_base + i as u32),
+            through: None,
         });
         self.heads.push(Head {
             index: i,
@@ -681,6 +691,9 @@ impl Builder {
         };
         let x = self.x;
         self.place(si, start, glyph, x);
+        if let Some(piece) = self.pieces.last_mut() {
+            piece.through = Some(self.note_base + ei as u32);
+        }
         self.x = x + glyph.width();
         // The second note draws nothing; its head is the swash's right end.
         let y = -(end.position as f32);
@@ -1192,6 +1205,7 @@ pub(crate) fn add_markings(built: &mut Built, kind: Kind, notes: &[Note], note_b
                 },
                 role: Ink::Episema,
                 note: id,
+                through: None,
             });
         }
         // Ictus (vertical episema).
@@ -1221,6 +1235,7 @@ pub(crate) fn add_markings(built: &mut Built, kind: Kind, notes: &[Note], note_b
                 },
                 role: Ink::Ictus,
                 note: id,
+                through: None,
             });
         }
         // Morae.
@@ -1273,6 +1288,7 @@ pub(crate) fn add_markings(built: &mut Built, kind: Kind, notes: &[Note], note_b
                     },
                     role: Ink::Mora,
                     note: id,
+                    through: None,
                 });
             }
         }
@@ -1306,6 +1322,7 @@ pub(crate) fn add_markings(built: &mut Built, kind: Kind, notes: &[Note], note_b
             },
             role: Ink::Ledger,
             note: Some(id),
+            through: None,
         });
     }
 }

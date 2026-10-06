@@ -488,11 +488,14 @@ impl Parser<'_, '_> {
                     self.i += 1;
                     // Each further `_` right after the first carries the episema back over one
                     // more note of the group: `fgf___` marks all three.
-                    if note.episema.is_some() && self.src.as_bytes().get(self.i - 2) == Some(&b'_') {
-                        extend += 1;
-                        continue;
-                    }
-                    let mut e = Episema::default();
+                    // Digits after the run modify the one episema it draws.
+                    let mut e = match note.episema {
+                        Some(e) if self.src.as_bytes().get(self.i - 2) == Some(&b'_') => {
+                            extend += 1;
+                            e
+                        }
+                        _ => Episema::default(),
+                    };
                     while let Some(d @ b'0'..=b'5') = self.peek() {
                         self.i += 1;
                         match d {
@@ -534,7 +537,12 @@ impl Parser<'_, '_> {
                 left -= 1;
             }
             for f in self.out.iter_mut().rev() {
-                let Figure::Note(n) = f else { break };
+                // `!` joins notes into one neume, so the run reaches past it.
+                let n = match f {
+                    Figure::Note(n) => n,
+                    Figure::Space(Space::Zero) => continue,
+                    _ => break,
+                };
                 if left == 0 {
                     break;
                 }

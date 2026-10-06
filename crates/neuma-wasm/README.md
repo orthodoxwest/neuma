@@ -18,7 +18,7 @@ import { init, Chant } from "./neuma.mjs";
 
 await init();                      // once; everything after is synchronous
 const chant = new Chant(gabc, { initial: 1, annotation: true });
-chant.diagnostics;                 // [{ severity, start, end, code, message }]
+chant.diagnostics;                 // [{ severity, start, end, code, message }], in UTF-8 bytes
 
 const page = chant.layout(host.clientWidth, {
   scale: 6,                        // SVG units per staff space
@@ -37,9 +37,11 @@ widths the layout planned for.
 `page` is `{ width, height, svg, timeline }`. All positions are in the SVG's user units.
 
 - **`timeline.notes`**: one entry per note, in singing order, with these fields:
-  - `id`: stable across layouts of one `Chant`. The note's SVG elements carry
-    `data-note="<id>"`.
-  - `x`, `y`, `w`, `h`: the notehead's center and size.
+  - `id`: stable across layouts of one `Chant`. Each SVG element lists the notes it draws
+    in `data-note`, so select a note's ink with `[data-note~="<id>"]`: a porrectus swash
+    draws two notes and reads `data-note="4 5"`.
+  - `x`, `y`, `w`, `h`: the notehead's center and size. For a porrectus, the swash's two
+    ends.
   - `line`, `syllable`, `word`.
   - `start`, `duration`: in weight units. Choose your own tempo.
   - `staffPosition`, `degree`, `semitones`: `semitones` counts from the clef's do, with
@@ -53,15 +55,24 @@ widths the layout planned for.
   - `spanStart`, `spanEnd`: the note's bytes in the GABC source.
 - **`timeline.pauses`**: `{ beforeNote, kind, weight, start }`. `kind` is one of
   `virgula`, `minimis`, `quarter`, `half`, `full`, `dotted-full`, `double`, `dominican`,
-  `mediant` (`*`) or `flex` (`†`).
+  `mediant` (`*`) or `flex` (`†`). A mediant or flex is the whole pause at its bar: the bar
+  right after it stays in the list with weight 0.
 - **`timeline.lines`**: each line's `top`, `bottom`, `staff` (the middle line) and
   `baseline` (the lyrics).
 - **`timeline.duration`**: the total length.
 
+Byte offsets (`spanStart`, `spanEnd` and the diagnostics' `start` and `end`) count UTF-8
+bytes of the source, not JavaScript string indices. Convert with
+`new TextDecoder().decode(new TextEncoder().encode(gabc).subarray(0, offset)).length`.
+
 `chant.noteAt(x, y)` returns the note under a point in the last layout, or the nearest note
-on that line, or `null`. `chant.free()` releases the score.
+on that line, or `null`. `chant.free()` releases the score; using a freed `Chant` throws.
 
 Weights default to `DEFAULT_WEIGHTS`: one pulse per note, two for a dotted note, and pauses
-that grow with the bar. Any key you pass overrides its default.
+that grow with the bar. Any key you pass with a number overrides its default.
+
+If the engine ever stops on an internal error, that call throws and so does every later one
+until you call `init()` again, which starts a fresh engine. Make the `Chant`s again after
+that.
 
 `neuma notes FILE` prints the same layout JSON from the command line, without the SVG.
