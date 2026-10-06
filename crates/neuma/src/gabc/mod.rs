@@ -70,17 +70,28 @@ fn parse_header(src: &str, sink: &mut Sink) -> (Header, usize) {
         offset += raw.len();
         let line = strip_comment(raw.trim_end_matches(['\r', '\n']));
         if let Some((name, mut value, start)) = pending.take() {
-            // Continuing a multi-line value, which ends with `;;`.
-            if let Some(end) = line.find(";;") {
-                value.push('\n');
-                value.push_str(&line[..end]);
+            // Continuing a multi-line value, which ends with `;;`, or like Gregorio, at a `;` that
+            // ends a line.
+            if is_header_line(line) {
+                // A forgotten `;`: the next field starts here, not more of this value.
+                sink.warn(
+                    start..line_start,
+                    "gabc::unterminated-header",
+                    format!("header `{name}` has no closing `;` or `;;`"),
+                );
                 header.fields.push((name, value.trim().to_string()));
             } else {
+                let end = line.find(";;").or_else(|| line.trim_end().strip_suffix(';').map(str::len));
                 value.push('\n');
-                value.push_str(line);
-                pending = Some((name, value, start));
+                if let Some(end) = end {
+                    value.push_str(&line[..end]);
+                    header.fields.push((name, value.trim().to_string()));
+                } else {
+                    value.push_str(line);
+                    pending = Some((name, value, start));
+                }
+                continue;
             }
-            continue;
         }
         if line.trim().is_empty() {
             continue;
@@ -138,6 +149,17 @@ fn parse_header(src: &str, sink: &mut Sink) -> (Header, usize) {
         }
     }
     (header, body_start)
+}
+
+/// A `name:` line, named as Gregorio names header fields.
+fn is_header_line(line: &str) -> bool {
+    line.split_once(':').is_some_and(|(name, rest)| {
+        let name = name.trim();
+        !name.is_empty()
+            && !rest.starts_with("//")
+            && !name.starts_with('-')
+            && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    })
 }
 
 fn looks_like_header(src: &str) -> bool {

@@ -307,3 +307,19 @@ fn parentheses_in_verbatim_and_alt_text_are_lyric() {
     let p = parse("(c4) A<v>(g) B(h)\n");
     assert_eq!(p.score.syllables.len(), 3);
 }
+
+#[test]
+fn header_missing_semicolon_ends_at_next_field() {
+    // From GregoBase: `name` lacks its `;`, which hid every field after it.
+    let p = parse("initial-style: 1;\nname: Angelus Domini\nbook: Antiphonale, p. 15;\nannotation: 1f;\n%%\n(c4) A(g)\n");
+    assert_eq!(p.score.header.get("name"), Some("Angelus Domini"));
+    assert_eq!(p.score.header.get("book"), Some("Antiphonale, p. 15"));
+    assert_eq!(p.score.header.get("annotation"), Some("1f"));
+    let n = p.diagnostics.iter().filter(|d| d.code == "gabc::unterminated-header").count();
+    assert_eq!(n, 1);
+    // Gregorio also ends a multi-line value at a `;` that ends a line.
+    let p = parse("commentary: one\ntwo;\nmode: 1;\n%%\n(c4) A(g)\n");
+    assert_eq!(p.score.header.get("commentary"), Some("one\ntwo"));
+    assert_eq!(p.score.header.get("mode"), Some("1"));
+    assert!(p.diagnostics.is_empty(), "{:?}", p.diagnostics);
+}
