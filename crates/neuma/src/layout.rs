@@ -517,7 +517,15 @@ impl Engraving {
             })
         });
         lines.truncate(kept);
-        let max_width = rights.iter().take(kept).fold(0.0f32, |a, &b| a.max(b));
+        // A line too wide for the column widens the layout, and every staff with it. Lines left
+        // out of a preview count too, so its staves are drawn as in the whole score.
+        for &(first, last) in ranges.iter().skip(placed) {
+            let (_, start) = self.line_start(first);
+            let natural = self.trial(first, last, start).natural;
+            let (ragged, _) = self.line_end(last, opts);
+            rights.push(if ragged { natural } else { target.max(natural) });
+        }
+        let max_width = rights.iter().fold(0.0f32, |a, &b| a.max(b));
         Layout {
             eng: self,
             lines,

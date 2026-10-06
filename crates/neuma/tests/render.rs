@@ -535,3 +535,26 @@ fn a_clef_change_right_after_the_opening_clef_shows_both() {
     assert_eq!(clefs("(c4) a(g)"), 1);
     assert_eq!(clefs("a(c4g)"), 1);
 }
+
+#[test]
+fn a_preview_draws_its_staves_as_wide_as_the_whole_score() {
+    // The second line holds a word too wide for the column, which widens the layout; the
+    // one-line preview's staff is as wide as in the whole score.
+    let src = "(c4) a(g) b(g) c(g) Supercalifragilisticexpialidocious(g) d(g)";
+    let eng = parse(src).score.engrave(&ApproxMeasure, &NO_INITIAL);
+    let full = eng.layout(120.0, &LayoutOptions::default()).display();
+    let preview = eng
+        .layout(
+            120.0,
+            &LayoutOptions {
+                max_lines: 1,
+                ..LayoutOptions::default()
+            },
+        )
+        .display();
+    assert!(full.width > 120.0);
+    assert_eq!(preview.width, full.width);
+    for item in &preview.items {
+        assert!(full.items.contains(item), "{item:?}");
+    }
+}
