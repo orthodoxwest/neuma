@@ -249,6 +249,11 @@ struct Entry {
     body: Vec<String>,
 }
 
+/// Bytes of leading spaces and tabs.
+fn indent_of(l: &str) -> usize {
+    l.len() - l.trim_start_matches([' ', '\t']).len()
+}
+
 fn entries(src: &str) -> Result<Vec<Entry>, BookError> {
     let mut out: Vec<Entry> = Vec::new();
     for (i, raw) in src.lines().enumerate() {
@@ -256,7 +261,7 @@ fn entries(src: &str) -> Result<Vec<Entry>, BookError> {
         let raw = raw.strip_suffix('\r').unwrap_or(raw);
         let indented = raw.starts_with([' ', '\t']);
         if indented {
-            if raw.trim().is_empty() {
+            if raw.trim_matches([' ', '\t']).is_empty() {
                 if let Some(e) = out.last_mut() {
                     e.body.push(String::new());
                 }
@@ -309,16 +314,12 @@ fn entries(src: &str) -> Result<Vec<Entry>, BookError> {
         while e.body.last().is_some_and(|l| l.is_empty()) {
             e.body.pop();
         }
-        let indent = e
-            .body
-            .iter()
-            .filter(|l| !l.is_empty())
-            .map(|l| l.len() - l.trim_start().len())
-            .min()
-            .unwrap_or(0);
+        let indent = e.body.iter().filter(|l| !l.is_empty()).map(|l| indent_of(l)).min().unwrap_or(0);
         for l in &mut e.body {
             if !l.is_empty() {
-                *l = l[indent..].trim_end().to_string();
+                // Only ASCII spaces and tabs indent, so `indent` is a char boundary; other
+                // whitespace (a no-break space) is text.
+                *l = l[indent.min(indent_of(l))..].trim_end_matches([' ', '\t']).to_string();
             }
         }
     }
@@ -693,6 +694,14 @@ mod tests {
         );
         let Piece::Psalm(p) = &book.pieces[1] else { panic!() };
         assert_eq!(p.source, Source::Inline("1 a * b\n2 c * d".into()));
+    }
+
+    /// A no-break space is text, not indentation (it used to split a character and panic).
+    #[test]
+    fn no_break_space_in_indented_text() {
+        let book = Book::parse("text:\n \u{a0}x\n  y\n").unwrap();
+        let Piece::Text { text, .. } = &book.pieces[0] else { panic!() };
+        assert_eq!(text, "x  y");
     }
 
     #[test]
