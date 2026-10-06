@@ -2,12 +2,15 @@
 //! notation (and the lyric under it) with geometry relative to its own origin, plus what may
 //! happen at the break after it. Line breaking places segments on lines (`layout`).
 
+mod initial;
 pub(crate) mod neume;
+
+pub use initial::Initial;
 
 use crate::diag::{Diagnostic, Sink};
 use crate::glyphs::GlyphId as G;
 use crate::score::{
-    AlterationKind, BarKind, Clef, ClefKind, CustosRule, Figure, LyricRun, Note, NoteShape, Score, Space, StaffPosition, TextStyle,
+    AlterationKind, BarKind, Clef, ClefKind, CustosRule, Figure, Lyric, LyricRun, Note, NoteShape, Score, Space, StaffPosition, TextStyle,
 };
 use crate::text::TextMeasure;
 use crate::vowel::VowelRules;
@@ -116,6 +119,10 @@ pub enum CustosPolicy {
 pub struct StyleOptions {
     /// Lyric font size, in staff spaces.
     pub lyric_size: f32,
+    /// The drop-cap initial.
+    pub initial: Initial,
+    /// Show the `annotation` headers (or the mode) above the initial.
+    pub annotation: bool,
     /// Overrides the rules the `language:` header picks.
     pub vowels: Option<VowelRules>,
     pub alterations: AlterationScope,
@@ -126,6 +133,8 @@ impl Default for StyleOptions {
     fn default() -> StyleOptions {
         StyleOptions {
             lyric_size: 2.7,
+            initial: Initial::default(),
+            annotation: true,
             vowels: None,
             alterations: AlterationScope::default(),
             custos: CustosPolicy::default(),
@@ -210,10 +219,37 @@ pub(crate) struct NoteInfo {
     pub vowel: Option<char>,
 }
 
+/// The drop cap and its annotations, sized at engrave time; layout indents the first
+/// `lines` staves to make room.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct InitialBox {
+    pub text: String,
+    /// The syllable the letter came from.
+    pub syllable: u32,
+    /// Font size of the initial, in staff spaces.
+    pub size: f32,
+    pub width: f32,
+    pub lines: usize,
+    /// Annotation lines, top first, with their widths.
+    pub annotations: Vec<(String, f32)>,
+    pub annotation_size: f32,
+    pub annotation_ascent: f32,
+    /// The staff-to-staff distance the initial's size assumes, for `lines` above 1.
+    pub line_pitch: f32,
+}
+
+impl InitialBox {
+    /// Width of the column the initial and its annotations share.
+    pub fn column(&self) -> f32 {
+        self.annotations.iter().map(|a| a.1).fold(self.width, f32::max)
+    }
+}
+
 /// A score engraved independently of width. Lay it out with [`Engraving::layout`].
 #[derive(Clone, Debug, PartialEq)]
 pub struct Engraving {
     pub(crate) segments: Vec<Segment>,
+    pub(crate) initial: Option<InitialBox>,
     pub(crate) clef: Clef,
     pub(crate) notes: Vec<NoteInfo>,
     pub(crate) syllable_text: Vec<String>,
@@ -234,6 +270,11 @@ pub(crate) const SYLLABLE_GAP: f32 = INTRA * 2.5;
 /// Extra gap between words.
 pub(crate) const WORD_GAP: f32 = INTRA;
 const ACCIDENTAL_GAP: f32 = INTRA * 2.0;
+/// Cap height of the lyric face, in ems (EB Garamond's is 0.65). It sizes the initial so its
+/// capital spans the staff.
+const CAP_HEIGHT: f32 = 0.65;
+/// Annotation size relative to the lyrics.
+const ANNOTATION_RATIO: f32 = 0.75;
 const DEFAULT_CLEF: Clef = Clef {
     kind: ClefKind::Do,
     line: 4,
@@ -575,6 +616,45 @@ impl Score {
         let hyphen = measure.advance("-", TextStyle::REGULAR) * size;
         let word_space = measure.advance(" ", TextStyle::REGULAR) * size;
         let (ascent, descent) = measure.vertical(TextStyle::REGULAR);
+
+        // The drop cap comes off the first syllable with text; the rest of it is the lyric.
+        let mut initial = None;
+        let mut first_lyric: Option<(usize, Lyric)> = None;
+        if let Initial::Lines(n) = style.initial
+            && n > 0
+            && let Some(si) = self.syllables.iter().position(|s| !s.text.is_empty())
+            && let Some((text, rest)) = initial::split_initial(&self.syllables[si].text)
+        {
+            // A nominal staff-to-staff distance: the staff, lyrics below it, and the gaps.
+            let line_pitch = 6.0 + 0.5 + 0.4 + ascent * size * 0.85 + descent * size + 1.0;
+            let lines = n as usize;
+            let cap = 6.0 + line_pitch * (lines - 1) as f32;
+            let initial_size = cap / CAP_HEIGHT;
+            let annotation_size = size * ANNOTATION_RATIO;
+            let annotations = if style.annotation {
+                initial::annotations(&self.header)
+                    .into_iter()
+                    .map(|a| {
+                        let w = measure.advance(&a, TextStyle::REGULAR) * annotation_size;
+                        (a, w)
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            initial = Some(InitialBox {
+                width: measure.advance(&text, TextStyle::REGULAR) * initial_size,
+                text,
+                syllable: si as u32,
+                size: initial_size,
+                lines,
+                annotations,
+                annotation_size,
+                annotation_ascent: ascent * annotation_size,
+                line_pitch,
+            });
+            first_lyric = Some((si, rest));
+        }
         let mut syllable_text = Vec::new();
         let mut syllable_word = Vec::new();
         let mut alt_text = String::new();
@@ -769,9 +849,13 @@ impl Score {
             }
 
             // The lyric goes under the first segment, its vowel over the first note.
-            if !syl.text.is_empty() {
+            let text = match &first_lyric {
+                Some((i, rest)) if *i == si as usize => rest,
+                _ => &syl.text,
+            };
+            if !text.is_empty() {
                 let k = seg_ids[0];
-                let runs = syl.text.runs.clone();
+                let runs = text.runs.clone();
                 let mut width = 0.0;
                 for r in &runs {
                     width += measure.advance(&r.text, r.style) * size;
@@ -787,7 +871,7 @@ impl Score {
                         }
                     }
                 }
-                let chars: Vec<char> = syl.text.plain().chars().collect();
+                let chars: Vec<char> = text.plain().chars().collect();
                 let mut masked = chars.clone();
                 let mut ci = 0;
                 for r in &runs {
@@ -798,7 +882,7 @@ impl Score {
                         ci += 1;
                     }
                 }
-                let nucleus = syl.text.center.clone().or_else(|| e.rules.nucleus(&masked));
+                let nucleus = text.center.clone().or_else(|| e.rules.nucleus(&masked));
                 let seg = &e.segments[k];
                 let anchor = match seg.heads.first() {
                     Some(h) => h.x,
@@ -840,6 +924,7 @@ impl Score {
 
         Engraving {
             segments: e.segments,
+            initial,
             clef: e.initial_clef.unwrap_or(DEFAULT_CLEF),
             notes: e.notes,
             syllable_text,

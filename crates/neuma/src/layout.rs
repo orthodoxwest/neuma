@@ -33,6 +33,10 @@ impl Default for LayoutOptions {
 
 /// Gap after the line-start clef.
 const CLEF_GAP: f32 = INTRA * 2.0;
+/// Gap between the first staff line and the lowest annotation's baseline.
+pub(crate) const ANNOTATION_GAP: f32 = 1.0;
+/// Gap between the initial's column and the staff.
+const INITIAL_GAP: f32 = 1.0;
 /// Gap before an end-of-line custos.
 const CUSTOS_GAP: f32 = INTRA;
 /// Room either side of a hyphen between syllables.
@@ -52,6 +56,8 @@ pub(crate) struct PlacedLine {
     /// x of each segment origin, in staff spaces from the line's left edge.
     pub xs: Vec<f32>,
     pub clef: Option<Clef>,
+    /// Where the staff starts: past the initial's column on the first lines, else 0.
+    pub indent: f32,
     pub custos: Option<(i8, f32)>,
     /// x of a hyphen after the last syllable, when its word continues on the next line.
     pub hyphen: Option<f32>,
@@ -236,72 +242,86 @@ impl Engraving {
                 scale,
             };
         }
-        // best[k]: least demerits for lines ending just before segment k.
-        let mut best: Vec<Option<(f32, usize)>> = vec![None; n + 1];
-        best[0] = Some((0.0, 0));
+        // The first `indented` lines make room for the initial, so the breaker tracks how many
+        // lines came before, up to that count.
+        let indented = self.initial.as_ref().map_or(0, |i| i.lines);
+        let indent = self.initial.as_ref().map_or(0.0, |i| i.column() + INITIAL_GAP);
+        // best[k][j]: least demerits for lines ending just before segment k, with j lines so
+        // far (capped at `indented`), and where the last line started and its own j.
+        let mut best: Vec<Vec<Option<(f32, usize, usize)>>> = vec![vec![None; indented + 1]; n + 1];
+        best[0][0] = Some((0.0, 0, 0));
         for first in 0..n {
-            let Some((base, _)) = best[first] else { continue };
-            let (_, start) = self.line_start(first);
-            // Packs the line one segment at a time, as `trial` does, so each candidate costs
-            // one step instead of a repack.
-            let mut cur = Cursor {
-                ink_right: None,
-                lyric_right: None,
-                word_continues: false,
-                x: start,
-            };
-            let mut right = 0.0f32;
-            let mut ink_end = start;
-            for last in first..n {
-                let seg = &self.segments[last];
-                let end_of_score = last + 1 == n;
-                let forced = matches!(seg.after, Break::Forced { .. });
-                let breakable = end_of_score || forced || seg.after == Break::Allowed;
-                let x = place(&cur, seg, self.hyphen, self.word_space, start);
-                cur = advance(&cur, seg, x);
-                right = right.max(x + seg.right());
-                if let Some((_, r)) = seg.ink {
-                    ink_end = ink_end.max(x + r);
-                }
-                let natural = self.natural(&cur, right, ink_end, last);
-                let over = natural > target;
-                if breakable {
-                    let gaps = (last - first) as f32;
-                    let ragged =
-                        end_of_score && opts.last_line == LastLine::Ragged || matches!(seg.after, Break::Forced { justify: false, .. });
-                    let badness = if over {
-                        if last == first { 10000.0 } else { f32::INFINITY }
-                    } else if ragged {
-                        0.0
-                    } else if gaps == 0.0 {
-                        // As bad as the loosest line with gaps, so splitting a loose line
-                        // into one-segment lines never looks cheaper.
-                        if target - natural > 0.5 { 10000.0 } else { 0.0 }
-                    } else {
-                        let r = (target - natural) / (gaps * STRETCH);
-                        (100.0 * r * r * r).min(10000.0)
-                    };
-                    if badness.is_finite() {
-                        let d = (10.0 + badness) * (10.0 + badness);
-                        let total = base + d;
-                        let better = best[last + 1].is_none_or(|(b, _)| total < b);
-                        if better {
-                            best[last + 1] = Some((total, first));
+            for j in 0..=indented {
+                let Some((base, _, _)) = best[first][j] else { continue };
+                let next = (j + 1).min(indented);
+                let target = if j < indented { target - indent } else { target };
+                let (_, start) = self.line_start(first);
+                // Packs the line one segment at a time, as `trial` does, so each candidate costs
+                // one step instead of a repack.
+                let mut cur = Cursor {
+                    ink_right: None,
+                    lyric_right: None,
+                    word_continues: false,
+                    x: start,
+                };
+                let mut right = 0.0f32;
+                let mut ink_end = start;
+                for last in first..n {
+                    let seg = &self.segments[last];
+                    let end_of_score = last + 1 == n;
+                    let forced = matches!(seg.after, Break::Forced { .. });
+                    let breakable = end_of_score || forced || seg.after == Break::Allowed;
+                    let x = place(&cur, seg, self.hyphen, self.word_space, start);
+                    cur = advance(&cur, seg, x);
+                    right = right.max(x + seg.right());
+                    if let Some((_, r)) = seg.ink {
+                        ink_end = ink_end.max(x + r);
+                    }
+                    let natural = self.natural(&cur, right, ink_end, last);
+                    let over = natural > target;
+                    if breakable {
+                        let gaps = (last - first) as f32;
+                        let ragged =
+                            end_of_score && opts.last_line == LastLine::Ragged || matches!(seg.after, Break::Forced { justify: false, .. });
+                        let badness = if over {
+                            if last == first { 10000.0 } else { f32::INFINITY }
+                        } else if ragged {
+                            0.0
+                        } else if gaps == 0.0 {
+                            // As bad as the loosest line with gaps, so splitting a loose line
+                            // into one-segment lines never looks cheaper.
+                            if target - natural > 0.5 { 10000.0 } else { 0.0 }
+                        } else {
+                            let r = (target - natural) / (gaps * STRETCH);
+                            (100.0 * r * r * r).min(10000.0)
+                        };
+                        if badness.is_finite() {
+                            let d = (10.0 + badness) * (10.0 + badness);
+                            let total = base + d;
+                            let better = best[last + 1][next].is_none_or(|(b, _, _)| total < b);
+                            if better {
+                                best[last + 1][next] = Some((total, first, j));
+                            }
                         }
                     }
-                }
-                if forced || over {
-                    break;
+                    if forced || over {
+                        break;
+                    }
                 }
             }
         }
-        // Walk back from the end.
+        // Walk back from the end, from the cheapest final state.
         let mut ranges = Vec::new();
         let mut k = n;
+        let mut j = (0..=indented)
+            .filter(|&j| best[n][j].is_some())
+            .min_by(|&a, &b| best[n][a].unwrap().0.total_cmp(&best[n][b].unwrap().0))
+            .unwrap_or(indented);
         while k > 0 {
-            let first = best[k].map_or(k - 1, |(_, f)| f);
+            let (first, pj) = best[k][j].map_or((k - 1, j), |(_, f, pj)| (f, pj));
             ranges.push((first, k - 1));
             k = first;
+            j = pj;
         }
         ranges.reverse();
 
@@ -310,6 +330,8 @@ impl Engraving {
         let mut y = 0.0f32;
         let mut max_width = 0.0f32;
         for (li, &(first, last)) in ranges.iter().enumerate() {
+            let line_indent = if li < indented { indent } else { 0.0 };
+            let target = target - line_indent;
             let (clef, start) = self.line_start(first);
             let trial = self.trial(first, last, start);
             let seg = &self.segments[last];
@@ -348,6 +370,11 @@ impl Engraving {
                 Some((r, true)) if last + 1 < self.segments.len() => Some(r + HYPHEN_PAD + self.hyphen / 2.0),
                 _ => None,
             };
+            for x in xs.iter_mut().chain(hyphens.iter_mut()) {
+                *x += line_indent;
+            }
+            let hyphen = hyphen.map(|h| h + line_indent);
+            let custos = custos.map(|(p, x)| (p, x + line_indent));
             // Vertical extent.
             let mut ink_top = -3.0f32;
             let mut ink_bottom = 3.0f32;
@@ -358,18 +385,27 @@ impl Engraving {
                     ink_bottom = ink_bottom.max(b);
                 }
             }
+            // The annotations sit above the first staff, over the initial.
+            if li == 0
+                && let Some(init) = &self.initial
+                && !init.annotations.is_empty()
+            {
+                let lines = init.annotations.len() as f32;
+                ink_top = ink_top.min(-3.0 - ANNOTATION_GAP - init.annotation_ascent - (lines - 1.0) * init.annotation_size * 1.1);
+            }
             let has_lyrics = self.segments[first..=last].iter().any(|s| s.lyric.is_some());
             let top = y;
             let staff = top + (-ink_top) + 0.5;
             let baseline = staff + ink_bottom + 0.4 + if has_lyrics { self.ascent * size * 0.85 } else { 0.0 };
             let bottom = baseline + if has_lyrics { self.descent * size } else { 0.5 };
-            let right = if ragged { trial.natural } else { target.max(trial.natural) };
+            let right = line_indent + if ragged { trial.natural } else { target.max(trial.natural) };
             max_width = max_width.max(right);
             lines.push(PlacedLine {
                 first,
                 last,
                 xs,
                 clef,
+                indent: line_indent,
                 custos,
                 hyphen,
                 hyphens,

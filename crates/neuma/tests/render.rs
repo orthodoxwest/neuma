@@ -3,7 +3,13 @@
 use std::fs;
 use std::path::Path;
 
-use neuma::{ApproxMeasure, Item, LayoutOptions, StyleOptions, SvgOptions, Weights, parse};
+use neuma::{ApproxMeasure, Initial, Item, LayoutOptions, StyleOptions, SvgOptions, TextRole, Weights, parse};
+
+/// Style without a drop cap, for tests about where syllables fall.
+static NO_INITIAL: std::sync::LazyLock<StyleOptions> = std::sync::LazyLock::new(|| StyleOptions {
+    initial: Initial::None,
+    ..StyleOptions::default()
+});
 
 fn corpus() -> Vec<(String, String)> {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/corpus");
@@ -87,7 +93,7 @@ fn render(src: &str, width: f32) -> String {
 fn lyric_on_break_only_syllable_is_kept() {
     // The break follows the syllable, text and all, as in Gregorio.
     for (src, first_line) in [("(c4) A(g) men(z) (h)", ["A", "men"]), ("(c4) Ky(g)ri(z)e(h)", ["Ky", "ri"])] {
-        let eng = parse(src).score.engrave(&ApproxMeasure, &StyleOptions::default());
+        let eng = parse(src).score.engrave(&ApproxMeasure, &NO_INITIAL);
         let layout = eng.layout(400.0, &LayoutOptions::default());
         assert_eq!(layout.line_count(), 2, "{src}");
         let list = layout.display();
@@ -95,7 +101,7 @@ fn lyric_on_break_only_syllable_is_kept() {
             .items
             .iter()
             .filter_map(|i| match i {
-                Item::Text { runs, baseline, .. } if *baseline < list.lines[0].bottom => {
+                Item::Text { runs, baseline, role, .. } if *baseline < list.lines[0].bottom && *role != TextRole::Initial => {
                     Some(runs.iter().map(|r| r.text.as_str()).collect::<String>())
                 }
                 _ => None,
@@ -154,11 +160,13 @@ fn wide_layout_is_fast() {
 }
 
 fn line_texts(src: &str, width: f32) -> Vec<Vec<String>> {
-    let eng = parse(src).score.engrave(&ApproxMeasure, &StyleOptions::default());
+    let eng = parse(src).score.engrave(&ApproxMeasure, &NO_INITIAL);
     let list = eng.layout(width, &LayoutOptions::default()).display();
     let mut out = vec![Vec::new(); list.lines.len()];
     for item in &list.items {
-        if let Item::Text { runs, baseline, .. } = item {
+        if let Item::Text { runs, baseline, role, .. } = item
+            && *role != TextRole::Initial
+        {
             let text: String = runs.iter().map(|r| r.text.as_str()).collect();
             if let Some(li) = list.lines.iter().position(|l| *baseline >= l.top && *baseline <= l.bottom)
                 && text != "-"
@@ -183,4 +191,70 @@ fn forced_breaks_keep_lines_balanced() {
     let z_line = lines.iter().find(|l| l.contains(&"cto".to_string())).unwrap();
     assert!(z_line.len() > 2, "{lines:?}");
     assert!(before.iter().all(|&n| n > 2), "{lines:?}");
+}
+
+#[test]
+fn initial_and_annotations() {
+    let src = "annotation: Ant.;\nannotation: VIII G;\n%%\n(c4) Ky(g)ri(h)e(g) e(h)le(g)i(h)son(g) (::)";
+    let eng = parse(src).score.engrave(&ApproxMeasure, &StyleOptions::default());
+    let list = eng.layout(600.0, &LayoutOptions::default()).display();
+    let texts: Vec<(TextRole, String, f32, f32)> = list
+        .items
+        .iter()
+        .filter_map(|i| match i {
+            Item::Text {
+                runs, role, x, baseline, ..
+            } => Some((*role, runs.iter().map(|r| r.text.as_str()).collect(), *x, *baseline)),
+            _ => None,
+        })
+        .collect();
+    let initial = texts.iter().find(|t| t.0 == TextRole::Initial).unwrap();
+    assert_eq!(initial.1, "K");
+    // The capital sits on the bottom staff line, left of the staff.
+    let line = &list.lines[0];
+    assert!((initial.3 - (line.staff + 3.0 * list.staff_space)).abs() < 0.01);
+    let staff_left = list
+        .items
+        .iter()
+        .find_map(|i| match i {
+            Item::Rect {
+                x,
+                role: neuma::Ink::Staff,
+                ..
+            } => Some(*x),
+            _ => None,
+        })
+        .unwrap();
+    assert!(staff_left > initial.2);
+    // The first lyric loses its capital; annotations stack above the staff, top line first.
+    assert!(texts.iter().any(|t| t.0 == TextRole::Lyric && t.1 == "y"));
+    let ann: Vec<&(TextRole, String, f32, f32)> = texts.iter().filter(|t| t.0 == TextRole::Annotation).collect();
+    assert_eq!(ann.iter().map(|t| t.1.as_str()).collect::<Vec<_>>(), ["Ant.", "VIII G"]);
+    assert!(ann[0].3 < ann[1].3 && ann[1].3 < line.staff - 3.0 * list.staff_space);
+    assert!(ann[0].3 > 0.0, "annotations stay inside the layout");
+
+    // Two-line initials indent the first two staves.
+    let style = StyleOptions {
+        initial: Initial::Lines(2),
+        ..StyleOptions::default()
+    };
+    let eng = parse(&src.replace("(::)", &"la(g) ".repeat(120)))
+        .score
+        .engrave(&ApproxMeasure, &style);
+    let list = eng.layout(500.0, &LayoutOptions::default()).display();
+    assert!(list.lines.len() > 3);
+    let lefts: Vec<f32> = list
+        .items
+        .iter()
+        .filter_map(|i| match i {
+            Item::Rect {
+                x,
+                role: neuma::Ink::Staff,
+                ..
+            } => Some(*x),
+            _ => None,
+        })
+        .step_by(4)
+        .collect();
+    assert!(lefts[0] > 0.0 && lefts[1] == lefts[0] && lefts[2] == 0.0, "{lefts:?}");
 }

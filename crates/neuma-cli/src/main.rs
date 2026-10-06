@@ -3,16 +3,18 @@
 use std::io::Read as _;
 use std::process::ExitCode;
 
-use neuma::{LayoutOptions, MetricsTable, Severity, StyleOptions, SvgOptions, Weights};
+use neuma::{Initial, LayoutOptions, MetricsTable, Severity, StyleOptions, SvgOptions, Weights};
 
 /// Metrics for EB Garamond 12, the lyric face the SVG output asks for.
 const EB_GARAMOND: &[u8] = include_bytes!("../../neuma-metrics/tables/eb-garamond-12.bin");
 
-const USAGE: &str = "usage: neuma <render|check|notes> [--width PX] [--scale PX] [FILE|-]
+const USAGE: &str = "usage: neuma <render|check|notes> [--width PX] [--scale PX] [--initial LINES] [FILE|-]
 
   render   write SVG to stdout
   check    print diagnostics; exit 1 on errors
-  notes    print the note map as JSON lines";
+  notes    print the note map as JSON lines
+
+  --initial LINES   drop-cap height in staves; 0 for none (default 1)";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -22,12 +24,18 @@ fn main() -> ExitCode {
     };
     let mut width = 800.0f32;
     let mut scale = LayoutOptions::default().scale;
+    let mut style = StyleOptions::default();
     let mut file = None;
     let mut it = args[1..].iter();
     while let Some(a) = it.next() {
         match a.as_str() {
             "--width" => width = it.next().and_then(|v| v.parse().ok()).unwrap_or(width),
             "--scale" => scale = it.next().and_then(|v| v.parse().ok()).unwrap_or(scale),
+            "--initial" => {
+                if let Some(n) = it.next().and_then(|v| v.parse::<u8>().ok()) {
+                    style.initial = if n == 0 { Initial::None } else { Initial::Lines(n) };
+                }
+            }
             "-h" | "--help" => {
                 println!("{USAGE}");
                 return ExitCode::SUCCESS;
@@ -60,7 +68,7 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let engraving = parsed.score.engrave(&metrics, &StyleOptions::default());
+    let engraving = parsed.score.engrave(&metrics, &style);
     let layout = engraving.layout(
         width,
         &LayoutOptions {
