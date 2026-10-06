@@ -197,9 +197,21 @@ impl Layout<'_> {
                 }
             }
         }
+        // A layout cut short (`max_lines`) still marks recitations as the whole score does,
+        // so the notes after its last line join the marking and are then dropped.
+        let drawn = self.lines.last().map_or(0, |l| l.last + 1);
+        let truncated = drawn < eng.segments.len();
+        let last_placed = placed.iter().rposition(Option::is_some);
         let mut notes = Vec::with_capacity(eng.notes.len());
+        let mut kept = 0;
         for (id, info) in eng.notes.iter().enumerate() {
-            let Some((line, x, y, w, h)) = placed[id] else { continue };
+            let after = truncated && last_placed.is_none_or(|l| id > l);
+            let Some((line, x, y, w, h)) = placed[id].or(after.then_some((0, 0.0, 0.0, 0.0, 0.0))) else {
+                continue;
+            };
+            if !after {
+                kept += 1;
+            }
             let (degree, semitones) = pitch(info);
             let weight = weights.of_note(info);
             let syllable_text = eng.syllable_text.get(info.syllable as usize).cloned().unwrap_or_default();
@@ -235,9 +247,15 @@ impl Layout<'_> {
         }
         let paused: Vec<u32> = eng.pauses.iter().map(|&(before, _)| before).collect();
         mark_recitations(&mut notes, &paused);
+        notes.truncate(kept);
 
         // Lay notes and pauses end to end, and count phrases.
         let mut pauses = timed_pauses(&eng.pauses, weights);
+        // A layout cut short keeps only the pauses drawn on its lines.
+        if truncated {
+            let mut segs = eng.pause_segments.iter();
+            pauses.retain(|_| segs.next().is_some_and(|&s| s < drawn));
+        }
         let mut t = 0.0f32;
         let mut verse = 0u32;
         let mut half = 0u8;

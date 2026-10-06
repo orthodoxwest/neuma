@@ -24,9 +24,9 @@ pub struct Summary {
     pub score_copyright: Option<String>,
     pub commentary: Option<String>,
     pub annotations: Vec<String>,
-    /// The opening words: up to the first bar after the second word, at most eight. An
-    /// opening word in capitals (for the initial) is written in lower case after its first
-    /// letter, here and in `text`.
+    /// The opening words: up to the first bar (other than a virgula) at or after the end of
+    /// the second word, at most eight. An opening word in capitals (for the initial) is
+    /// written in lower case after its first letter, here and in `text`.
     pub incipit: String,
     /// All the sung text, words separated by spaces, for full-text search. Psalm marks and
     /// other signs set as text are left out.
@@ -71,19 +71,23 @@ pub enum OfficePart {
 impl OfficePart {
     pub fn parse(value: &str) -> OfficePart {
         use OfficePart as P;
-        let word = value.split_whitespace().next().unwrap_or("").trim_end_matches('.').to_lowercase();
-        match word.as_str() {
-            "antiphona" | "antiphon" | "ant" | "an" => P::Antiphon,
+        let lower = value.to_lowercase();
+        let mut words = lower.split(|c: char| !c.is_alphabetic()).filter(|w| !w.is_empty());
+        let word = words.next().unwrap_or("");
+        match word {
+            // The lesser doxology, not the Gloria of the Mass.
+            "gloria" if words.next() == Some("patri") => P::Other,
+            "antiphona" | "antiphonae" | "antiphon" | "antiphons" | "ant" | "an" => P::Antiphon,
             "introitus" | "introit" | "intr" | "in" => P::Introit,
             "graduale" | "gradual" | "grad" | "gr" => P::Gradual,
-            "alleluia" | "all" | "al" => P::Alleluia,
+            "alleluia" | "alleluja" | "allelúia" | "all" | "al" => P::Alleluia,
             "tractus" | "tract" | "tr" => P::Tract,
             "sequentia" | "sequence" | "seq" | "sq" => P::Sequence,
             "offertorium" | "offertory" | "off" | "of" => P::Offertory,
             "communio" | "communion" | "comm" | "co" => P::Communion,
-            "hymnus" | "hymn" | "hy" => P::Hymn,
-            "responsorium" | "responsory" | "resp" | "re" | "rb" => P::Responsory,
-            "psalmus" | "psalm" | "ps" => P::Psalm,
+            "hymnus" | "hymni" | "hymn" | "hy" => P::Hymn,
+            "responsorium" | "responsoria" | "responsory" | "resp" | "re" | "rb" | "r" => P::Responsory,
+            "psalmus" | "psalmi" | "psalm" | "ps" => P::Psalm,
             "canticum" | "canticle" | "cant" => P::Canticle,
             "kyrie" | "ky" => P::Kyrie,
             "gloria" | "gl" => P::Gloria,
@@ -121,22 +125,33 @@ impl Mode {
     }
 }
 
-/// A leading 1–8 or I–VIII (any case), and the text after it.
+/// A leading 1–8 or I–VIII (upper or lower case), and the text after it. The number must end the
+/// word or be followed by one differentia letter (`1g`, `VIIIG`, `Ia`), so `Irregularis` and
+/// `IX` are not mode numbers.
 fn mode_number(s: &str) -> (Option<u8>, &str) {
+    let ends = |rest: &str| {
+        let mut chars = rest.chars();
+        match chars.next() {
+            None => true,
+            Some(c) if !c.is_alphabetic() => true,
+            Some(c) => matches!(c.to_ascii_lowercase(), 'a'..='g') && chars.next().is_none_or(|d| !d.is_alphabetic()),
+        }
+    };
     let digits = s.bytes().take_while(u8::is_ascii_digit).count();
     if digits > 0 {
         return match s[..digits].parse::<u8>() {
-            Ok(n @ 1..=8) => (Some(n), &s[digits..]),
+            Ok(n @ 1..=8) if ends(&s[digits..]) => (Some(n), &s[digits..]),
             _ => (None, s),
         };
     }
     const ROMAN: [&str; 8] = ["VIII", "VII", "VI", "IV", "V", "III", "II", "I"];
     const VALUE: [u8; 8] = [8, 7, 6, 4, 5, 3, 2, 1];
     for (r, v) in ROMAN.iter().zip(VALUE) {
-        if s.len() >= r.len() && s.is_char_boundary(r.len()) && s[..r.len()].eq_ignore_ascii_case(r) {
+        let head = s.get(..r.len()).unwrap_or("");
+        // One case throughout: `VIII` or `viii`, not `Ii`.
+        if head == *r || head == r.to_ascii_lowercase() {
             let rest = &s[r.len()..];
-            // `Ia` is mode 1, differentia a; `Irregular` is not a mode number.
-            if rest.chars().next().is_none_or(|c| !c.is_ascii_alphabetic()) || rest.len() <= 2 {
+            if ends(rest) {
                 return (Some(v), rest);
             }
         }
@@ -158,10 +173,9 @@ const INCIPIT_WORDS: usize = 8;
 impl Engraving {
     /// The score's catalogue entry. `header` is the parsed score's header.
     pub fn summary(&self, header: &Header) -> Summary {
-        // Text, word by word.
-        let mut text = String::new();
+        // Text, word by word. A syllable's text can hold spaces of its own (`℟ Ecce`).
+        let mut word_texts: Vec<String> = Vec::new();
         let mut syllables = 0;
-        let mut words = 0;
         let mut word_of_syllable = Vec::with_capacity(self.syllable_text.len());
         let mut last_word = None;
         for (si, plain) in self.syllable_text.iter().enumerate() {
@@ -169,25 +183,31 @@ impl Engraving {
             // Psalm marks (`*`, `†`) and other signs set as text aren't words.
             if plain.chars().any(char::is_alphanumeric) {
                 if last_word != Some(word) {
-                    if !text.is_empty() {
-                        text.push(' ');
-                    }
-                    words += 1;
+                    word_texts.push(String::new());
                     last_word = Some(word);
                 }
-                text.push_str(plain);
+                if let Some(w) = word_texts.last_mut() {
+                    w.push_str(plain);
+                }
                 syllables += 1;
             }
-            word_of_syllable.push(words);
+            word_of_syllable.push(word_texts.len());
         }
+        let words = word_texts.len();
 
-        // The opening word is often in capitals for the initial (`PUER`, `CHristus`).
-        if text.chars().take(2).all(char::is_uppercase) && text.chars().count() >= 2 {
-            let end = text.find(' ').unwrap_or(text.len());
-            let mut chars = text[..end].chars();
-            let first: String = chars.next().into_iter().chain(chars.flat_map(char::to_lowercase)).collect();
-            text.replace_range(..end, &first);
+        // The opening word is often in capitals for the initial (`PUER`, `CHristus`). This
+        // also lowers an opening acronym (`IHS`).
+        if let Some(first) = word_texts.first_mut() {
+            let start = first.find(char::is_alphabetic).unwrap_or(0);
+            let end = first[start..].find(char::is_whitespace).map_or(first.len(), |e| start + e);
+            let token = &first[start..end];
+            if token.chars().count() >= 2 && token.chars().take(2).all(char::is_uppercase) {
+                let mut chars = token.chars();
+                let lowered: String = chars.next().into_iter().chain(chars.flat_map(char::to_lowercase)).collect();
+                first.replace_range(start..end, &lowered);
+            }
         }
+        let text = word_texts.join(" ");
 
         // The incipit runs to the first bar after its second word (an intonation's `*` or a
         // virgula is too early), within the word cap.
@@ -200,7 +220,7 @@ impl Engraving {
             .map(|n| word_of_syllable.get(n.syllable as usize).copied().unwrap_or(0))
             .find(|&w| w >= 2.min(words));
         let take = bar_words.unwrap_or(words).min(INCIPIT_WORDS);
-        let incipit = text.split(' ').take(take).collect::<Vec<_>>().join(" ");
+        let incipit = word_texts[..take].join(" ");
 
         let pitches: Vec<i16> = self.notes.iter().map(|n| pitch(n).1).collect();
         let range = pitches.iter().min().zip(pitches.iter().max()).map(|(lo, hi)| (*lo, *hi));
@@ -288,6 +308,15 @@ mod tests {
         assert_eq!(mode("mode: iv;").unwrap().number, Some(4));
         assert_eq!(mode("mode: Irregularis;").unwrap().number, None);
         assert_eq!(mode("mode: 9;").unwrap().number, None);
+        for v in ["IX", "irr", "Irr", "in", "Vir", "Ii", "1st"] {
+            assert_eq!(mode(&format!("mode: {v};")).unwrap().number, None, "{v}");
+        }
+        let m = mode("mode: IVg;").unwrap();
+        assert_eq!((m.number, m.differentia.as_deref()), (Some(4), Some("g")));
+        let m = mode("mode: Ia;").unwrap();
+        assert_eq!((m.number, m.differentia.as_deref()), (Some(1), Some("a")));
+        let m = mode("mode: VIII.;").unwrap();
+        assert_eq!((m.number, m.differentia), (Some(8), None));
         assert_eq!(mode("mode: ;"), None);
         assert_eq!(mode(""), None);
     }
@@ -301,6 +330,13 @@ mod tests {
             ("hymn", OfficePart::Hymn),
             ("Communio", OfficePart::Communion),
             ("Varia", OfficePart::Other),
+            ("Ant.ad Magn.", OfficePart::Antiphon),
+            ("R. br.", OfficePart::Responsory),
+            ("Alleluja", OfficePart::Alleluia),
+            ("Allelúia", OfficePart::Alleluia),
+            ("Psalmi", OfficePart::Psalm),
+            ("Gloria", OfficePart::Gloria),
+            ("Gloria Patri", OfficePart::Other),
         ] {
             assert_eq!(OfficePart::parse(v), k, "{v}");
         }
@@ -319,6 +355,13 @@ mod tests {
         assert_eq!(s.text, "Christus factus est pro nobis");
         assert_eq!(s.incipit, "Christus factus est");
         assert_eq!(s.words, 5);
+        // A syllable's own spaces don't split its word.
+        let s = summarize("%%\n(c4) <sp>R/</sp> Ec(g)ce(h) quam(g) (,) bo(h)num(g) (::)");
+        assert_eq!(s.text, "℟ Ecce quam bonum");
+        assert_eq!((s.words, s.incipit.as_str()), (3, "℟ Ecce quam"));
+        // Capitals after a sign are lowered too.
+        let s = summarize("%%\n(c4) <sp>R/</sp> EC(g)ce(h) (::)");
+        assert_eq!(s.text, "℟ Ecce");
     }
 
     #[test]

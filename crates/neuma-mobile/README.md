@@ -105,4 +105,6 @@ The entry holds:
 - counts, and the length in pulses.
 
 For a preview row, lay out with `maxLines = 1`. The line is broken as it would be in the
-whole score.
+whole score. An initial that spans more staves keeps its full size, and the page's
+height includes it. The timeline ends with the kept lines: their notes and the pauses drawn
+on them.

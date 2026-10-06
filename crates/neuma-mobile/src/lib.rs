@@ -126,7 +126,8 @@ pub struct LayoutOptions {
     pub last_line: LastLine,
     pub weights: Weights,
     /// Keep only the first this many lines, as broken for the whole score, for previews
-    /// such as an incipit; 0 keeps them all.
+    /// such as an incipit; 0 keeps them all. An initial spanning more lines keeps its full
+    /// size, and the height includes it. The timeline ends with the kept lines.
     #[uniffi(default = 0)]
     pub max_lines: u32,
 }
@@ -547,7 +548,8 @@ pub struct Summary {
     pub score_copyright: Option<String>,
     pub commentary: Option<String>,
     pub annotations: Vec<String>,
-    /// The opening words: up to the first bar or psalm mark, at most eight words.
+    /// The opening words: up to the first bar (other than a virgula) at or after the end of
+    /// the second word, at most eight words.
     pub incipit: String,
     /// All the sung text, for full-text search.
     pub text: String,

@@ -373,25 +373,51 @@ fn tall_initials_never_cover_the_clef() {
 #[test]
 fn max_lines_keeps_the_first_lines_as_broken() {
     for (name, src) in corpus() {
-        let eng = parse(&src).score.engrave(&ApproxMeasure, &StyleOptions::default());
-        let full = eng.layout(300.0, &LayoutOptions::default());
-        let full_list = full.display();
-        for n in 1..=3 {
-            let opts = LayoutOptions {
-                max_lines: n,
-                ..LayoutOptions::default()
+        for spans in 1..=4 {
+            let style = StyleOptions {
+                initial: Initial::Lines(spans),
+                ..StyleOptions::default()
             };
-            let part = eng.layout(300.0, &opts).display();
-            let kept = n.min(full_list.lines.len());
-            assert_eq!(part.lines, full_list.lines[..kept], "{name} {n}");
-            assert!(part.height <= full_list.height + 0.01, "{name} {n}");
-            assert!(part.width <= full_list.width + 0.01, "{name} {n}");
-            // Every item on a kept line is drawn exactly as in the full layout.
-            let bottom = part.lines.last().unwrap().bottom;
-            for item in &part.items {
-                assert!(full_list.items.contains(item), "{name} {n}: {item:?}");
-                if let Item::Rect { y, .. } = item {
-                    assert!(*y <= bottom, "{name} {n}");
+            let eng = parse(&src).score.engrave(&ApproxMeasure, &style);
+            for width in [300.0, 500.0] {
+                let full = eng.layout(width, &LayoutOptions::default());
+                let full_list = full.display();
+                let full_map = full.notes(&Weights::default());
+                for n in 1..=3 {
+                    let opts = LayoutOptions {
+                        max_lines: n,
+                        ..LayoutOptions::default()
+                    };
+                    let part = eng.layout(width, &opts);
+                    let list = part.display();
+                    let ctx = format!("{name} spans {spans} width {width} lines {n}");
+                    let kept = n.min(full_list.lines.len());
+                    assert_eq!(list.lines, full_list.lines[..kept], "{ctx}");
+                    assert!(list.height <= full_list.height + 0.01, "{ctx}");
+                    assert!(list.width <= full_list.width + 0.01, "{ctx}");
+                    // Every item on a kept line, the initial included, is drawn exactly as in
+                    // the full layout.
+                    let bottom = list.lines.last().unwrap().bottom;
+                    for item in &list.items {
+                        assert!(full_list.items.contains(item), "{ctx}: {item:?}");
+                        if let Item::Rect { y, .. } = item {
+                            assert!(*y <= bottom, "{ctx}");
+                        }
+                    }
+                    // The timeline is the full one cut after the kept notes and the pauses
+                    // drawn with them.
+                    let map = part.notes(&Weights::default());
+                    assert_eq!(map.notes[..], full_map.notes[..map.notes.len()], "{ctx}");
+                    assert_eq!(map.pauses[..], full_map.pauses[..map.pauses.len()], "{ctx}");
+                    if kept < full_list.lines.len() {
+                        let last = map.notes.last().unwrap();
+                        let end = map.pauses.last().map_or(0.0, |p| p.start + p.weight);
+                        let expected = (last.start + last.duration).max(end);
+                        assert!((map.duration - expected).abs() < 1e-4, "{ctx}");
+                        assert!(map.pauses.iter().all(|p| p.before_note <= last.id + 1), "{ctx}");
+                    } else {
+                        assert_eq!(map.duration, full_map.duration, "{ctx}");
+                    }
                 }
             }
         }

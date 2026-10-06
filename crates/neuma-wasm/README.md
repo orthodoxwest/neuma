@@ -91,14 +91,17 @@ markup is removed.
   `sanctus`, `agnus` or `other`.
 - `mode`: `{ number, name, modifier, differentia }`. `number` is 1 to 8 when the header
   starts with one (`8`, `VIII`, `1g`), else `null` (`per`).
-- `incipit`: the opening words, up to the first bar after the second word, at most eight.
-  `text`: all the sung text, for search. Both skip psalm marks, and write an opening word
-  in capitals (`PUER`) as `Puer`.
+- `incipit`: the opening words, up to the first bar (not a virgula) at or after the end of
+  the second word, at most eight.
+- `text`: all the sung text, for search. Both skip psalm marks, and write an opening word
+  in capitals (`PUER`) as `Puer`, an opening acronym included.
 - `range` (`[lowest, highest]`) and `finalPitch`: in semitones above the clef's do.
 - `notes`, `syllables`, `words`, and `duration` in pulses with the default weights.
 
 For a preview, lay the score out with `maxLines: 1`. The first line is broken as it would
-be in the whole score.
+be in the whole score. An initial that spans more staves keeps its full size, and the page's
+height includes it. The timeline ends with the kept lines: their notes and the pauses drawn
+on them.
 
 `neuma notes FILE` prints the same layout JSON from the command line, without the SVG.
 `neuma info FILE...` prints one catalogue entry per file, as a line of JSON with a `file`

@@ -74,6 +74,10 @@ const preview = long.layout(300, { maxLines: 1 });
 assert.ok(full.timeline.lines.length > 1 && preview.timeline.lines.length === 1);
 assert.ok(preview.height < full.height);
 assert.deepEqual(preview.timeline.notes.map((n) => n.id), full.timeline.notes.filter((n) => n.line === 0).map((n) => n.id));
+// The preview's timeline ends with its line: no pauses from the lines left out.
+const lastNote = preview.timeline.notes.at(-1);
+assert.ok(preview.timeline.pauses.every((p) => p.beforeNote <= lastNote.id + 1));
+assert.ok(preview.timeline.duration < full.timeline.duration);
 
 assert.equal(DEFAULT_WEIGHTS.note, 1);
 console.log(`ok: ${notes.length} notes, ${wide.timeline.lines.length} lines at 900, ${narrow.timeline.lines.length} at 360`);
