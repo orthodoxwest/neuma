@@ -1,0 +1,18 @@
+[package]
+name = "neuma-book"
+description = "Print booklets for neuma: chant, pointed psalms, rubrics and text paginated into SVG pages and PDF"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+neuma = { path = "../neuma" }
+neuma-tones = { path = "../neuma-tones" }
+# Shapes text with the booklet's font (kerning, small caps) and reads its outlines, so measured
+# and drawn text agree. Already in the workspace through neuma-metrics.
+rustybuzz = "0.20"
+
+[lints]
+workspace = true

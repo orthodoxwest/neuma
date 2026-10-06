@@ -90,7 +90,9 @@ neuma/
     neuma-wasm/              browser package: a hand-written C ABI and one ES module with
                              the wasm inlined
     neuma-mobile/            UniFFI bindings for Swift and Kotlin
-    neuma-cli/               `neuma render|check|notes|fmt|point`
+    neuma-book/              print booklets: a `.book` list of pieces paginated into SVG pages
+                             and a PDF (issue #10)
+    neuma-cli/               `neuma render|check|notes|fmt|point|book`
   tools/
     gen-glyphs/              exsurge Glyphs.js → normalized glyphs/table.rs (checked in)
   tests/
@@ -755,3 +757,6 @@ syllabification is an **M2b requirement**, not an M5 addition:
    English rules?
 4. Do we want an SVG mode that draws text as paths, for exports that must
    look identical without the font installed?
+   `neuma-book` does this for booklets (`text-as-paths: yes`, or
+   `neuma book --text-as-paths`), in its PDF and SVG pages; the core's SVG
+   still names the font.
