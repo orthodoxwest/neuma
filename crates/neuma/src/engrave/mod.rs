@@ -504,6 +504,22 @@ impl Engraver<'_> {
         }
         let next_note = self.note_positions.get(*run.ids.last().unwrap_or(&0) as usize + 1).copied();
         let splits = neume::split(&mut run.notes);
+        // A double mora after a neume ending on two pitches (`hg..`) is one mora for each of
+        // its last two notes, as Gregorio reads it: a dot after the neume at each note's height.
+        for s in &splits {
+            if s.end - s.start >= 2 {
+                let (a, b) = (s.end - 2, s.end - 1);
+                if run.notes[b].morae == 2 && run.notes[a].morae == 0 && run.notes[a].position != run.notes[b].position {
+                    run.notes[a].morae = 1;
+                    run.notes[b].morae = 1;
+                    for k in [a, b] {
+                        if let Some(info) = self.notes.get_mut(run.ids[k] as usize) {
+                            info.morae = 1;
+                        }
+                    }
+                }
+            }
+        }
         let mut x = open.advance(SYLLABLE_GAP);
         for (k, s) in splits.iter().enumerate() {
             let notes = &run.notes[s.start..s.end];

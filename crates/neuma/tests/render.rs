@@ -710,3 +710,48 @@ fn lyrics_sit_where_gregorio_sets_them() {
         assert!((drop - 8.3).abs() < 0.01, "{lower:?}");
     }
 }
+
+#[test]
+fn a_double_mora_on_a_clivis_dots_each_note() {
+    // Gregorio reads `hg..` as a mora on each note: one dot after the clivis at each note's
+    // height, and both notes held.
+    let eng = parse("(c4) a(hg..)").score.engrave(&ApproxMeasure, &NO_INITIAL);
+    let layout = eng.layout(400.0, &LayoutOptions::default());
+    let dots: Vec<(f32, f32, Option<u32>)> = layout
+        .display()
+        .items
+        .iter()
+        .filter_map(|i| match i {
+            Item::Glyph {
+                x,
+                y,
+                role: neuma::Ink::Mora,
+                note,
+                ..
+            } => Some((*x, *y, *note)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(dots.len(), 2, "{dots:?}");
+    assert!((dots[0].0 - dots[1].0).abs() < 0.01, "{dots:?}");
+    assert!(dots[0].1 < dots[1].1, "{dots:?}");
+    assert_eq!((dots[0].2, dots[1].2), (Some(0), Some(1)));
+    let weights = Weights::default();
+    let map = layout.notes(&weights);
+    assert!(map.notes.iter().all(|n| n.weight == weights.mora), "{:?}", map.notes);
+    // A double mora on a single note stays two dots side by side, on that note.
+    let eng = parse("(c4) a(h..)").score.engrave(&ApproxMeasure, &NO_INITIAL);
+    let list = eng.layout(400.0, &LayoutOptions::default()).display();
+    let ys: Vec<f32> = list
+        .items
+        .iter()
+        .filter_map(|i| match i {
+            Item::Glyph {
+                y, role: neuma::Ink::Mora, ..
+            } => Some(*y),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(ys.len(), 2);
+    assert_eq!(ys[0], ys[1]);
+}
