@@ -16,6 +16,7 @@ pub struct Summary {
     pub office_part: Option<String>,
     pub kind: Option<OfficePart>,
     pub mode: Option<Mode>,
+    /// A short label for when the piece is sung; a calendar holds the full list of uses.
     pub occasion: Option<String>,
     pub book: Option<String>,
     pub language: Option<String>,
@@ -24,6 +25,9 @@ pub struct Summary {
     pub score_copyright: Option<String>,
     pub commentary: Option<String>,
     pub annotations: Vec<String>,
+    /// Every other header, as written and in source order, so a library can keep its own
+    /// fields (`source`, `translation-of`) in the score file.
+    pub other_headers: Vec<(String, String)>,
     /// The opening words: up to the first bar (other than a virgula) at or after the end of
     /// the second word, at most eight. An opening word in capitals (for the initial) is
     /// written in lower case after its first letter, here and in `text`.
@@ -57,6 +61,13 @@ pub enum OfficePart {
     Communion,
     Hymn,
     Responsory,
+    /// A short responsory (`Responsorium breve`, `R. br.`).
+    ShortResponsory,
+    Versicle,
+    /// The chapter (`Capitulum`).
+    Chapter,
+    /// The collect (`Oratio`).
+    Collect,
     Psalm,
     Canticle,
     Kyrie,
@@ -77,6 +88,16 @@ impl OfficePart {
         match word {
             // The lesser doxology, not the Gloria of the Mass.
             "gloria" if words.next() == Some("patri") => P::Other,
+            "responsorium" | "responsoria" | "responsory" | "resp" | "r"
+                if words.next().is_some_and(|w| matches!(w, "breve" | "brevia" | "br" | "brev")) =>
+            {
+                P::ShortResponsory
+            }
+            "short" if lower.contains("respons") => P::ShortResponsory,
+            "rb" => P::ShortResponsory,
+            "versiculus" | "versicle" | "versicles" | "vers" | "v" => P::Versicle,
+            "capitulum" | "chapter" | "cap" => P::Chapter,
+            "oratio" | "collect" | "collecta" | "or" => P::Collect,
             "antiphona" | "antiphonae" | "antiphon" | "antiphons" | "ant" | "an" => P::Antiphon,
             "introitus" | "introit" | "intr" | "in" => P::Introit,
             "graduale" | "gradual" | "grad" | "gr" => P::Gradual,
@@ -86,7 +107,7 @@ impl OfficePart {
             "offertorium" | "offertory" | "off" | "of" => P::Offertory,
             "communio" | "communion" | "comm" | "co" => P::Communion,
             "hymnus" | "hymni" | "hymn" | "hy" => P::Hymn,
-            "responsorium" | "responsoria" | "responsory" | "resp" | "re" | "rb" | "r" => P::Responsory,
+            "responsorium" | "responsoria" | "responsory" | "resp" | "re" | "r" => P::Responsory,
             "psalmus" | "psalmi" | "psalm" | "ps" => P::Psalm,
             "canticum" | "canticle" | "cant" => P::Canticle,
             "kyrie" | "ky" => P::Kyrie,
@@ -166,6 +187,23 @@ fn field(header: &Header, name: &str) -> Option<String> {
         .map(|v| v.trim().to_string())
         .filter(|v| !v.is_empty())
 }
+
+/// Headers the summary types; the rest go to `other_headers`.
+const TYPED: [&str; 13] = [
+    "name",
+    "office-part",
+    "mode",
+    "mode-modifier",
+    "mode-differentia",
+    "occasion",
+    "book",
+    "language",
+    "transcriber",
+    "gabc-copyright",
+    "score-copyright",
+    "commentary",
+    "annotation",
+];
 
 /// The most words an incipit takes when the score has no early bar.
 const INCIPIT_WORDS: usize = 8;
@@ -247,6 +285,12 @@ impl Engraving {
                 .map(|a| a.trim().to_string())
                 .filter(|a| !a.is_empty())
                 .collect(),
+            other_headers: header
+                .fields
+                .iter()
+                .filter(|(n, _)| !TYPED.iter().any(|t| n.eq_ignore_ascii_case(t)))
+                .map(|(n, v)| (n.clone(), v.trim().to_string()))
+                .collect(),
             incipit,
             text,
             range,
@@ -284,6 +328,15 @@ mod tests {
         assert_eq!(s.kind, Some(OfficePart::Introit));
         assert_eq!(s.mode.as_ref().and_then(|m| m.number), Some(7));
         assert_eq!(s.annotations, ["Intr."]);
+        assert!(s.other_headers.is_empty());
+        let other = summarize("name: x;\nsource: Vespers booklet, p. 7;\ntranslation-of: puer-natus;\nMode: 7;\n%%\n(c4) a(g)");
+        assert_eq!(
+            other.other_headers,
+            [
+                ("source".to_string(), "Vespers booklet, p. 7".to_string()),
+                ("translation-of".to_string(), "puer-natus".to_string())
+            ]
+        );
         assert_eq!(s.text, "Puer natus est nobis et fílius");
         assert_eq!(s.incipit, "Puer natus est");
         assert_eq!((s.words, s.syllables, s.notes), (6, 11, 14));
@@ -326,12 +379,20 @@ mod tests {
         for (v, k) in [
             ("Antiphona", OfficePart::Antiphon),
             ("Ant.", OfficePart::Antiphon),
-            ("Responsorium breve", OfficePart::Responsory),
+            ("Responsorium breve", OfficePart::ShortResponsory),
+            ("Responsorium", OfficePart::Responsory),
+            ("Short Responsory", OfficePart::ShortResponsory),
+            ("Versicle", OfficePart::Versicle),
+            ("V.", OfficePart::Versicle),
+            ("Capitulum", OfficePart::Chapter),
+            ("Chapter", OfficePart::Chapter),
+            ("Oratio", OfficePart::Collect),
+            ("Collect", OfficePart::Collect),
             ("hymn", OfficePart::Hymn),
             ("Communio", OfficePart::Communion),
             ("Varia", OfficePart::Other),
             ("Ant.ad Magn.", OfficePart::Antiphon),
-            ("R. br.", OfficePart::Responsory),
+            ("R. br.", OfficePart::ShortResponsory),
             ("Alleluja", OfficePart::Alleluia),
             ("Allelúia", OfficePart::Alleluia),
             ("Psalmi", OfficePart::Psalm),
