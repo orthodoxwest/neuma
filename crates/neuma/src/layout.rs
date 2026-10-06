@@ -4,7 +4,6 @@
 //! and an optimal-fit breaker picks the breaks with the least total demerits. Arithmetic is
 //! limited to add, subtract, multiply, divide and comparison (DESIGN section 13).
 
-use crate::engrave::neume::INTRA;
 use crate::engrave::{Break, CAP_HEIGHT, Engraving, Segment, clef_pieces, custos_piece};
 use crate::score::{Clef, CustosRule};
 
@@ -44,8 +43,9 @@ const NOTES_WORD_GAP: f32 = 2.0;
 /// The space either side of a bar standing in a syllable of its own, as measured from
 /// GregorioTeX's output (its bar spacing, `bar@minor` and the like, is 0.18 cm plus glue).
 const BAR_GAP: f32 = 1.6;
-/// Gap after the line-start clef.
-const CLEF_GAP: f32 = INTRA * 2.0;
+/// Gap after the line-start clef: GregorioTeX's `spaceafterlineclef` is 0.23 cm, and its
+/// output shows 1.5 staff spaces from the clef's ink to the first note.
+const CLEF_GAP: f32 = 1.5;
 /// Gap between the first staff line and the lowest annotation's baseline.
 const ANNOTATION_GAP: f32 = 1.0;
 /// Gap between the top of a one-staff initial and the baseline of the annotation over it,
@@ -762,6 +762,22 @@ impl Engraving {
 mod tests {
     use super::*;
     use crate::{ApproxMeasure, Initial, StyleOptions, parse};
+
+    #[test]
+    fn the_first_note_keeps_gregorios_distance_from_the_clef() {
+        let style = StyleOptions {
+            initial: Initial::None,
+            ..StyleOptions::default()
+        };
+        let eng = parse("(c4) a(g) b(h)").score.engrave(&ApproxMeasure, &style);
+        let (clef, start) = eng.line_start(0);
+        let (_, clef_right) = clef_pieces(&clef.unwrap(), 0.0);
+        assert!((start - clef_right - 1.5).abs() < 1e-6);
+        // The first note's ink starts there.
+        let x = eng.trial(0, 0, start).xs[0];
+        let (left, _) = eng.segments[0].ink.unwrap();
+        assert!((x + left - start).abs() < 1e-6);
+    }
 
     #[test]
     fn a_stuck_line_takes_the_break_it_ends_at() {
