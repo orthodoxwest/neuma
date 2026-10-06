@@ -397,22 +397,7 @@ impl Chant {
             ..defaults
         };
         let engraving = parsed.score.engrave(EngineFont::from(options.font).table(), &style);
-        let diagnostics = parsed
-            .diagnostics
-            .iter()
-            .chain(&engraving.diagnostics)
-            .map(|d| Diagnostic {
-                severity: match d.severity {
-                    neuma::Severity::Info => Severity::Info,
-                    neuma::Severity::Warning => Severity::Warning,
-                    neuma::Severity::Error => Severity::Error,
-                },
-                start: d.span.start as u64,
-                end: d.span.end as u64,
-                code: d.code.to_string(),
-                message: d.message.clone(),
-            })
-            .collect();
+        let diagnostics = parsed.diagnostics.iter().chain(&engraving.diagnostics).map(diagnostic).collect();
         let summary = summary(engraving.summary(&parsed.score.header));
         Arc::new(Chant {
             engraving,
@@ -582,6 +567,154 @@ pub struct HeaderField {
 #[uniffi::export]
 pub fn summarize(gabc: String) -> Summary {
     summary(neuma::summarize(&gabc))
+}
+
+fn diagnostic(d: &neuma::Diagnostic) -> Diagnostic {
+    Diagnostic {
+        severity: match d.severity {
+            neuma::Severity::Info => Severity::Info,
+            neuma::Severity::Warning => Severity::Warning,
+            neuma::Severity::Error => Severity::Error,
+        },
+        start: d.span.start as u64,
+        end: d.span.end as u64,
+        code: d.code.to_string(),
+        message: d.message.clone(),
+    }
+}
+
+/// When a psalm's intonation is sung.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum Intone {
+    /// On the first verse only, as at the Office.
+    FirstVerse,
+    /// On every verse, as in the Gospel canticles.
+    EveryVerse,
+    Never,
+}
+
+/// Which part of a verse a note is in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum VersePart {
+    /// Up to the flex `†`.
+    Flex,
+    /// Up to the mediant `*`.
+    Mediant,
+    /// After the mediant.
+    Termination,
+}
+
+/// What a note does in the psalm tone.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum ToneRole {
+    Intonation,
+    /// The reciting note.
+    Tenor,
+    Preparatory,
+    Accent,
+    /// After an accent: passing notes and the cadence's ending.
+    Ending,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct PsalmNote {
+    /// Index of the verse in the text.
+    pub verse: u32,
+    /// The printed verse number.
+    pub number: Option<u32>,
+    pub part: VersePart,
+    pub role: ToneRole,
+    /// The sung syllable's UTF-8 bytes in the pointed text.
+    pub start: u64,
+    pub end: u64,
+}
+
+/// Pointed text set to a tone. Engrave `gabc` with `Chant`; `notes[i]` describes note `i`.
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct PsalmSetting {
+    pub gabc: String,
+    pub notes: Vec<PsalmNote>,
+    /// Problems in the pointing, with spans in the pointed text.
+    pub diagnostics: Vec<Diagnostic>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Error)]
+pub enum ToneError {
+    /// No built-in tone has that name.
+    Unknown { name: String },
+    /// The tone block can't be read.
+    Invalid { message: String },
+}
+
+impl std::fmt::Display for ToneError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ToneError::Unknown { name } => write!(f, "no built-in tone {name}"),
+            ToneError::Invalid { message } => f.write_str(message),
+        }
+    }
+}
+
+impl std::error::Error for ToneError {}
+
+/// Sets pointed psalm text (a verse per line, with `*`, `†`, `·`, acutes and `–`) to a
+/// built-in tone such as `8.G`.
+#[uniffi::export]
+pub fn psalm(text: String, tone: String, intone: Intone) -> Result<PsalmSetting, ToneError> {
+    let t = neuma_tones::Tone::named(&tone).ok_or(ToneError::Unknown { name: tone })?;
+    Ok(setting(t, &text, intone))
+}
+
+/// Sets pointed text to a tone of your own, given as a tone block (`name:`, `clef:`,
+/// `mediant:` and `termination:` lines).
+#[uniffi::export]
+pub fn psalm_with_tone(text: String, tone: String, intone: Intone) -> Result<PsalmSetting, ToneError> {
+    let t = neuma_tones::Tone::parse(&tone).map_err(|e| ToneError::Invalid { message: e.to_string() })?;
+    Ok(setting(&t, &text, intone))
+}
+
+/// The built-in tones' names.
+#[uniffi::export]
+pub fn tone_names() -> Vec<String> {
+    neuma_tones::Tone::builtin().iter().map(|t| t.name.clone()).collect()
+}
+
+fn setting(tone: &neuma_tones::Tone, text: &str, intone: Intone) -> PsalmSetting {
+    let options = neuma_tones::Options {
+        intone: match intone {
+            Intone::FirstVerse => neuma_tones::Intone::FirstVerse,
+            Intone::EveryVerse => neuma_tones::Intone::EveryVerse,
+            Intone::Never => neuma_tones::Intone::Never,
+        },
+        ..neuma_tones::Options::default()
+    };
+    let s = neuma_tones::apply_text(tone, text, &options);
+    PsalmSetting {
+        notes: s
+            .notes
+            .iter()
+            .map(|n| PsalmNote {
+                verse: n.verse as u32,
+                number: n.number,
+                part: match n.part {
+                    neuma_tones::PartKind::Flex => VersePart::Flex,
+                    neuma_tones::PartKind::Mediant => VersePart::Mediant,
+                    neuma_tones::PartKind::Termination => VersePart::Termination,
+                },
+                role: match n.role {
+                    neuma_tones::Role::Intonation => ToneRole::Intonation,
+                    neuma_tones::Role::Tenor => ToneRole::Tenor,
+                    neuma_tones::Role::Preparatory => ToneRole::Preparatory,
+                    neuma_tones::Role::Accent => ToneRole::Accent,
+                    neuma_tones::Role::Ending => ToneRole::Ending,
+                },
+                start: n.source.start as u64,
+                end: n.source.end as u64,
+            })
+            .collect(),
+        diagnostics: s.diagnostics.iter().map(diagnostic).collect(),
+        gabc: s.gabc,
+    }
 }
 
 fn summary(s: neuma::Summary) -> Summary {

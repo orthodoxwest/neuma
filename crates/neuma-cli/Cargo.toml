@@ -1,6 +1,6 @@
 [package]
 name = "neuma-cli"
-description = "Command-line tools for the neuma chant engine: render, check and note maps."
+description = "Command-line tools for the neuma chant engine: render, check, note maps and psalm tones."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -13,6 +13,7 @@ path = "src/main.rs"
 
 [dependencies]
 neuma = { path = "../neuma" }
+neuma-tones = { path = "../neuma-tones" }
 neuma-wasm = { path = "../neuma-wasm" }
 
 [lints]

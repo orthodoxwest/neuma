@@ -45,6 +45,46 @@ fn field(out: &mut String, first: &mut bool, name: &str) {
     out.push(':');
 }
 
+/// A psalm setting: `{ gabc, notes: [{ verse, number, part, role, start, end }], diagnostics }`.
+/// `notes[i]` describes note `i` of the engraved score.
+pub fn setting(out: &mut String, s: &neuma_tones::Setting) {
+    out.push_str("{\"gabc\":");
+    string(out, &s.gabc);
+    out.push_str(",\"notes\":[");
+    for (i, n) in s.notes.iter().enumerate() {
+        if i > 0 {
+            out.push(',');
+        }
+        let part = match n.part {
+            neuma_tones::PartKind::Flex => "flex",
+            neuma_tones::PartKind::Mediant => "mediant",
+            neuma_tones::PartKind::Termination => "termination",
+        };
+        let role = match n.role {
+            neuma_tones::Role::Intonation => "intonation",
+            neuma_tones::Role::Tenor => "tenor",
+            neuma_tones::Role::Preparatory => "preparatory",
+            neuma_tones::Role::Accent => "accent",
+            neuma_tones::Role::Ending => "ending",
+        };
+        let _ = write!(out, r#"{{"verse":{},"number":"#, n.verse);
+        match n.number {
+            Some(v) => {
+                let _ = write!(out, "{v}");
+            }
+            None => out.push_str("null"),
+        }
+        let _ = write!(
+            out,
+            r#","part":"{part}","role":"{role}","start":{},"end":{}}}"#,
+            n.source.start, n.source.end
+        );
+    }
+    out.push_str("],\"diagnostics\":");
+    diagnostics(out, &s.diagnostics);
+    out.push('}');
+}
+
 pub fn diagnostics(out: &mut String, diags: &[Diagnostic]) {
     out.push('[');
     for (i, d) in diags.iter().enumerate() {

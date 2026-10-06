@@ -104,6 +104,38 @@ export function summarize(gabc) {
   });
 }
 
+/**
+ * Sets pointed psalm text (a verse per line, marked with `*`, `†`, `·`, acutes and `–`) to a
+ * psalm tone, and returns the score as GABC for `new Chant(gabc)`.
+ * @param {string} text
+ * @param {string} tone a built-in tone such as "8.G" (see `TONES`), or a whole tone block
+ *   (`name:`, `clef:`, `mediant:`, `termination:` lines) for a tone of your own.
+ * @param {{ intone?: "first"|"every"|"never" }} [options]
+ * @returns {{ gabc: string, notes: Array<{ verse: number, number: number|null,
+ *   part: "flex"|"mediant"|"termination", role: "intonation"|"tenor"|"preparatory"|"accent"|"ending",
+ *   start: number, end: number }>, diagnostics: Array<object> }}
+ *   `notes[i]` describes note `i` of the engraved chant (`timeline.notes[i].id === i`);
+ *   `start` and `end` are the sung syllable's UTF-8 bytes in `text`.
+ */
+export function psalm(text, tone, { intone = "first" } = {}) {
+  return guarded((w) => {
+    const custom = String(tone).includes("\n") ? 1 : 0;
+    putInput(String(tone) + "\0" + String(text));
+    w.neuma_psalm(custom, intone === "every" ? 1 : intone === "never" ? 2 : 0);
+    const out = JSON.parse(takeOutput());
+    if (out.error) throw new Error(out.error);
+    return out;
+  });
+}
+
+/** The built-in psalm tones' names, such as "8.G". Call after `init()`. */
+export function tones() {
+  return guarded((w) => {
+    w.neuma_tones();
+    return takeOutput().split("\n");
+  });
+}
+
 export class Chant {
   #handle;
   #generation;

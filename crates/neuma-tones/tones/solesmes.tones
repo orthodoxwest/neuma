@@ -1,0 +1,175 @@
+# The Solesmes psalm tones with their usual endings, as in the Liber Usualis (1961).
+# Transcribed from the tone table of jgabc by Benjamin Bloomfield, which is in the public
+# domain (Unlicense): https://github.com/bbloomf/jgabc
+#
+# Each tone is a block: `name:`, `clef:`, `mediant:` and `termination:`, optionally `flex:`,
+# separated by blank lines. A formula lists one GABC neume per syllable. The first `r` neume
+# is the reciting note (the tenor): neumes before it are the intonation, and neumes after it
+# up to the first accent are preparatory syllables. A neume after `'` falls on an accented
+# syllable. A neume ending `r` takes any number of unaccented syllables, and the neumes after
+# the last accent take the last syllables. A final `.` only ends the formula.
+
+name: 1.D
+clef: c4
+mediant: f gh hr 'ixi hr 'g hr h.
+termination: hr g f 'gh gr gvFED.
+
+name: 1.D-
+clef: c4
+mediant: f gh hr 'ixi hr 'g hr h.
+termination: hr g f 'g gr gvFED.
+
+name: 1.D2
+clef: c4
+mediant: f gh hr 'ixi hr 'g hr h.
+termination: hr g f gr 'gf d.
+
+name: 1.f
+clef: c4
+mediant: f gh hr 'ixi hr 'g hr h.
+termination: hr g f 'gh gr gf..
+
+name: 1.g
+clef: c4
+mediant: f gh hr 'ixi hr 'g hr h.
+termination: hr g f 'gh gr g.
+
+name: 1.g2
+clef: c4
+mediant: f gh hr 'ixi hr 'g hr h.
+termination: hr g f 'g gr ghg.
+
+name: 1.g3
+clef: c4
+mediant: f gh hr 'ixi hr 'g hr h.
+termination: hr g f 'g gr g.
+
+name: 1.a
+clef: c4
+mediant: f gh hr 'ixi hr 'g hr h.
+termination: hr g f 'g hr h.
+
+name: 1.a2
+clef: c4
+mediant: f gh hr 'ixi hr 'g hr h.
+termination: hr g f 'g gr gh..
+
+name: 1.a3
+clef: c4
+mediant: f gh hr 'ixi hr 'g hr h.
+termination: hr g f 'gh gr gh..
+
+name: 2.D
+clef: f3
+mediant: e f hr 'i hr h.
+termination: hr g 'e fr f.
+
+name: 3.b
+clef: c4
+mediant: g hj jr 'k jr jr 'ih j.
+termination: jr h 'j jr i.
+
+name: 3.a
+clef: c4
+mediant: g hj jr 'k jr jr 'ih j.
+termination: jr h 'j jr ih..
+
+name: 3.a2
+clef: c4
+mediant: g hj jr 'k jr jr 'ih j.
+termination: jr ji hi 'h gr gh..
+
+name: 3.g
+clef: c4
+mediant: g hj jr 'k jr jr 'ih j.
+termination: jr ji hi 'h gr g.
+
+name: 3.g2
+clef: c4
+mediant: g hj jr 'k jr jr 'ih j.
+termination: jr h j i 'h gr g.
+
+name: 4.g
+clef: c4
+mediant: h gh hr g h 'i hr h.
+termination: hr 'h gr g.
+
+name: 4.E
+clef: c4
+mediant: h gh hr g h 'i hr h.
+termination: hr g h ih gr 'gf e.
+
+name: 4.c
+clef: c3
+mediant: i hi ir h i 'j ir i.
+termination: ir 'i hr h.
+
+name: 4.A
+clef: c3
+mediant: i hi ir h i 'j ir i.
+termination: ir h i j 'h fr f.
+
+name: 4.A*
+clef: c3
+mediant: i hi ir h i 'j ir i.
+termination: ir h i j 'h fr fg..
+
+name: 4.d
+clef: c3
+mediant: i hi ir h i 'j ir i.
+termination: ir h i j 'h ir i.
+
+name: 5.a
+clef: c3
+mediant: d f hr 'i hr h.
+termination: hr 'i gr 'h fr f.
+
+name: 6.F
+clef: c4
+mediant: f gh hr 'ixi hr 'g hr h.
+termination: hr f gh 'g fr f.
+
+name: 7.a
+clef: c3
+mediant: hg hi ir 'k jr 'i jr j.
+termination: ir 'j ir 'h hr gf..
+
+name: 7.b
+clef: c3
+mediant: hg hi ir 'k jr 'i jr j.
+termination: ir 'j ir 'h hr g.
+
+name: 7.c
+clef: c3
+mediant: hg hi ir 'k jr 'i jr j.
+termination: ir 'j ir 'h hr gh..
+
+name: 7.c2
+clef: c3
+mediant: hg hi ir 'k jr 'i jr j.
+termination: ir 'j ir 'h hr ih..
+
+name: 7.d
+clef: c3
+mediant: hg hi ir 'k jr 'i jr j.
+termination: ir 'j ir 'h hr gi..
+
+name: 8.G
+clef: c4
+mediant: g h jr 'k jr j.
+termination: jr i j 'h gr g.
+
+name: 8.G*
+clef: c4
+mediant: g h jr 'k jr j.
+termination: jr i j 'h gr gh..
+
+name: 8.c
+clef: c4
+mediant: g h jr 'k jr j.
+termination: jr h j 'k jr j.
+
+name: per
+clef: c4
+mediant: ixhi hr g ixi h 'g fr f.
+termination: gr d 'f fr ed..

@@ -369,6 +369,7 @@ name = "neuma-cli"
 version = "0.1.0"
 dependencies = [
  "neuma",
+ "neuma-tones",
  "neuma-wasm",
 ]
 
@@ -386,7 +387,15 @@ name = "neuma-mobile"
 version = "0.1.0"
 dependencies = [
  "neuma",
+ "neuma-tones",
  "uniffi",
+]
+
+[[package]]
+name = "neuma-tones"
+version = "0.1.0"
+dependencies = [
+ "neuma",
 ]
 
 [[package]]
@@ -394,6 +403,7 @@ name = "neuma-wasm"
 version = "0.1.0"
 dependencies = [
  "neuma",
+ "neuma-tones",
 ]
 
 [[package]]

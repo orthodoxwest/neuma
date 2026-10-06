@@ -150,6 +150,51 @@ pub extern "C" fn neuma_summarize() {
     output(&out);
 }
 
+/// Sets pointed psalm text to a tone. The input buffer holds the tone and the text separated
+/// by a NUL: the tone is a built-in name (`8.G`) when `custom` is 0, else a tone block in the
+/// tone file syntax. Leaves the setting JSON, or `{"error": …}`, in the output buffer.
+#[allow(unsafe_code)]
+#[unsafe(no_mangle)]
+pub extern "C" fn neuma_psalm(custom: u32, intone: u32) {
+    let all = input();
+    let (tone_src, text) = all.split_once('\0').unwrap_or((all.as_str(), ""));
+    let parsed;
+    let tone = if custom == 0 {
+        neuma_tones::Tone::named(tone_src).ok_or_else(|| format!("no built-in tone {tone_src}"))
+    } else {
+        parsed = neuma_tones::Tone::parse(tone_src);
+        parsed.as_ref().map_err(|e| e.to_string())
+    };
+    let mut out = String::new();
+    match tone {
+        Ok(tone) => {
+            let options = neuma_tones::Options {
+                intone: match intone {
+                    1 => neuma_tones::Intone::EveryVerse,
+                    2 => neuma_tones::Intone::Never,
+                    _ => neuma_tones::Intone::FirstVerse,
+                },
+                ..neuma_tones::Options::default()
+            };
+            crate::json::setting(&mut out, &neuma_tones::apply_text(tone, text, &options));
+        }
+        Err(e) => {
+            out.push_str("{\"error\":");
+            crate::json::string(&mut out, &e);
+            out.push('}');
+        }
+    }
+    output(&out);
+}
+
+/// Leaves the built-in tone names, one per line, in the output buffer.
+#[allow(unsafe_code)]
+#[unsafe(no_mangle)]
+pub extern "C" fn neuma_tones() {
+    let names: Vec<&str> = neuma_tones::Tone::builtin().iter().map(|t| t.name.as_str()).collect();
+    output(&names.join("\n"));
+}
+
 /// Leaves the last layout's SVG in the output buffer.
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
