@@ -314,7 +314,7 @@ impl Engraving {
         if self.custos_never {
             return None;
         }
-        self.segments[last + 1..].iter().find_map(|s| s.first_note)
+        self.next_note.get(last).copied().flatten()
     }
 
     fn trial(&self, first: usize, last: usize, start: f32) -> Trial {

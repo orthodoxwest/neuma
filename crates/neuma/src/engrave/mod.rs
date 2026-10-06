@@ -291,6 +291,8 @@ pub struct Engraving {
     pub(crate) custos_never: bool,
     /// The lowest note's staff position, or 0 for a score without notes.
     pub(crate) lowest: StaffPosition,
+    /// The first note after each segment, for its custos (so layout needn't scan ahead).
+    pub(crate) next_note: Vec<Option<StaffPosition>>,
     pub diagnostics: Vec<Diagnostic>,
 }
 
@@ -752,6 +754,8 @@ impl Score {
             syllable_text.push(plain);
             e.reset_alterations(syl.word_start, false);
             let pauses_before = e.pauses.len();
+            // This syllable's notes are the ones pushed from here on.
+            let notes_from = e.notes.len();
 
             let mut open = Open::new();
             let mut run = Run {
@@ -1023,7 +1027,7 @@ impl Score {
                 if let Some(r) = &nucleus
                     && let Some(c) = chars.get(r.start)
                 {
-                    for n in e.notes.iter_mut().filter(|n| n.syllable == si) {
+                    for n in &mut e.notes[notes_from..] {
                         n.vowel = Some(*c);
                     }
                 }
@@ -1080,7 +1084,12 @@ impl Score {
         }
 
         let lowest = e.notes.iter().map(|n| n.position).min().unwrap_or(0);
+        let mut next_note = vec![None; e.segments.len()];
+        for k in (0..e.segments.len().saturating_sub(1)).rev() {
+            next_note[k] = e.segments[k + 1].first_note.or(next_note[k + 1]);
+        }
         Engraving {
+            next_note,
             segments: e.segments,
             initial,
             clef: e.initial_clef.unwrap_or(DEFAULT_CLEF),
@@ -1146,6 +1155,17 @@ mod tests {
         for p in &pieces {
             assert_eq!(p.y_extent(), (-3.0, 3.0));
         }
+    }
+
+    #[test]
+    fn next_note_looks_past_segments_without_notes() {
+        let src = "(c4) A(g) b() c() (,) d(hi) e(j) (::) f() g()";
+        let eng = crate::parse(src).score.engrave(&crate::ApproxMeasure, &StyleOptions::default());
+        for k in 0..eng.segments.len() {
+            let scanned = eng.segments[k + 1..].iter().find_map(|s| s.first_note);
+            assert_eq!(eng.next_note[k], scanned, "segment {k}");
+        }
+        assert!(eng.next_note.iter().any(Option::is_some) && eng.next_note.last() == Some(&None));
     }
 
     #[test]
