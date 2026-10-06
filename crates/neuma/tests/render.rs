@@ -597,6 +597,33 @@ fn touching_syllables_stay_together_on_a_justified_line() {
 }
 
 #[test]
+fn justifying_a_one_word_line_never_parts_its_syllables_without_a_hyphen() {
+    use neuma::TextMeasure;
+    // One long word whose syllables touch: a narrow width breaks it over lines, and stretching
+    // those lines must not pull syllables apart unless a hyphen goes between them.
+    let src = format!("(c4) {}(::)", ["Dóm(g)mim(g)num(g)"; 12].concat());
+    for width in [150.0, 200.0, 300.0] {
+        let t = texts(&src, width, &LayoutOptions::default());
+        let hyphens: Vec<f32> = t.iter().filter(|t| t.3 == TextRole::Hyphen).map(|h| h.1).collect();
+        let lyrics: Vec<_> = t.iter().filter(|t| t.3 == TextRole::Lyric).collect();
+        for pair in lyrics.windows(2) {
+            let (a, b) = (pair[0], pair[1]);
+            let r = a.1 + ApproxMeasure.advance(&a.0, Default::default()) * a.2;
+            // A later line starts back at the left.
+            if b.1 < a.1 {
+                continue;
+            }
+            let gap = b.1 - r;
+            if gap > 0.1 {
+                let dash = ApproxMeasure.advance("-", Default::default()) * a.2;
+                assert!(hyphens.iter().any(|h| (h - r).abs() < 0.01), "{width}: {a:?} {b:?} {t:?}");
+                assert!(gap >= dash - 0.01, "{width}: {a:?} {b:?} {t:?}");
+            }
+        }
+    }
+}
+
+#[test]
 fn a_hyphen_ends_a_line_inside_a_word() {
     use neuma::TextMeasure;
     let src = format!("(c4) {} (::)", ["la(g)ta(h)"; 30].join("-").replace("-", ""));

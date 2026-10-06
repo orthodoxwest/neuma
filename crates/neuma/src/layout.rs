@@ -173,12 +173,14 @@ struct Cursor {
 #[derive(Clone, Copy)]
 struct Spot {
     x: f32,
-    /// A hyphen goes between the previous syllable's text and this one's.
-    hyphen: bool,
     /// How much the gap before this segment stretches (see [`STRETCH_IN_SYLLABLE`]).
     weight: f32,
     /// How far the gap before this segment may shrink, in staff spaces.
     shrink: f32,
+    /// This segment's text touches the previous syllable's, in the same word. Neither this
+    /// gap nor any since that syllable's text may stretch, or the word would come apart
+    /// with no hyphen.
+    touching: bool,
 }
 
 fn place(cur: &Cursor, seg: &Segment, hyphen: f32, word_space: f32, line_start: f32) -> Spot {
@@ -201,7 +203,6 @@ fn place(cur: &Cursor, seg: &Segment, hyphen: f32, word_space: f32, line_start: 
         (None, Some((l, _))) => x = x.max(line_start - l),
         _ => {}
     }
-    let mut shows_hyphen = false;
     let mut touching = false;
     if let Some(t) = &seg.lyric {
         match cur.lyric_right {
@@ -215,7 +216,6 @@ fn place(cur: &Cursor, seg: &Segment, hyphen: f32, word_space: f32, line_start: 
                 // follows the first text, and the second must clear it.
                 x = x.max(r - t.left);
                 if x + t.left - r > HYPHEN_MIN_GAP {
-                    shows_hyphen = true;
                     x = x.max(r + hyphen - t.left);
                 } else {
                     touching = true;
@@ -239,7 +239,7 @@ fn place(cur: &Cursor, seg: &Segment, hyphen: f32, word_space: f32, line_start: 
     };
     Spot {
         x,
-        hyphen: shows_hyphen,
+        touching,
         weight,
         shrink,
     }
@@ -264,8 +264,7 @@ fn advance(cur: &Cursor, seg: &Segment, x: f32) -> Cursor {
 
 struct Trial {
     xs: Vec<f32>,
-    /// Per segment: a hyphen before its text, and how much the gap before it stretches.
-    hyphens: Vec<bool>,
+    /// Per segment: how much the gap before it stretches.
     weights: Vec<f32>,
     shrinks: Vec<f32>,
     natural: f32,
@@ -316,17 +315,24 @@ impl Engraving {
             x: start,
         };
         let mut xs = Vec::with_capacity(last - first + 1);
-        let mut hyphens = Vec::with_capacity(last - first + 1);
         let mut weights = Vec::with_capacity(last - first + 1);
         let mut shrinks = Vec::with_capacity(last - first + 1);
         let mut right = 0.0f32;
         let mut ink_end = start;
+        let mut last_lyric = 0;
         for seg in &self.segments[first..=last] {
             let spot = place(&cur, seg, self.hyphen, self.word_space, start);
             let x = spot.x;
             xs.push(x);
-            hyphens.push(spot.hyphen);
+            if spot.touching {
+                for w in &mut weights[last_lyric + 1..] {
+                    *w = 0.0;
+                }
+            }
             weights.push(if xs.len() == 1 { 0.0 } else { spot.weight });
+            if seg.lyric.is_some() {
+                last_lyric = xs.len() - 1;
+            }
             shrinks.push(if xs.len() == 1 { 0.0 } else { spot.shrink });
             cur = advance(&cur, seg, x);
             right = right.max(x + seg.right());
@@ -336,7 +342,6 @@ impl Engraving {
         }
         Trial {
             xs,
-            hyphens,
             weights,
             shrinks,
             natural: self.natural(&cur, right, ink_end, last),
@@ -445,6 +450,8 @@ impl Engraving {
                 let mut ink_end = start;
                 // How far the line's gaps stretch together, relative to a gap between words.
                 let mut stretch_weight = 0.0f32;
+                // The part of it since the last text, which a touching text takes back.
+                let mut since_text = 0.0f32;
                 // How far its word gaps may shrink together.
                 let mut shrink = 0.0f32;
                 // Whether this line has passed a boundary where it may end.
@@ -456,9 +463,17 @@ impl Engraving {
                     let breakable = end_of_score || forced || matches!(seg.after, Break::Allowed | Break::InMelisma);
                     let spot = place(&cur, seg, self.hyphen, self.word_space, start);
                     let x = spot.x;
+                    if spot.touching {
+                        stretch_weight -= since_text;
+                        since_text = 0.0;
+                    }
                     if last > first {
                         stretch_weight += spot.weight;
+                        since_text += spot.weight;
                         shrink += spot.shrink;
+                    }
+                    if seg.lyric.is_some() {
+                        since_text = 0.0;
                     }
                     cur = advance(&cur, seg, x);
                     right = right.max(x + seg.right());
@@ -554,14 +569,18 @@ impl Engraving {
             let gaps = last - first;
             let mut stretch = 0.0;
             if !ragged && gaps > 0 && trial.natural < target {
-                // Each gap takes its share of the slack; a line whose gaps can't stretch (one
-                // word, its syllables touching) spreads it evenly.
+                // Each gap takes its share of the slack. A line whose gaps can't stretch (one
+                // word, its syllables touching) spreads it evenly when that leaves room for a
+                // hyphen in every gap; less slack stays at the line's end, as in GregorioTeX,
+                // whose touching syllables have no glue.
                 let total: f32 = trial.weights.iter().sum();
                 let even = total <= 0.0;
                 let per = (target - trial.natural) / if even { gaps as f32 } else { total };
-                for (i, x) in xs.iter_mut().enumerate().skip(1) {
-                    stretch += per * if even { 1.0 } else { trial.weights[i] };
-                    *x += stretch;
+                if !even || per >= self.hyphen + HYPHEN_MIN_GAP {
+                    for (i, x) in xs.iter_mut().enumerate().skip(1) {
+                        stretch += per * if even { 1.0 } else { trial.weights[i] };
+                        *x += stretch;
+                    }
                 }
             }
             if gaps > 0 && trial.natural > target {
@@ -588,9 +607,10 @@ impl Engraving {
             for (i, s) in self.segments[first..=last].iter().enumerate() {
                 if let Some(t) = &s.lyric {
                     let l = xs[i] + t.left;
-                    // Right after the previous syllable's text, as GregorioTeX sets it.
+                    // Wherever the final positions hold a word's syllables apart, right after
+                    // the first text, as GregorioTeX sets it.
                     if let Some((r, true)) = prev_lyric
-                        && trial.hyphens[i]
+                        && l - r > HYPHEN_MIN_GAP
                     {
                         hyphens.push(r + self.hyphen / 2.0);
                     }
