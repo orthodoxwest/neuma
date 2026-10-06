@@ -199,18 +199,22 @@ pub fn length(s: &str) -> Option<Pt> {
     let split = s.find(|c: char| c.is_ascii_alphabetic()).unwrap_or(s.len());
     let (num, unit) = s.split_at(split);
     let v: f32 = num.trim().parse().ok()?;
-    if !v.is_finite() || v < 0.0 {
-        return None;
-    }
-    Some(match unit {
+    let pt = match unit {
         "" | "pt" => v,
         "mm" => mm(v),
         "cm" => mm(v * 10.0),
         "in" => v * 72.0,
         "pc" => v * 12.0,
         _ => return None,
-    })
+    };
+    // Checked after the unit, which can overflow a finite number.
+    (pt.is_finite() && pt >= 0.0).then_some(pt)
 }
+
+/// The largest page side PDF allows, in points (200 inches).
+pub const MAX_PAGE: Pt = 14_400.0;
+/// The least room the margins must leave for text, in points.
+const MIN_MEASURE: Pt = 36.0;
 
 fn color(s: &str) -> Option<[u8; 3]> {
     let h = s.trim().strip_prefix('#')?;
@@ -424,6 +428,9 @@ impl Book {
                         _ => None,
                     }
                     .ok_or_else(|| e.err(format!("`{v}`: give a paper size (a4, a5, letter …) or a width and a height")))?;
+                    if !(1.0..=MAX_PAGE).contains(&w) || !(1.0..=MAX_PAGE).contains(&h) {
+                        return Err(e.err(format!("`{v}`: each side of a page must be more than 0 and at most 200in")));
+                    }
                     s.width = w;
                     s.height = h;
                 }
@@ -478,6 +485,21 @@ impl Book {
                     book.pieces.push(piece(&e)?);
                 }
             }
+        }
+        let s = &book.settings;
+        let measure = s.width - s.margins[1] - s.margins[3];
+        let room = s.height - s.margins[0] - s.margins[2];
+        if measure < MIN_MEASURE || room < MIN_MEASURE {
+            return Err(BookError {
+                line: 0,
+                message: format!(
+                    "the margins leave {:.0}pt by {:.0}pt for text on a {:.0}pt by {:.0}pt page; they need to leave at least {MIN_MEASURE:.0}pt each way",
+                    measure.max(0.0),
+                    room.max(0.0),
+                    s.width,
+                    s.height
+                ),
+            });
         }
         Ok(book)
     }
@@ -632,6 +654,8 @@ mod tests {
         assert!((length("25.4mm").unwrap() - 72.0).abs() < 1e-3);
         assert_eq!(length("3furlongs"), None);
         assert_eq!(length("-3pt"), None);
+        // Finite before the unit, infinite after it.
+        assert_eq!(length("3e38in"), None);
     }
 
     #[test]
@@ -713,5 +737,10 @@ mod tests {
         assert!(Book::parse("score: a.gabc\n    (c4)").unwrap_err().message.contains("not both"));
         assert!(Book::parse("  indented").is_err());
         assert!(Book::parse("margins: 1 2 3 4 5").is_err());
+        assert!(Book::parse("page: 0 0").unwrap_err().message.contains("more than 0"));
+        assert!(Book::parse("page: 3e38in 10in").is_err());
+        assert!(Book::parse("page: 300in 10in").unwrap_err().message.contains("200in"));
+        let err = Book::parse("page: a6\nmargins: 60mm").unwrap_err();
+        assert!(err.message.contains("margins leave"), "{err}");
     }
 }
