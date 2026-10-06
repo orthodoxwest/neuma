@@ -26,6 +26,14 @@ pub fn parse(src: &str) -> Parsed {
         body_start += '\u{feff}'.len_utf8();
     }
     let syllables = parse_body(src, body_start, &mut sink);
+    // An NABC score has NABC in nearly every syllable; one diagnostic says it.
+    if sink.items.iter().filter(|d| d.code == "gabc::nabc").count() > 1 {
+        let mut seen = false;
+        sink.items.retain(|d| d.code != "gabc::nabc" || !std::mem::replace(&mut seen, true));
+        if let Some(d) = sink.items.iter_mut().find(|d| d.code == "gabc::nabc") {
+            d.message = "NABC notation isn't supported and is skipped throughout the score".into();
+        }
+    }
     Parsed {
         score: Score { header, syllables },
         diagnostics: sink.items,

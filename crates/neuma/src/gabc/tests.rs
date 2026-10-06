@@ -391,3 +391,11 @@ fn episema_tuning_is_only_a_note() {
     let p = parse("(c4) a(g[oll:1]h[nv:x])");
     assert_eq!(p.diagnostics.iter().filter(|d| d.code == "gabc::unsupported-tag").count(), 2);
 }
+
+#[test]
+fn nabc_is_reported_once() {
+    let p = parse("nabc-lines: 1;\n%%\n(c4) A(f|vi) B(g|pe) C(h|ta)\n");
+    let nabc: Vec<_> = p.diagnostics.iter().filter(|d| d.code == "gabc::nabc").collect();
+    assert_eq!(nabc.len(), 1, "{:?}", p.diagnostics);
+    assert_eq!(p.score.syllables.len(), 4);
+}
