@@ -555,7 +555,7 @@ fn hyphens_follow_the_text_and_only_where_syllables_part() {
     use neuma::TextMeasure;
     let opts = LayoutOptions::default();
     // Syllables whose texts touch need no hyphen, as in Gregorio's "Dómi-nus".
-    let t = texts("(c4) Dó(g)mi(g)nus(g)", 2000.0, &opts);
+    let t = texts("(c4) Dóm(g)mim(g)num(g)", 2000.0, &opts);
     assert!(t.iter().all(|t| t.3 != TextRole::Hyphen), "{t:?}");
     // A melisma holds the next syllable away: the hyphen sits right after the first text.
     let t = texts("(c4) a(ghghghgh)b(g)", 2000.0, &opts);
@@ -572,9 +572,18 @@ fn hyphens_follow_the_text_and_only_where_syllables_part() {
 #[test]
 fn touching_syllables_stay_together_on_a_justified_line() {
     // Justifying a line widens the gaps between words, not between syllables whose texts touch.
-    let src = format!("(c4) {} (::)", ["Dó(g)mi(g)nus(g)"; 12].join(" "));
+    let src = format!("(c4) {} (::)", ["Dóm(g)mim(g)num(g)"; 12].join(" "));
     let t = texts(&src, 500.0, &LayoutOptions::default());
-    assert!(t.iter().all(|t| t.3 != TextRole::Hyphen), "{t:?}");
+    // Only the lines that end inside a word have a hyphen, at their end.
+    let lines = parse(&src)
+        .score
+        .engrave(&ApproxMeasure, &NO_INITIAL)
+        .layout(500.0, &LayoutOptions::default())
+        .line_count();
+    assert!(lines > 1);
+    let hyphens: Vec<_> = t.iter().filter(|t| t.3 == TextRole::Hyphen).collect();
+    assert!(hyphens.len() < lines, "{t:?}");
+    assert!(hyphens.iter().all(|h| h.1 > 400.0), "{t:?}");
 }
 
 #[test]
@@ -615,5 +624,18 @@ fn a_preview_draws_its_staves_as_wide_as_the_whole_score() {
     assert_eq!(preview.width, full.width);
     for item in &preview.items {
         assert!(full.items.contains(item), "{item:?}");
+    }
+}
+
+#[test]
+fn words_keep_gregorios_space_between_them() {
+    use neuma::TextMeasure;
+    assert_eq!(StyleOptions::default().lyric_size, 2.45);
+    // Short notes don't pull two words' texts closer than GregorioTeX's 0.17 cm (0.48 em).
+    let t = texts("(c4) hính(g) là(g) lúc(g)", 2000.0, &LayoutOptions::default());
+    let lyrics: Vec<_> = t.iter().filter(|t| t.3 == TextRole::Lyric).collect();
+    for w in lyrics.windows(2) {
+        let right = w[0].1 + ApproxMeasure.advance(&w[0].0, Default::default()) * w[0].2;
+        assert!(w[1].1 - right >= 0.48 * w[0].2 - 0.01, "{t:?}");
     }
 }

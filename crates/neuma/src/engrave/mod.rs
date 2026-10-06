@@ -121,7 +121,8 @@ pub enum CustosPolicy {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct StyleOptions {
-    /// Lyric font size, in staff spaces.
+    /// Lyric font size, in staff spaces. The default, 2.45, is GregorioTeX's: 10 pt lyrics on
+    /// its default staff.
     pub lyric_size: f32,
     /// The drop-cap initial.
     pub initial: Initial,
@@ -136,7 +137,7 @@ pub struct StyleOptions {
 impl Default for StyleOptions {
     fn default() -> StyleOptions {
         StyleOptions {
-            lyric_size: 2.7,
+            lyric_size: 2.45,
             initial: Initial::default(),
             annotation: true,
             vowels: None,
@@ -290,6 +291,10 @@ const ACCIDENTAL_GAP: f32 = INTRA * 2.0;
 /// this many notes may break between its note groups, but not within this many of either end.
 const MELISMA_NOTES: usize = 10;
 const MELISMA_END_NOTES: usize = 4;
+/// The least space between the texts of two words, in ems of the lyrics: GregorioTeX's
+/// `interwordspacetext` (0.17 cm against 10 pt lyrics). The font's own space is narrower, and
+/// set words ran together.
+const WORD_SPACE: f32 = 0.48;
 /// Annotation size relative to the lyrics.
 const ANNOTATION_RATIO: f32 = 0.75;
 const DEFAULT_CLEF: Clef = Clef {
@@ -642,7 +647,7 @@ impl Score {
 
         let size = style.lyric_size;
         let hyphen = measure.advance("-", TextStyle::REGULAR) * size;
-        let word_space = measure.advance(" ", TextStyle::REGULAR) * size;
+        let word_space = measure.advance(" ", TextStyle::REGULAR).max(WORD_SPACE) * size;
         let (ascent, descent) = measure.vertical(TextStyle::REGULAR);
 
         // The drop cap comes off the first syllable with text; the rest of it is the lyric.

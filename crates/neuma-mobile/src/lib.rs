@@ -40,7 +40,7 @@ pub struct ChantOptions {
     /// Show the annotation (or the mode) above the initial.
     #[uniffi(default = true)]
     pub annotation: bool,
-    /// Lyric size in staff spaces; 0 or less keeps the default (2.7).
+    /// Lyric size in staff spaces; 0 or less keeps the default (2.45).
     #[uniffi(default = 0.0)]
     pub lyric_size: f32,
     pub font: LyricFont,
