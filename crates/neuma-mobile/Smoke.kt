@@ -29,6 +29,10 @@ fun main() {
 
     val swash = Chant("(c4) a(hgh)", defaultChantOptions()).layout(400f, defaultLayoutOptions())
     check(swash.items.filterIsInstance<Item.Glyph>().any { it.notes == listOf(0u, 1u) }, "porrectus")
+    val entry = summarize("office-part: Introitus;\nmode: VII;\n%%\n(c3) PU(g)er(h) na(h)tus(g) (::)")
+    check(entry.kind == OfficePart.INTROIT && entry.mode?.number == 7.toUByte() && entry.text == "Puer natus", "summary")
+    val preview = chant.layout(120f, LayoutOptions(lastLine = LastLine.RAGGED, weights = Weights(), maxLines = 1u))
+    check(preview.lines.size == 1 && preview.lines[0] == narrow.lines[0], "preview")
     chant.close()
     println("ok: kotlin, ${narrow.notes.size} notes, ${glyphs.size} glyphs")
 }

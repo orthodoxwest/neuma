@@ -91,3 +91,18 @@ chant.close()                 // or let the cleaner free it
 pause at its bar, so a bar right after one has weight 0. `Weights` are the relative
 durations, and any field left out keeps its default. `virgula` also times the minimis bar,
 and `half` the Dominican bars. `noteAt(x, y)` hit-tests the last layout.
+
+### Library entries
+
+`summarize(gabc)` returns a score's `Summary` without engraving it for display, which is
+cheap enough to index a library. `chant.summary()` gives the same entry for a loaded score.
+The entry holds:
+
+- the typed headers: name, office part with its `OfficePart` kind, mode with number and
+  differentia, occasion and the rest;
+- the incipit and full text, for search;
+- the lowest, highest and final pitches, in semitones above do;
+- counts, and the length in pulses.
+
+For a preview row, lay out with `maxLines = 1`. The line is broken as it would be in the
+whole score.

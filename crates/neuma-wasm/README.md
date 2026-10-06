@@ -23,6 +23,7 @@ chant.diagnostics;                 // [{ severity, start, end, code, message }],
 const page = chant.layout(host.clientWidth, {
   scale: 6,                        // SVG units per staff space
   lastLine: "ragged",              // or "justified"
+  maxLines: 0,                     // 1 for an incipit preview; 0 keeps every line
   weights: { mediant: 3, full: 2.5 },
 });
 host.innerHTML = page.svg;
@@ -75,4 +76,30 @@ If the engine ever stops on an internal error, that call throws and so does ever
 until you call `init()` again, which starts a fresh engine. Make the `Chant`s again after
 that.
 
+## Library entries
+
+`summarize(gabc)` reads a score's catalogue entry without engraving it for display, which is
+cheap enough to index a whole library. `chant.summary` gives the same entry for a score you
+have already loaded. Header fields are `null` when the source leaves them out, and TeX
+markup is removed.
+
+- `name`, `officePart`, `occasion`, `book`, `language`, `transcriber`, `gabcCopyright`,
+  `scoreCopyright`, `commentary`, `annotations`: the headers as written.
+- `kind`: what `officePart` names, in Latin or English, spelled out or abbreviated:
+  `antiphon`, `introit`, `gradual`, `alleluia`, `tract`, `sequence`, `offertory`,
+  `communion`, `hymn`, `responsory`, `psalm`, `canticle`, `kyrie`, `gloria`, `credo`,
+  `sanctus`, `agnus` or `other`.
+- `mode`: `{ number, name, modifier, differentia }`. `number` is 1 to 8 when the header
+  starts with one (`8`, `VIII`, `1g`), else `null` (`per`).
+- `incipit`: the opening words, up to the first bar after the second word, at most eight.
+  `text`: all the sung text, for search. Both skip psalm marks, and write an opening word
+  in capitals (`PUER`) as `Puer`.
+- `range` (`[lowest, highest]`) and `finalPitch`: in semitones above the clef's do.
+- `notes`, `syllables`, `words`, and `duration` in pulses with the default weights.
+
+For a preview, lay the score out with `maxLines: 1`. The first line is broken as it would
+be in the whole score.
+
 `neuma notes FILE` prints the same layout JSON from the command line, without the SVG.
+`neuma info FILE...` prints one catalogue entry per file, as a line of JSON with a `file`
+field.

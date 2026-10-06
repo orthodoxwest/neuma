@@ -369,3 +369,31 @@ fn tall_initials_never_cover_the_clef() {
         }
     }
 }
+
+#[test]
+fn max_lines_keeps_the_first_lines_as_broken() {
+    for (name, src) in corpus() {
+        let eng = parse(&src).score.engrave(&ApproxMeasure, &StyleOptions::default());
+        let full = eng.layout(300.0, &LayoutOptions::default());
+        let full_list = full.display();
+        for n in 1..=3 {
+            let opts = LayoutOptions {
+                max_lines: n,
+                ..LayoutOptions::default()
+            };
+            let part = eng.layout(300.0, &opts).display();
+            let kept = n.min(full_list.lines.len());
+            assert_eq!(part.lines, full_list.lines[..kept], "{name} {n}");
+            assert!(part.height <= full_list.height + 0.01, "{name} {n}");
+            assert!(part.width <= full_list.width + 0.01, "{name} {n}");
+            // Every item on a kept line is drawn exactly as in the full layout.
+            let bottom = part.lines.last().unwrap().bottom;
+            for item in &part.items {
+                assert!(full_list.items.contains(item), "{name} {n}: {item:?}");
+                if let Item::Rect { y, .. } = item {
+                    assert!(*y <= bottom, "{name} {n}");
+                }
+            }
+        }
+    }
+}

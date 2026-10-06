@@ -42,4 +42,8 @@ check(swash.items.contains { item in
     if case let .glyph(_, _, _, _, _, notes) = item { return notes == [0, 1] }
     return false
 }, "porrectus")
+let entry = summarize(gabc: "office-part: Introitus;\nmode: VII;\n%%\n(c3) PU(g)er(h) na(h)tus(g) (::)")
+check(entry.kind == .introit && entry.mode?.number == 7 && entry.text == "Puer natus", "summary")
+let preview = chant.layout(width: 120, options: LayoutOptions(lastLine: .ragged, weights: Weights(), maxLines: 1))
+check(preview.lines.count == 1 && preview.lines[0] == narrow.lines[0], "preview")
 print("ok: swift, \(narrow.notes.count) notes, \(glyphs.count) glyphs")

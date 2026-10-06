@@ -4,7 +4,7 @@
 use std::fmt::Write as _;
 
 use neuma::score::{BarKind, NoteShape};
-use neuma::{Diagnostic, LineBox, NoteMap, PauseKind, Severity};
+use neuma::{Diagnostic, LineBox, NoteMap, OfficePart, PauseKind, Severity, Summary};
 
 /// A JSON string literal for `s`.
 pub fn string(out: &mut String, s: &str) {
@@ -198,6 +198,112 @@ pub fn note_map(out: &mut String, map: &NoteMap) {
     }
     out.push_str("],\"duration\":");
     number(out, map.duration);
+    out.push('}');
+}
+
+fn opt_string(out: &mut String, v: Option<&str>) {
+    match v {
+        Some(s) => string(out, s),
+        None => out.push_str("null"),
+    }
+}
+
+pub fn office_part_name(k: OfficePart) -> &'static str {
+    match k {
+        OfficePart::Antiphon => "antiphon",
+        OfficePart::Introit => "introit",
+        OfficePart::Gradual => "gradual",
+        OfficePart::Alleluia => "alleluia",
+        OfficePart::Tract => "tract",
+        OfficePart::Sequence => "sequence",
+        OfficePart::Offertory => "offertory",
+        OfficePart::Communion => "communion",
+        OfficePart::Hymn => "hymn",
+        OfficePart::Responsory => "responsory",
+        OfficePart::Psalm => "psalm",
+        OfficePart::Canticle => "canticle",
+        OfficePart::Kyrie => "kyrie",
+        OfficePart::Gloria => "gloria",
+        OfficePart::Credo => "credo",
+        OfficePart::Sanctus => "sanctus",
+        OfficePart::Agnus => "agnus",
+        OfficePart::Other => "other",
+    }
+}
+
+/// A score's catalogue entry (`neuma::Summary`).
+pub fn summary(out: &mut String, s: &Summary) {
+    let mut first = true;
+    out.push('{');
+    for (name, v) in [
+        ("name", &s.name),
+        ("officePart", &s.office_part),
+        ("occasion", &s.occasion),
+        ("book", &s.book),
+        ("language", &s.language),
+        ("transcriber", &s.transcriber),
+        ("gabcCopyright", &s.gabc_copyright),
+        ("scoreCopyright", &s.score_copyright),
+        ("commentary", &s.commentary),
+    ] {
+        field(out, &mut first, name);
+        opt_string(out, v.as_deref());
+    }
+    field(out, &mut first, "kind");
+    opt_string(out, s.kind.map(office_part_name));
+    field(out, &mut first, "mode");
+    match &s.mode {
+        Some(m) => {
+            out.push_str("{\"number\":");
+            match m.number {
+                Some(n) => {
+                    let _ = write!(out, "{n}");
+                }
+                None => out.push_str("null"),
+            }
+            out.push_str(",\"name\":");
+            string(out, &m.name);
+            out.push_str(",\"modifier\":");
+            opt_string(out, m.modifier.as_deref());
+            out.push_str(",\"differentia\":");
+            opt_string(out, m.differentia.as_deref());
+            out.push('}');
+        }
+        None => out.push_str("null"),
+    }
+    field(out, &mut first, "annotations");
+    out.push('[');
+    for (i, a) in s.annotations.iter().enumerate() {
+        if i > 0 {
+            out.push(',');
+        }
+        string(out, a);
+    }
+    out.push(']');
+    field(out, &mut first, "incipit");
+    string(out, &s.incipit);
+    field(out, &mut first, "text");
+    string(out, &s.text);
+    field(out, &mut first, "range");
+    match s.range {
+        Some((lo, hi)) => {
+            let _ = write!(out, "[{lo},{hi}]");
+        }
+        None => out.push_str("null"),
+    }
+    field(out, &mut first, "finalPitch");
+    match s.final_pitch {
+        Some(p) => {
+            let _ = write!(out, "{p}");
+        }
+        None => out.push_str("null"),
+    }
+    let _ = write!(
+        out,
+        ",\"notes\":{},\"syllables\":{},\"words\":{},\"duration\":",
+        s.notes, s.syllables, s.words
+    );
+    number(out, s.duration);
     out.push('}');
 }
 

@@ -1,7 +1,7 @@
 // Smoke test for dist/neuma.mjs under Node: `node crates/neuma-wasm/test.mjs`.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { init, Chant, DEFAULT_WEIGHTS } from "./dist/neuma.mjs";
+import { init, Chant, DEFAULT_WEIGHTS, summarize } from "./dist/neuma.mjs";
 
 await init();
 const gabc = readFileSync(new URL("../neuma/tests/corpus/psalm-134.gabc", import.meta.url), "utf8");
@@ -58,5 +58,22 @@ assert.equal(chant.noteAt(-50, -50), null);
 
 chant.free();
 assert.throws(() => chant.layout(400));
+// Catalogue entries, from a Chant or straight from the source.
+const puer = "name: Puer natus est;\noffice-part: Introitus;\nmode: 7;\n%%\n(c3) Pu(g)er(gh) na(h)tus(hi) est(h.) (,) no(h)bis(g) (::)";
+const entry = summarize(puer);
+assert.equal(entry.kind, "introit");
+assert.equal(entry.mode.number, 7);
+assert.equal(entry.incipit, "Puer natus est");
+assert.deepEqual(new Chant(puer).summary, entry);
+assert.equal(summarize("").notes, 0);
+
+// A one-line preview keeps the first line as broken for the whole score.
+const long = new Chant(puer.replace("(::)", "(;) " + "a(g) ".repeat(40) + "(::)"), { initial: 0 });
+const full = long.layout(300);
+const preview = long.layout(300, { maxLines: 1 });
+assert.ok(full.timeline.lines.length > 1 && preview.timeline.lines.length === 1);
+assert.ok(preview.height < full.height);
+assert.deepEqual(preview.timeline.notes.map((n) => n.id), full.timeline.notes.filter((n) => n.line === 0).map((n) => n.id));
+
 assert.equal(DEFAULT_WEIGHTS.note, 1);
 console.log(`ok: ${notes.length} notes, ${wide.timeline.lines.length} lines at 900, ${narrow.timeline.lines.length} at 360`);

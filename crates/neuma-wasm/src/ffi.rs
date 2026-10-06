@@ -92,9 +92,9 @@ pub extern "C" fn chant_free(handle: u32) {
     });
 }
 
-/// Lays out at `width`, with the weights as ten numbers (NaN keeps a default) and the SVG
-/// class prefix in the input buffer. Leaves the layout JSON in the output buffer; returns 0
-/// for an unknown handle.
+/// Lays out at `width`, keeping at most `max_lines` lines (0 for all), with the weights as
+/// ten numbers (NaN keeps a default) and the SVG class prefix in the input buffer. Leaves
+/// the layout JSON in the output buffer; returns 0 for an unknown handle.
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
 #[allow(clippy::too_many_arguments)]
@@ -103,6 +103,7 @@ pub extern "C" fn chant_layout(
     width: f32,
     scale: f32,
     last: u32,
+    max_lines: u32,
     note: f32,
     mora: f32,
     episema: f32,
@@ -119,6 +120,7 @@ pub extern "C" fn chant_layout(
     let opts = LayoutOptions {
         scale,
         last_line: last_line(last),
+        max_lines: max_lines as usize,
     };
     let svg = SvgOptions {
         prefix: if prefix.is_empty() { SvgOptions::default().prefix } else { prefix },
@@ -129,6 +131,23 @@ pub extern "C" fn chant_layout(
         output(c.layout_json());
     })
     .map_or(0, |_| 1)
+}
+
+/// Leaves the score's catalogue entry JSON in the output buffer.
+#[allow(unsafe_code)]
+#[unsafe(no_mangle)]
+pub extern "C" fn chant_summary(handle: u32) -> u32 {
+    with_chant(handle, |c| output(c.summary_json())).map_or(0, |_| 1)
+}
+
+/// Summarizes the GABC in the input buffer without engraving it for display, leaving the
+/// catalogue entry JSON in the output buffer.
+#[allow(unsafe_code)]
+#[unsafe(no_mangle)]
+pub extern "C" fn neuma_summarize() {
+    let mut out = String::new();
+    crate::json::summary(&mut out, &neuma::summarize(&input()));
+    output(&out);
 }
 
 /// Leaves the last layout's SVG in the output buffer.

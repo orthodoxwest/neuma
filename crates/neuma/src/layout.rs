@@ -20,6 +20,9 @@ pub struct LayoutOptions {
     /// Output units (px or pt) per staff space.
     pub scale: f32,
     pub last_line: LastLine,
+    /// Keep only the first this many lines, as broken for the whole score (for previews such
+    /// as an incipit); 0 keeps them all.
+    pub max_lines: usize,
 }
 
 impl Default for LayoutOptions {
@@ -27,6 +30,7 @@ impl Default for LayoutOptions {
         LayoutOptions {
             scale: 6.0,
             last_line: LastLine::Ragged,
+            max_lines: 0,
         }
     }
 }
@@ -360,7 +364,12 @@ impl Engraving {
         let mut lines = Vec::new();
         let mut y = 0.0f32;
         let mut max_width = 0.0f32;
-        for (li, &(first, last)) in ranges.iter().enumerate() {
+        let kept = if opts.max_lines == 0 {
+            ranges.len()
+        } else {
+            opts.max_lines.min(ranges.len())
+        };
+        for (li, &(first, last)) in ranges.iter().take(kept).enumerate() {
             let line_indent = if li < indented { indent } else { 0.0 };
             let target = target - line_indent;
             let (clef, start) = self.line_start(first);

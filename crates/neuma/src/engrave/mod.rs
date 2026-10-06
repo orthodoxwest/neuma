@@ -5,8 +5,8 @@
 mod initial;
 pub(crate) mod neume;
 
-pub(crate) use initial::CAP_HEIGHT;
 pub use initial::Initial;
+pub(crate) use initial::{CAP_HEIGHT, strip_tex};
 
 use crate::diag::{Diagnostic, Sink};
 use crate::glyphs::GlyphId as G;
