@@ -226,6 +226,7 @@ tokens real AWRV material uses and moves rows between E1 and E2.
 | Item | Treatment |
 |---|---|
 | `name: value;` headers, multi-line values ending `;;`, `%` comments, the `%%` separator | E1 |
+| A value missing its closing `;` | E1 with a warning. As in Gregorio, a continued value also ends at a `;` that ends a line. neuma's own recovery (Gregorio has none) ends it before a following line that looks like `name:`, so one missing `;` doesn't swallow the fields after it |
 | `name`, `office-part`, `occasion`, `transcriber`, `gabc-copyright`, `score-copyright`, other descriptive headers | A (kept in `Score::header`) |
 | `language:` | E1: selects vowel rules (`la` default, `en`, with Gregorio's aliases) |
 | `annotation:` (one or two; the first is the upper line) | E1 |
