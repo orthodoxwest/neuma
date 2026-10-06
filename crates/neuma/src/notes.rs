@@ -21,7 +21,7 @@ pub struct NoteMap {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PauseKind {
     Bar(BarKind),
-    /// A `*` in the text: the mediant of a psalm verse, or where the cantor's intonation
+    /// A `*` in the text: the mediant of a psalm verse, or where the soloist's intonation
     /// ends in other chants.
     Mediant,
     /// The flex `†`.
