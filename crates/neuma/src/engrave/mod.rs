@@ -281,6 +281,8 @@ pub struct Engraving {
     /// The segment each pause is drawn in, parallel to `pauses`.
     pub(crate) pause_segments: Vec<usize>,
     pub(crate) custos_never: bool,
+    /// The lowest note's staff position, or 0 for a score without notes.
+    pub(crate) lowest: StaffPosition,
     pub diagnostics: Vec<Diagnostic>,
 }
 
@@ -668,7 +670,7 @@ impl Score {
             // A nominal staff-to-staff distance (the staff, lyrics below it, and the gaps)
             // sizes the column the breaker indents for; layout sizes the capital itself to
             // the staves it actually spans.
-            let line_pitch = 6.0 + 0.5 + 0.4 + ascent * size * 0.85 + descent * size + 1.0;
+            let line_pitch = crate::layout::BASELINE_PITCH;
             let lines = n.min(initial::MAX_LINES) as usize;
             let cap = 6.0 + line_pitch * (lines - 1) as f32;
             let initial_size = cap / CAP_HEIGHT;
@@ -1026,6 +1028,7 @@ impl Score {
                 .info(0..0, "engrave::final-break", "a line break at the end of the score is dropped");
         }
 
+        let lowest = e.notes.iter().map(|n| n.position).min().unwrap_or(0);
         Engraving {
             segments: e.segments,
             initial,
@@ -1042,6 +1045,7 @@ impl Score {
             pauses: e.pauses,
             pause_segments: e.pause_segments,
             custos_never: style.custos == CustosPolicy::Never,
+            lowest,
             diagnostics: e.sink.items,
         }
     }

@@ -62,6 +62,17 @@ const STRETCH: f32 = 1.5;
 /// The widest column laid out, in output units and in staff spaces; wider requests are
 /// clamped to it.
 const MAX_WIDTH: f32 = 1.0e6;
+/// The lyric baseline's drop below the staff's bottom line: GregorioTeX's `spacelinestext`
+/// (3.48 ex of its lyrics), as measured from its output.
+const TEXT_DROP: f32 = 3.3;
+/// GregorioTeX lowers the lyrics by `noteadditionalspacelinestext` (0.144 cm, about a staff
+/// space) for each step the score's lowest note lies below this position (`c` on a four-line
+/// staff).
+const BELOW_STAFF: i8 = -4;
+const LOW_NOTE_DROP: f32 = 1.0;
+/// Distance between the lyric baselines of consecutive lines: GregorioTeX's `baselineskip`
+/// (55 pt on its default staff).
+pub(crate) const BASELINE_PITCH: f32 = 13.43;
 /// Space between stacked lines, in staff spaces.
 const LINE_GAP: f32 = 1.0;
 /// Extra demerits for a break inside a melisma: about a moderately loose line's worth.
@@ -468,6 +479,7 @@ impl Engraving {
         // whole score, then dropped.
         let placed = kept.max(indented).min(ranges.len());
         let mut rights = Vec::with_capacity(placed);
+        let mut prev_baseline: Option<f32> = None;
         for (li, &(first, last)) in ranges.iter().take(placed).enumerate() {
             let line_indent = if li < indented { indent } else { 0.0 };
             let target = target - line_indent;
@@ -549,9 +561,29 @@ impl Engraving {
                 }
             }
             let has_lyrics = self.segments[first..=last].iter().any(|s| s.lyric.is_some());
-            let top = y;
-            let staff = top + (-ink_top) + 0.5;
-            let baseline = staff + ink_bottom + 0.4 + if has_lyrics { self.ascent * size * 0.85 } else { 0.0 };
+            let mut top = y;
+            let mut staff = top + (-ink_top) + 0.5;
+            let mut baseline = if has_lyrics {
+                // GregorioTeX's lyric line: a fixed drop below the staff, more for a score that
+                // goes below the staff, the same on every line. Ink hanging lower still (a stem
+                // or a sign under a low note) pushes it down rather than into the text.
+                let drop = TEXT_DROP + LOW_NOTE_DROP * (BELOW_STAFF - self.lowest).max(0) as f32;
+                (staff + 3.0 + drop).max(staff + ink_bottom + 0.2 + self.ascent * size * 0.5)
+            } else {
+                staff + ink_bottom + 0.4
+            };
+            // Lines of lyrics are as far apart as GregorioTeX's baselines, or farther if the
+            // notes need the room.
+            if has_lyrics
+                && let Some(prev) = prev_baseline
+                && baseline < prev + BASELINE_PITCH
+            {
+                let shift = prev + BASELINE_PITCH - baseline;
+                top += shift;
+                staff += shift;
+                baseline += shift;
+            }
+            prev_baseline = has_lyrics.then_some(baseline);
             let bottom = baseline + if has_lyrics { self.descent * size } else { 0.5 };
             let right = line_indent + if ragged { trial.natural } else { target.max(trial.natural) };
             rights.push(right);

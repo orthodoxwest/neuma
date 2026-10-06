@@ -665,3 +665,38 @@ fn a_syllable_with_its_own_hyphen_gets_no_other() {
     let t = texts(&src, 300.0, &LayoutOptions::default());
     assert!(t.iter().all(|t| t.3 != TextRole::Hyphen), "{t:?}");
 }
+
+#[test]
+fn lyrics_sit_where_gregorio_sets_them() {
+    let lines = |src: &str| {
+        let eng = parse(src).score.engrave(&ApproxMeasure, &NO_INITIAL);
+        let opts = LayoutOptions::default();
+        let list = eng.layout(100.0, &opts).display();
+        let s = opts.scale;
+        list.lines
+            .iter()
+            .map(|l| ((l.baseline - l.staff) / s, l.baseline / s))
+            .collect::<Vec<_>>()
+    };
+    let src = "(c4) la(g) la(h) la(g) la(h) la(g) la(h) la(g) la(h) la(g) la(h) la(g) la(h)";
+    let plain = lines(src);
+    assert!(plain.len() > 2);
+    // 3.3 staff spaces below the bottom line, on every line, and 13.43 from baseline to
+    // baseline (GregorioTeX's spacelinestext and baselineskip).
+    for (drop, _) in &plain {
+        assert!((drop - 6.3).abs() < 0.01, "{plain:?}");
+    }
+    for w in plain.windows(2) {
+        assert!((w[1].1 - w[0].1 - 13.43).abs() < 0.01, "{plain:?}");
+    }
+    // A note below `c` anywhere in the score lowers the lyrics on every line by a staff space
+    // a step.
+    let low = lines(&src.replacen("la(h)", "la(b)", 1));
+    for (drop, _) in &low {
+        assert!((drop - 7.3).abs() < 0.01, "{low:?}");
+    }
+    let lower = lines(&format!("{src} la(a)"));
+    for (drop, _) in &lower {
+        assert!((drop - 8.3).abs() < 0.01, "{lower:?}");
+    }
+}
