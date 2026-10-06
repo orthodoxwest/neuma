@@ -226,6 +226,7 @@ tokens real AWRV material uses and moves rows between E1 and E2.
 | Item | Treatment |
 |---|---|
 | `name: value;` headers, multi-line values ending `;;`, `%` comments, the `%%` separator | E1 |
+| A value missing its closing `;` | E1 with a warning. As in Gregorio, a continued value also ends at a `;` that ends a line. neuma's own recovery (Gregorio has none) ends it before a following line that looks like `name:`, so one missing `;` doesn't swallow the fields after it |
 | `name`, `office-part`, `occasion`, `transcriber`, `gabc-copyright`, `score-copyright`, other descriptive headers | A (kept in `Score::header`) |
 | `language:` | E1: selects vowel rules (`la` default, `en`, with Gregorio's aliases) |
 | `annotation:` (one or two; the first is the upper line) | E1 |
@@ -254,7 +255,7 @@ tokens real AWRV material uses and moves rows between E1 and E2.
 | `<pr>`, `<pr:n>` | A |
 | `<alt>…</alt>` above-lines text | E2 |
 | `[…]` and `[/]` translations | E2 |
-| `<v>…</v>` verbatim TeX | A (printed as it stands when it holds no TeX, as `<v>(</v>`; otherwise dropped, with a warning when it held visible text) |
+| `<v>…</v>` verbatim TeX | A (printed as it stands when it holds no TeX, as `<v>(</v>`; GregorioTeX's stars and crosses, as `\greheightstar`, print as `*`, `†` or `‡`; otherwise dropped, with a warning when it held visible text) |
 
 ### 6.3 Notes, shapes and signs
 
@@ -280,7 +281,8 @@ tokens real AWRV material uses and moves rows between E1 and E2.
 | `'` `'0` `'1` vertical episema | E1 |
 | `+` custos at a pitch, `z0` automatic custos | E1 |
 | `[nocustos]` | E1 |
-| `[ll:0/1]`, `[oll:]`, `[ull:]`, `[oh:]`, `[uh:]`, `[shape:]`, `[cs:]`, `[cn:]`, braces (`[ob:]` etc.), `[nv:]` `[gv:]` `[ev:]`, slurs | U |
+| `[ll:0/1]` stem and ledger hints, `[oh:]` `[uh:]` episema tuning | A (default placement, with an info note) |
+| `[oll:]`, `[ull:]`, `[shape:]`, `[cs:]`, `[cn:]`, braces (`[ob:]` etc.), `[nv:]` `[gv:]` `[ev:]`, slurs | U |
 
 ### 6.4 Grouping, spacing, bars, clefs and breaks
 
@@ -293,14 +295,18 @@ tokens real AWRV material uses and moves rows between E1 and E2.
 | `{…}` zero-width notes | A (drawn with their own width) |
 | `@` manual fusion, `@[…]` auto fusion | E2 |
 | `` ` `` `` `0 `` `^` `^0` `,` `,0` `;` `:` `:?` `::` | E1 |
-| `;1`–`;8` Dominican bars | E2 |
+| `;1`–`;8` Dominican bars (also `,1`–`,8`, as Gregorio reads them) | E1 |
 | Bar suffixes `'` (episema) and `_` (brace) | U |
 | `c1`–`c4`, `f1`–`f4`, `cb1`–`cb4`, mid-line clef changes | E1 |
 | Double clefs `c1@c4` | U (first clef used) |
 | `z` justified break, `Z` ragged break, `z+ z- Z+ Z-` custos control | E1 |
 | A break at the end of the score | A (Gregorio discourages it; dropped) |
 
-**Line-breaking inputs.** `z` and `Z` both force a break. `z` justifies the
+**Line-breaking inputs.** Breaks fall between syllables and at spaces inside
+the notes. As in GregorioTeX (`\gresetunbreakablesyllablenotes{10}{4}{4}`), a
+syllable of ten or more notes may also break after a bar or at a `/`, `//`,
+`/0` or `/[f]` cut, but not within four notes of either end, and at a small
+cost, so a syllable's end is preferred. `z` and `Z` both force a break. `z` justifies the
 line it ends, and `Z` leaves that line ragged. A `+` or `-` suffix forces or
 suppresses that break's custos. The only ways to forbid a break are `<nlba>`
 regions and `!` before a space. A line that can't end anywhere else within the

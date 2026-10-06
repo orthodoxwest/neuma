@@ -347,3 +347,96 @@ fn notes_with_gregorio_6_syntax() {
     assert_eq!(spaces, [&Figure::Space(Space::LargeNoBreak), &Figure::Space(Space::Large)]);
     assert!(p.diagnostics.is_empty(), "{:?}", p.diagnostics);
 }
+
+#[test]
+fn verbatim_stars_and_crosses_print() {
+    // From GregoBase: `<v>\greheightstar</v>` is the asterisk after the intonation.
+    let p = parse(r"(c4) Ec(g)ce <v>\greheightstar</v>(h) quam(g) <v>\ \GreDagger</v>(g) bo<v>\ddag\ </v>(h)");
+    let s = &p.score.syllables;
+    assert_eq!(s[2].text.plain(), "ce *");
+    assert_eq!(s[4].text.plain(), "†");
+    assert_eq!(s[5].text.plain(), "bo‡");
+    assert!(s[2].text.runs.iter().any(|r| r.text == "*" && r.style.rubric));
+    assert!(p.diagnostics.is_empty(), "{:?}", p.diagnostics);
+    let again = parse(&p.score.to_gabc());
+    assert_eq!(again.score.syllables[2].text, s[2].text);
+    assert_eq!(again.score.syllables[4].text, s[4].text);
+    assert_eq!(again.score.syllables[5].text, s[5].text);
+}
+
+#[test]
+fn comma_digit_is_a_dominican_bar() {
+    let bars: Vec<BarKind> = notes("(c4) a(f;3 f,4 f,0)")
+        .iter()
+        .filter_map(|f| if let Figure::Bar(b) = f { Some(b.kind) } else { None })
+        .collect();
+    assert_eq!(bars, [BarKind::Dominican(3), BarKind::Dominican(4), BarKind::Minima]);
+    let p = parse("(c4) a(f;8)");
+    assert!(p.diagnostics.iter().any(|d| d.code == "gabc::dominican-bar"));
+    assert!(parse("(c4) a(f;3)").diagnostics.is_empty());
+}
+
+#[test]
+fn episema_tuning_is_only_a_note() {
+    // From GregoBase: `[oh:h]` after an episema, `[ll:1]` on a stem, and an `[oh:h{]…[oh}]` block.
+    let p = parse("(c4) a(d_[oh:h]e_[uh:l] e[ll:1]d ix[oh:h{]g_d//f_eg.[oh}])");
+    assert!(!p.diagnostics.is_empty());
+    assert!(
+        p.diagnostics
+            .iter()
+            .all(|d| d.code == "gabc::tuning-ignored" && d.severity == crate::diag::Severity::Info),
+        "{:?}",
+        p.diagnostics
+    );
+    let p = parse("(c4) a(g[oll:1]h[nv:x])");
+    assert_eq!(p.diagnostics.iter().filter(|d| d.code == "gabc::unsupported-tag").count(), 2);
+}
+
+#[test]
+fn nabc_is_reported_once() {
+    let p = parse("nabc-lines: 1;\n%%\n(c4) A(f|vi) B(g|pe) C(h|ta)\n");
+    let nabc: Vec<_> = p.diagnostics.iter().filter(|d| d.code == "gabc::nabc").collect();
+    assert_eq!(nabc.len(), 1, "{:?}", p.diagnostics);
+    assert_eq!(p.score.syllables.len(), 4);
+}
+
+#[test]
+fn unclosed_verbatim_tags_parse_in_linear_time() {
+    // Each unclosed `<alt>` used to rescan the rest of the score for a closer.
+    let src = format!("(c4) {}", "a<alt>(g) ".repeat(50_000));
+    let t = std::time::Instant::now();
+    let p = parse(&src);
+    assert_eq!(p.score.syllables.len(), 50_001);
+    // Linear parsing takes well under a second here, even unoptimized; the quadratic scan took
+    // seconds in a release build. The bound is loose so a slow runner can't trip it.
+    assert!(t.elapsed().as_secs() < 20, "{:?}", t.elapsed());
+}
+
+#[test]
+fn plain_verbatim_text_collapses_spaces() {
+    let p = parse("(c4) A<v>(non\n   repetitur)  </v>b(g)\n");
+    assert_eq!(p.score.syllables[1].text.plain(), "A(non repetitur) b");
+}
+
+#[test]
+fn double_slash_before_a_tag_is_the_larger_space() {
+    // From GregoBase: `//` then a ledger-line tag, not a cut and a malformed scaled space.
+    let p = parse("(c4) a(jk//[oll:1{1]lkl[oll:}])");
+    let spaces: Vec<Space> = p.score.syllables[1]
+        .notation
+        .iter()
+        .filter_map(|f| if let Figure::Space(s) = f { Some(*s) } else { None })
+        .collect();
+    assert_eq!(spaces, [Space::Medium]);
+    let codes: Vec<&str> = p.diagnostics.iter().map(|d| d.code).collect();
+    assert_eq!(codes, ["gabc::unsupported-tag", "gabc::unsupported-tag"]);
+    let once = p.score.to_gabc();
+    assert_eq!(parse(&once).score.to_gabc(), once);
+}
+
+#[test]
+fn zero_width_notes_are_reported_once() {
+    let p = parse("(c4) a(gF0/[-0.5]{ix}F0hi) b(h/[-0.5]{iy}hg)\n");
+    let n = p.diagnostics.iter().filter(|d| d.code == "gabc::zero-width").count();
+    assert_eq!(n, 1, "{:?}", p.diagnostics);
+}

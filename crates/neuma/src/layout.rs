@@ -53,6 +53,8 @@ const STRETCH: f32 = 1.5;
 const MAX_WIDTH: f32 = 1.0e6;
 /// Space between stacked lines, in staff spaces.
 const LINE_GAP: f32 = 1.0;
+/// Extra demerits for a break inside a melisma: about a moderately loose line's worth.
+const MELISMA_DEMERITS: f32 = 2500.0;
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct PlacedLine {
@@ -308,7 +310,7 @@ impl Engraving {
                     let seg = &self.segments[last];
                     let end_of_score = last + 1 == n;
                     let forced = matches!(seg.after, Break::Forced { .. });
-                    let breakable = end_of_score || forced || seg.after == Break::Allowed;
+                    let breakable = end_of_score || forced || matches!(seg.after, Break::Allowed | Break::InMelisma);
                     let x = place(&cur, seg, self.hyphen, self.word_space, start);
                     cur = advance(&cur, seg, x);
                     right = right.max(x + seg.right());
@@ -318,11 +320,12 @@ impl Engraving {
                     let natural = self.natural(&cur, right, ink_end, last);
                     let over = natural > target;
                     // Past the width with only forbidden breaks behind it, as in an unclosed
-                    // `<nlba>`: the line ends at the last of them rather than nowhere, which left
-                    // the walk back to set every segment on a line of its own.
-                    let stuck = over && !breakable_seen && last > first;
+                    // `<nlba>`: the line ends at the last of them, or after this segment when it
+                    // alone is too wide, rather than nowhere, which left the walk back to set every
+                    // segment on a line of its own.
+                    let stuck = over && !breakable_seen;
                     if breakable || stuck {
-                        let end = if stuck { last - 1 } else { last };
+                        let end = if stuck && last > first { last - 1 } else { last };
                         let gaps = (last - first) as f32;
                         let ragged =
                             end_of_score && opts.last_line == LastLine::Ragged || matches!(seg.after, Break::Forced { justify: false, .. });
@@ -340,7 +343,8 @@ impl Engraving {
                         };
                         if badness.is_finite() {
                             let d = (10.0 + badness) * (10.0 + badness);
-                            let total = base + d;
+                            // A syllable's end is a better break than a cut inside its melisma.
+                            let total = base + d + if seg.after == Break::InMelisma { MELISMA_DEMERITS } else { 0.0 };
                             let better = best[end + 1][next].is_none_or(|(b, _, _)| total < b);
                             if better {
                                 best[end + 1][next] = Some((total, first, j));
@@ -430,6 +434,14 @@ impl Engraving {
             // Vertical extent.
             let mut ink_top = -3.0f32;
             let mut ink_bottom = 3.0f32;
+            // A clef on the top line rises above the staff. Later lines leave that to the gap
+            // under the line above, as Gregorio does, but the first must not be clipped.
+            let clef_ink = clef.as_ref().filter(|_| li == 0).map(|c| clef_pieces(c, 0.0).0).unwrap_or_default();
+            for p in &clef_ink {
+                let (a, b) = p.y_extent();
+                ink_top = ink_top.min(a);
+                ink_bottom = ink_bottom.max(b);
+            }
             for s in &self.segments[first..=last] {
                 for p in &s.pieces {
                     let (a, b) = p.y_extent();

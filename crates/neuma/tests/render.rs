@@ -188,6 +188,34 @@ fn unclosed_nlba_still_fills_lines() {
     let lines = layout.display().lines.len();
     assert!((2..10).contains(&lines), "{lines} lines");
     assert!(layout.size().0 <= 300.01);
+    // A syllable wider than the column inside the run gets an overfull line of its own, and
+    // the syllables after it still share lines.
+    let src = "(c4) <nlba>Ab(g) c(h) d(g) e(h) f(g) g(h) h(g) Supercalifragilistic(ghghghghghghghghghghghghgh) i(g) j(h) k(g) l(h) m(g) n(h) o(g) p(h) q(g)</nlba>(::)";
+    let eng = parse(src).score.engrave(&ApproxMeasure, &NO_INITIAL);
+    let lines = eng.layout(200.0, &LayoutOptions::default()).display().lines.len();
+    assert!((3..8).contains(&lines), "{lines} lines");
+}
+
+#[test]
+fn long_melismas_break_between_note_groups() {
+    // From GregoBase: one syllable wider than a phone column, cut by `//` and bars.
+    let src = "(c4) To(ixdh//gih//ivGF;ggf//gg//f/gh//jjg;hhg//hvGF;4hiHG//ixhi)ta(h) (::)";
+    let eng = parse(src).score.engrave(&ApproxMeasure, &NO_INITIAL);
+    let layout = eng.layout(300.0, &LayoutOptions::default());
+    assert!(layout.size().0 <= 300.01, "{:?}", layout.size());
+    assert!(layout.display().lines.len() >= 2);
+    // As in Gregorio, a syllable of fewer than ten notes isn't split, and a longer one keeps
+    // four notes at either end.
+    let lines = |src: &str| {
+        let eng = parse(src).score.engrave(&ApproxMeasure, &NO_INITIAL);
+        eng.layout(40.0, &LayoutOptions::default()).display().lines.len()
+    };
+    assert_eq!(lines("(c4) A(ghg/hgh/ghg)"), 1);
+    assert_eq!(lines("(c4) A(gh/hg/gh/hg/gh)"), 3);
+    // Inside `<nlba>` the melisma stays whole, even past the width.
+    let src = "(c4) <nlba>To(ixdh//gih//ivGF;ggf//gg//f/gh//jjg;hhg//hvGF;4hiHG//ixhi)ta(h)</nlba> (::)";
+    let eng = parse(src).score.engrave(&ApproxMeasure, &NO_INITIAL);
+    assert!(eng.layout(300.0, &LayoutOptions::default()).size().0 > 300.0);
 }
 
 #[test]
@@ -433,5 +461,35 @@ fn max_lines_keeps_the_first_lines_as_broken() {
                 }
             }
         }
+    }
+}
+
+#[test]
+fn clefs_fit_their_lines() {
+    // A do clef on the top line rises above the staff; its line makes room for it. A score of
+    // only a clef draws its staff, as Gregorio does, rather than nothing.
+    for src in ["(c4) a(f) b(g)", "(c4)", "name: a;\n%%\n(f3) ()"] {
+        let eng = parse(src).score.engrave(&ApproxMeasure, &NO_INITIAL);
+        let list = eng.layout(300.0, &LayoutOptions::default()).display();
+        assert_eq!(list.lines.len(), 1, "{src}");
+        let line = list.lines[0];
+        let mut clefs = 0;
+        for item in &list.items {
+            if let Item::Glyph {
+                glyph,
+                y,
+                scale,
+                role: neuma::Ink::Clef,
+                ..
+            } = item
+            {
+                let (_, top, _, bottom) = neuma::glyphs::GlyphId::from_id(*glyph).unwrap().ink();
+                let unit = scale * neuma::glyphs::UNITS_PER_SPACE;
+                assert!(y + top * unit >= line.top - 0.01, "{src}: {item:?} {line:?}");
+                assert!(y + bottom * unit <= line.bottom + 0.01, "{src}: {item:?} {line:?}");
+                clefs += 1;
+            }
+        }
+        assert_eq!(clefs, 1, "{src}");
     }
 }

@@ -110,11 +110,13 @@ impl Parser<'_, '_> {
                 b',' => {
                     self.i += 1;
                     let high = self.take(b'0');
-                    // `,1`–`,8` appear in some sources; treat as a plain minima.
-                    if self.peek().is_some_and(|d| (b'1'..=b'8').contains(&d)) {
+                    // Gregorio reads `,1`–`,8` as Dominican bars too.
+                    if !high && let Some(d) = self.peek().filter(|d| (b'1'..=b'8').contains(d)) {
                         self.i += 1;
+                        self.bar(BarKind::Dominican(d - b'0'), false, start);
+                    } else {
+                        self.bar(BarKind::Minima, high, start);
                     }
-                    self.bar(BarKind::Minima, high, start);
                 }
                 b';' => {
                     self.i += 1;
@@ -220,11 +222,11 @@ impl Parser<'_, '_> {
             self.sink
                 .warn(self.span(start), "gabc::bar-sign", "signs on bars aren't supported and are skipped");
         }
-        if let BarKind::Dominican(_) = kind {
-            self.sink.info(
+        if let BarKind::Dominican(n @ 7..) = kind {
+            self.sink.warn(
                 self.span(start),
                 "gabc::dominican-bar",
-                "Dominican bars are drawn as a minor bar for now",
+                format!("a four-line staff has no Dominican bar {n}; it is drawn above the staff"),
             );
         }
         self.out.push(Figure::Bar(Bar {
@@ -237,8 +239,9 @@ impl Parser<'_, '_> {
     fn slash(&mut self) {
         self.i += 1;
         let space = match self.peek() {
-            // `//[2]` is a neumatic cut and then a scaled space, as Gregorio reads it.
-            Some(b'/') if self.peek_at(1) == Some(b'[') => Space::Small,
+            // `//[2]` is a neumatic cut and then a scaled space, as Gregorio reads it. Before
+            // anything but a number, `//` is the larger space and the `[…]` a tag.
+            Some(b'/') if self.peek_at(1) == Some(b'[') && self.scale_at(self.i + 1).is_some() => Space::Small,
             Some(b'/') => {
                 self.i += 1;
                 Space::Medium
@@ -254,11 +257,11 @@ impl Parser<'_, '_> {
             Some(b'[') => {
                 let start = self.i;
                 let end = self.src[self.i..].find(']').map_or(self.s.len(), |n| self.i + n);
-                let factor = self.src[self.i + 1..end].trim().parse::<f32>();
+                let factor = self.scale_at(self.i);
                 self.i = (end + 1).min(self.s.len());
                 match factor {
-                    Ok(f) if f.is_finite() => Space::Scaled(f),
-                    _ => {
+                    Some(f) => Space::Scaled(f),
+                    None => {
                         self.sink
                             .warn(self.span(start), "gabc::bad-space", "`/[…]` needs a number; using a small space");
                         Space::Small
@@ -270,6 +273,12 @@ impl Parser<'_, '_> {
         self.out.push(Figure::Space(space));
     }
 
+    /// The factor in a `[f]` starting at byte `at`, if it is a finite number.
+    fn scale_at(&self, at: usize) -> Option<f32> {
+        let end = self.src[at..].find(']').map_or(self.s.len(), |n| at + n);
+        self.src[at + 1..end].trim().parse::<f32>().ok().filter(|f| f.is_finite())
+    }
+
     fn bracket(&mut self) {
         let start = self.i;
         let end = self.src[self.i..].find(']').map_or(self.s.len(), |n| self.i + n);
@@ -279,11 +288,21 @@ impl Parser<'_, '_> {
             self.out.push(Figure::NoCustos);
         } else {
             let name = inner.split([':', '{', '}']).next().unwrap_or(inner);
-            self.sink.warn(
-                self.span(start),
-                "gabc::unsupported-tag",
-                format!("`[{name}:…]` isn't supported and is skipped"),
-            );
+            if matches!(name, "oh" | "uh" | "ll") {
+                // Fine-tuning of where an episema sits or how long a stem is: the default
+                // placement stands, so it's worth a note rather than a warning.
+                self.sink.info(
+                    self.span(start),
+                    "gabc::tuning-ignored",
+                    format!("`[{name}:…]` fine-tunes placement; the default placement is used"),
+                );
+            } else {
+                self.sink.warn(
+                    self.span(start),
+                    "gabc::unsupported-tag",
+                    format!("`[{name}:…]` isn't supported and is skipped"),
+                );
+            }
         }
     }
 
