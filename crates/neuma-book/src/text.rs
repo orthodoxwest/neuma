@@ -205,27 +205,51 @@ pub fn set(fonts: &Fonts, para: &Para, width: f32) -> Vec<Line> {
     let has_drop = drop_op.is_some();
     let words = words(&spans, fonts, size);
     let space = fonts.width(" ", fonts.resolve(false, false), false) * size;
-    let mut lines = Vec::new();
-    let mut i = 0;
-    while i < words.len() || lines.is_empty() {
-        let n = lines.len();
-        let left = if has_drop && n < 2 {
+    let left = |n: usize| {
+        if has_drop && n < 2 {
             para.indent + drop_w
         } else {
             para.indent + if n == 0 { para.first } else { 0.0 }
-        };
-        let avail = (width - left).max(size);
+        }
+    };
+    let avail = |n: usize| (width - left(n)).max(size);
+    let natural = |r: std::ops::Range<usize>| -> f32 {
+        let n = r.len();
+        words[r].iter().map(|w| w.width).sum::<f32>() + space * n.saturating_sub(1) as f32
+    };
+    // Break greedily, as ranges of words.
+    let mut ranges: Vec<std::ops::Range<usize>> = Vec::new();
+    let mut i = 0;
+    while i < words.len() || ranges.is_empty() {
         let start = i;
-        let mut natural = 0.0;
+        let mut used = 0.0;
         while i < words.len() {
             let add = if i == start { words[i].width } else { space + words[i].width };
-            if i > start && natural + add > avail {
+            if i > start && used + add > avail(ranges.len()) {
                 break;
             }
-            natural += add;
+            used += add;
             i += 1;
         }
-        let last = i >= words.len();
+        ranges.push(start..i);
+    }
+    // A last line of one word ("Amen.") takes a word from the line above, when that line
+    // keeps at least two and the last line still fits.
+    let n = ranges.len();
+    if n >= 2 && para.align != Align::Center && ranges[n - 1].len() == 1 && ranges[n - 2].len() >= 3 {
+        let moved = ranges[n - 2].end - 1;
+        if natural(moved..ranges[n - 1].end) <= avail(n - 1) {
+            ranges[n - 2].end = moved;
+            ranges[n - 1].start = moved;
+        }
+    }
+    let mut lines = Vec::new();
+    for (n, r) in ranges.iter().enumerate() {
+        let (start, i) = (r.start, r.end);
+        let left = left(n);
+        let avail = avail(n);
+        let natural = natural(r.clone());
+        let last = n + 1 == ranges.len();
         let gaps = (i - start).saturating_sub(1) as f32;
         let (mut x, gap) = match para.align {
             Align::Center => (left + (avail - natural) / 2.0, space),
@@ -378,6 +402,28 @@ mod tests {
                 assert_ne!(last.as_deref(), Some("·"), "a line ends with the point at width {width}");
             }
         }
+    }
+
+    /// A last line of a single word takes a word from the line above.
+    #[test]
+    fn no_lone_word_on_the_last_line() {
+        let f = Fonts::standard();
+        let text = "As it was in the beginning, is now, and ever shall be, world without end. Amen.";
+        let mut hit = 0;
+        for width in (150..400).step_by(2) {
+            let lines = set(&f, &para(text, Align::Justify, false), width as f32);
+            let words = |l: &Line| l.ops.len();
+            if lines.len() >= 2 {
+                if words(&lines[lines.len() - 2]) >= 4 {
+                    hit += 1;
+                }
+                assert!(
+                    words(&lines[lines.len() - 1]) >= 2 || words(&lines[lines.len() - 2]) <= 2,
+                    "width {width}"
+                );
+            }
+        }
+        assert!(hit > 0);
     }
 
     #[test]
