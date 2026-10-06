@@ -39,6 +39,17 @@ fun main() {
     check(try { psalm("a * b", "9.z", Intone.NEVER); false } catch (e: ToneException.Unknown) { true }, "unknown tone")
     val pt = point("O come, let us sing unto the Lord * let us heartily rejoice in the strength of our salvation.", "8.G")
     check(pt.halves.size == 2 && pt.text.contains("·"), "point")
+    val src = "(c4) Kŷ-(g)ri(hi) (,) e(h) (::)"
+    val ed = Chant(src, defaultChantOptions())
+    val hyphen = ed.diagnostics().first { it.code == "gabc::hyphen-in-syllable" }
+    check(src.substring(hyphen.utf16Start.toInt(), hyphen.utf16End.toInt()) == "-", "utf16 span")
+    check(hyphen.fix?.replacement == "", "fix")
+    val edPage = ed.layout(500f, defaultLayoutOptions())
+    for (n in edPage.notes) check(ed.sourceAt(n.x, n.y)?.index == n.id, "source of note ${n.id}")
+    val at = ed.elementsAt((src.indexOf("hi") + 1).toULong(), OffsetUnit.UTF16)
+    check(at.map { it.kind } == listOf(ElementKind.NOTE, ElementKind.SYLLABLE), "caret")
+    check(src.substring(at[1].utf16Start.toInt(), at[1].utf16End.toInt()) == "ri(hi)", "syllable span")
+    ed.close()
     chant.close()
     println("ok: kotlin, ${narrow.notes.size} notes, ${glyphs.size} glyphs")
 }

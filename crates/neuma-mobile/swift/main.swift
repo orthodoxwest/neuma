@@ -1,6 +1,8 @@
 // Calls neuma through its generated Swift bindings, as an iOS app would. test.sh compiles
 // it with Neuma.swift into one executable on macOS.
 
+import Foundation
+
 func check(_ ok: Bool, _ what: String) {
     if !ok { fatalError(what) }
 }
@@ -58,4 +60,15 @@ do {
 }
 let pt = try! point(text: "O come, let us sing unto the Lord * let us heartily rejoice in the strength of our salvation.", tone: "8.G")
 check(pt.halves.count == 2 && pt.text.contains("·"), "point")
+let src = "(c4) Kŷ-(g)ri(hi) (,) e(h) (::)"
+let ed = Chant(gabc: src, options: defaultChantOptions())
+let hyphen = ed.diagnostics().first { $0.code == "gabc::hyphen-in-syllable" }!
+check(hyphen.fix?.replacement == "" && hyphen.utf16Start == hyphen.start - 1, "fix")
+let edPage = ed.layout(width: 500, options: defaultLayoutOptions())
+for n in edPage.notes {
+    check(ed.sourceAt(x: n.x, y: n.y)?.index == n.id, "source of note \(n.id)")
+}
+let caret = UInt64((src as NSString).range(of: "hi").location + 1)
+let at = ed.elementsAt(offset: caret, unit: .utf16)
+check(at.map { $0.kind } == [.note, .syllable], "caret")
 print("ok: swift, \(narrow.notes.count) notes, \(glyphs.count) glyphs")
