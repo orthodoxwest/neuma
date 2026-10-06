@@ -284,6 +284,14 @@ struct Trial {
     shrunk: f32,
 }
 
+/// What a line adds at its end beyond its segments: the custos's width, if it has one, and
+/// whether its last word goes on to the next line (so it may end with a hyphen).
+#[derive(Clone, Copy, Default, Debug, PartialEq)]
+struct Closing {
+    custos: Option<f32>,
+    word_goes_on: bool,
+}
+
 impl Engraving {
     fn clef_before(&self, first: usize) -> Clef {
         if first == 0 {
@@ -369,8 +377,8 @@ impl Engraving {
             weights,
             touching,
             shrinks,
-            natural: self.natural(&cur, right, ink_end, last),
-            shrunk: self.natural(&cur_shrunk, right_shrunk, ink_end_shrunk, last),
+            natural: self.natural(&cur, right, ink_end, self.closing(last)),
+            shrunk: self.natural(&cur_shrunk, right_shrunk, ink_end_shrunk, self.closing(last)),
         }
     }
 
@@ -393,7 +401,7 @@ impl Engraving {
                 ink_end = ink_end.max(x + r);
             }
         }
-        (self.natural(&cur, right, ink_end, last), ink_end)
+        (self.natural(&cur, right, ink_end, self.closing(last)), ink_end)
     }
 
     /// Whether the next text after segment `last` is in the same word, so a line ending there
@@ -407,21 +415,53 @@ impl Engraving {
 
     /// The width a line ending at `last` needs: its segments, plus a trailing hyphen and the
     /// custos.
-    fn natural(&self, cur: &Cursor, mut right: f32, ink_end: f32, last: usize) -> f32 {
+    fn natural(&self, cur: &Cursor, mut right: f32, ink_end: f32, close: Closing) -> f32 {
         if cur.word_continues
             && !cur.own_hyphen
-            && self.continues_past(last)
+            && close.word_goes_on
             && let Some(r) = cur.lyric_right
         {
             right = right.max(r + self.hyphen);
         }
-        if last + 1 < self.segments.len()
-            && let Some(p) = self.custos_for(last)
-        {
-            let (_, w) = custos_piece(p, 0.0);
+        if let Some(w) = close.custos {
             right = right.max(ink_end + CUSTOS_GAP + w);
         }
         right
+    }
+
+    /// How a line ending after segment `last` closes, for its width.
+    fn closing(&self, last: usize) -> Closing {
+        Closing {
+            custos: self.custos_width(last),
+            word_goes_on: self.continues_past(last),
+        }
+    }
+
+    /// The width of the custos at the end of a line ending at `last`, if it has one.
+    fn custos_width(&self, last: usize) -> Option<f32> {
+        if last + 1 < self.segments.len() {
+            self.custos_for(last).map(|p| custos_piece(p, 0.0).1)
+        } else {
+            None
+        }
+    }
+
+    /// `closing` for every segment at once, in one pass from the end, so the line breaker
+    /// neither measures a custos nor scans ahead for the next text at each step.
+    fn closings(&self) -> Vec<Closing> {
+        let mut out = vec![Closing::default(); self.segments.len()];
+        // Whether the next text after the segment being looked at starts a word.
+        let mut next_word_start = None;
+        for k in (0..self.segments.len()).rev() {
+            out[k] = Closing {
+                custos: self.custos_width(k),
+                word_goes_on: next_word_start == Some(false),
+            };
+            if self.segments[k].lyric.is_some() {
+                next_word_start = Some(self.segments[k].word_start);
+            }
+        }
+        out
     }
 
     /// How far the lyric baseline lies below the staff's bottom line.
@@ -486,6 +526,8 @@ impl Engraving {
         // best[k][j]: least demerits for lines ending just before segment k, with j lines so
         // far (capped at `indented`), and where the last line started and its own j.
         let mut best: Vec<Vec<Option<(f64, usize, usize)>>> = vec![vec![None; indented + 1]; n + 1];
+        // How each candidate line closes, worked out once rather than at every step.
+        let closings = self.closings();
         best[0][0] = Some((0.0, 0, 0));
         for first in 0..n {
             for j in 0..=indented {
@@ -544,8 +586,9 @@ impl Engraving {
                         ink_end = ink_end.max(x + r);
                         ink_end_shrunk = ink_end_shrunk.max(x - gone + r);
                     }
-                    let natural = self.natural(&cur, right, ink_end, last);
-                    let shrink = natural - self.natural(&cur_shrunk, right_shrunk, ink_end_shrunk, last);
+                    let close = closings.get(last).copied().unwrap_or_default();
+                    let natural = self.natural(&cur, right, ink_end, close);
+                    let shrink = natural - self.natural(&cur_shrunk, right_shrunk, ink_end_shrunk, close);
                     // A line may be a little wider than the column: its word gaps shrink, as
                     // GregorioTeX's glue does.
                     let over = natural > target + shrink;
@@ -858,6 +901,17 @@ impl Engraving {
 mod tests {
     use super::*;
     use crate::{ApproxMeasure, Initial, StyleOptions, parse};
+
+    #[test]
+    fn the_breakers_closings_match_each_lines_own() {
+        let src = "(c4) Al(g)le(h)lu(ij)ia.(h) (,) Al(g)le(h) (;) lu(gh) (::) ia(hi) e(j)ius(j) (z) cu(g)-(h)jus(i) <i>a(g)men()";
+        let eng = parse(src).score.engrave(&ApproxMeasure, &StyleOptions::default());
+        let all = eng.closings();
+        for (k, c) in all.iter().enumerate() {
+            assert_eq!(*c, eng.closing(k), "segment {k}");
+        }
+        assert!(all.iter().any(|c| c.word_goes_on) && all.iter().any(|c| c.custos.is_some()));
+    }
 
     #[test]
     fn the_first_note_keeps_gregorios_distance_from_the_clef() {
