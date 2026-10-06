@@ -3,7 +3,7 @@
 
 use crate::book::{PageNumbers, Settings};
 use crate::compose::{Block, Kind};
-use crate::font::{Fonts, ITALIC};
+use crate::font::Fonts;
 use crate::page::{Color, Op, Page};
 
 /// What one page holds before its furniture is drawn.
@@ -135,16 +135,23 @@ fn furnish(sheet: Sheet, number: usize, s: &Settings, fonts: &Fonts) -> Page {
     };
     let mid = left + (s.width - left - right) / 2.0;
     if let Some(h) = sheet.header.as_deref().filter(|_| !sheet.title) {
-        put(h, ITALIC, 0.5, mid, top, Color::Red);
+        put(h, fonts.resolve(true, false), 0.5, mid, top, Color::Red);
     }
     let n = number.to_string();
     match s.page_numbers {
-        PageNumbers::Bottom => put(&n, 0, 0.5, mid, s.height - s.margins[2] * 0.45, Color::Black),
+        PageNumbers::Bottom => put(
+            &n,
+            fonts.resolve(false, false),
+            0.5,
+            mid,
+            s.height - s.margins[2] * 0.45,
+            Color::Black,
+        ),
         PageNumbers::Outer if !sheet.title => {
             if even {
-                put(&n, 0, 0.0, left, top, Color::Black);
+                put(&n, fonts.resolve(false, false), 0.0, left, top, Color::Black);
             } else {
-                put(&n, 0, 1.0, s.width - right, top, Color::Black);
+                put(&n, fonts.resolve(false, false), 1.0, s.width - right, top, Color::Black);
             }
         }
         _ => {}

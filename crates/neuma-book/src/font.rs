@@ -315,8 +315,14 @@ impl<'a> Fonts<'a> {
         }
     }
 
-    /// Shapes `text` in a face.
+    /// The face a face index is drawn in: itself if loaded, else the nearest loaded one.
+    pub fn resolve_index(&self, face: usize) -> usize {
+        self.resolve(face == ITALIC || face == BOLD_ITALIC, face == BOLD || face == BOLD_ITALIC)
+    }
+
+    /// Shapes `text` in a face, or in the nearest loaded one when that face isn't.
     pub fn shape(&self, text: &str, face: usize, small_caps: bool) -> Shaped {
+        let face = self.resolve_index(face);
         let Some(f) = self.face(face) else {
             self.missing
                 .borrow_mut()
@@ -365,6 +371,7 @@ impl<'a> Fonts<'a> {
 
     /// The advance of `text` in ems, cached.
     pub fn width(&self, text: &str, face: usize, small_caps: bool) -> f32 {
+        let face = self.resolve_index(face);
         let key = (face, small_caps, text.to_string());
         if let Some(w) = self.widths.borrow().get(&key) {
             return *w;
@@ -625,6 +632,22 @@ mod tests {
         assert_eq!(s.glyphs[5].id, 0x86);
         assert!(s.width > 1.0);
         assert_eq!(winansi('℣'), None);
+    }
+
+    /// A face that isn't loaded falls back to one that is, so nothing is drawn in a face
+    /// the PDF doesn't embed.
+    #[test]
+    fn missing_faces_resolve() {
+        let path = Path::new("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf");
+        if !path.is_file() {
+            return;
+        }
+        let files = FontFiles::load([Some(path), None, None, None]).unwrap();
+        let fonts = Fonts::new(&files);
+        for face in [ITALIC, BOLD, BOLD_ITALIC] {
+            assert_eq!(fonts.shape("Compline", face, false).face, REGULAR);
+        }
+        assert!(fonts.width("Compline", ITALIC, false) > 0.0);
     }
 
     /// Right-to-left clusters come in descending order; each glyph still gets its own text,

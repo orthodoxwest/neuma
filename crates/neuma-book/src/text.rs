@@ -173,7 +173,7 @@ pub fn set(fonts: &Fonts, para: &Para, width: f32) -> Vec<Line> {
         if let Some(c) = t.chars().next().filter(|c| c.is_alphanumeric()) {
             let cap = fonts.face(0).map_or(0.66, |f| f.cap_height);
             let dsize = (height + cap * size) / cap;
-            let run = fonts.shape(&c.to_string(), 0, false);
+            let run = fonts.shape(&c.to_string(), fonts.resolve(false, false), false);
             drop_w = run.width * dsize + 0.3 * size;
             drop_op = Some(Op::Text {
                 x: para.indent,
@@ -187,7 +187,7 @@ pub fn set(fonts: &Fonts, para: &Para, width: f32) -> Vec<Line> {
     }
     let has_drop = drop_op.is_some();
     let words = words(&spans, fonts, size);
-    let space = fonts.width(" ", 0, false) * size;
+    let space = fonts.width(" ", fonts.resolve(false, false), false) * size;
     let mut lines = Vec::new();
     let mut i = 0;
     while i < words.len() || lines.is_empty() {

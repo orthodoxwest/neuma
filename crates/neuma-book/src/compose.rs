@@ -563,7 +563,7 @@ fn psalm_blocks(ps: &Psalm, s: &Settings, fonts: &Fonts, m: &Metrics, diags: &mu
             });
         }
         let nsize = size * 0.9;
-        let number_w = fonts.width("00", 0, false) * nsize + size * 0.45;
+        let number_w = fonts.width("00", fonts.resolve(false, false), false) * nsize + size * 0.45;
         let pointed = pointing.text();
         for (k, line) in pointed.lines().enumerate() {
             let line = line.replace("\\-", "-");
@@ -580,7 +580,7 @@ fn psalm_blocks(ps: &Psalm, s: &Settings, fonts: &Fonts, m: &Metrics, diags: &mu
             p.indent = number_w;
             let mut lines = text::set(fonts, &p, m.width);
             if let (Some(n), Some(first)) = (num, lines.first_mut()) {
-                let run = fonts.shape(n, 0, false);
+                let run = fonts.shape(n, fonts.resolve(false, false), false);
                 let w = run.width * nsize;
                 first.ops.push(Op::Text {
                     x: number_w - size * 0.45 - w,

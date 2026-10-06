@@ -130,3 +130,27 @@ fn example_with_eb_garamond_when_installed() {
     let svg = doc.svg(0, &fonts).unwrap();
     assert!(!svg.contains("<text"));
 }
+
+/// With only a regular face, everything (the italic running header too) is set in it, so
+/// the PDF embeds every face it uses and nothing falls back to an unembedded Times.
+#[test]
+fn running_header_without_an_italic_face() {
+    let path = std::path::Path::new("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf");
+    if !path.is_file() {
+        return;
+    }
+    let files = FontFiles::load([Some(path), None, None, None]).unwrap();
+    let fonts = Fonts::new(&files);
+    let book = Book::parse("header: Running\nrubric: Italic.\ntext: one\nbreak\ntext: two\n").unwrap();
+    let doc = typeset(&book, &fonts);
+    assert!(texts(&doc.pages[1]).iter().any(|t| t == "Running"));
+    for p in &doc.pages {
+        for op in &p.ops {
+            if let Op::Text { run, .. } = op {
+                assert_eq!(run.face, neuma_book::font::REGULAR);
+            }
+        }
+    }
+    let pdf = doc.pdf(&fonts);
+    assert!(!pdf.windows(5).any(|w| w == b"Times"));
+}
