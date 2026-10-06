@@ -38,10 +38,11 @@ The pointer chooses among the ways to place the cadence's accents on the last sy
 a linear model over the syllables' lexical stress (from a stress table drawn from the CMU
 Pronouncing Dictionary, `tones/stress.txt`), the small words involved, how many syllables
 follow the last accent, and the gap between accents. Its weights (`tones/pointing.weights`)
-were fitted to a hand-pointed English psalter. On psalms held out from fitting it agrees with
-the hand pointing on about 85% of half-verses, where the same hand agrees with itself across
-settings of a psalm about 89% of the time. It is 80% sure or more of about two thirds of
-half-verses, and those agree about 92% of the time.
+were fitted to a hand-pointed English psalter. On psalms held out from fitting (split into
+syllables as the hand split them) it agrees with the hand pointing on about 81% of
+half-verses, where the same hand agrees with itself across settings of a psalm about 89% of
+the time. It is 80% sure or more of about 70% of half-verses, and those agree about 92% of
+the time.
 
 ## Pointed text
 

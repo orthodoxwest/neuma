@@ -3,7 +3,6 @@
 # 2 secondary, 0 none. Words stressed on the first syllable alone are left out.
 abandon 010
 abandoned 010
-abbreviates 0102
 aberdeen 102
 abhor 01
 abhorred 01
@@ -29,7 +28,6 @@ abundance 010
 abundant 010
 abundantly 0100
 abyss 01
-ac 11
 accept 01
 acceptable 0100
 accepted 010
@@ -44,7 +42,6 @@ accordingly 0100
 accosted 010
 account 01
 accounted 010
-accounting 010
 accusation 2010
 accused 01
 accusers 010
@@ -54,7 +51,6 @@ acknowledged 010
 acolyte 102
 acquaintance 010
 acquired 010
-activate 102
 adapted 010
 addition 010
 addressed 01
@@ -160,7 +156,6 @@ antiphons 102
 antonia 0100
 anyone 102
 anything 102
-anyway 102
 apace 01
 apart 01
 apocalypse 0102
@@ -178,7 +173,6 @@ appearing 010
 appears 01
 appease 01
 appellation 2010
-appended 010
 applauding 010
 applied 01
 applies 01
@@ -294,7 +288,6 @@ awhile 01
 awoke 01
 axes 12
 babylon 102
-backlog 12
 balbina 010
 baptize 01
 baptized 01
@@ -390,7 +383,6 @@ canterbury 1020
 capernaum 0100
 capito 010
 captivity 0100
-career 01
 carefulness 102
 caresses 010
 carmel 01
@@ -400,20 +392,14 @@ castello 010
 catacombs 102
 catania 010
 catastrophe 0100
-categories 1020
-category 1020
 caterpillar 1020
 caterpillars 1020
-cc 21
-cd 21
-cea 221
 cecilia 010
 celano 010
 celebrate 102
 celebrated 1020
 celebrating 1020
 celebration 2010
-celebrity 0100
 celestial 010
 celestine 0010
 cemetery 1020
@@ -435,8 +421,6 @@ christina 010
 cilicia 010
 circumcision 2010
 circumstance 102
-citation 010
-clarification 20010
 clementi 010
 clermont 12
 collapse 01
@@ -449,7 +433,6 @@ columba 210
 combating 010
 combats 01
 combined 01
-comedian 0100
 command 01
 commanded 010
 commander 010
@@ -509,7 +492,6 @@ condemn 01
 condemned 01
 condescending 2010
 condition 010
-conditional 0100
 conducted 010
 confederate 0100
 confer 01
@@ -544,7 +526,6 @@ considerable 01000
 considered 010
 consist 01
 consistent 010
-consistently 0100
 consolation 2010
 consoled 01
 consoling 010
@@ -594,7 +575,6 @@ cornerstone 102
 corona 010
 corrected 010
 correction 010
-correctly 010
 corrupt 01
 corrupted 010
 corruptible 0100
@@ -635,7 +615,6 @@ decrees 01
 dedicate 102
 dedication 2010
 defaced 01
-defaults 01
 defeated 010
 defeating 010
 defence 01
@@ -645,7 +624,6 @@ defender 010
 defending 010
 defense 01
 deferred 01
-definitions 2010
 degenerated 01020
 degree 01
 delay 01
@@ -817,7 +795,6 @@ donation 010
 dorchester 120
 dorothea 2010
 doxology 0100
-duplicated 1020
 earthenware 102
 earthquake 12
 ecclesiastical 020100
@@ -909,7 +886,6 @@ established 010
 establishment 0100
 estate 01
 esteemed 01
-etc 2100
 eternal 010
 eternally 0100
 eternity 0100
@@ -981,8 +957,6 @@ expelling 010
 experience 0100
 experiencing 01000
 expired 01
-explicit 010
-explicitly 0100
 exposed 01
 exposition 2010
 express 01
@@ -1004,13 +978,11 @@ exulting 010
 eyelashes 120
 eyelids 12
 faithfulness 102
-fallback 12
 falsehood 12
 familiar 010
 farewell 21
 fatherland 102
 fatigue 01
-feb 1020
 february 1020
 felicity 0100
 fellowship 102
@@ -1025,7 +997,6 @@ firstborn 11
 flaminian 0100
 florentina 2010
 flores 12
-footnote 12
 footsteps 12
 forbid 01
 forbids 01
@@ -1046,7 +1017,6 @@ forgiveness 010
 forgiving 010
 forgotten 010
 forlorn 01
-format 12
 forsake 01
 forsaken 010
 forsaking 010
@@ -1072,7 +1042,6 @@ gargano 010
 gateway 12
 generation 2010
 generations 2010
-generic 010
 genevieve 102
 gentile 12
 gentiles 12
@@ -1211,14 +1180,12 @@ inherit 210
 inheritance 2100
 inherited 2100
 iniquity 2100
-inline 21
 innumerable 21000
 inquire 21
 inquired 210
 inquisition 2010
 inscribed 21
 inseparable 21000
-insertion 210
 insignia 2120
 inspiration 2010
 inspired 210
@@ -1242,7 +1209,6 @@ intended 210
 intending 210
 intent 21
 intention 210
-intentional 2100
 inter 21
 intercede 201
 interceding 2010
@@ -1288,7 +1254,6 @@ juliana 2010
 july 21
 justified 102
 justina 010
-kenny 12
 kiev 21
 lacerate 102
 lament 01
@@ -1353,7 +1318,6 @@ maurice 01
 mauritania 20100
 mauritius 0100
 maximilian 20100
-md 21
 mediation 2010
 mediator 1020
 meditating 1020
@@ -1380,8 +1344,6 @@ miraculously 01000
 misdeeds 01
 misfortune 010
 misguided 010
-misprinted 110
-misprints 11
 mistake 01
 modena 010
 moderation 2010
@@ -1416,7 +1378,6 @@ nineteen 11
 nobility 0100
 nocera 010
 nolasco 010
-normalized 102
 notwithstanding 2010
 november 010
 numidia 0100
@@ -1446,7 +1407,6 @@ offended 010
 officials 010
 offspring 12
 oftentimes 102
-ok 11
 oliva 010
 olympias 0100
 omit 01
@@ -1489,8 +1449,6 @@ overcome 102
 overcoming 1020
 overflowing 1020
 overflows 102
-override 102
-overrides 102
 overshadow 1010
 overshadowed 2010
 overtake 102
@@ -1507,7 +1465,6 @@ palestine 102
 pantheon 102
 paradise 102
 paralytic 2010
-parenthetical 00100
 partake 01
 particularly 21000
 passover 120
@@ -1521,7 +1478,6 @@ patrician 010
 patrimony 1020
 paulina 210
 pavilion 010
-pdf 221
 peacemaker 120
 peacemakers 120
 pelagia 0100
@@ -1532,7 +1488,6 @@ pentecost 102
 perceive 01
 perfect 01
 perfection 010
-perforation 2010
 perform 01
 performance 010
 performed 01
@@ -1560,7 +1515,6 @@ perverse 01
 petition 010
 petitions 010
 petronilla 2010
-ph 11
 pharisees 102
 philadelphia 20100
 phileas 010
@@ -1588,7 +1542,6 @@ possessing 010
 possession 010
 posterity 0100
 potenza 010
-pr 11
 praiseworthy 120
 preceded 010
 preceding 010
@@ -1643,7 +1596,6 @@ profess 01
 professed 01
 professing 010
 profession 010
-profile 12
 profligate 102
 profound 01
 progress 12
@@ -1674,7 +1626,6 @@ provocation 2010
 provoke 01
 provoked 01
 provoking 010
-punctuate 102
 purification 20010
 purified 102
 purify 102
@@ -1699,7 +1650,6 @@ receive 01
 received 01
 receives 01
 receiving 010
-recheck 11
 recitation 2010
 recite 01
 recognized 102
@@ -1721,7 +1671,6 @@ redemption 010
 reduced 01
 refer 01
 refers 01
-refinements 010
 reformed 01
 refrain 01
 refrained 01
@@ -1862,8 +1811,6 @@ revealing 010
 revelation 2010
 revere 01
 reverted 010
-review 21
-reviewed 01
 revile 01
 revive 01
 revolving 010
@@ -1913,7 +1860,6 @@ security 0100
 seduced 01
 select 01
 selected 010
-selections 010
 senatorial 20100
 separate 102
 separated 1020
@@ -1956,7 +1902,6 @@ sophia 010
 spiritual 1020
 spoleto 010
 spontaneously 01000
-ss 11
 starry 12
 starvation 010
 steadfast 12
@@ -2034,7 +1979,6 @@ testifies 102
 testify 102
 testimonies 1020
 testimony 1020
-th 11
 thanksgiving 210
 thecla 12
 themselves 01
@@ -2072,8 +2016,6 @@ toward 01
 towards 01
 traditions 010
 transcendent 010
-transcribed 01
-transcriber 010
 transferred 01
 transfixed 01
 transgress 01
@@ -2173,7 +2115,6 @@ valerian 0100
 venerate 102
 venerated 1020
 veneration 2010
-verbatim 010
 verena 010
 verona 010
 viator 010

@@ -7,13 +7,14 @@
 //! every way to place the accents among the last syllables with a linear model over the
 //! syllables' lexical stress (from a stress dictionary), the words involved, how many syllables
 //! follow the last accent, and the gap between accents. The weights were fitted to a hand-pointed
-//! English psalter, and agree with it on about 85% of the half-verses of psalms held out from
-//! fitting; the same pointer agrees with itself across different settings of a psalm about 89%
-//! of the time.
+//! English psalter. On psalms held out from fitting (with the hand's own syllable splits) they
+//! agree with it on about 81% of the half-verses; the hand agrees with itself across different
+//! settings of a psalm about 89% of the time.
 //!
 //! Each half-verse comes with a confidence (the model's probability for its choice), so an
-//! editor can flag the doubtful ones. Halves that already carry a mark (an accent or `·`) are
-//! kept as written, so a correction survives pointing again.
+//! editor can flag the doubtful ones. Halves that already carry a mark (an accent, `·` or `–`)
+//! are kept as written, so a correction survives pointing again. An acute in plain text
+//! ("café") counts as a mark, since it is how the markup writes an accent.
 
 use std::collections::HashMap;
 use std::sync::OnceLock;
@@ -29,7 +30,7 @@ pub struct HalfPointing {
     pub verse: usize,
     pub part: PartKind,
     /// The model's probability for the chosen pointing, from 0 to 1; 1 for a half that was
-    /// kept as written.
+    /// kept as written, and 0 for one too short for the tone, which accents every syllable.
     pub confidence: f32,
     /// The half already carried marks, which were kept.
     pub kept: bool,
@@ -69,8 +70,9 @@ pub fn point(tone: &Tone, text: &Pointed) -> Pointing {
                 PartKind::Mediant => &tone.mediant,
                 PartKind::Termination => &tone.termination,
             };
-            let kept = part.syllables.iter().any(|s| s.accent || s.cadence);
-            let confidence = if kept { 1.0 } else { point_part(part, cadence) };
+            let kept = part.omitted > 0 || part.held_end > 0 || part.syllables.iter().any(|s| s.accent || s.cadence || s.held);
+            let zero = may_end_on_accent(part.kind, tone);
+            let confidence = if kept { 1.0 } else { point_part(part, cadence, zero) };
             halves.push(HalfPointing {
                 verse: vi,
                 part: part.kind,
@@ -83,16 +85,17 @@ pub fn point(tone: &Tone, text: &Pointed) -> Pointing {
 }
 
 /// Marks one unpointed half and returns the confidence.
-fn point_part(part: &mut Part, cadence: &Cadence) -> f32 {
+fn point_part(part: &mut Part, cadence: &Cadence, zero: bool) -> f32 {
     let accents = cadence.accents();
     let n = part.syllables.len();
     if accents == 0 || n == 0 {
         return 1.0;
     }
     let ctx = Context::new(part);
-    let tag = tag(part.kind, accents, ends_on_tenor(cadence));
+    let tag = tag(part.kind, accents, zero);
+    let ok = accentable(part);
     let w = weights();
-    let mut scored: Vec<(f32, Vec<usize>)> = candidates(n, accents)
+    let mut scored: Vec<(f32, Vec<usize>)> = candidates(&ok, accents)
         .into_iter()
         .map(|c| {
             (
@@ -110,8 +113,12 @@ fn point_part(part: &mut Part, cadence: &Cadence) -> f32 {
             let total: f32 = scored.iter().map(|(s, _)| ((s - best) / t).exp()).sum();
             (1.0 / total, c)
         }
-        // Fewer syllables than accents: every syllable takes one.
-        None => (0.0, (0..n).collect()),
+        // Fewer syllables than accents: every syllable that can takes one (the last if none
+        // can), and the tone's missing accents are left out.
+        None => {
+            let all: Vec<usize> = (0..n).filter(|&i| ok[i]).collect();
+            (0.0, if all.is_empty() { vec![n - 1] } else { all })
+        }
     };
     scored.clear();
     for &a in &chosen {
@@ -140,16 +147,27 @@ fn point_part(part: &mut Part, cadence: &Cadence) -> f32 {
 /// The softmax temperature that turns score margins into probabilities, fitted with the
 /// weights.
 fn temperature() -> f32 {
-    WEIGHTS
-        .lines()
-        .find_map(|l| l.strip_prefix("# temperature\t")?.trim().parse().ok())
-        .unwrap_or(1.0)
+    static T: OnceLock<f32> = OnceLock::new();
+    *T.get_or_init(|| {
+        WEIGHTS
+            .lines()
+            .find_map(|l| l.strip_prefix("# temperature\t")?.trim().parse().ok())
+            .unwrap_or(1.0)
+    })
 }
 
 const WEIGHTS: &str = include_str!("../tones/pointing.weights");
 
+/// Whether a half's last syllable may take its accent, which tags the half's features: only
+/// for a mediant whose cadence returns to the tenor. A hand-pointed psalter ends a termination
+/// on its accent almost never, whatever the tone.
+fn may_end_on_accent(kind: PartKind, tone: &Tone) -> bool {
+    kind == PartKind::Mediant && ends_on_tenor(&tone.mediant)
+}
+
 /// Whether a one-accent cadence returns to the reciting note after its accent, so the accent
-/// can fall on the last syllable (`'k jr j` after a `jr` tenor).
+/// can fall on the last syllable (`'k jr j` after a `jr` tenor). A hand-pointed psalter puts a
+/// two-accent cadence's last accent on the last syllable almost never, so those are left out.
 fn ends_on_tenor(c: &Cadence) -> bool {
     let Some(at) = c.slots.iter().position(|s| matches!(s, Slot::Accent(_))) else {
         return false;
@@ -161,6 +179,11 @@ fn ends_on_tenor(c: &Cadence) -> bool {
         })
 }
 
+/// Which syllables can take an accent: those with a letter or digit, not bare punctuation.
+fn accentable(part: &Part) -> Vec<bool> {
+    part.syllables.iter().map(|s| s.text.chars().any(char::is_alphanumeric)).collect()
+}
+
 fn tag(kind: PartKind, accents: usize, zero: bool) -> String {
     let k = match kind {
         PartKind::Flex => "flex",
@@ -170,13 +193,15 @@ fn tag(kind: PartKind, accents: usize, zero: bool) -> String {
     format!("{k}{accents}:z{}", u8::from(zero))
 }
 
-/// Ways to place `accents` accents among the last syllables of `n`: the last accent at most
-/// four syllables from the end, all within the last nine.
-fn candidates(n: usize, accents: usize) -> Vec<Vec<usize>> {
+/// Ways to place `accents` accents on the accentable (`ok`) syllables among the last of them:
+/// the last accent at most four syllables from the end, all within the last nine.
+fn candidates(ok: &[bool], accents: usize) -> Vec<Vec<usize>> {
+    let n = ok.len();
     let lo = n.saturating_sub(9);
     let mut out = Vec::new();
     let mut cur = Vec::with_capacity(accents);
-    fn walk(from: usize, n: usize, left: usize, cur: &mut Vec<usize>, out: &mut Vec<Vec<usize>>) {
+    fn walk(from: usize, ok: &[bool], left: usize, cur: &mut Vec<usize>, out: &mut Vec<Vec<usize>>) {
+        let n = ok.len();
         if left == 0 {
             if cur.last().is_some_and(|&l| n - 1 - l <= 4) {
                 out.push(cur.clone());
@@ -187,12 +212,15 @@ fn candidates(n: usize, accents: usize) -> Vec<Vec<usize>> {
             if n - i < left {
                 break;
             }
+            if !ok[i] {
+                continue;
+            }
             cur.push(i);
-            walk(i + 1, n, left - 1, cur, out);
+            walk(i + 1, ok, left - 1, cur, out);
             cur.pop();
         }
     }
-    walk(lo, n, accents, &mut cur, &mut out);
+    walk(lo, ok, accents, &mut cur, &mut out);
     out
 }
 
@@ -327,16 +355,16 @@ pub(crate) fn stress(word: &str, n: usize) -> Vec<u8> {
         // Archaic endings take the stem's stress: "mak-eth", "ex-alt-est".
         ["eth", "est", "edst"].iter().find_map(|suffix| {
             let stem = word.strip_suffix(suffix)?;
-            let undoubled = stem.len() > 2 && stem.as_bytes()[stem.len() - 1] == stem.as_bytes()[stem.len() - 2];
-            [
-                Some(stem.to_string()),
-                Some(format!("{stem}e")),
-                undoubled.then(|| stem[..stem.len() - 1].to_string()),
-            ]
-            .into_iter()
-            .flatten()
-            .find_map(|s| lookup(&s))
-            .map(|p| format!("{p}0"))
+            let mut rev = stem.char_indices().rev();
+            let undoubled = match (rev.next(), rev.next()) {
+                (Some((at, a)), Some((_, b))) if a == b && stem.chars().count() > 2 => Some(&stem[..at]),
+                _ => None,
+            };
+            [Some(stem.to_string()), Some(format!("{stem}e")), undoubled.map(str::to_string)]
+                .into_iter()
+                .flatten()
+                .find_map(|s| lookup(&s))
+                .map(|p| format!("{p}0"))
         })
     });
     let digits: Vec<u8> = match pattern {
@@ -371,12 +399,22 @@ fn lookup(word: &str) -> Option<&'static str> {
         .copied()
 }
 
-/// The syllable with an acute on its first vowel ("Lord" → "Lórd").
+/// The syllable with an acute on its first vowel ("Lord" → "Lórd"), passing over a
+/// consonantal y ("yóuth") and the u after q ("quéen").
 fn with_acute(text: &str) -> String {
     let mut out = String::with_capacity(text.len() + 2);
     let mut done = false;
-    for c in text.chars() {
-        if !done {
+    let chars: Vec<char> = text.chars().collect();
+    let vowel = |c: char| matches!(c.to_ascii_lowercase(), 'a' | 'e' | 'i' | 'o' | 'u' | 'y' | 'æ');
+    for (i, &c) in chars.iter().enumerate() {
+        let prev = i.checked_sub(1).map(|j| chars[j].to_ascii_lowercase());
+        let next = chars.get(i + 1).copied();
+        let consonant = match c.to_ascii_lowercase() {
+            'y' => next.is_some_and(vowel) && !prev.is_some_and(vowel),
+            'u' => prev == Some('q') && next.is_some_and(vowel),
+            _ => false,
+        };
+        if !done && !consonant {
             let accented = match c {
                 'a' => Some('á'),
                 'e' => Some('é'),
@@ -403,11 +441,12 @@ fn with_acute(text: &str) -> String {
         out.push(c);
     }
     if !done {
-        // No plain vowel: a combining acute after the first letter.
-        let mut cs = text.chars();
-        let mut out: String = cs.next().into_iter().collect();
+        // No plain vowel: a combining acute after the first letter (or the first character,
+        // which keeps the accent in the markup).
+        let at = chars.iter().position(|c| c.is_alphabetic()).unwrap_or(0);
+        let mut out: String = chars.iter().take(at + 1).collect();
         out.push('\u{301}');
-        out.extend(cs);
+        out.extend(chars.iter().skip(at + 1));
         return out;
     }
     out
@@ -429,9 +468,13 @@ pub mod training {
         pub syllables: Vec<String>,
     }
 
-    /// The pointed halves of `text`, with `zero` saying whether each half's tone may end on
-    /// its accent (see the tag in the features).
-    pub fn halves(text: &Pointed, zero: impl Fn(PartKind) -> bool) -> Vec<Half> {
+    /// The pointed halves of `text`, sung to `tone`, tagged as the pointer tags them.
+    pub fn halves(text: &Pointed, tone: &Tone) -> Vec<Half> {
+        halves_with(text, |kind| may_end_on_accent(kind, tone))
+    }
+
+    /// [`halves`] with the tag's ending flag given per part.
+    pub fn halves_with(text: &Pointed, zero: impl Fn(PartKind) -> bool) -> Vec<Half> {
         let text = text.syllabified();
         let mut out = Vec::new();
         for verse in &text.verses {
@@ -445,7 +488,7 @@ pub mod training {
                 }
                 let ctx = Context::new(part);
                 let tag = tag(part.kind, gold.len(), zero(part.kind));
-                let candidates: Vec<(Vec<usize>, Vec<String>)> = candidates(part.syllables.len(), gold.len())
+                let candidates: Vec<(Vec<usize>, Vec<String>)> = candidates(&accentable(part), gold.len())
                     .into_iter()
                     .map(|c| {
                         let f = features(&ctx, &c, &tag);
@@ -462,5 +505,87 @@ pub mod training {
             }
         }
         out
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tone(name: &str) -> &'static Tone {
+        Tone::named(name).unwrap()
+    }
+
+    #[test]
+    fn points_plain_text() {
+        let p = point_text(
+            tone("8.G"),
+            "O come, let us sing unto the Lord * let us heartily rejoice in the strength of our salvation.",
+        );
+        assert_eq!(
+            p.text().trim_end(),
+            "O come, let us sing unto the · Lórd * let us heartily rejoice in the strength of · our salvátion."
+        );
+        assert!(p.halves.iter().all(|h| !h.kept && h.confidence > 0.0 && h.confidence <= 1.0));
+        // Pointing again keeps every half, and the marks read back as written.
+        let again = point(tone("8.G"), &pointed::parse(&p.text()));
+        assert_eq!(again.text(), p.text());
+        assert!(again.halves.iter().all(|h| h.kept && h.confidence == 1.0));
+    }
+
+    #[test]
+    fn stress_is_char_safe() {
+        // The last two bytes of ṹ are equal; the stem must still be cut by characters.
+        point_text(tone("8.G"), "maṹeth maṹeth * x");
+        assert_eq!(stress("blessethth", 2).len(), 2);
+    }
+
+    #[test]
+    fn acute_skips_consonants() {
+        assert_eq!(with_acute("youth"), "yóuth");
+        assert_eq!(with_acute("Yea"), "Yéa");
+        assert_eq!(with_acute("queen"), "quéen");
+        assert_eq!(with_acute("ye"), "yé");
+        assert_eq!(with_acute("my"), "mý");
+        assert_eq!(with_acute("psst"), "p\u{301}sst");
+        assert_eq!(with_acute("42"), "4\u{301}2");
+    }
+
+    #[test]
+    fn punctuation_takes_no_accent() {
+        let p = point_text(tone("1.D"), "I called upon the Lord ! * and he heard me ?");
+        for part in p.pointed.verses.iter().flat_map(|v| &v.parts) {
+            for s in &part.syllables {
+                assert!(!s.accent || s.text.chars().any(char::is_alphanumeric), "{:?}", s.text);
+            }
+        }
+    }
+
+    #[test]
+    fn short_halves_skip_punctuation() {
+        let p = point_text(tone("1.D"), "Lord ! * God ?");
+        assert_eq!(p.halves[0].confidence, 0.0);
+        assert!(p.text().starts_with("· Lórd ! *"), "{}", p.text());
+    }
+
+    #[test]
+    fn dashes_are_kept() {
+        let p = point_text(tone("1.D"), "– – praise the Lord * O my soul");
+        assert!(p.halves[0].kept);
+        assert!(p.text().starts_with("– – praise the Lord *"), "{}", p.text());
+    }
+
+    #[test]
+    fn one_accent_cadences_can_end_on_the_tenor() {
+        assert!(ends_on_tenor(&tone("8.G").mediant));
+        assert!(!ends_on_tenor(&tone("8.G").termination));
+        assert!(!ends_on_tenor(&tone("1.D").mediant));
+    }
+
+    #[test]
+    fn function_words_are_sorted() {
+        let words = ["a", "all", "yours", "unto", "the"];
+        assert!(words.iter().all(|w| is_function(w)));
+        assert!(!is_function("lord"));
     }
 }
