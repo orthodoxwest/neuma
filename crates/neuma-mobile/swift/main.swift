@@ -56,4 +56,6 @@ do {
 } catch {
     check(false, "unknown tone error")
 }
+let pt = try! point(text: "O come, let us sing unto the Lord * let us heartily rejoice in the strength of our salvation.", tone: "8.G")
+check(pt.halves.count == 2 && pt.text.contains("·"), "point")
 print("ok: swift, \(narrow.notes.count) notes, \(glyphs.count) glyphs")

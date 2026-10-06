@@ -1,4 +1,4 @@
-//! `neuma render | check | notes | info | psalm | tones`: the engine from the command line.
+//! `neuma render | check | notes | info | psalm | point | tones`: the engine from the command line.
 
 use std::io::{Read as _, Write as _};
 use std::process::ExitCode;
@@ -9,7 +9,8 @@ use neuma_wasm::{Chant, ChantOptions, Font};
 const USAGE: &str = "usage: neuma <render|check|notes> [--width PX] [--scale PX] [--initial LINES] [--font FONT]
                      [--max-lines N] [FILE|-]
        neuma info [FILE...]
-       neuma psalm --tone TONE [--tone-file FILE] [--intone first|every|never] [--name NAME] [FILE|-]
+       neuma psalm --tone TONE [--tone-file FILE] [--intone first|every|never] [--name NAME] [--no-point] [FILE|-]
+       neuma point --tone TONE [--tone-file FILE] [FILE|-]
        neuma tones
 
   render   write SVG to stdout
@@ -17,8 +18,11 @@ const USAGE: &str = "usage: neuma <render|check|notes> [--width PX] [--scale PX]
   notes    print the layout and playback timeline as JSON, as the browser package does
   info     print each score's catalogue entry as one line of JSON, with its file name;
            the layout options don't apply
-  psalm    set pointed psalm text (a verse per line) to a tone and print it as GABC;
-           problems in the pointing go to stderr. Pipe it to `neuma render -` to see it.
+  psalm    set psalm text (a verse per line, the mediant marked `*`) to a tone and print it
+           as GABC. Half-verses without pointing marks are pointed automatically, unless
+           --no-point. Problems go to stderr. Pipe it to `neuma render -` to see it.
+  point    print the text with pointing marks added for the tone; half-verses the pointer
+           is unsure of are listed on stderr
   tones    list the built-in psalm tones
 
   --initial LINES   drop-cap height in staves, 0 to 4; 0 for none (default 1)
@@ -87,6 +91,7 @@ fn main() -> ExitCode {
             "--tone" => tone_name = it.next().cloned(),
             "--tone-file" => tone_file = it.next().cloned(),
             "--name" => psalm.name = it.next().cloned(),
+            "--no-point" => psalm.no_auto_point = true,
             "--intone" => match it.next().map(String::as_str) {
                 Some("first") => psalm.intone = neuma_tones::Intone::FirstVerse,
                 Some("every") => psalm.intone = neuma_tones::Intone::EveryVerse,
@@ -111,8 +116,18 @@ fn main() -> ExitCode {
         }
         return ExitCode::SUCCESS;
     }
-    if cmd == "psalm" {
-        return psalm_command(files.first().map_or("-", String::as_str), tone_name, tone_file, &psalm);
+    if cmd == "psalm" || cmd == "point" {
+        let tone = match resolve_tone(tone_name, tone_file) {
+            Ok(t) => t,
+            Err(code) => return code,
+        };
+        let path = files.first().map_or("-", String::as_str);
+        let Some(src) = read(path) else { return ExitCode::from(2) };
+        return if cmd == "psalm" {
+            psalm_command(&src, &tone, &psalm)
+        } else {
+            point_command(&src, &tone)
+        };
     }
     if cmd == "info" {
         if files.is_empty() {
@@ -199,53 +214,70 @@ fn main() -> ExitCode {
     }
 }
 
-/// `neuma psalm`: pointed text and a tone to GABC.
-fn psalm_command(path: &str, name: Option<String>, file: Option<String>, options: &neuma_tones::Options) -> ExitCode {
-    let custom;
-    let tone = match (&name, &file) {
-        (_, Some(f)) => {
-            let Some(src) = read(f) else { return ExitCode::from(2) };
-            custom = match neuma_tones::Tone::parse_all(&src) {
-                Ok(t) => t,
-                Err(e) => {
-                    eprintln!("neuma: {f}: {e}");
-                    return ExitCode::from(2);
-                }
-            };
-            // A name not in the file falls back to the built-in tones.
-            let found = match &name {
-                Some(n) => neuma_tones::Tone::find(&custom, n).or_else(|| neuma_tones::Tone::named(n)),
-                None => custom.first(),
-            };
-            match found {
-                Some(t) => t,
-                None => {
-                    eprintln!("neuma: {f}: no tone {}", name.as_deref().unwrap_or(""));
-                    return ExitCode::from(2);
-                }
-            }
+/// The tone `--tone` names, from `--tone-file` when given, else built in.
+fn resolve_tone(name: Option<String>, file: Option<String>) -> Result<neuma_tones::Tone, ExitCode> {
+    let custom = match &file {
+        Some(f) => {
+            let src = read(f).ok_or(ExitCode::from(2))?;
+            neuma_tones::Tone::parse_all(&src).map_err(|e| {
+                eprintln!("neuma: {f}: {e}");
+                ExitCode::from(2)
+            })?
         }
-        (Some(n), None) => match neuma_tones::Tone::named(n) {
-            Some(t) => t,
-            None => {
-                eprintln!("neuma: no built-in tone {n}; `neuma tones` lists them");
-                return ExitCode::from(2);
-            }
-        },
+        None => Vec::new(),
+    };
+    let found = match (&name, &file) {
+        // A name not in the file falls back to the built-in tones.
+        (Some(n), _) => neuma_tones::Tone::find(&custom, n).or_else(|| neuma_tones::Tone::named(n)),
+        (None, Some(_)) => custom.first(),
         (None, None) => {
-            eprintln!("neuma: psalm needs --tone or --tone-file\n{USAGE}");
-            return ExitCode::from(2);
+            eprintln!("neuma: this needs --tone or --tone-file\n{USAGE}");
+            return Err(ExitCode::from(2));
         }
     };
-    let Some(src) = read(path) else { return ExitCode::from(2) };
-    let setting = neuma_tones::apply_text(tone, &src, options);
+    found.cloned().ok_or_else(|| {
+        match (&name, &file) {
+            (Some(n), Some(f)) => eprintln!("neuma: no tone {n} in {f} or built in"),
+            (Some(n), None) => eprintln!("neuma: no built-in tone {n}; `neuma tones` lists them"),
+            (None, _) => eprintln!("neuma: {} has no tones", file.as_deref().unwrap_or("")),
+        }
+        ExitCode::from(2)
+    })
+}
+
+/// `neuma psalm`: psalm text and a tone to GABC.
+fn psalm_command(src: &str, tone: &neuma_tones::Tone, options: &neuma_tones::Options) -> ExitCode {
+    let setting = neuma_tones::apply_text(tone, src, options);
     let mut errors = false;
     for d in &setting.diagnostics {
-        let (line, col) = neuma::diag::line_col(&src, d.span.start);
+        let (line, col) = neuma::diag::line_col(src, d.span.start);
         eprintln!("{line}:{col}: {d}");
         errors |= d.severity == Severity::Error;
     }
     out!("{}", setting.gabc);
+    if errors { ExitCode::FAILURE } else { ExitCode::SUCCESS }
+}
+
+/// `neuma point`: psalm text with pointing marks added.
+fn point_command(src: &str, tone: &neuma_tones::Tone) -> ExitCode {
+    let p = neuma_tones::point_text(tone, src);
+    let mut errors = false;
+    for d in &p.pointed.diagnostics {
+        let (line, col) = neuma::diag::line_col(src, d.span.start);
+        eprintln!("{line}:{col}: {d}");
+        errors |= d.severity == Severity::Error;
+    }
+    for h in p.halves.iter().filter(|h| !h.kept && h.confidence < neuma_tones::apply::UNSURE) {
+        let verse = &p.pointed.verses[h.verse];
+        let (line, _) = neuma::diag::line_col(src, verse.span.start);
+        let part = match h.part {
+            neuma_tones::PartKind::Flex => "flex",
+            neuma_tones::PartKind::Mediant => "first half",
+            neuma_tones::PartKind::Termination => "second half",
+        };
+        eprintln!("{line}: check the {part}: {:.0}% sure", h.confidence * 100.0);
+    }
+    out!("{}", p.text().trim_end());
     if errors { ExitCode::FAILURE } else { ExitCode::SUCCESS }
 }
 

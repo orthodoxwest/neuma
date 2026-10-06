@@ -28,7 +28,13 @@ pub struct Options {
     pub strip_accents: bool,
     /// The score's `name:` header.
     pub name: Option<String>,
+    /// Leave half-verses with no marks as they are, instead of pointing them with
+    /// [`point`](crate::point::point) first. Their cadence then falls on the last syllables.
+    pub no_auto_point: bool,
 }
+
+/// Below this confidence an automatically pointed half-verse is reported for checking.
+pub const UNSURE: f32 = 0.8;
 
 /// What a note does in the tone.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -77,9 +83,23 @@ pub fn apply_text(tone: &Tone, pointed: &str, options: &Options) -> Setting {
     setting
 }
 
-/// Sets a parsed pointed text to `tone`. The text is split into sung syllables first.
+/// Sets a parsed pointed text to `tone`. The text is split into sung syllables first, and
+/// half-verses with no marks are pointed automatically (unless `options.no_auto_point`); a
+/// pointing the model is unsure of is reported as `point::unsure`.
 pub fn apply(tone: &Tone, pointed: &Pointed, options: &Options) -> Setting {
-    let text = pointed.syllabified();
+    let mut unsure = Vec::new();
+    let text = if options.no_auto_point {
+        pointed.syllabified()
+    } else {
+        let p = crate::point::point(tone, pointed);
+        for h in p.halves.iter().filter(|h| !h.kept && h.confidence < UNSURE) {
+            let part = p.pointed.verses[h.verse].parts.iter().find(|x| x.kind == h.part);
+            if let Some(syls) = part.map(|x| &x.syllables).filter(|s| !s.is_empty()) {
+                unsure.push((syls[0].span.start..syls[syls.len() - 1].span.end, h.confidence));
+            }
+        }
+        p.pointed
+    };
     let mut b = ScoreBuilder::new();
     if let Some(name) = &options.name {
         b = b.header("name", name);
@@ -89,6 +109,18 @@ pub fn apply(tone: &Tone, pointed: &Pointed, options: &Options) -> Setting {
     let mut diags = Vec::new();
     if text.verses.is_empty() {
         warn(&mut diags, Severity::Warning, 0..0, "apply::empty", "there is no verse to sing");
+    }
+    for (span, confidence) in unsure {
+        warn(
+            &mut diags,
+            Severity::Info,
+            span,
+            "point::unsure",
+            &format!(
+                "pointed automatically, but only {:.0}% sure: check where the accents fall",
+                confidence * 100.0
+            ),
+        );
     }
     let mut figures = Figures::default();
     let last_verse = text.verses.len().saturating_sub(1);
@@ -613,7 +645,14 @@ mod tests {
         let codes = |tone: &str, t: &str| set(tone, t).diagnostics.iter().map(|d| d.code).collect::<Vec<_>>();
         // 1.D's mediant has two accents.
         assert!(codes("1.D", "a b · cé d * e · fé g").contains(&"apply::missing-accent"));
-        assert!(codes("8.G", "a b c d * e f g h").contains(&"apply::no-accent"));
+        let manual = Options {
+            no_auto_point: true,
+            ..Options::default()
+        };
+        let plain = apply_text(Tone::named("8.G").unwrap(), "a b c d * e f g h", &manual);
+        assert!(plain.diagnostics.iter().any(|d| d.code == "apply::no-accent"));
+        // Pointed automatically, with no complaint about missing marks.
+        assert!(!codes("8.G", "a b c d * e f g h").iter().any(|c| c.starts_with("apply::")));
         assert!(codes("8.G", "a b · c dé * e · fé g").contains(&"apply::few-preparatory"));
         assert!(codes("8.G", "a b c dé * · e f g hé i").contains(&"apply::extra-preparatory"));
     }

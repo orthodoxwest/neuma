@@ -1,7 +1,7 @@
 // Smoke test for dist/neuma.mjs under Node: `node crates/neuma-wasm/test.mjs`.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { init, Chant, DEFAULT_WEIGHTS, psalm, summarize, tones } from "./dist/neuma.mjs";
+import { init, Chant, DEFAULT_WEIGHTS, point, psalm, summarize, tones } from "./dist/neuma.mjs";
 
 await init();
 const gabc = readFileSync(new URL("../neuma/tests/corpus/psalm-134.gabc", import.meta.url), "utf8");
@@ -101,6 +101,14 @@ const ownTone = psalm(text, "name: mine\nclef: c4\nmediant: f g hr 'g hr h\nterm
 assert.ok(ownTone.gabc.includes("(c4)"));
 assert.equal(psalm(text, "8.G\n").gabc, psalm(text, "8.G").gabc);
 psChant.free();
+// Plain text is pointed automatically, and `point` shows where.
+const plain = "O come, let us sing unto the Lord * let us heartily rejoice in the strength of our salvation.";
+const pt = point(plain, "8.G");
+assert.equal(pt.halves.length, 2);
+assert.ok(pt.halves.every((h) => !h.kept && h.confidence > 0 && h.confidence <= 1));
+assert.ok(pt.text.includes("·") && /[áéíóú]/.test(pt.text));
+assert.equal(psalm(plain, "8.G").gabc, psalm(pt.text, "8.G").gabc);
+assert.ok(psalm(plain, "8.G", { pointing: "manual" }).diagnostics.some((d) => d.code === "apply::no-accent"));
 
 assert.equal(DEFAULT_WEIGHTS.note, 1);
 console.log(`ok: ${notes.length} notes, ${wide.timeline.lines.length} lines at 900, ${narrow.timeline.lines.length} at 360`);

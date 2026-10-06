@@ -105,29 +105,51 @@ export function summarize(gabc) {
 }
 
 /**
- * Sets pointed psalm text (a verse per line, marked with `*`, `†`, `·`, acutes and `–`) to a
- * psalm tone, and returns the score as GABC for `new Chant(gabc)`.
+ * Sets psalm text (a verse per line, the mediant marked `*`, optionally pointed with `†`, `·`,
+ * acutes and `–`) to a psalm tone, and returns the score as GABC for `new Chant(gabc)`.
+ * Half-verses with no pointing marks are pointed automatically (see `point`), unless
+ * `pointing: "manual"`; diagnostics then include `point::unsure` for halves to check.
  * @param {string} text
- * @param {string} tone a built-in tone such as "8.G" (see `TONES`), or a whole tone block
+ * @param {string} tone a built-in tone such as "8.G" (see `tones()`), or a whole tone block
  *   (`name:`, `clef:`, `mediant:`, `termination:` lines) for a tone of your own.
- * @param {{ intone?: "first"|"every"|"never" }} [options]
+ * @param {{ intone?: "first"|"every"|"never", pointing?: "auto"|"manual" }} [options]
  * @returns {{ gabc: string, notes: Array<{ verse: number, number: number|null,
  *   part: "flex"|"mediant"|"termination", role: "intonation"|"tenor"|"preparatory"|"accent"|"ending",
  *   start: number, end: number }>, diagnostics: Array<object> }}
  *   `notes[i]` describes note `i` of the engraved chant (`timeline.notes[i].id === i`);
  *   `start` and `end` are the sung syllable's UTF-8 bytes in `text`.
  */
-export function psalm(text, tone, { intone = "first" } = {}) {
+export function psalm(text, tone, { intone = "first", pointing = "auto" } = {}) {
   return guarded((w) => {
-    // A tone block always has `key: value` lines; a tone name never has a colon.
-    const custom = String(tone).includes(":") ? 1 : 0;
     putInput(String(tone) + "\0" + String(text));
-    w.neuma_psalm(custom, intone === "every" ? 1 : intone === "never" ? 2 : 0);
+    w.neuma_psalm(isBlock(tone), intone === "every" ? 1 : intone === "never" ? 2 : 0, pointing === "manual" ? 1 : 0);
     const out = JSON.parse(takeOutput());
     if (out.error) throw new Error(out.error);
     return out;
   });
 }
+
+/**
+ * Points psalm text for a tone: marks each half-verse's accents and cadence start, keeping
+ * halves that already carry marks. `confidence` is the model's probability (0 to 1) for each
+ * half it pointed; below about 0.8 a half is worth checking.
+ * @param {string} text a verse per line, the mediant marked `*`
+ * @param {string} tone as for `psalm`
+ * @returns {{ text: string, halves: Array<{ verse: number, part: "mediant"|"termination",
+ *   confidence: number, kept: boolean }>, diagnostics: Array<object> }}
+ */
+export function point(text, tone) {
+  return guarded((w) => {
+    putInput(String(tone) + "\0" + String(text));
+    w.neuma_point(isBlock(tone));
+    const out = JSON.parse(takeOutput());
+    if (out.error) throw new Error(out.error);
+    return out;
+  });
+}
+
+// A tone block always has `key: value` lines; a tone name never has a colon.
+const isBlock = (tone) => (String(tone).includes(":") ? 1 : 0);
 
 /** The built-in psalm tones' names, such as "8.G". Call after `init()`. */
 export function tones() {

@@ -10,10 +10,12 @@
 //! ```
 
 pub mod apply;
+pub mod point;
 pub mod pointed;
 pub mod syllable;
 pub mod tone;
 
 pub use apply::{Intone, NoteRole, Options, Role, Setting, apply, apply_text};
+pub use point::{HalfPointing, Pointing, point, point_text};
 pub use pointed::{Joint, Part, PartKind, Pointed, Syllable, Verse};
 pub use tone::{Cadence, Slot, Tone, ToneError};
