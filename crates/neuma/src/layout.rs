@@ -241,6 +241,17 @@ impl Engraving {
         right
     }
 
+    /// How a line ending after segment `end` closes: whether it is set ragged, and the extra
+    /// demerits for the break it takes.
+    fn line_end(&self, end: usize, opts: &LayoutOptions) -> (bool, f32) {
+        let after = self.segments[end].after;
+        let ragged =
+            end + 1 == self.segments.len() && opts.last_line == LastLine::Ragged || matches!(after, Break::Forced { justify: false, .. });
+        // A syllable's end is a better break than a cut inside its melisma.
+        let cost = if after == Break::InMelisma { MELISMA_DEMERITS } else { 0.0 };
+        (ragged, cost)
+    }
+
     /// Lays the engraving out at `width` output units.
     pub fn layout(&self, width: f32, opts: &LayoutOptions) -> Layout<'_> {
         let mut layout = self.layout_with(width, opts, None);
@@ -327,8 +338,8 @@ impl Engraving {
                     if breakable || stuck {
                         let end = if stuck && last > first { last - 1 } else { last };
                         let gaps = (last - first) as f32;
-                        let ragged =
-                            end_of_score && opts.last_line == LastLine::Ragged || matches!(seg.after, Break::Forced { justify: false, .. });
+                        // A stuck line ends before this segment, so the break it takes is `end`'s.
+                        let (ragged, break_cost) = self.line_end(end, opts);
                         let badness = if over {
                             if last == first || stuck { 10000.0 } else { f32::INFINITY }
                         } else if ragged {
@@ -344,7 +355,7 @@ impl Engraving {
                         if badness.is_finite() {
                             let d = (10.0 + badness) * (10.0 + badness);
                             // A syllable's end is a better break than a cut inside its melisma.
-                            let total = base + d + if seg.after == Break::InMelisma { MELISMA_DEMERITS } else { 0.0 };
+                            let total = base + d + break_cost;
                             let better = best[end + 1][next].is_none_or(|(b, _, _)| total < b);
                             if better {
                                 best[end + 1][next] = Some((total, first, j));
@@ -390,9 +401,7 @@ impl Engraving {
             let target = target - line_indent;
             let (clef, start) = self.line_start(first);
             let trial = self.trial(first, last, start);
-            let seg = &self.segments[last];
-            let end_of_score = li + 1 == ranges.len();
-            let ragged = end_of_score && opts.last_line == LastLine::Ragged || matches!(seg.after, Break::Forced { justify: false, .. });
+            let (ragged, _) = self.line_end(last, opts);
             let mut xs = trial.xs.clone();
             let gaps = last - first;
             let mut stretch = 0.0;
@@ -517,5 +526,33 @@ impl Engraving {
             height,
             scale,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{ApproxMeasure, Initial, StyleOptions, parse};
+
+    #[test]
+    fn a_stuck_line_takes_the_break_it_ends_at() {
+        // A line stuck behind forbidden breaks ends before the segment that overflowed, so its
+        // cost and raggedness are those of the segment it ends after, not the overflowing one.
+        let style = StyleOptions {
+            initial: Initial::None,
+            ..StyleOptions::default()
+        };
+        let mut eng = parse("(c4) a(g) b(h) c(g)").score.engrave(&ApproxMeasure, &style);
+        let opts = LayoutOptions::default();
+        let n = eng.segments.len();
+        eng.segments[n - 3].after = Break::Forbidden;
+        eng.segments[n - 2].after = Break::InMelisma;
+        assert_eq!(eng.line_end(n - 3, &opts), (false, 0.0));
+        assert_eq!(eng.line_end(n - 2, &opts), (false, MELISMA_DEMERITS));
+        assert_eq!(eng.line_end(n - 1, &opts), (true, 0.0));
+        // Laid out narrower than the first two syllables, the line is stuck at `b` and ends
+        // after `a`; the breaker still sets every syllable.
+        let layout = eng.layout(1.0, &opts);
+        assert_eq!(layout.lines.last().map(|l| l.last), Some(n - 1));
     }
 }
