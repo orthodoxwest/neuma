@@ -4,7 +4,7 @@
 //! Text is shaped with rustybuzz the way neuma measures lyrics: ligatures off, kerning on and
 //! real small caps (`smcp`), so the PDF draws exactly the advances the layout used. Without a
 //! font file, the PDF falls back to the standard Times faces every viewer has, measured
-//! approximately.
+//! with their published widths.
 
 use std::cell::RefCell;
 use std::collections::{BTreeSet, HashMap};
@@ -263,7 +263,7 @@ impl<'a> Fonts<'a> {
         }
     }
 
-    /// The standard Times faces, measured approximately.
+    /// The standard Times faces, measured with Adobe's published widths.
     pub fn standard() -> Fonts<'static> {
         Fonts {
             faces: None,
@@ -447,22 +447,26 @@ pub fn winansi(c: char) -> Option<u8> {
     })
 }
 
-fn standard_shape(text: &str, face: usize, small_caps: bool) -> Shaped {
-    let style = TextStyle {
-        italic: face == ITALIC || face == BOLD_ITALIC,
-        bold: face >= BOLD,
-        small_caps,
-        ..TextStyle::REGULAR
+/// The standard Times face's advance for a WinAnsi code, in ems.
+pub fn standard_advance(face: usize, code: u8) -> f32 {
+    let table = match face {
+        ITALIC => &crate::times::ITALIC,
+        BOLD => &crate::times::BOLD,
+        BOLD_ITALIC => &crate::times::BOLD_ITALIC,
+        _ => &crate::times::ROMAN,
     };
-    let m = neuma::ApproxMeasure;
+    code.checked_sub(0x20).map_or(0, |i| table[i as usize]) as f32 / 1000.0
+}
+
+fn standard_shape(text: &str, face: usize, small_caps: bool) -> Shaped {
     let mut glyphs = Vec::new();
     let mut width = 0.0;
     for c in text.chars() {
-        let mut s = [0u8; 4];
-        let advance = m.advance(c.encode_utf8(&mut s), style);
+        let code = winansi(c).unwrap_or(b'?');
+        let advance = standard_advance(face, code);
         width += advance;
         glyphs.push(Glyph {
-            id: winansi(c).unwrap_or(b'?') as u16,
+            id: code as u16,
             advance,
             dx: 0.0,
             dy: 0.0,
@@ -630,7 +634,9 @@ mod tests {
         assert_eq!(s.glyphs.len(), 6);
         assert_eq!(s.glyphs[1].id, 0xF3);
         assert_eq!(s.glyphs[5].id, 0x86);
-        assert!(s.width > 1.0);
+        // Adobe's widths: L 611, ó 500, r 333, d 500, space 250, dagger 500.
+        assert!((s.width - 2.694).abs() < 1e-4, "{}", s.width);
+        assert_eq!(standard_advance(ITALIC, b'A'), 0.611);
         assert_eq!(winansi('℣'), None);
     }
 

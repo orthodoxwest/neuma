@@ -39,10 +39,44 @@ EB Garamond 12
   the EB Garamond fonts served by Google Fonts (version 33, regular and italic),
   also under the SIL Open Font License 1.1, with no outlines.
 
+Adobe core-14 font metrics
+  crates/neuma-book/src/times.rs holds the advance widths of the standard
+  Times faces, taken from Adobe's AFM files for the 14 PDF core fonts and
+  modified: only the widths are kept, indexed by WinAnsi code. The AFM files
+  carry this notice:
+
+  Copyright (c) 1985, 1987, 1989, 1990, 1993, 1997 Adobe Systems
+  Incorporated. All Rights Reserved.
+
+  This file and the 14 PostScript(R) AFM files it accompanies may be used,
+  copied, and distributed for any purpose and without charge, with or without
+  modification, provided that all copyright notices are retained; that the AFM
+  files are not distributed without this file; that all modifications to this
+  file or any of the AFM files are prominently noted in the modified file(s);
+  and that this paragraph is not modified. Adobe Systems has no responsibility
+  or obligation to support the use of the AFM files.
+
 jgabc
   The psalm tone formulas in crates/neuma-tones/tones/solesmes.tones are
   transcribed from the tone table of jgabc by Benjamin Bloomfield, which is
-  dedicated to the public domain (the Unlicense). https://github.com/bbloomf/jgabc
+  dedicated to the public domain (the Unlicense). https://github.com/bbloomf/Adobe core-14 font metrics
+  crates/neuma-book/src/times.rs holds the advance widths of the standard
+  Times faces, taken from Adobe's AFM files for the 14 PDF core fonts and
+  modified: only the widths are kept, indexed by WinAnsi code. The AFM files
+  carry this notice:
+
+  Copyright (c) 1985, 1987, 1989, 1990, 1993, 1997 Adobe Systems
+  Incorporated. All Rights Reserved.
+
+  This file and the 14 PostScript(R) AFM files it accompanies may be used,
+  copied, and distributed for any purpose and without charge, with or without
+  modification, provided that all copyright notices are retained; that the AFM
+  files are not distributed without this file; that all modifications to this
+  file or any of the AFM files are prominently noted in the modified file(s);
+  and that this paragraph is not modified. Adobe Systems has no responsibility
+  or obligation to support the use of the AFM files.
+
+jgabc
 
 CMU Pronouncing Dictionary
   crates/neuma-tones/tones/stress.txt holds the lexical stress of words in the

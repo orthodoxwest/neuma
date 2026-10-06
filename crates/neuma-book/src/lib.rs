@@ -25,6 +25,7 @@ pub mod paginate;
 pub mod pdf;
 pub mod svg;
 pub mod text;
+mod times;
 
 pub use book::{Book, BookError, PageNumbers, Piece, PsalmSet, Settings, Source};
 pub use compose::Problem;

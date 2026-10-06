@@ -333,10 +333,7 @@ fn book_command(args: &[String]) -> ExitCode {
     };
     let fonts = neuma_book::Fonts::new(&files);
     if fonts.is_standard() {
-        eprintln!(
-            "neuma: no text font: set `font:` in the book, or install EB Garamond 12; using the PDF's standard Times, \
-             measured approximately"
-        );
+        eprintln!("neuma: no text font: set `font:` in the book, or install EB Garamond 12; using the PDF's standard Times");
     }
     let mut doc = neuma_book::typeset(&book, &fonts);
     if paths {

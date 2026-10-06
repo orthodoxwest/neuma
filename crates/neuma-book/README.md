@@ -146,8 +146,8 @@ Text keeps a ToUnicode map, so it can be searched and copied. With `text-as-path
 drawn as outlines instead and no font is embedded.
 
 Without any font file (no `font:` and no EB Garamond 12 installed), the PDF uses the
-standard Times faces every PDF viewer has, measured only approximately, and the command
-warns. Install EB Garamond 12 (`fonts-ebgaramond` on Debian and Ubuntu) or name a font for
+standard Times faces every PDF viewer has, measured with Adobe's published widths
+(no kerning, no small capitals), and the command warns. Install EB Garamond 12 (`fonts-ebgaramond` on Debian and Ubuntu) or name a font for
 real output; any TrueType or OpenType face works.
 
 **SVG.** One file per page, sized in points, with a white background. Text is set in
