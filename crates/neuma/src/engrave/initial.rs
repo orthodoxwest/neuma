@@ -93,7 +93,7 @@ pub(crate) fn annotations(header: &Header) -> Vec<String> {
 }
 
 /// Plain text from a header value that may hold TeX: commands and braces are dropped.
-fn strip_tex(value: &str) -> String {
+pub(crate) fn strip_tex(value: &str) -> String {
     let mut out = String::new();
     let mut chars = value.chars().peekable();
     while let Some(c) = chars.next() {

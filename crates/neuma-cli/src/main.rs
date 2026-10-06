@@ -1,20 +1,33 @@
 //! `neuma render | check | notes`: the engine from the command line.
 
-use std::io::Read as _;
+use std::io::{Read as _, Write as _};
 use std::process::ExitCode;
 
 use neuma::{Initial, LayoutOptions, MetricsTable, Severity, StyleOptions, SvgOptions, Weights};
 use neuma_wasm::{Chant, ChantOptions, Font};
 
-const USAGE: &str = "usage: neuma <render|check|notes> [--width PX] [--scale PX] [--initial LINES] [--font FONT] [FILE|-]
+const USAGE: &str = "usage: neuma <render|check|notes> [--width PX] [--scale PX] [--initial LINES] [--font FONT]
+                     [--max-lines N] [FILE|-]
+       neuma info [FILE...]
 
   render   write SVG to stdout
   check    print diagnostics; exit 1 on errors
   notes    print the layout and playback timeline as JSON, as the browser package does
+  info     print each score's catalogue entry as one line of JSON, with its file name;
+           the layout options don't apply
 
   --initial LINES   drop-cap height in staves, 0 to 4; 0 for none (default 1)
+  --max-lines N     keep only the first N lines, as broken for the whole score (an incipit);
+                    a taller initial keeps its full size
   --font FONT       the EB Garamond the lyrics are measured for: google (Google Fonts,
                     the default) or eb-garamond-12";
+
+/// Prints a line to stdout, ignoring a closed pipe (`neuma info *.gabc | head`).
+macro_rules! out {
+    ($($arg:tt)*) => {
+        let _ = writeln!(std::io::stdout(), $($arg)*);
+    };
+}
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -27,7 +40,8 @@ fn main() -> ExitCode {
     let mut style = StyleOptions::default();
     let mut initial_lines = 1u8;
     let mut font = Font::Google;
-    let mut file = None;
+    let mut max_lines = 0usize;
+    let mut files = Vec::new();
     let mut it = args[1..].iter();
     while let Some(a) = it.next() {
         match a.as_str() {
@@ -52,28 +66,46 @@ fn main() -> ExitCode {
                 }
             },
             "-h" | "--help" => {
-                println!("{USAGE}");
+                out!("{USAGE}");
                 return ExitCode::SUCCESS;
             }
-            f => file = Some(f.to_string()),
+            "--max-lines" => match it.next().and_then(|v| v.parse().ok()) {
+                Some(n) => max_lines = n,
+                None => {
+                    eprintln!("neuma: --max-lines takes a number of lines\n{USAGE}");
+                    return ExitCode::from(2);
+                }
+            },
+            f => files.push(f.to_string()),
         }
     }
-    let src = match file.as_deref() {
-        None | Some("-") => {
-            let mut s = String::new();
-            if std::io::stdin().read_to_string(&mut s).is_err() {
-                eprintln!("neuma: can't read stdin");
-                return ExitCode::from(2);
-            }
-            s
+    if cmd == "info" {
+        if files.is_empty() {
+            files.push("-".to_string());
         }
-        Some(path) => match std::fs::read_to_string(path) {
-            Ok(s) => s,
-            Err(e) => {
-                eprintln!("neuma: {path}: {e}");
-                return ExitCode::from(2);
-            }
-        },
+        let mut status = ExitCode::SUCCESS;
+        for path in &files {
+            let Some(src) = read(path) else {
+                status = ExitCode::from(2);
+                continue;
+            };
+            // The entry's object, with the file name as its first field.
+            let mut line = String::from("{\"file\":");
+            neuma_wasm::json::string(&mut line, path);
+            let mut entry = String::new();
+            neuma_wasm::json::summary(&mut entry, &neuma::summarize(&src));
+            line.push(',');
+            line.push_str(&entry[1..]);
+            out!("{line}");
+        }
+        return status;
+    }
+    if files.len() > 1 {
+        eprintln!("neuma: {cmd} takes one file\n{USAGE}");
+        return ExitCode::from(2);
+    }
+    let Some(src) = read(files.first().map_or("-", String::as_str)) else {
+        return ExitCode::from(2);
     };
     let parsed = neuma::parse(&src);
     let metrics = match MetricsTable::from_bytes(font.table_bytes()) {
@@ -88,19 +120,20 @@ fn main() -> ExitCode {
         width,
         &LayoutOptions {
             scale,
+            max_lines,
             ..LayoutOptions::default()
         },
     );
     match cmd.as_str() {
         "render" => {
-            println!("{}", layout.svg(&SvgOptions::default()));
+            out!("{}", layout.svg(&SvgOptions::default()));
             ExitCode::SUCCESS
         }
         "check" => {
             let mut errors = false;
             for d in parsed.diagnostics.iter().chain(&engraving.diagnostics) {
                 let (line, col) = neuma::diag::line_col(&src, d.span.start);
-                println!("{line}:{col}: {d}");
+                out!("{line}:{col}: {d}");
                 errors |= d.severity == Severity::Error;
             }
             if errors { ExitCode::FAILURE } else { ExitCode::SUCCESS }
@@ -117,15 +150,35 @@ fn main() -> ExitCode {
             );
             let opts = LayoutOptions {
                 scale,
+                max_lines,
                 ..LayoutOptions::default()
             };
             chant.layout(width, &opts, &Weights::SOLESMES, &SvgOptions::default());
-            println!("{}", chant.layout_json());
+            out!("{}", chant.layout_json());
             ExitCode::SUCCESS
         }
         _ => {
             eprintln!("{USAGE}");
             ExitCode::from(2)
+        }
+    }
+}
+
+/// The file at `path`, or stdin for `-`; reports a failure and returns `None`.
+fn read(path: &str) -> Option<String> {
+    if path == "-" {
+        let mut s = String::new();
+        if std::io::stdin().read_to_string(&mut s).is_err() {
+            eprintln!("neuma: can't read stdin");
+            return None;
+        }
+        return Some(s);
+    }
+    match std::fs::read_to_string(path) {
+        Ok(s) => Some(s),
+        Err(e) => {
+            eprintln!("neuma: {path}: {e}");
+            None
         }
     }
 }

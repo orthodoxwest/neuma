@@ -36,6 +36,8 @@ pub struct Chant {
     engraving: Engraving,
     /// Parse and engrave diagnostics, as JSON.
     diagnostics: String,
+    /// The catalogue entry, as JSON.
+    summary: String,
     svg: String,
     notes: Option<NoteMap>,
     /// The layout as JSON: size, lines, notes and pauses (without the SVG).
@@ -60,6 +62,8 @@ impl Chant {
             ..StyleOptions::default()
         };
         let engraving = parsed.score.engrave(opts.font.table(), &style);
+        let mut summary = String::new();
+        json::summary(&mut summary, &engraving.summary(&parsed.score.header));
         let mut all = parsed.diagnostics;
         all.extend(engraving.diagnostics.iter().cloned());
         let mut diagnostics = String::new();
@@ -67,6 +71,7 @@ impl Chant {
         Chant {
             engraving,
             diagnostics,
+            summary,
             svg: String::new(),
             notes: None,
             layout_json: String::new(),
@@ -75,6 +80,10 @@ impl Chant {
 
     pub fn diagnostics_json(&self) -> &str {
         &self.diagnostics
+    }
+
+    pub fn summary_json(&self) -> &str {
+        &self.summary
     }
 
     /// Lays the score out at `width` output units and caches the SVG and timeline.

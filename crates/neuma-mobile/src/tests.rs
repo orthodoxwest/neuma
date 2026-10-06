@@ -123,3 +123,26 @@ fn weight_field_defaults_match_the_engine() {
         [1.0, 2.0, 1.5, 0.5, 0.5, 1.0, 2.0, 3.0, 2.0, 1.0]
     );
 }
+
+#[test]
+fn summaries_and_previews() {
+    let src = "name: Kyrie;\noffice-part: Kyrie;\nmode: 8G;\n%%\n(c4) KY(g)ri(h)e(g) (,) e(h)le(g)i(h)son(g) (::)";
+    let s = summarize(src.to_string());
+    assert_eq!(
+        (s.kind, s.mode.as_ref().map(|m| (m.number, m.differentia.clone()))),
+        (Some(OfficePart::Kyrie), Some((Some(8), Some("G".to_string()))))
+    );
+    assert_eq!(s.text, "Kyrie eleison");
+    // g and h under a do clef on the top line are sol and la below do.
+    assert_eq!((s.lowest, s.highest), (Some(-5), Some(-3)));
+    assert_eq!(chant(src).summary(), s);
+
+    let long = chant(&format!("(c4) {}(::)", "a(g) ".repeat(60)));
+    let full = long.layout(200.0, options());
+    let mut one = options();
+    one.max_lines = 1;
+    let preview = long.layout(200.0, one);
+    assert!(full.lines.len() > 1 && preview.lines.len() == 1);
+    assert_eq!(preview.lines[0], full.lines[0]);
+    assert!(preview.notes.iter().all(|n| n.line == 0));
+}

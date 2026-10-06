@@ -4,6 +4,7 @@
 use std::ops::Range;
 
 use crate::display::{LineBox, NoteRef};
+use crate::engrave::NoteInfo;
 use crate::layout::Layout;
 use crate::score::{BarKind, ClefKind, NoteShape};
 
@@ -112,6 +113,16 @@ impl Weights {
         flex: 1.0,
     };
 
+    pub(crate) fn of_note(&self, info: &NoteInfo) -> f32 {
+        if info.morae > 0 {
+            self.mora
+        } else if info.episema {
+            self.episema
+        } else {
+            self.note
+        }
+    }
+
     fn pause(&self, kind: PauseKind) -> f32 {
         let kind = match kind {
             PauseKind::Bar(b) => b,
@@ -142,6 +153,34 @@ fn semitones(degree: i32) -> i16 {
     MAJOR[degree.rem_euclid(7) as usize] + 12 * octave as i16
 }
 
+/// A note's diatonic degree and semitones above its clef's do, alterations applied.
+pub(crate) fn pitch(info: &NoteInfo) -> (i32, i16) {
+    let reference = info.clef.position() as i32;
+    let degree = info.position as i32 - reference + if info.clef.kind == ClefKind::Fa { 3 } else { 0 };
+    (degree, semitones(degree) + info.alteration as i16)
+}
+
+/// The score's pauses with their weights. A mediant or flex is the pause at its bar: the
+/// bar right after it adds no time.
+pub(crate) fn timed_pauses(marks: &[(u32, PauseKind)], weights: &Weights) -> Vec<Pause> {
+    let mut pauses: Vec<Pause> = marks
+        .iter()
+        .map(|&(before, kind)| Pause {
+            before_note: before,
+            kind,
+            weight: weights.pause(kind),
+            start: 0.0,
+        })
+        .collect();
+    for i in 1..pauses.len() {
+        let mark = matches!(pauses[i - 1].kind, PauseKind::Mediant | PauseKind::Flex);
+        if mark && matches!(pauses[i].kind, PauseKind::Bar(_)) && pauses[i - 1].before_note == pauses[i].before_note {
+            pauses[i].weight = 0.0;
+        }
+    }
+    pauses
+}
+
 impl Layout<'_> {
     pub fn notes(&self, weights: &Weights) -> NoteMap {
         let eng = self.eng;
@@ -158,18 +197,23 @@ impl Layout<'_> {
                 }
             }
         }
+        // A layout cut short (`max_lines`) still marks recitations as the whole score does,
+        // so the notes after its last line join the marking and are then dropped.
+        let drawn = self.lines.last().map_or(0, |l| l.last + 1);
+        let truncated = drawn < eng.segments.len();
+        let last_placed = placed.iter().rposition(Option::is_some);
         let mut notes = Vec::with_capacity(eng.notes.len());
+        let mut kept = 0;
         for (id, info) in eng.notes.iter().enumerate() {
-            let Some((line, x, y, w, h)) = placed[id] else { continue };
-            let reference = info.clef.position() as i32;
-            let degree = info.position as i32 - reference + if info.clef.kind == ClefKind::Fa { 3 } else { 0 };
-            let weight = if info.morae > 0 {
-                weights.mora
-            } else if info.episema {
-                weights.episema
-            } else {
-                weights.note
+            let after = truncated && last_placed.is_none_or(|l| id > l);
+            let Some((line, x, y, w, h)) = placed[id].or(after.then_some((0, 0.0, 0.0, 0.0, 0.0))) else {
+                continue;
             };
+            if !after {
+                kept += 1;
+            }
+            let (degree, semitones) = pitch(info);
+            let weight = weights.of_note(info);
             let syllable_text = eng.syllable_text.get(info.syllable as usize).cloned().unwrap_or_default();
             let accent = syllable_text.chars().any(|c| "áéíóúýǽÁÉÍÓÚÝǼ\u{0301}".contains(c));
             let new_syllable = id == 0 || eng.notes[id - 1].syllable != info.syllable;
@@ -184,7 +228,7 @@ impl Layout<'_> {
                 span: info.span.clone(),
                 staff_position: info.position,
                 degree,
-                semitones: semitones(degree) + info.alteration as i16,
+                semitones,
                 weight,
                 start: 0.0,
                 duration: weight,
@@ -203,24 +247,14 @@ impl Layout<'_> {
         }
         let paused: Vec<u32> = eng.pauses.iter().map(|&(before, _)| before).collect();
         mark_recitations(&mut notes, &paused);
+        notes.truncate(kept);
 
         // Lay notes and pauses end to end, and count phrases.
-        let mut pauses: Vec<Pause> = eng
-            .pauses
-            .iter()
-            .map(|&(before, kind)| Pause {
-                before_note: before,
-                kind,
-                weight: weights.pause(kind),
-                start: 0.0,
-            })
-            .collect();
-        // A mediant or flex is the pause at its bar: the bar after it adds no time.
-        for i in 1..pauses.len() {
-            let mark = matches!(pauses[i - 1].kind, PauseKind::Mediant | PauseKind::Flex);
-            if mark && matches!(pauses[i].kind, PauseKind::Bar(_)) && pauses[i - 1].before_note == pauses[i].before_note {
-                pauses[i].weight = 0.0;
-            }
+        let mut pauses = timed_pauses(&eng.pauses, weights);
+        // A layout cut short keeps only the pauses drawn on its lines.
+        if truncated {
+            let mut segs = eng.pause_segments.iter();
+            pauses.retain(|_| segs.next().is_some_and(|&s| s < drawn));
         }
         let mut t = 0.0f32;
         let mut verse = 0u32;

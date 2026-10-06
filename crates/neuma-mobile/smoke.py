@@ -36,4 +36,11 @@ assert any(t.role == neuma.TextRole.INITIAL and t.runs[0].text == "K" for t in t
 swash = neuma.Chant("(c4) a(hgh)", neuma.default_chant_options()).layout(400.0, neuma.default_layout_options())
 assert any(isinstance(i, neuma.Item.GLYPH) and i.notes == [0, 1] for i in swash.items)
 
+# Catalogue entries and one-line previews.
+entry = neuma.summarize("office-part: Introitus;\nmode: VII;\n%%\n(c3) PU(g)er(h) na(h)tus(g) (::)")
+assert entry.kind == neuma.OfficePart.INTROIT and entry.mode.number == 7 and entry.text == "Puer natus"
+assert chant.summary().incipit == "Kyrie eleison"
+preview = chant.layout(120.0, neuma.LayoutOptions(last_line=neuma.LastLine.RAGGED, weights=neuma.Weights(), max_lines=1))
+assert len(preview.lines) == 1 and preview.lines[0] == narrow.lines[0]
+
 print(f"ok: {len(narrow.notes)} notes, {len(narrow.lines)} lines at 120, {len(glyphs)} glyphs")

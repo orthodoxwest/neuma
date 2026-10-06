@@ -91,10 +91,24 @@ export const DEFAULT_WEIGHTS = Object.freeze({
   note: 1, mora: 2, episema: 1.5, virgula: 0.5, quarter: 0.5, half: 1, full: 2, double: 3, mediant: 2, flex: 1,
 });
 
+/**
+ * A score's catalogue entry, without engraving it for display: cheap enough to index a
+ * whole library. See the README for the fields.
+ * @param {string} gabc
+ */
+export function summarize(gabc) {
+  return guarded((w) => {
+    putInput(String(gabc));
+    w.neuma_summarize();
+    return JSON.parse(takeOutput());
+  });
+}
+
 export class Chant {
   #handle;
   #generation;
   #diagnostics;
+  #summary;
 
   /**
    * Engraves `gabc` once.
@@ -125,17 +139,30 @@ export class Chant {
     return this.#diagnostics;
   }
 
+  /** The score's catalogue entry, as `summarize` returns it. */
+  get summary() {
+    if (this.#summary === undefined) {
+      const handle = this.#live();
+      this.#summary = guarded((w) => {
+        w.chant_summary(handle);
+        return JSON.parse(takeOutput());
+      });
+    }
+    return this.#summary;
+  }
+
   /**
    * Lays the score out at `width` SVG units.
    * @param {number} width
-   * @param {{ scale?: number, lastLine?: "ragged"|"justified", weights?: object, prefix?: string }} [options]
-   *   scale: units per staff space (default 6). weights: any of DEFAULT_WEIGHTS's keys; a
+   * @param {{ scale?: number, lastLine?: "ragged"|"justified", maxLines?: number, weights?: object, prefix?: string }} [options]
+   *   scale: units per staff space (default 6). maxLines: keep only the first lines, as
+   *   broken for the whole score, for a preview such as an incipit (default 0, all). weights: any of DEFAULT_WEIGHTS's keys; a
    *   missing, null or non-numeric value keeps the default.
    *   prefix: class and id prefix for the SVG (default "neuma").
    * @returns {{ width: number, height: number, svg: string, timeline: object }}
    *   timeline: `{ notes, pauses, lines, duration }`, with times in weight units.
    */
-  layout(width, { scale = 6, lastLine = "ragged", weights = {}, prefix = "" } = {}) {
+  layout(width, { scale = 6, lastLine = "ragged", maxLines = 0, weights = {}, prefix = "" } = {}) {
     const handle = this.#live();
     if (!(scale > 0 && Number.isFinite(scale))) scale = 6;
     const values = WEIGHTS.map((k) => {
@@ -144,7 +171,7 @@ export class Chant {
     });
     return guarded((w) => {
       putInput(prefix);
-      if (!w.chant_layout(handle, width, scale, lastLine === "justified" ? 1 : 0, ...values)) {
+      if (!w.chant_layout(handle, width, scale, lastLine === "justified" ? 1 : 0, maxLines >>> 0, ...values)) {
         throw new Error("neuma: this Chant was freed");
       }
       const page = JSON.parse(takeOutput());

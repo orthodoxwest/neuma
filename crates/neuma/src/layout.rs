@@ -20,6 +20,10 @@ pub struct LayoutOptions {
     /// Output units (px or pt) per staff space.
     pub scale: f32,
     pub last_line: LastLine,
+    /// Keep only the first this many lines, as broken for the whole score (for previews such
+    /// as an incipit); 0 keeps them all. An initial spanning more lines keeps its full size,
+    /// and the height includes it. The timeline ends with the kept lines.
+    pub max_lines: usize,
 }
 
 impl Default for LayoutOptions {
@@ -27,6 +31,7 @@ impl Default for LayoutOptions {
         LayoutOptions {
             scale: 6.0,
             last_line: LastLine::Ragged,
+            max_lines: 0,
         }
     }
 }
@@ -359,8 +364,16 @@ impl Engraving {
         let size = self.lyric_size;
         let mut lines = Vec::new();
         let mut y = 0.0f32;
-        let mut max_width = 0.0f32;
-        for (li, &(first, last)) in ranges.iter().enumerate() {
+        let kept = if opts.max_lines == 0 {
+            ranges.len()
+        } else {
+            opts.max_lines.min(ranges.len())
+        };
+        // Lines past `kept` that the initial spans are placed too, so it is sized as in the
+        // whole score, then dropped.
+        let placed = kept.max(indented).min(ranges.len());
+        let mut rights = Vec::with_capacity(placed);
+        for (li, &(first, last)) in ranges.iter().take(placed).enumerate() {
             let line_indent = if li < indented { indent } else { 0.0 };
             let target = target - line_indent;
             let (clef, start) = self.line_start(first);
@@ -434,7 +447,7 @@ impl Engraving {
             let baseline = staff + ink_bottom + 0.4 + if has_lyrics { self.ascent * size * 0.85 } else { 0.0 };
             let bottom = baseline + if has_lyrics { self.descent * size } else { 0.5 };
             let right = line_indent + if ragged { trial.natural } else { target.max(trial.natural) };
-            max_width = max_width.max(right);
+            rights.push(right);
             lines.push(PlacedLine {
                 first,
                 last,
@@ -451,7 +464,7 @@ impl Engraving {
             });
             y = bottom + LINE_GAP;
         }
-        let mut height = lines.last().map_or(0.0, |l| l.bottom);
+        let mut height = lines.get(kept.wrapping_sub(1)).map_or(0.0, |l| l.bottom);
         // The capital runs from the first staff's top line to the bottom line of the last
         // staff it spans, narrowed if need be to fit the column the breaker left for it.
         let initial = self.initial.as_ref().and_then(|init| {
@@ -474,6 +487,8 @@ impl Engraving {
                 natural_width: init.advance_em * natural,
             })
         });
+        lines.truncate(kept);
+        let max_width = rights.iter().take(kept).fold(0.0f32, |a, &b| a.max(b));
         Layout {
             eng: self,
             lines,

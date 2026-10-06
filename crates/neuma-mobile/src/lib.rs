@@ -125,6 +125,11 @@ pub struct LayoutOptions {
     pub scale: f32,
     pub last_line: LastLine,
     pub weights: Weights,
+    /// Keep only the first this many lines, as broken for the whole score, for previews
+    /// such as an incipit; 0 keeps them all. An initial spanning more lines keeps its full
+    /// size, and the height includes it. The timeline ends with the kept lines.
+    #[uniffi(default = 0)]
+    pub max_lines: u32,
 }
 
 /// The default score options: a one-staff initial with its annotation, EB Garamond 12.
@@ -145,6 +150,7 @@ pub fn default_layout_options() -> LayoutOptions {
         scale: 0.0,
         last_line: LastLine::Ragged,
         weights: default_weights(),
+        max_lines: 0,
     }
 }
 
@@ -366,6 +372,7 @@ pub fn glyph_outline(id: u16) -> Option<GlyphOutline> {
 pub struct Chant {
     engraving: Engraving,
     diagnostics: Vec<Diagnostic>,
+    summary: Summary,
     /// The last layout's timeline, for `note_at`.
     last: Mutex<Option<neuma::NoteMap>>,
 }
@@ -406,9 +413,11 @@ impl Chant {
                 message: d.message.clone(),
             })
             .collect();
+        let summary = summary(engraving.summary(&parsed.score.header));
         Arc::new(Chant {
             engraving,
             diagnostics,
+            summary,
             last: Mutex::new(None),
         })
     }
@@ -416,6 +425,11 @@ impl Chant {
     /// Problems found while reading the score.
     pub fn diagnostics(&self) -> Vec<Diagnostic> {
         self.diagnostics.clone()
+    }
+
+    /// The score's catalogue entry.
+    pub fn summary(&self) -> Summary {
+        self.summary.clone()
     }
 
     /// Lays the score out `width` units wide.
@@ -430,6 +444,7 @@ impl Chant {
                 LastLine::Ragged => neuma::LastLine::Ragged,
                 LastLine::Justified => neuma::LastLine::Justified,
             },
+            max_lines: options.max_lines as usize,
         };
         let layout = self.engraving.layout(width, &opts);
         let list = layout.display();
@@ -478,6 +493,132 @@ impl Chant {
     fn last_map(&self) -> MutexGuard<'_, Option<neuma::NoteMap>> {
         // The map is replaced whole, so a panic elsewhere can't leave it half-written.
         self.last.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
+/// What a chant `office-part` header names, in Latin or English, spelled out or abbreviated.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum OfficePart {
+    Antiphon,
+    Introit,
+    Gradual,
+    Alleluia,
+    Tract,
+    Sequence,
+    Offertory,
+    Communion,
+    Hymn,
+    Responsory,
+    Psalm,
+    Canticle,
+    Kyrie,
+    Gloria,
+    Credo,
+    Sanctus,
+    Agnus,
+    /// Something else; the header itself is in `office_part`.
+    Other,
+}
+
+/// The `mode`, `mode-modifier` and `mode-differentia` headers.
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct Mode {
+    /// 1 to 8, when the header starts with an arabic or roman number.
+    pub number: Option<u8>,
+    /// The `mode` header as written, such as `8`, `VIII` or `per`.
+    pub name: String,
+    pub modifier: Option<String>,
+    pub differentia: Option<String>,
+}
+
+/// A score's catalogue entry: its descriptive headers (TeX removed; missing or empty ones
+/// are null) and what can be read off its notes without laying it out.
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct Summary {
+    pub name: Option<String>,
+    /// The `office-part` header as written, and what it names.
+    pub office_part: Option<String>,
+    pub kind: Option<OfficePart>,
+    pub mode: Option<Mode>,
+    pub occasion: Option<String>,
+    pub book: Option<String>,
+    pub language: Option<String>,
+    pub transcriber: Option<String>,
+    pub gabc_copyright: Option<String>,
+    pub score_copyright: Option<String>,
+    pub commentary: Option<String>,
+    pub annotations: Vec<String>,
+    /// The opening words: up to the first bar (other than a virgula) at or after the end of
+    /// the second word, at most eight words.
+    pub incipit: String,
+    /// All the sung text, for full-text search.
+    pub text: String,
+    /// The lowest and highest notes, in semitones above the clef's do.
+    pub lowest: Option<i16>,
+    pub highest: Option<i16>,
+    /// The last note, in semitones above the clef's do.
+    pub final_pitch: Option<i16>,
+    pub notes: u32,
+    pub syllables: u32,
+    pub words: u32,
+    /// The length with the default weights, in pulses.
+    pub duration: f32,
+}
+
+/// Summarizes a score without engraving it for display: cheap enough to index a library.
+#[uniffi::export]
+pub fn summarize(gabc: String) -> Summary {
+    summary(neuma::summarize(&gabc))
+}
+
+fn summary(s: neuma::Summary) -> Summary {
+    use neuma::OfficePart as P;
+    Summary {
+        name: s.name,
+        office_part: s.office_part,
+        kind: s.kind.map(|k| match k {
+            P::Antiphon => OfficePart::Antiphon,
+            P::Introit => OfficePart::Introit,
+            P::Gradual => OfficePart::Gradual,
+            P::Alleluia => OfficePart::Alleluia,
+            P::Tract => OfficePart::Tract,
+            P::Sequence => OfficePart::Sequence,
+            P::Offertory => OfficePart::Offertory,
+            P::Communion => OfficePart::Communion,
+            P::Hymn => OfficePart::Hymn,
+            P::Responsory => OfficePart::Responsory,
+            P::Psalm => OfficePart::Psalm,
+            P::Canticle => OfficePart::Canticle,
+            P::Kyrie => OfficePart::Kyrie,
+            P::Gloria => OfficePart::Gloria,
+            P::Credo => OfficePart::Credo,
+            P::Sanctus => OfficePart::Sanctus,
+            P::Agnus => OfficePart::Agnus,
+            P::Other => OfficePart::Other,
+        }),
+        mode: s.mode.map(|m| Mode {
+            number: m.number,
+            name: m.name,
+            modifier: m.modifier,
+            differentia: m.differentia,
+        }),
+        occasion: s.occasion,
+        book: s.book,
+        language: s.language,
+        transcriber: s.transcriber,
+        gabc_copyright: s.gabc_copyright,
+        score_copyright: s.score_copyright,
+        commentary: s.commentary,
+        annotations: s.annotations,
+        incipit: s.incipit,
+        text: s.text,
+        lowest: s.range.map(|r| r.0),
+        highest: s.range.map(|r| r.1),
+        final_pitch: s.final_pitch,
+        notes: s.notes,
+        syllables: s.syllables,
+        words: s.words,
+        duration: s.duration,
     }
 }
 

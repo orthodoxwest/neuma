@@ -5,8 +5,8 @@
 mod initial;
 pub(crate) mod neume;
 
-pub(crate) use initial::CAP_HEIGHT;
 pub use initial::Initial;
+pub(crate) use initial::{CAP_HEIGHT, strip_tex};
 
 use crate::diag::{Diagnostic, Sink};
 use crate::glyphs::GlyphId as G;
@@ -270,6 +270,8 @@ pub struct Engraving {
     pub(crate) descent: f32,
     pub(crate) alt_text: String,
     pub(crate) pauses: Vec<(u32, PauseKind)>,
+    /// The segment each pause is drawn in, parallel to `pauses`.
+    pub(crate) pause_segments: Vec<usize>,
     pub(crate) custos_never: bool,
     pub diagnostics: Vec<Diagnostic>,
 }
@@ -431,6 +433,7 @@ struct Engraver<'a> {
     clef: Clef,
     initial_clef: Option<Clef>,
     pauses: Vec<(u32, PauseKind)>,
+    pause_segments: Vec<usize>,
     alteration: Vec<(StaffPosition, i8)>,
     /// Positions of every note in source order, for automatic custodes.
     note_positions: Vec<StaffPosition>,
@@ -601,6 +604,7 @@ impl Score {
             clef: DEFAULT_CLEF,
             initial_clef: None,
             pauses: Vec::new(),
+            pause_segments: Vec::new(),
             alteration: Vec::new(),
             note_positions: Vec::new(),
         };
@@ -801,6 +805,8 @@ impl Score {
                         open.pieces.extend(pieces);
                         open.x = x + w;
                         e.pauses.push((e.notes.len() as u32, PauseKind::Bar(b.kind)));
+                        // The bar's ink is in the open segment, which closes next.
+                        e.pause_segments.push(e.segments.len());
                     }
                     Figure::Custos { position, .. } => {
                         e.flush(&mut run, &mut open, si);
@@ -844,6 +850,7 @@ impl Score {
                     _ => continue,
                 };
                 e.pauses.insert(at, (end, kind));
+                e.pause_segments.insert(at, usize::MAX);
                 at += 1;
             }
             e.flush(&mut run, &mut open, si);
@@ -852,6 +859,11 @@ impl Score {
             }
             if let Some(k) = e.close(open, si, first_seg, syl.word_start, space_before) {
                 seg_ids.push(k);
+            }
+            // A psalm mark belongs to its syllable's last segment.
+            let last_seg = e.segments.len().saturating_sub(1);
+            for s in e.pause_segments.iter_mut().skip(pauses_before).filter(|s| **s == usize::MAX) {
+                *s = last_seg;
             }
             if seg_ids.is_empty() {
                 continue;
@@ -973,6 +985,7 @@ impl Score {
             descent,
             alt_text,
             pauses: e.pauses,
+            pause_segments: e.pause_segments,
             custos_never: style.custos == CustosPolicy::Never,
             diagnostics: e.sink.items,
         }
