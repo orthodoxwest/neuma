@@ -11,9 +11,11 @@ use crate::layout::Layout;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct SvgOptions {
-    /// CSS font-family for lyrics.
+    /// CSS font-family for lyrics. Characters that could end the declaration or the
+    /// `<style>` block (`< > & { } ;` and control characters) are dropped.
     pub font_family: String,
-    /// Prefix for ids and classes, so several scores can share a page.
+    /// Prefix for ids and classes, so several scores can share a page. Only ASCII letters,
+    /// digits, `-` and `_` are kept; an empty result falls back to `neuma`.
     pub prefix: String,
     /// Include the default `<style>` block.
     pub style: bool,
@@ -35,9 +37,15 @@ fn n(v: f32) -> String {
     if s == "-0.00" { "0.00".into() } else { s }
 }
 
+/// Whether XML 1.0 allows `c` in text.
+fn xml_char(c: char) -> bool {
+    matches!(c, '\t' | '\n' | '\r' | '\u{20}'..='\u{D7FF}' | '\u{E000}'..='\u{FFFD}' | '\u{10000}'..)
+}
+
 fn escape(s: &str, out: &mut String) {
     for c in s.chars() {
         match c {
+            c if !xml_char(c) => {}
             '&' => out.push_str("&amp;"),
             '<' => out.push_str("&lt;"),
             '>' => out.push_str("&gt;"),
@@ -55,7 +63,12 @@ impl Layout<'_> {
 
 impl DisplayList {
     pub fn svg(&self, opts: &SvgOptions) -> String {
-        let p = &opts.prefix;
+        let p: String = opts
+            .prefix
+            .chars()
+            .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_'))
+            .collect();
+        let p = if p.is_empty() { "neuma" } else { p.as_str() };
         let mut out = String::new();
         let _ = write!(
             out,
@@ -69,7 +82,11 @@ impl DisplayList {
             let _ = write!(
                 out,
                 "<style>.{p}{{fill:currentColor}}.{p} text{{font-family:{f};font-variant-ligatures:none;font-kerning:normal}}.{p} .{p}-rubric{{fill:var(--{p}-rubric,#a3211c)}}</style>",
-                f = opts.font_family.replace('<', "")
+                f = opts
+                    .font_family
+                    .chars()
+                    .filter(|&c| xml_char(c) && !c.is_control() && !matches!(c, '<' | '>' | '&' | '{' | '}' | ';'))
+                    .collect::<String>()
             );
         }
         let used: BTreeSet<u16> = self

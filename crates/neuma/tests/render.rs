@@ -77,3 +77,60 @@ fn output_is_deterministic() {
         assert!(a.starts_with("<svg") && a.ends_with("</svg>"));
     }
 }
+
+fn render(src: &str, width: f32) -> String {
+    let eng = parse(src).score.engrave(&ApproxMeasure, &StyleOptions::default());
+    eng.layout(width, &LayoutOptions::default()).svg(&SvgOptions::default())
+}
+
+#[test]
+fn lyric_on_break_only_syllable_is_kept() {
+    let svg = render("(c4) A(g) men(z) (h)", 400.0);
+    assert!(svg.contains(">men<"), "{svg}");
+}
+
+#[test]
+fn svg_drops_characters_xml_forbids() {
+    let svg = render("(c4) A\u{1}B\u{7f}(g)", 400.0);
+    assert!(!svg.contains('\u{1}'));
+    let opts = SvgOptions {
+        prefix: "x\"><script>".into(),
+        font_family: "a}</style><script>".into(),
+        ..SvgOptions::default()
+    };
+    let eng = parse("(c4) A(g)").score.engrave(&ApproxMeasure, &StyleOptions::default());
+    let svg = eng.layout(400.0, &LayoutOptions::default()).svg(&opts);
+    assert!(!svg.contains("<script"), "{svg}");
+}
+
+#[test]
+fn non_finite_sizes_stay_finite() {
+    let eng = parse("(c4) A(g)men(h) (::)")
+        .score
+        .engrave(&ApproxMeasure, &StyleOptions::default());
+    for width in [f32::INFINITY, f32::NAN, -5.0, 1e9] {
+        for scale in [f32::INFINITY, f32::NAN, 0.0, 6.0] {
+            let layout = eng.layout(
+                width,
+                &LayoutOptions {
+                    scale,
+                    ..LayoutOptions::default()
+                },
+            );
+            let (w, h) = layout.size();
+            assert!(w.is_finite() && h.is_finite(), "{width} {scale}: {w} {h}");
+            assert!(!layout.svg(&SvgOptions::default()).contains("inf"));
+        }
+    }
+}
+
+#[test]
+fn wide_layout_is_fast() {
+    let src = format!("(c4) {}(::)", "la(g) ".repeat(2000));
+    let eng = parse(&src).score.engrave(&ApproxMeasure, &StyleOptions::default());
+    let t = std::time::Instant::now();
+    let layout = eng.layout(1e9, &LayoutOptions::default());
+    assert!(layout.line_count() > 0);
+    // The quadratic breaker takes milliseconds here; the old cubic one took tens of seconds.
+    assert!(t.elapsed().as_secs() < 5, "{:?}", t.elapsed());
+}

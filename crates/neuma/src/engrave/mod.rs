@@ -95,6 +95,8 @@ impl Piece {
 /// How long an alteration lasts (DESIGN section 6.4).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum AlterationScope {
+    /// Until the next clef or written line break. Engraving doesn't know where layout will
+    /// break lines, so an alteration carries past a line break that layout chose.
     Line,
     Word,
     Bar,
@@ -740,20 +742,20 @@ impl Score {
             // A break written in its own syllable applies after the previous segment.
             if let Some(brk) = pending_break.take() {
                 let k = seg_ids[0];
-                if syl
+                let break_only = syl
                     .notation
                     .iter()
-                    .all(|f| matches!(f, Figure::Break(_) | Figure::Space(_) | Figure::NoCustos))
-                    && k > 0
-                {
+                    .all(|f| matches!(f, Figure::Break(_) | Figure::Space(_) | Figure::NoCustos));
+                if break_only && k > 0 {
                     e.segments[k - 1].after = brk;
-                    e.segments.truncate(k);
-                    if e.segments[k - 1].pieces.is_empty() && e.segments[k - 1].lyric.is_none() {
-                        // nothing
+                    if syl.text.is_empty() {
+                        e.segments.truncate(k);
+                        continue;
                     }
-                    continue;
+                    // The syllable's text still needs its segment, at the start of the new line.
+                } else {
+                    e.segments[*seg_ids.last().unwrap_or(&k)].after = brk;
                 }
-                e.segments[*seg_ids.last().unwrap_or(&k)].after = brk;
             }
             if nocustos {
                 if let Some(k) = seg_ids.last() {

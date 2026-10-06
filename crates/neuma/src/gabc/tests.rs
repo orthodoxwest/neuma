@@ -232,6 +232,8 @@ fn strip_spans(mut s: Score) -> Score {
 fn round_trip() {
     let srcs = [
         "name: Psalm;\nmode: 8;\n%%\n(c4) BE(e)HOLD(fgh) now,(h.) (,) praise(h) the(h) Lord(h.) (;) Lord.(hgfe.) (::)\n",
+        "(c4) <e>A</e>(g) <sp>A/</sp>(h) <e>Aj</e>(g)\n",
+        "\u{feff}name: a; b;;\n%%\n(c4) A(g)\n",
         "(cb3) <i>Al</i>(g_'1)le(hv.0)<sp>V/</sp> lu{i}a(i//j/0k!l/[1.5]m) $(x$)(gx g+ z0 Z- [nocustos]) <e>j</e>(Gw -f~ go1 gr gsss hvv.) <nlba>A(g)men(:?)</nlba> <eu>e(g)u(h)</eu>(::)\n",
     ];
     for src in srcs {
@@ -240,4 +242,10 @@ fn round_trip() {
         let second = parse(&written);
         assert_eq!(strip_spans(first.score), strip_spans(second.score), "\n{written}");
     }
+}
+
+#[test]
+fn header_bom_and_semicolons() {
+    let p = parse("\u{feff}name: a; b;;\n%%\n(c4) A(g)\n");
+    assert_eq!(p.score.header.get("name"), Some("a; b"));
 }

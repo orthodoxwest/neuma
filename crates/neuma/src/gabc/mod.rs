@@ -89,9 +89,13 @@ fn parse_header(src: &str, sink: &mut Sink) -> (Header, usize) {
             );
             continue;
         };
-        let name = line[..colon].trim().to_string();
+        // A byte-order mark before the first header isn't part of its name.
+        let name = line[..colon].trim().trim_start_matches('\u{feff}').trim().to_string();
         let rest = &line[colon + 1..];
-        if let Some(end) = rest.find(';') {
+        if let Some(value) = rest.trim_end().strip_suffix(";;") {
+            // A one-line value that itself contains `;`, as `to_gabc` writes it.
+            header.fields.push((name, value.trim().to_string()));
+        } else if let Some(end) = rest.find(';') {
             header.fields.push((name, rest[..end].trim().to_string()));
         } else {
             pending = Some((name, rest.trim().to_string(), line_start));
