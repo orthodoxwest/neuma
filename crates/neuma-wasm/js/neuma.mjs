@@ -70,13 +70,15 @@ export class Chant {
   /**
    * Engraves `gabc` once.
    * @param {string} gabc
-   * @param {{ initial?: number, annotation?: boolean, lyricSize?: number }} [options]
+   * @param {{ initial?: number, annotation?: boolean, lyricSize?: number, font?: string }} [options]
    *   initial: drop-cap height in staves (0 for none, default 1). annotation: show the
    *   annotation or mode above it (default true). lyricSize: in staff spaces (default 2.7).
+   *   font: which EB Garamond the page loads, "google" (Google Fonts, default) or
+   *   "eb-garamond-12" (the EB Garamond 12 files), so lyrics are spaced for it.
    */
-  constructor(gabc, { initial = 1, annotation = true, lyricSize = 2.7 } = {}) {
+  constructor(gabc, { initial = 1, annotation = true, lyricSize = 2.7, font = "google" } = {}) {
     putInput(String(gabc));
-    this.#handle = ready().chant_new(initial >>> 0, annotation ? 1 : 0, lyricSize);
+    this.#handle = ready().chant_new(initial >>> 0, annotation ? 1 : 0, lyricSize, font === "eb-garamond-12" ? 1 : 0);
     this.#diagnostics = JSON.parse(takeOutput());
   }
 

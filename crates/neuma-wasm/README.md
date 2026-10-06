@@ -28,8 +28,11 @@ const page = chant.layout(host.clientWidth, {
 host.innerHTML = page.svg;
 ```
 
-The lyric font is EB Garamond. Load it on the page, for example from Google Fonts. The
-layout measures text with its metrics.
+The lyric font is EB Garamond. Load it on the page from Google Fonts
+(`family=EB+Garamond:ital@0;1`), and the layout spaces lyrics with that font's metrics. A
+page that serves the EB Garamond 12 files instead passes `{ font: "eb-garamond-12" }`. Leave
+the SVG text's size, weight and letter-spacing alone: CSS that changes them changes the
+widths the layout planned for.
 
 `page` is `{ width, height, svg, timeline }`. All positions are in the SVG's user units.
 

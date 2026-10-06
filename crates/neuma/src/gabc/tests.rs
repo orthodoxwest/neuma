@@ -256,3 +256,19 @@ fn header_bom_and_semicolons() {
     let p = parse("name: a;\n\u{feff}%%\n(c4) A(g)");
     assert_eq!(p.score.header.get("name"), Some("a"));
 }
+
+#[test]
+fn repeated_underscores_extend_the_episema() {
+    let marked = |src: &str| -> Vec<bool> {
+        notes(src)
+            .into_iter()
+            .filter_map(|f| if let Figure::Note(n) = f { Some(n.episema.is_some()) } else { None })
+            .collect()
+    };
+    assert_eq!(marked("(c4) a(fgf___)"), [true, true, true]);
+    assert_eq!(marked("(c4) a(fgf__)"), [false, true, true]);
+    assert_eq!(marked("(c4) a(fgf_)"), [false, false, true]);
+    // A space ends the group.
+    assert_eq!(marked("(c4) a(f/gf___)"), [false, true, true]);
+    assert_eq!(marked("(c4) a(fg_0f_)"), [false, true, true]);
+}

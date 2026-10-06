@@ -6,7 +6,7 @@ use std::cell::RefCell;
 
 use neuma::{LayoutOptions, SvgOptions};
 
-use crate::{Chant, ChantOptions, last_line, weights_from};
+use crate::{Chant, ChantOptions, Font, last_line, weights_from};
 
 thread_local! {
     static INPUT: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
@@ -58,11 +58,12 @@ pub extern "C" fn neuma_output_len() -> u32 {
 /// in the output buffer.
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
-pub extern "C" fn chant_new(initial: u32, annotation: u32, lyric_size: f32) -> u32 {
+pub extern "C" fn chant_new(initial: u32, annotation: u32, lyric_size: f32, font: u32) -> u32 {
     let opts = ChantOptions {
         initial: initial.min(u8::MAX as u32) as u8,
         annotation: annotation != 0,
         lyric_size,
+        font: if font == 1 { Font::Garamond12 } else { Font::Google },
     };
     let chant = Chant::new(&input(), opts);
     output(chant.diagnostics_json());

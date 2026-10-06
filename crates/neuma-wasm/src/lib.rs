@@ -7,11 +7,24 @@ pub mod json;
 
 use neuma::{Engraving, Initial, LastLine, LayoutOptions, MetricsTable, NoteMap, NoteRef, StyleOptions, SvgOptions, Weights, parse};
 
-/// The metrics for the lyric face the SVG names (EB Garamond).
-const EB_GARAMOND: &[u8] = include_bytes!("../../neuma-metrics/tables/eb-garamond-12.bin");
+/// Metrics for the lyric face the SVG names (EB Garamond): the version Google Fonts serves,
+/// and the EB Garamond 12 release that apps bundle. They differ by about 1% in places.
+const EB_GARAMOND_GOOGLE: &[u8] = include_bytes!("../../neuma-metrics/tables/eb-garamond-google.bin");
+const EB_GARAMOND_12: &[u8] = include_bytes!("../../neuma-metrics/tables/eb-garamond-12.bin");
 
 thread_local! {
-    static METRICS: MetricsTable = MetricsTable::from_bytes(EB_GARAMOND).unwrap_or_default();
+    static GOOGLE: MetricsTable = MetricsTable::from_bytes(EB_GARAMOND_GOOGLE).unwrap_or_default();
+    static BUNDLED: MetricsTable = MetricsTable::from_bytes(EB_GARAMOND_12).unwrap_or_default();
+}
+
+/// Which EB Garamond the page loads, so lyrics are measured as they will be drawn.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Font {
+    /// From Google Fonts.
+    #[default]
+    Google,
+    /// The EB Garamond 12 files, as the apps bundle them.
+    Garamond12,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -20,6 +33,7 @@ pub struct ChantOptions {
     pub initial: u8,
     pub annotation: bool,
     pub lyric_size: f32,
+    pub font: Font,
 }
 
 impl Default for ChantOptions {
@@ -29,6 +43,7 @@ impl Default for ChantOptions {
             initial: 1,
             annotation: style.annotation,
             lyric_size: style.lyric_size,
+            font: Font::default(),
         }
     }
 }
@@ -62,7 +77,10 @@ impl Chant {
             },
             ..StyleOptions::default()
         };
-        let engraving = METRICS.with(|m| parsed.score.engrave(m, &style));
+        let engraving = match opts.font {
+            Font::Google => GOOGLE.with(|m| parsed.score.engrave(m, &style)),
+            Font::Garamond12 => BUNDLED.with(|m| parsed.score.engrave(m, &style)),
+        };
         let mut all = parsed.diagnostics;
         all.extend(engraving.diagnostics.iter().cloned());
         let mut diagnostics = String::new();

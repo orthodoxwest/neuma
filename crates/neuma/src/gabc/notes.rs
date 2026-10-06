@@ -363,6 +363,8 @@ impl Parser<'_, '_> {
         note.initio_debilis = std::mem::take(&mut self.initio);
         // Notes already finished by a repetition (`vv`, `ss`); signs after it go to the new note.
         let mut done: Vec<Note> = Vec::new();
+        // Notes before this one in its group that a run of `_` extends the episema over.
+        let mut extend = 0usize;
         loop {
             match self.peek() {
                 Some(d @ b'0'..=b'2') if note.shape == NoteShape::Inclinatum && note.lean.is_none() => {
@@ -484,6 +486,12 @@ impl Parser<'_, '_> {
                 }
                 Some(b'_') => {
                     self.i += 1;
+                    // Each further `_` right after the first carries the episema back over one
+                    // more note of the group: `fgf___` marks all three.
+                    if note.episema.is_some() && self.src.as_bytes().get(self.i - 2) == Some(&b'_') {
+                        extend += 1;
+                        continue;
+                    }
                     let mut e = Episema::default();
                     while let Some(d @ b'0'..=b'5') = self.peek() {
                         self.i += 1;
@@ -512,6 +520,26 @@ impl Parser<'_, '_> {
                     note.ictus = Some(placement);
                 }
                 _ => break,
+            }
+        }
+        if let Some(e) = note.episema
+            && extend > 0
+        {
+            let mut left = extend;
+            for n in done.iter_mut().rev() {
+                if left == 0 {
+                    break;
+                }
+                n.episema.get_or_insert(e);
+                left -= 1;
+            }
+            for f in self.out.iter_mut().rev() {
+                let Figure::Note(n) = f else { break };
+                if left == 0 {
+                    break;
+                }
+                n.episema.get_or_insert(e);
+                left -= 1;
             }
         }
         let span = self.span(start);
