@@ -164,7 +164,8 @@ fn to_unicode(map: &BTreeMap<u16, String>) -> String {
          /CMapName /Adobe-Identity-UCS def\n/CMapType 2 def\n\
          1 begincodespacerange\n<0000> <FFFF>\nendcodespacerange\n",
     );
-    let entries: Vec<_> = map.iter().filter(|(_, t)| !t.is_empty()).collect();
+    // Glyph 0 is the missing glyph: it stands for any character, so it maps to none.
+    let entries: Vec<_> = map.iter().filter(|(g, t)| **g != 0 && !t.is_empty()).collect();
     for chunk in entries.chunks(100) {
         let _ = writeln!(s, "{} beginbfchar", chunk.len());
         for (g, t) in chunk {
@@ -490,6 +491,15 @@ mod tests {
                 assert!(p.ends_with("h\n"), "{id}");
             }
         }
+    }
+
+    #[test]
+    fn missing_glyph_has_no_unicode() {
+        let map = BTreeMap::from([(0u16, "\u{5d0}".to_string()), (5, "a".to_string())]);
+        let cmap = to_unicode(&map);
+        assert!(!cmap.contains("<0000>  "));
+        assert!(!cmap.contains("<0000> <05D0>"));
+        assert!(cmap.contains("<0005> <0061>"));
     }
 
     #[test]

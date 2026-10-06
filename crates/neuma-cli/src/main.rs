@@ -350,6 +350,11 @@ fn book_command(args: &[String]) -> ExitCode {
             eprintln!("{file}: piece {}: {d}", p.piece + 1);
         }
     }
+    let missing = fonts.missing();
+    if !missing.is_empty() {
+        let list: String = missing.iter().map(|c| format!(" {c} (U+{:04X})", *c as u32)).collect();
+        eprintln!("neuma: the text font has no glyph for{list}");
+    }
     let pdf_out = pdf_out.unwrap_or_else(|| path.with_extension("pdf").to_string_lossy().into_owned());
     if let Err(e) = std::fs::write(&pdf_out, doc.pdf(&fonts)) {
         eprintln!("neuma: {pdf_out}: {e}");

@@ -231,6 +231,8 @@ pub struct Fonts<'a> {
     /// `None` uses the PDF standard Times faces.
     faces: Option<[Option<Face<'a>>; 4]>,
     widths: RefCell<HashMap<(usize, bool, String), f32>>,
+    /// Characters shaped to the missing glyph.
+    missing: RefCell<BTreeSet<char>>,
 }
 
 /// The standard faces' names, by face index.
@@ -257,6 +259,7 @@ impl<'a> Fonts<'a> {
         Fonts {
             faces: Some(faces),
             widths: RefCell::default(),
+            missing: RefCell::default(),
         }
     }
 
@@ -265,7 +268,13 @@ impl<'a> Fonts<'a> {
         Fonts {
             faces: None,
             widths: RefCell::default(),
+            missing: RefCell::default(),
         }
+    }
+
+    /// Characters the face has no glyph for, seen so far; they print as the missing glyph.
+    pub fn missing(&self) -> Vec<char> {
+        self.missing.borrow().iter().copied().collect()
     }
 
     pub fn is_standard(&self) -> bool {
@@ -309,6 +318,9 @@ impl<'a> Fonts<'a> {
     /// Shapes `text` in a face.
     pub fn shape(&self, text: &str, face: usize, small_caps: bool) -> Shaped {
         let Some(f) = self.face(face) else {
+            self.missing
+                .borrow_mut()
+                .extend(text.chars().filter(|c| !c.is_whitespace() && winansi(*c).is_none()));
             return standard_shape(text, face, small_caps);
         };
         let mut buf = UnicodeBuffer::new();
@@ -321,12 +333,18 @@ impl<'a> Fonts<'a> {
         for (i, (info, p)) in infos.iter().zip(pos).enumerate() {
             let start = info.cluster as usize;
             let first = i == 0 || infos[i - 1].cluster != info.cluster;
-            let end = infos[i + 1..]
+            // The cluster runs to the next cluster start in the text, wherever its glyph is:
+            // right-to-left runs list clusters in descending order.
+            let end = infos
                 .iter()
                 .map(|n| n.cluster as usize)
-                .find(|c| *c != start)
-                .map_or(text.len(), |c| c.max(start));
+                .filter(|c| *c > start)
+                .min()
+                .unwrap_or(text.len());
             let chunk = if first { text.get(start..end).unwrap_or("") } else { "" };
+            if info.glyph_id == 0 && first {
+                self.missing.borrow_mut().extend(chunk.chars().filter(|c| !c.is_whitespace()));
+            }
             let advance = p.x_advance as f32 / f.upem;
             width += advance;
             glyphs.push(Glyph {
@@ -607,6 +625,29 @@ mod tests {
         assert_eq!(s.glyphs[5].id, 0x86);
         assert!(s.width > 1.0);
         assert_eq!(winansi('℣'), None);
+    }
+
+    /// Right-to-left clusters come in descending order; each glyph still gets its own text,
+    /// and characters with no glyph are reported.
+    #[test]
+    fn rtl_clusters_and_missing_glyphs() {
+        let path = Path::new("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf");
+        if !path.is_file() {
+            return;
+        }
+        let files = FontFiles::load([Some(path), None, None, None]).unwrap();
+        let fonts = Fonts::new(&files);
+        let s = fonts.shape("abc שָׁלוֹם", REGULAR, false);
+        let text: String = s.glyphs.iter().map(|g| g.text.as_str()).collect();
+        let mut sorted: Vec<char> = text.chars().collect();
+        let mut want: Vec<char> = "abc שָׁלוֹם".chars().collect();
+        sorted.sort();
+        want.sort();
+        assert_eq!(sorted, want);
+        assert!(fonts.missing().is_empty());
+        let s = fonts.shape("a\u{4E2D}", REGULAR, false);
+        assert_eq!(s.glyphs[1].id, 0);
+        assert_eq!(fonts.missing(), vec!['\u{4E2D}']);
     }
 
     /// With EB Garamond installed, shaping kerns and measuring agrees with shaping.
