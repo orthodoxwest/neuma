@@ -44,7 +44,12 @@ const NOTES_WORD_GAP: f32 = 2.0;
 /// Gap after the line-start clef.
 const CLEF_GAP: f32 = INTRA * 2.0;
 /// Gap between the first staff line and the lowest annotation's baseline.
-pub(crate) const ANNOTATION_GAP: f32 = 1.0;
+const ANNOTATION_GAP: f32 = 1.0;
+/// Gap between the top of a one-staff initial and the baseline of the annotation over it,
+/// as GregorioTeX sets them.
+const INITIAL_ANNOTATION_GAP: f32 = 1.6;
+/// Space before the initial's column: GregorioTeX's `beforeinitialshift` (0.2 cm).
+pub(crate) const INITIAL_BEFORE: f32 = 1.39;
 /// Gap between the initial's column and the staff.
 const INITIAL_GAP: f32 = 1.0;
 /// Gap before an end-of-line custos.
@@ -109,6 +114,8 @@ pub(crate) struct PlacedInitial {
     pub column: f32,
     /// Width the capital would take to span its staves, before narrowing to the column.
     pub natural_width: f32,
+    /// Baseline of the lowest annotation line.
+    pub annotation_baseline: f32,
 }
 
 /// A layout at one width.
@@ -315,6 +322,11 @@ impl Engraving {
         right
     }
 
+    /// How far the lyric baseline lies below the staff's bottom line.
+    fn text_drop(&self) -> f32 {
+        TEXT_DROP + LOW_NOTE_DROP * (BELOW_STAFF - self.lowest).max(0) as f32
+    }
+
     /// How a line ending after segment `end` closes: whether it is set ragged, and the extra
     /// demerits for the break it takes.
     fn line_end(&self, end: usize, opts: &LayoutOptions) -> (bool, f32) {
@@ -368,7 +380,7 @@ impl Engraving {
         // lines came before, up to that count.
         let indented = self.initial.as_ref().map_or(0, |i| i.lines);
         let column = self.initial.as_ref().map_or(0.0, |i| column.unwrap_or(0.0).max(i.column()));
-        let indent = if indented > 0 { column + INITIAL_GAP } else { 0.0 };
+        let indent = if indented > 0 { INITIAL_BEFORE + column + INITIAL_GAP } else { 0.0 };
         // best[k][j]: least demerits for lines ending just before segment k, with j lines so
         // far (capped at `indented`), and where the last line started and its own j.
         let mut best: Vec<Vec<Option<(f32, usize, usize)>>> = vec![vec![None; indented + 1]; n + 1];
@@ -549,7 +561,19 @@ impl Engraving {
                 }
             }
             // The annotations sit above the first staff, over the initial and any accent on it.
+            // Above a one-staff initial, which stands on the lyric line, they sit over the
+            // capital, beside the staff.
             if li == 0
+                && let Some(init) = &self.initial
+                && init.lines == 1
+            {
+                let cap_top = 3.0 + self.text_drop() - CAP_HEIGHT * init.size;
+                if !init.annotations.is_empty() {
+                    let lines = init.annotations.len() as f32;
+                    ink_top =
+                        ink_top.min(cap_top - INITIAL_ANNOTATION_GAP - init.annotation_ascent - (lines - 1.0) * init.annotation_size * 1.1);
+                }
+            } else if li == 0
                 && let Some(init) = &self.initial
             {
                 ink_top = ink_top.min(-3.0 - init.accent_room);
@@ -567,8 +591,7 @@ impl Engraving {
                 // GregorioTeX's lyric line: a fixed drop below the staff, more for a score that
                 // goes below the staff, the same on every line. Ink hanging lower still (a stem
                 // or a sign under a low note) pushes it down rather than into the text.
-                let drop = TEXT_DROP + LOW_NOTE_DROP * (BELOW_STAFF - self.lowest).max(0) as f32;
-                (staff + 3.0 + drop).max(staff + ink_bottom + 0.2 + self.ascent * size * 0.5)
+                (staff + 3.0 + self.text_drop()).max(staff + ink_bottom + 0.2 + self.ascent * size * 0.5)
             } else {
                 staff + ink_bottom + 0.4
             };
@@ -608,6 +631,27 @@ impl Engraving {
         // staff it spans, narrowed if need be to fit the column the breaker left for it.
         let initial = self.initial.as_ref().and_then(|init| {
             let first = lines.first()?;
+            if init.lines == 1 {
+                // GregorioTeX's default initial: a fixed size, standing on the first line's
+                // lyric baseline, the lyrics running on beside it.
+                let has_lyrics = self.segments[first.first..=first.last].iter().any(|s| s.lyric.is_some());
+                let baseline = if has_lyrics {
+                    first.baseline
+                } else {
+                    first.staff + 3.0 + self.text_drop()
+                };
+                let size = init.size;
+                let width = init.advance_em * size;
+                height = height.max(baseline + init.descent * size);
+                return Some(PlacedInitial {
+                    x: INITIAL_BEFORE + (column - width) / 2.0,
+                    baseline,
+                    size,
+                    column,
+                    natural_width: width,
+                    annotation_baseline: baseline - CAP_HEIGHT * size - INITIAL_ANNOTATION_GAP,
+                });
+            }
             let last = &lines[init.lines.min(lines.len()) - 1];
             let cap = (last.staff + 3.0) - (first.staff - 3.0);
             let natural = cap / CAP_HEIGHT;
@@ -619,11 +663,12 @@ impl Engraving {
             let baseline = last.staff + 3.0;
             height = height.max(baseline + init.descent * size);
             Some(PlacedInitial {
-                x: (column - width) / 2.0,
+                x: INITIAL_BEFORE + (column - width) / 2.0,
                 baseline,
                 size,
                 column,
                 natural_width: init.advance_em * natural,
+                annotation_baseline: first.staff - 3.0 - init.accent_room - ANNOTATION_GAP,
             })
         });
         lines.truncate(kept);

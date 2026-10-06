@@ -14,8 +14,9 @@ pub(crate) const CAP_HEIGHT: f32 = 0.65;
 pub enum Initial {
     None,
     /// The initial spans this many staves (at most 4, and no more than the layout has): its
-    /// cap height runs from the top line of the first staff to the bottom line of the last,
-    /// as in GregorioTeX.
+    /// cap height runs from the top line of the first staff to the bottom line of the last.
+    /// `Lines(1)`, the default, is GregorioTeX's default initial instead: four times the lyric
+    /// size, standing on the first line's lyric baseline.
     Lines(u8),
 }
 

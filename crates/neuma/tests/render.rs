@@ -267,9 +267,17 @@ fn initial_and_annotations() {
         .collect();
     let initial = texts.iter().find(|t| t.0 == TextRole::Initial).unwrap();
     assert_eq!(initial.1, "K");
-    // The capital sits on the bottom staff line, left of the staff.
+    // As in GregorioTeX, the capital stands on the first line's lyric baseline, left of the
+    // staff, four times the lyrics' size.
     let line = &list.lines[0];
-    assert!((initial.3 - (line.staff + 3.0 * list.staff_space)).abs() < 0.01);
+    assert!((initial.3 - line.baseline).abs() < 0.01);
+    let size = |role: TextRole| {
+        list.items.iter().find_map(|i| match i {
+            Item::Text { role: r, size, .. } if *r == role => Some(*size),
+            _ => None,
+        })
+    };
+    assert!((size(TextRole::Initial).unwrap() - 4.0 * size(TextRole::Lyric).unwrap()).abs() < 0.01);
     let staff_left = list
         .items
         .iter()
@@ -287,7 +295,9 @@ fn initial_and_annotations() {
     assert!(texts.iter().any(|t| t.0 == TextRole::Lyric && t.1 == "y"));
     let ann: Vec<&(TextRole, String, f32, f32)> = texts.iter().filter(|t| t.0 == TextRole::Annotation).collect();
     assert_eq!(ann.iter().map(|t| t.1.as_str()).collect::<Vec<_>>(), ["Ant.", "VIII G"]);
-    assert!(ann[0].3 < ann[1].3 && ann[1].3 < line.staff - 3.0 * list.staff_space);
+    // Over the capital, whose cap height is 0.65 em.
+    let cap_top = initial.3 - 0.65 * size(TextRole::Initial).unwrap();
+    assert!(ann[0].3 < ann[1].3 && ann[1].3 < cap_top);
     assert!(ann[0].3 > 0.0, "annotations stay inside the layout");
 
     // Two-line initials indent the first two staves.

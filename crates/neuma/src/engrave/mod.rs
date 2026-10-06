@@ -298,6 +298,8 @@ const MELISMA_END_NOTES: usize = 4;
 /// `interwordspacetext` (0.17 cm against 10 pt lyrics). The font's own space is narrower, and
 /// set words ran together.
 const WORD_SPACE: f32 = 0.48;
+/// A one-staff initial's size relative to the lyrics (GregorioTeX's 40 pt and 10 pt).
+const INITIAL_SCALE: f32 = 4.0;
 /// Annotation size relative to the lyrics.
 const ANNOTATION_RATIO: f32 = 0.75;
 const DEFAULT_CLEF: Clef = Clef {
@@ -673,7 +675,9 @@ impl Score {
             let line_pitch = crate::layout::BASELINE_PITCH;
             let lines = n.min(initial::MAX_LINES) as usize;
             let cap = 6.0 + line_pitch * (lines - 1) as f32;
-            let initial_size = cap / CAP_HEIGHT;
+            // A one-staff initial is GregorioTeX's default: 40 pt against 10 pt lyrics, set on
+            // the lyric line rather than spanning the staff.
+            let initial_size = if lines == 1 { INITIAL_SCALE * size } else { cap / CAP_HEIGHT };
             let annotation_size = size * ANNOTATION_RATIO;
             let annotations = if style.annotation {
                 initial::annotations(&self.header)
@@ -692,7 +696,8 @@ impl Score {
             initial = Some(InitialBox {
                 width: advance_em * initial_size,
                 advance_em,
-                accent_room: if accented { 0.25 * initial_size } else { 0.0 },
+                // Standing on the lyric line, a one-staff initial's accent stays below the staff's top.
+                accent_room: if accented && lines > 1 { 0.25 * initial_size } else { 0.0 },
                 descent,
                 text,
                 syllable: si as u32,
