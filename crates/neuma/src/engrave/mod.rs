@@ -422,7 +422,8 @@ fn bar_pieces(kind: BarKind, high: bool, left: f32) -> (Vec<Piece>, f32) {
         }
         BarKind::Dominican(n) => {
             // `;1`–`;8`: a bar an interline and a half long, as GregorioTeX draws them. An odd
-            // one rises from line (n+1)/2; an even one hangs from line n/2.
+            // one rises from line (n+1)/2; an even one hangs from line n/2+1. Lines count from
+            // the bottom, so `;7` and `;8` reach above the staff.
             let n = n as StaffPosition;
             let (top, bottom) = if n % 2 == 1 { (n - 1, n - 4) } else { (n - 3, n - 6) };
             (vec![bar(top, bottom)], STEM)

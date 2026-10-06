@@ -226,7 +226,7 @@ impl Parser<'_, '_> {
             self.sink.warn(
                 self.span(start),
                 "gabc::dominican-bar",
-                format!("a four-line staff has no Dominican bar {n}; it is drawn above the staff"),
+                format!("a four-line staff has no Dominican bar {n}; it is drawn partly above the staff"),
             );
         }
         self.out.push(Figure::Bar(Bar {

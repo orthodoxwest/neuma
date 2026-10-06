@@ -382,7 +382,12 @@ fn comma_digit_is_a_dominican_bar() {
         .collect();
     assert_eq!(bars, [BarKind::Dominican(3), BarKind::Dominican(4), BarKind::Minima]);
     let p = parse("(c4) a(f;8)");
-    assert!(p.diagnostics.iter().any(|d| d.code == "gabc::dominican-bar"));
+    // `;7` and `;8` reach from the top line up past the staff.
+    assert!(
+        p.diagnostics
+            .iter()
+            .any(|d| d.code == "gabc::dominican-bar" && d.message.contains("partly above the staff"))
+    );
     assert!(parse("(c4) a(f;3)").diagnostics.is_empty());
 }
 
