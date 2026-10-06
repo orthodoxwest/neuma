@@ -467,6 +467,22 @@ fn psalm_blocks(ps: &Psalm, s: &Settings, fonts: &Fonts, m: &Metrics, diags: &mu
         text.push_str(GLORIA);
     }
     let verses: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
+    // Diagnostics name the verse, and their spans are bytes of the psalm's own text.
+    let source_len = source_text(&ps.source).trim_end().len();
+    let labels: Vec<String> = verses
+        .iter()
+        .enumerate()
+        .map(|(i, v)| {
+            if offset_of(&text, v) >= source_len {
+                "the Gloria".to_string()
+            } else {
+                match split_number(v).0 {
+                    Some(n) => format!("verse {n}"),
+                    None => format!("verse {}", i + 1),
+                }
+            }
+        })
+        .collect();
     let set = ps.set.unwrap_or(s.psalms);
     let size = s.text_size;
     let chant_verses = match set {
@@ -545,7 +561,8 @@ fn psalm_blocks(ps: &Psalm, s: &Settings, fonts: &Fonts, m: &Metrics, diags: &mu
                 ..Options::default()
             },
         );
-        diags.extend(setting.diagnostics);
+        let shift = offset_of(&text, words);
+        diags.extend(setting.diagnostics.into_iter().map(|d| place(d, shift, &labels[vi], source_len)));
         let mut b = score_blocks(
             &setting.score,
             fonts,
@@ -566,24 +583,40 @@ fn psalm_blocks(ps: &Psalm, s: &Settings, fonts: &Fonts, m: &Metrics, diags: &mu
     }
     if chant_verses < verses.len() {
         let rest = verses[chant_verses..].join("\n");
+        // Where each verse starts in `rest`, to put spans back into the psalm's own text.
+        let mut starts = Vec::new();
+        let mut at = 0;
+        for v in &verses[chant_verses..] {
+            starts.push(at);
+            at += v.len() + 1;
+        }
+        let relocate = |d: Diagnostic| {
+            let i = starts.iter().rposition(|st| *st <= d.span.start).unwrap_or(0);
+            let vi = chant_verses + i;
+            let shift = offset_of(&text, verses[vi]) as isize - starts[i] as isize;
+            let d = Diagnostic {
+                span: (d.span.start as isize + shift).max(0) as usize..(d.span.end as isize + shift).max(0) as usize,
+                ..d
+            };
+            place(d, 0, &labels[vi], source_len)
+        };
         let pointing = neuma_tones::point_text(&tone, &rest);
-        diags.extend(pointing.pointed.diagnostics.iter().cloned());
+        diags.extend(pointing.pointed.diagnostics.iter().cloned().map(relocate));
         for h in pointing
             .halves
             .iter()
             .filter(|h| !h.kept && h.confidence < neuma_tones::apply::UNSURE)
         {
             let verse = &pointing.pointed.verses[h.verse];
-            diags.push(Diagnostic {
+            diags.push(relocate(Diagnostic {
                 severity: Severity::Info,
                 span: verse.span.clone(),
                 code: "point::unsure",
                 message: format!(
-                    "verse {}: pointed automatically, but only {:.0}% sure: check where the accents fall",
-                    verse.number.map_or_else(|| (h.verse + 1).to_string(), |n| n.to_string()),
+                    "pointed automatically, but only {:.0}% sure: check where the accents fall",
                     h.confidence * 100.0
                 ),
-            });
+            }));
         }
         let nsize = size * 0.9;
         let number_w = fonts.width("000", fonts.resolve(false, false), false) * nsize + size * 0.45;
@@ -631,6 +664,22 @@ fn psalm_blocks(ps: &Psalm, s: &Settings, fonts: &Fonts, m: &Metrics, diags: &mu
         }
     }
     out
+}
+
+/// Where `part`, a slice of `text`, starts in it.
+fn offset_of(text: &str, part: &str) -> usize {
+    (part.as_ptr() as usize).saturating_sub(text.as_ptr() as usize).min(text.len())
+}
+
+/// A diagnostic from one verse, with its span moved by `shift` into the psalm's text (or
+/// emptied for the Gloria, which isn't in it) and the verse named in its message.
+fn place(d: Diagnostic, shift: usize, label: &str, source_len: usize) -> Diagnostic {
+    let span = d.span.start + shift..d.span.end + shift;
+    Diagnostic {
+        span: if span.start >= source_len { 0..0 } else { span },
+        message: format!("{label}: {}", d.message),
+        ..d
+    }
 }
 
 fn strip_number(verse: &str) -> &str {
@@ -779,6 +828,34 @@ mod tests {
         assert!(blocks.iter().all(|b| !b.ops.is_empty()));
         assert!(left(&blocks[1]) > 10.0, "the second line clears the cap");
         assert!((left(&blocks[0]) - left(&blocks[1])).abs() < 0.01);
+    }
+
+    /// Diagnostics from psalm verses name the verse and point into the psalm's own text,
+    /// whether the verse is set in chant or pointed.
+    #[test]
+    fn psalm_diagnostics_name_their_verse() {
+        let fonts = Fonts::standard();
+        let src =
+            "1 Behold now, praise the Lord * all ye servants of the Lord;\n2 Lift up your hands in the sanctuary * and praise the Lord.";
+        for set in ["chant", "pointed"] {
+            let book = Book::parse(&format!("psalm tone=8.G set={set}:\n    {}\n", src.replace('\n', "\n    "))).unwrap();
+            let (_, problems) = blocks(&book, &fonts);
+            let unsure: Vec<_> = problems.iter().filter(|p| p.diagnostic.code == "point::unsure").collect();
+            assert!(!unsure.is_empty(), "{set}: {problems:?}");
+            for p in unsure {
+                let d = &p.diagnostic;
+                let verse = if d.message.starts_with("verse 1:") {
+                    0..src.find('\n').unwrap()
+                } else {
+                    assert!(d.message.starts_with("verse 2:"), "{set}: {}", d.message);
+                    src.find('\n').unwrap() + 1..src.len()
+                };
+                assert!(
+                    verse.start <= d.span.start && d.span.end <= verse.end,
+                    "{set}: {d:?} outside {verse:?}"
+                );
+            }
+        }
     }
 
     /// Psalm 119 has 176 verses: three-digit numbers fit their column.
