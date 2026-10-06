@@ -300,7 +300,11 @@ tokens real AWRV material uses and moves rows between E1 and E2.
 | `z` justified break, `Z` ragged break, `z+ z- Z+ Z-` custos control | E1 |
 | A break at the end of the score | A (Gregorio discourages it; dropped) |
 
-**Line-breaking inputs.** `z` and `Z` both force a break. `z` justifies the
+**Line-breaking inputs.** Breaks fall between syllables and at spaces inside
+the notes. As in GregorioTeX (`\gresetunbreakablesyllablenotes{10}{4}{4}`), a
+syllable of ten or more notes may also break after a bar or at a `/`, `//`,
+`/0` or `/[f]` cut, but not within four notes of either end, and at a small
+cost, so a syllable's end is preferred. `z` and `Z` both force a break. `z` justifies the
 line it ends, and `Z` leaves that line ragged. A `+` or `-` suffix forces or
 suppresses that break's custos. The only ways to forbid a break are `<nlba>`
 regions and `!` before a space. A line that can't end anywhere else within the

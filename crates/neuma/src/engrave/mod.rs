@@ -150,8 +150,13 @@ impl Default for StyleOptions {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Break {
     Allowed,
+    /// Between two note groups of a long melisma, as Gregorio allows.
+    InMelisma,
     Forbidden,
-    Forced { justify: bool, custos: CustosRule },
+    Forced {
+        justify: bool,
+        custos: CustosRule,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -281,6 +286,10 @@ pub(crate) const SYLLABLE_GAP: f32 = INTRA * 2.5;
 /// Extra gap between words.
 pub(crate) const WORD_GAP: f32 = INTRA;
 const ACCIDENTAL_GAP: f32 = INTRA * 2.0;
+/// GregorioTeX's default `\gresetunbreakablesyllablenotes{10}{4}{4}`: a syllable of at least
+/// this many notes may break between its note groups, but not within this many of either end.
+const MELISMA_NOTES: usize = 10;
+const MELISMA_END_NOTES: usize = 4;
 /// Annotation size relative to the lyrics.
 const ANNOTATION_RATIO: f32 = 0.75;
 const DEFAULT_CLEF: Clef = Clef {
@@ -716,6 +725,16 @@ impl Score {
             let mut space_before = 0.0;
             let mut seg_ids: Vec<usize> = Vec::new();
             let only_clef = syl.text.is_empty() && syl.notation.iter().all(|f| matches!(f, Figure::Clef(_) | Figure::Space(_)));
+            let total_notes = syl.notation.iter().filter(|f| matches!(f, Figure::Note(_))).count();
+            let glued = syl.no_break_before || self.syllables.get(si as usize + 1).is_some_and(|s| s.no_break_before);
+            let mut notes_before = 0usize;
+            // A break between note groups is allowed only inside a long melisma, away from its ends.
+            let melisma_break = |notes_before: usize| {
+                !glued
+                    && total_notes >= MELISMA_NOTES
+                    && notes_before >= MELISMA_END_NOTES
+                    && total_notes - notes_before >= MELISMA_END_NOTES
+            };
 
             for f in &syl.notation {
                 match f {
@@ -743,12 +762,21 @@ impl Score {
                         }
                         run.notes.push(n.clone());
                         run.ids.push(id);
+                        notes_before += 1;
                     }
                     Figure::Space(s) => {
                         e.flush(&mut run, &mut open, si);
-                        if *s == Space::Large && !open.empty {
+                        let cut = match *s {
+                            Space::Small | Space::Medium | Space::Half => true,
+                            Space::Scaled(f) => f > 0.0,
+                            _ => false,
+                        };
+                        if !open.empty && (*s == Space::Large || cut && melisma_break(notes_before)) {
                             let o = std::mem::replace(&mut open, Open::new());
                             if let Some(k) = e.close(o, si, first_seg, syl.word_start, space_before) {
+                                if *s != Space::Large {
+                                    e.segments[k].after = Break::InMelisma;
+                                }
                                 seg_ids.push(k);
                                 first_seg = false;
                             }
@@ -807,6 +835,15 @@ impl Score {
                         e.pauses.push((e.notes.len() as u32, PauseKind::Bar(b.kind)));
                         // The bar's ink is in the open segment, which closes next.
                         e.pause_segments.push(e.segments.len());
+                        if melisma_break(notes_before) {
+                            let o = std::mem::replace(&mut open, Open::new());
+                            if let Some(k) = e.close(o, si, first_seg, syl.word_start, space_before) {
+                                e.segments[k].after = Break::InMelisma;
+                                seg_ids.push(k);
+                                first_seg = false;
+                            }
+                            space_before = SYLLABLE_GAP;
+                        }
                     }
                     Figure::Custos { position, .. } => {
                         e.flush(&mut run, &mut open, si);

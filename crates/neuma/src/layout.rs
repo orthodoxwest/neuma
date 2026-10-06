@@ -53,6 +53,8 @@ const STRETCH: f32 = 1.5;
 const MAX_WIDTH: f32 = 1.0e6;
 /// Space between stacked lines, in staff spaces.
 const LINE_GAP: f32 = 1.0;
+/// Extra demerits for a break inside a melisma: about a moderately loose line's worth.
+const MELISMA_DEMERITS: f32 = 2500.0;
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct PlacedLine {
@@ -308,7 +310,7 @@ impl Engraving {
                     let seg = &self.segments[last];
                     let end_of_score = last + 1 == n;
                     let forced = matches!(seg.after, Break::Forced { .. });
-                    let breakable = end_of_score || forced || seg.after == Break::Allowed;
+                    let breakable = end_of_score || forced || matches!(seg.after, Break::Allowed | Break::InMelisma);
                     let x = place(&cur, seg, self.hyphen, self.word_space, start);
                     cur = advance(&cur, seg, x);
                     right = right.max(x + seg.right());
@@ -340,7 +342,8 @@ impl Engraving {
                         };
                         if badness.is_finite() {
                             let d = (10.0 + badness) * (10.0 + badness);
-                            let total = base + d;
+                            // A syllable's end is a better break than a cut inside its melisma.
+                            let total = base + d + if seg.after == Break::InMelisma { MELISMA_DEMERITS } else { 0.0 };
                             let better = best[end + 1][next].is_none_or(|(b, _, _)| total < b);
                             if better {
                                 best[end + 1][next] = Some((total, first, j));

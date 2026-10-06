@@ -191,6 +191,28 @@ fn unclosed_nlba_still_fills_lines() {
 }
 
 #[test]
+fn long_melismas_break_between_note_groups() {
+    // From GregoBase: one syllable wider than a phone column, cut by `//` and bars.
+    let src = "(c4) To(ixdh//gih//ivGF;ggf//gg//f/gh//jjg;hhg//hvGF;4hiHG//ixhi)ta(h) (::)";
+    let eng = parse(src).score.engrave(&ApproxMeasure, &NO_INITIAL);
+    let layout = eng.layout(300.0, &LayoutOptions::default());
+    assert!(layout.size().0 <= 300.01, "{:?}", layout.size());
+    assert!(layout.display().lines.len() >= 2);
+    // As in Gregorio, a syllable of fewer than ten notes isn't split, and a longer one keeps
+    // four notes at either end.
+    let lines = |src: &str| {
+        let eng = parse(src).score.engrave(&ApproxMeasure, &NO_INITIAL);
+        eng.layout(40.0, &LayoutOptions::default()).display().lines.len()
+    };
+    assert_eq!(lines("(c4) A(ghg/hgh/ghg)"), 1);
+    assert_eq!(lines("(c4) A(gh/hg/gh/hg/gh)"), 3);
+    // Inside `<nlba>` the melisma stays whole, even past the width.
+    let src = "(c4) <nlba>To(ixdh//gih//ivGF;ggf//gg//f/gh//jjg;hhg//hvGF;4hiHG//ixhi)ta(h)</nlba> (::)";
+    let eng = parse(src).score.engrave(&ApproxMeasure, &NO_INITIAL);
+    assert!(eng.layout(300.0, &LayoutOptions::default()).size().0 > 300.0);
+}
+
+#[test]
 fn forced_breaks_keep_lines_balanced() {
     // Short syllables before a written break share a line rather than taking one each.
     assert_eq!(line_texts("(c4) A(g) B(h) C(gz) D(h)", 400.0), [vec!["A", "B", "C"], vec!["D"]]);
