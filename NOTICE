@@ -38,3 +38,8 @@ EB Garamond 12
   crates/neuma/fonts/eb-garamond-google.bin holds the same measurements of
   the EB Garamond fonts served by Google Fonts (version 33, regular and italic),
   also under the SIL Open Font License 1.1, with no outlines.
+
+jgabc
+  The psalm tone formulas in crates/neuma-tones/tones/solesmes.tones are
+  transcribed from the tone table of jgabc by Benjamin Bloomfield, which is
+  dedicated to the public domain (the Unlicense). https://github.com/bbloomf/jgabc

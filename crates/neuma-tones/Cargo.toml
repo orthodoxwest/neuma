@@ -1,0 +1,17 @@
+[package]
+name = "neuma-tones"
+description = "Psalm tones for neuma: pointed English psalm text plus a tone, engraved as chant"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+neuma = { path = "../neuma", default-features = false }
+
+[dev-dependencies]
+neuma = { path = "../neuma" }
+
+[lints]
+workspace = true

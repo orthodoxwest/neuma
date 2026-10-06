@@ -43,4 +43,14 @@ assert chant.summary().incipit == "Kyrie eleison"
 preview = chant.layout(120.0, neuma.LayoutOptions(last_line=neuma.LastLine.RAGGED, weights=neuma.Weights(), max_lines=1))
 assert len(preview.lines) == 1 and preview.lines[0] == narrow.lines[0]
 
+# Psalm tones.
+ps = neuma.psalm("The Lord is King, and hath put on glorious ap·pá-rel; * the Lord hath put on his apparel, and gird·ed him-sélf with strength.", "8.G", neuma.Intone.FIRST_VERSE)
+assert ps.diagnostics == [] and ps.notes[0].role == neuma.ToneRole.INTONATION
+assert len(neuma.Chant(ps.gabc, neuma.default_chant_options()).layout(500.0, neuma.default_layout_options()).notes) == len(ps.notes)
+try:
+    neuma.psalm("a * b", "9.z", neuma.Intone.NEVER)
+    raise AssertionError("unknown tone accepted")
+except neuma.ToneError.Unknown:
+    pass
+
 print(f"ok: {len(narrow.notes)} notes, {len(narrow.lines)} lines at 120, {len(glyphs)} glyphs")

@@ -46,4 +46,14 @@ let entry = summarize(gabc: "office-part: Introitus;\nmode: VII;\n%%\n(c3) PU(g)
 check(entry.kind == .introit && entry.mode?.number == 7 && entry.text == "Puer natus", "summary")
 let preview = chant.layout(width: 120, options: LayoutOptions(lastLine: .ragged, weights: Weights(), maxLines: 1))
 check(preview.lines.count == 1 && preview.lines[0] == narrow.lines[0], "preview")
+let ps = try! psalm(text: "The Lord is King, and hath put on glorious ap·pá-rel; * the Lord hath put on his apparel, and gird·ed him-sélf with strength.", tone: "8.G", intone: .firstVerse)
+check(ps.diagnostics.isEmpty && ps.notes[0].role == .intonation, "psalm")
+check(Chant(gabc: ps.gabc, options: defaultChantOptions()).layout(width: 500, options: defaultLayoutOptions()).notes.count == ps.notes.count, "psalm notes")
+do {
+    _ = try psalm(text: "a * b", tone: "9.z", intone: .never)
+    check(false, "unknown tone")
+} catch ToneError.Unknown {
+} catch {
+    check(false, "unknown tone error")
+}
 print("ok: swift, \(narrow.notes.count) notes, \(glyphs.count) glyphs")

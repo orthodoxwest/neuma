@@ -13,6 +13,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 neuma = { path = "../neuma" }
+neuma-tones = { path = "../neuma-tones" }
 
 # The exports need `#[unsafe(no_mangle)]`, so this crate can't inherit the workspace's
 # `forbid(unsafe_code)`; it denies it instead and allows it only on those items.

@@ -1,7 +1,7 @@
 // Smoke test for dist/neuma.mjs under Node: `node crates/neuma-wasm/test.mjs`.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { init, Chant, DEFAULT_WEIGHTS, summarize } from "./dist/neuma.mjs";
+import { init, Chant, DEFAULT_WEIGHTS, psalm, summarize, tones } from "./dist/neuma.mjs";
 
 await init();
 const gabc = readFileSync(new URL("../neuma/tests/corpus/psalm-134.gabc", import.meta.url), "utf8");
@@ -81,6 +81,26 @@ assert.deepEqual(preview.timeline.notes.map((n) => n.id), full.timeline.notes.fi
 const lastNote = preview.timeline.notes.at(-1);
 assert.ok(preview.timeline.pauses.every((p) => p.beforeNote <= lastNote.id + 1));
 assert.ok(preview.timeline.duration < full.timeline.duration);
+
+// Psalm tones: pointed text to GABC, with each note's role.
+const text = "1 The Lord is King, and hath put on glorious ap·pá-rel; * the Lord hath put on his apparel, and gird·ed him-sélf with strength.\n" +
+  "2 He hath made the round world so · súre, * that it can·not be móv-ed.";
+const ps = psalm(text, "8.G");
+assert.deepEqual(ps.diagnostics, []);
+assert.ok(tones().includes("8.G"));
+const psChant = new Chant(ps.gabc);
+const psNotes = psChant.layout(500).timeline.notes;
+assert.equal(psNotes.length, ps.notes.length);
+assert.equal(ps.notes[0].role, "intonation");
+const accent = ps.notes.findIndex((n) => n.role === "accent");
+assert.equal(psNotes[accent].syllableText, "pá");
+assert.equal(new TextDecoder().decode(new TextEncoder().encode(text).slice(ps.notes[accent].start, ps.notes[accent].end)), "pá");
+assert.ok(ps.notes.some((n) => n.verse === 1 && n.number === 2 && n.part === "termination"));
+assert.throws(() => psalm(text, "9.z"), /no built-in tone/);
+const ownTone = psalm(text, "name: mine\nclef: c4\nmediant: f g hr 'g hr h\ntermination: hr g f 'g hr h");
+assert.ok(ownTone.gabc.includes("(c4)"));
+assert.equal(psalm(text, "8.G\n").gabc, psalm(text, "8.G").gabc);
+psChant.free();
 
 assert.equal(DEFAULT_WEIGHTS.note, 1);
 console.log(`ok: ${notes.length} notes, ${wide.timeline.lines.length} lines at 900, ${narrow.timeline.lines.length} at 360`);

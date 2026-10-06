@@ -24,6 +24,7 @@ bindgen = ["uniffi/cli"]
 
 [dependencies]
 neuma = { path = "../neuma" }
+neuma-tones = { path = "../neuma-tones" }
 uniffi = "0.32"
 
 # No workspace lint table: UniFFI's generated scaffolding is `unsafe` FFI glue, which the

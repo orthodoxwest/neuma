@@ -146,3 +146,26 @@ fn summaries_and_previews() {
     assert_eq!(preview.lines[0], full.lines[0]);
     assert!(preview.notes.iter().all(|n| n.line == 0));
 }
+
+#[test]
+fn sets_psalms() {
+    let text =
+        "1 The Lord is King, and hath put on glorious ap·pá-rel; * the Lord hath put on his apparel, and gird·ed him-sélf with strength.";
+    let s = psalm(text.to_string(), "8.G".to_string(), Intone::FirstVerse).unwrap();
+    assert!(s.diagnostics.is_empty(), "{:?}", s.diagnostics);
+    let page = chant(&s.gabc).layout(600.0, options());
+    assert_eq!(page.notes.len(), s.notes.len());
+    assert_eq!(s.notes[0].role, ToneRole::Intonation);
+    assert_eq!(s.notes[0].number, Some(1));
+    let accent = s.notes.iter().position(|n| n.role == ToneRole::Accent).unwrap();
+    assert_eq!(&text[s.notes[accent].start as usize..s.notes[accent].end as usize], "pá");
+    assert_eq!(
+        psalm(text.to_string(), "9.z".to_string(), Intone::Never),
+        Err(ToneError::Unknown { name: "9.z".into() })
+    );
+    assert!(matches!(
+        psalm_with_tone(text.to_string(), "name: x".to_string(), Intone::Never),
+        Err(ToneError::Invalid { .. })
+    ));
+    assert!(tone_names().contains(&"8.G".to_string()));
+}

@@ -33,6 +33,10 @@ fun main() {
     check(entry.kind == OfficePart.INTROIT && entry.mode?.number == 7.toUByte() && entry.text == "Puer natus", "summary")
     val preview = chant.layout(120f, LayoutOptions(lastLine = LastLine.RAGGED, weights = Weights(), maxLines = 1u))
     check(preview.lines.size == 1 && preview.lines[0] == narrow.lines[0], "preview")
+    val ps = psalm("The Lord is King, and hath put on glorious ap·pá-rel; * the Lord hath put on his apparel, and gird·ed him-sélf with strength.", "8.G", Intone.FIRST_VERSE)
+    check(ps.diagnostics.isEmpty() && ps.notes[0].role == ToneRole.INTONATION, "psalm")
+    check(Chant(ps.gabc, defaultChantOptions()).layout(500f, defaultLayoutOptions()).notes.size == ps.notes.size, "psalm notes")
+    check(try { psalm("a * b", "9.z", Intone.NEVER); false } catch (e: ToneException.Unknown) { true }, "unknown tone")
     chant.close()
     println("ok: kotlin, ${narrow.notes.size} notes, ${glyphs.size} glyphs")
 }
