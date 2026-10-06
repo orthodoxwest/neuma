@@ -33,8 +33,18 @@ impl Default for SvgOptions {
 
 /// Two decimals, with no negative zero.
 fn n(v: f32) -> String {
-    let s = format!("{:.2}", v);
-    if s == "-0.00" { "0.00".into() } else { s }
+    let mut s = String::with_capacity(12);
+    push_n(&mut s, v);
+    s
+}
+
+/// Appends `v` as [`n`] writes it.
+fn push_n(out: &mut String, v: f32) {
+    let start = out.len();
+    crate::decimal::push_fixed(out, v, 2);
+    if &out[start..] == "-0.00" {
+        out.replace_range(start.., "0.00");
+    }
 }
 
 /// Whether XML 1.0 allows `c` in text.
@@ -69,7 +79,7 @@ impl DisplayList {
             .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_'))
             .collect();
         let p = if p.is_empty() { "neuma" } else { p.as_str() };
-        let mut out = String::new();
+        let mut out = String::with_capacity(1024 + self.items.len() * 96);
         let _ = write!(
             out,
             r#"<svg xmlns="http://www.w3.org/2000/svg" class="{p}" width="{w}" height="{h}" viewBox="0 0 {w} {h}" role="img" aria-label=""#,
@@ -124,13 +134,15 @@ impl DisplayList {
                     through,
                     ..
                 } => {
-                    let _ = write!(
-                        out,
-                        r##"<use href="#{p}-g{glyph}" x="{}" y="{}" class="{p}-{}""##,
-                        n(*x),
-                        n(*y),
-                        role.class()
-                    );
+                    out.push_str("<use href=\"#");
+                    out.push_str(p);
+                    out.push_str("-g");
+                    crate::decimal::push_u64(&mut out, *glyph as u64);
+                    out.push_str("\" x=\"");
+                    push_n(&mut out, *x);
+                    out.push_str("\" y=\"");
+                    push_n(&mut out, *y);
+                    push_class(&mut out, p, role.class());
                     data_note(&mut out, *note, *through);
                     out.push_str("/>");
                 }
@@ -143,15 +155,15 @@ impl DisplayList {
                     note,
                     through,
                 } => {
-                    let _ = write!(
-                        out,
-                        r#"<rect x="{}" y="{}" width="{}" height="{}" class="{p}-{}""#,
-                        n(*x),
-                        n(*y),
-                        n(*w),
-                        n(*h),
-                        role.class()
-                    );
+                    out.push_str("<rect x=\"");
+                    push_n(&mut out, *x);
+                    out.push_str("\" y=\"");
+                    push_n(&mut out, *y);
+                    out.push_str("\" width=\"");
+                    push_n(&mut out, *w);
+                    out.push_str("\" height=\"");
+                    push_n(&mut out, *h);
+                    push_class(&mut out, p, role.class());
                     data_note(&mut out, *note, *through);
                     out.push_str("/>");
                 }
@@ -170,15 +182,17 @@ impl DisplayList {
                         TextRole::Annotation => "annotation",
                         TextRole::Rubric => "rubric",
                     };
-                    let _ = write!(
-                        out,
-                        r#"<text x="{}" y="{}" font-size="{}" class="{p}-{class}""#,
-                        n(*x),
-                        n(*baseline),
-                        n(*size)
-                    );
+                    out.push_str("<text x=\"");
+                    push_n(&mut out, *x);
+                    out.push_str("\" y=\"");
+                    push_n(&mut out, *baseline);
+                    out.push_str("\" font-size=\"");
+                    push_n(&mut out, *size);
+                    push_class(&mut out, p, class);
                     if let Some(s) = syllable {
-                        let _ = write!(out, r#" data-syllable="{s}""#);
+                        out.push_str(" data-syllable=\"");
+                        crate::decimal::push_u64(&mut out, *s as u64);
+                        out.push('"');
                     }
                     out.push('>');
                     for r in runs {
@@ -235,13 +249,24 @@ fn format_scale(s: f32) -> String {
     t.trim_end_matches('.').to_string()
 }
 
+/// Closes the previous attribute and writes the role class.
+fn push_class(out: &mut String, prefix: &str, class: &str) {
+    out.push_str("\" class=\"");
+    out.push_str(prefix);
+    out.push('-');
+    out.push_str(class);
+    out.push('"');
+}
+
 /// `data-note` lists every note the ink draws, so `[data-note~="3"]` finds note 3 whether it
 /// has a glyph of its own or shares a porrectus swash.
 fn data_note(out: &mut String, note: Option<u32>, through: Option<u32>) {
     let Some(first) = note else { return };
-    let _ = write!(out, r#" data-note="{first}"#);
+    out.push_str(" data-note=\"");
+    crate::decimal::push_u64(out, first as u64);
     for id in first + 1..=through.unwrap_or(first) {
-        let _ = write!(out, " {id}");
+        out.push(' ');
+        crate::decimal::push_u64(out, id as u64);
     }
     out.push('"');
 }

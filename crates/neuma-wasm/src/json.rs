@@ -9,6 +9,12 @@ use neuma::{Diagnostic, LineBox, NoteMap, OfficePart, PauseKind, Severity, Summa
 /// A JSON string literal for `s`.
 pub fn string(out: &mut String, s: &str) {
     out.push('"');
+    // Most strings need no escapes: copy them whole.
+    if !s.bytes().any(|b| b < 0x20 || b == b'"' || b == b'\\') {
+        out.push_str(s);
+        out.push('"');
+        return;
+    }
     for c in s.chars() {
         match c {
             '"' => out.push_str("\\\""),
@@ -31,9 +37,20 @@ pub fn number(out: &mut String, v: f32) {
         out.push('0');
         return;
     }
-    let s = format!("{:.3}", v);
-    let s = s.trim_end_matches('0').trim_end_matches('.');
-    out.push_str(if s == "-0" { "0" } else { s });
+    let start = out.len();
+    neuma::decimal::push_fixed(out, v, 3);
+    let trimmed = out[start..].trim_end_matches('0').trim_end_matches('.').len();
+    out.truncate(start + trimmed);
+    if &out[start..] == "-0" {
+        out.replace_range(start.., "0");
+    }
+}
+
+pub fn integer(out: &mut String, v: i64) {
+    if v < 0 {
+        out.push('-');
+    }
+    neuma::decimal::push_u64(out, v.unsigned_abs());
 }
 
 fn field(out: &mut String, first: &mut bool, name: &str) {
@@ -187,7 +204,7 @@ pub fn note_map(out: &mut String, map: &NoteMap) {
         let mut first = true;
         out.push('{');
         field(out, &mut first, "id");
-        let _ = write!(out, "{}", n.id);
+        integer(out, n.id as i64);
         for (name, v) in [
             ("x", n.x),
             ("y", n.y),
@@ -212,7 +229,7 @@ pub fn note_map(out: &mut String, map: &NoteMap) {
             ("spanEnd", n.span.end as i64),
         ] {
             field(out, &mut first, name);
-            let _ = write!(out, "{v}");
+            integer(out, v);
         }
         field(out, &mut first, "syllableText");
         string(out, &n.syllable_text);

@@ -5,6 +5,7 @@
 //! The pipeline is `parse` → [`Score`] → [`Score::engrave`] (width-independent, cache it) →
 //! [`Engraving::layout`] (cheap; rerun on every resize) → display list, SVG and note map.
 
+pub mod decimal;
 pub mod diag;
 pub mod display;
 pub mod engrave;
