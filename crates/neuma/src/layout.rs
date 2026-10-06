@@ -271,12 +271,12 @@ impl Engraving {
                         end_of_score && opts.last_line == LastLine::Ragged || matches!(seg.after, Break::Forced { justify: false, .. });
                     let badness = if over {
                         if last == first { 10000.0 } else { f32::INFINITY }
-                    } else if ragged || forced {
-                        // A written break fixes where this line ends, so how loose it is says
-                        // nothing about the breaks before it.
+                    } else if ragged {
                         0.0
                     } else if gaps == 0.0 {
-                        if target - natural > 0.5 { 5000.0 } else { 0.0 }
+                        // As bad as the loosest line with gaps, so splitting a loose line
+                        // into one-segment lines never looks cheaper.
+                        if target - natural > 0.5 { 10000.0 } else { 0.0 }
                     } else {
                         let r = (target - natural) / (gaps * STRETCH);
                         (100.0 * r * r * r).min(10000.0)
