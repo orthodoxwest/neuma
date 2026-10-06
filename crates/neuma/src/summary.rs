@@ -99,10 +99,15 @@ impl OfficePart {
             }
             "short" if lower.contains("resp") => P::ShortResponsory,
             "rb" => P::ShortResponsory,
-            // `V` alone is also the numeral five ("V. Ant."), so a kind named after it wins.
-            "v" => match OfficePart::parse(&lower[lower.find('v').map_or(0, |i| i + 1)..]) {
-                P::Other => P::Versicle,
-                other => other,
+            // `V` alone is also the numeral five ("V. Ant."), so a kind spelled out or
+            // abbreviated after it wins; a response ("V. R.") or a two-letter word ("V. In
+            // omnem") does not. Only the next word is read, so this recurses once at most.
+            "v" => match words.next() {
+                Some(w) if w.len() > 2 && !matches!(w, "resp" | "responsorium" | "responsory" | "response") => match OfficePart::parse(w) {
+                    P::Other => P::Versicle,
+                    other => other,
+                },
+                _ => P::Versicle,
             },
             "versiculus" | "versiculi" | "versicle" | "versicles" => P::Versicle,
             "capitulum" | "capitula" | "chapter" | "chapters" | "cap" => P::Chapter,
@@ -419,8 +424,16 @@ mod tests {
             ("Orationes", OfficePart::Collect),
             ("Collects", OfficePart::Collect),
             ("Versus", OfficePart::Other),
+            ("V. R.", OfficePart::Versicle),
+            ("℣. ℟.", OfficePart::Versicle),
+            ("V. In omnem terram", OfficePart::Versicle),
+            ("V. Resp.", OfficePart::Versicle),
         ] {
             assert_eq!(OfficePart::parse(v), k, "{v}");
+        }
+        // A long run of V is read in one pass.
+        for v in ["v ".repeat(50_000), "V. ".repeat(50_000) + "Ant."] {
+            assert_eq!(OfficePart::parse(&v), OfficePart::Versicle);
         }
     }
 
