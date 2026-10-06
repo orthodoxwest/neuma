@@ -37,6 +37,8 @@ fun main() {
     check(ps.diagnostics.isEmpty() && ps.notes[0].role == ToneRole.INTONATION, "psalm")
     check(Chant(ps.gabc, defaultChantOptions()).layout(500f, defaultLayoutOptions()).notes.size == ps.notes.size, "psalm notes")
     check(try { psalm("a * b", "9.z", Intone.NEVER); false } catch (e: ToneException.Unknown) { true }, "unknown tone")
+    val pt = point("O come, let us sing unto the Lord * let us heartily rejoice in the strength of our salvation.", "8.G")
+    check(pt.halves.size == 2 && pt.text.contains("·"), "point")
     chant.close()
     println("ok: kotlin, ${narrow.notes.size} notes, ${glyphs.size} glyphs")
 }

@@ -110,3 +110,16 @@ on them.
 `neuma notes FILE` prints the same layout JSON from the command line, without the SVG.
 `neuma info FILE...` prints one catalogue entry per file, as a line of JSON with a `file`
 field.
+
+## Psalm tones
+
+`psalm(text, tone, { intone, pointing })` sets psalm text, a verse per line with the mediant
+marked `*`, to a tone: a built-in name from `tones()` such as `"8.G"`, or a tone block of your
+own. It returns `{ gabc, notes, diagnostics }`: engrave `gabc` with `new Chant(gabc)`, and
+`notes[i]` gives note `i`'s verse, half and role in the tone (intonation, tenor, preparatory,
+accent, ending). Text can be hand-pointed (`·`, acutes, `†`, `–`); half-verses with no marks
+are pointed automatically unless `pointing: "manual"`, and a `point::unsure` diagnostic
+flags each one worth checking.
+
+`point(text, tone)` returns the pointed text itself, `{ text, halves, diagnostics }`, with the
+pointer's confidence (0 to 1) for each half-verse it marked, for an editor to show.

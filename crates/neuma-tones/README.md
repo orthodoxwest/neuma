@@ -1,8 +1,9 @@
 # neuma-tones
 
-Sets pointed English psalm text to a psalm tone and returns the chant as a neuma `Score` and
-GABC, with each note's place in the tone (intonation, tenor, preparatory, accent or ending)
-for practice tools.
+Sets English psalm text to a psalm tone and returns the chant as a neuma `Score` and GABC,
+with each note's place in the tone (intonation, tenor, preparatory, accent or ending) for
+practice tools. Text can come hand-pointed, or plain: the pointer marks each half-verse's
+accents and cadence for the tone, the way a hand-pointed psalter does, and says how sure it is.
 
 ```rust
 use neuma_tones::{Options, Tone, apply_text};
@@ -14,7 +15,34 @@ let setting = apply_text(tone, "1 The Lord is King, and hath put on glorious ap�
 // setting.notes[i] describes note i of the engraved score.
 ```
 
-From the command line: `neuma psalm --tone 8.G psalm.txt | neuma render - > psalm.svg`.
+From the command line: `neuma psalm --tone 8.G psalm.txt | neuma render - > psalm.svg`, and
+`neuma point --tone 8.G psalm.txt` to see the pointing.
+
+## Pointing plain text
+
+```rust
+use neuma_tones::{Tone, point_text};
+
+let p = point_text(Tone::named("8.G").unwrap(), "O come, let us sing unto the Lord * \
+    let us heartily rejoice in the strength of our salvation.");
+assert_eq!(p.text(), "O come, let us sing unto the · Lórd * let us heartily rejoice in the \
+    strength of · our salvátion.\n");
+// p.halves[i].confidence: how sure the pointer is of each half-verse, 0 to 1.
+```
+
+`apply` points any half-verse that has no marks before setting it (unless
+`Options::no_auto_point`), and reports one it is less than 80% sure of as `point::unsure`. A
+half with marks is kept as written, so correcting one half and pointing again keeps the fix.
+
+The pointer chooses among the ways to place the cadence's accents on the last syllables with
+a linear model over the syllables' lexical stress (from a stress table drawn from the CMU
+Pronouncing Dictionary, `tones/stress.txt`), the small words involved, how many syllables
+follow the last accent, and the gap between accents. Its weights (`tones/pointing.weights`)
+were fitted to a hand-pointed English psalter. On psalms held out from fitting (split into
+syllables as the hand split them) it agrees with the hand pointing on about 81% of
+half-verses, where the same hand agrees with itself across settings of a psalm about 89% of
+the time. It is 80% sure or more of about 70% of half-verses, and those agree about 92% of
+the time.
 
 ## Pointed text
 

@@ -108,3 +108,11 @@ For a preview row, lay out with `maxLines = 1`. The line is broken as it would b
 whole score. An initial that spans more staves keeps its full size, and the page's
 height includes it. The timeline ends with the kept lines: their notes and the pauses drawn
 on them.
+
+### Psalm tones
+
+`psalm(text, tone, intone)` sets psalm text (a verse per line, the mediant marked `*`) to a
+built-in tone from `toneNames()`, and `psalmWithTone` to a tone block of your own. The
+`PsalmSetting` holds GABC for `Chant` and each note's verse, half and role in the tone.
+Half-verses with no pointing marks are pointed automatically; `point(text, tone)` returns
+the pointed text with the pointer's confidence for each half-verse.

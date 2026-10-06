@@ -657,8 +657,9 @@ impl std::fmt::Display for ToneError {
 
 impl std::error::Error for ToneError {}
 
-/// Sets pointed psalm text (a verse per line, with `*`, `†`, `·`, acutes and `–`) to a
-/// built-in tone such as `8.G`.
+/// Sets psalm text (a verse per line, the mediant marked `*`, optionally pointed with `†`,
+/// `·`, acutes and `–`) to a built-in tone such as `8.G`. Half-verses with no marks are
+/// pointed automatically (see [`point`]); `point::unsure` diagnostics flag those to check.
 #[uniffi::export]
 pub fn psalm(text: String, tone: String, intone: Intone) -> Result<PsalmSetting, ToneError> {
     let t = neuma_tones::Tone::named(&tone).ok_or(ToneError::Unknown { name: tone })?;
@@ -671,6 +672,69 @@ pub fn psalm(text: String, tone: String, intone: Intone) -> Result<PsalmSetting,
 pub fn psalm_with_tone(text: String, tone: String, intone: Intone) -> Result<PsalmSetting, ToneError> {
     let t = neuma_tones::Tone::parse(&tone).map_err(|e| ToneError::Invalid { reason: e.to_string() })?;
     Ok(setting(&t, &text, intone))
+}
+
+/// The pointer's choice for one half-verse.
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct HalfPointing {
+    /// Index of the verse in the text.
+    pub verse: u32,
+    pub part: VersePart,
+    /// The model's probability for its choice, 0 to 1; below about 0.8 it is worth checking.
+    pub confidence: f32,
+    /// The half already carried marks, which were kept.
+    pub kept: bool,
+}
+
+/// Psalm text with pointing marks added.
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct Pointing {
+    /// The pointed text, in the same markup `psalm` reads.
+    pub text: String,
+    /// Each verse's mediant and termination, in order.
+    pub halves: Vec<HalfPointing>,
+    pub diagnostics: Vec<Diagnostic>,
+}
+
+/// Points psalm text (a verse per line, the mediant marked `*`) for a built-in tone: marks
+/// each half-verse's accents and cadence start, keeping halves that already carry marks.
+#[uniffi::export]
+pub fn point(text: String, tone: String) -> Result<Pointing, ToneError> {
+    let t = neuma_tones::Tone::named(&tone).ok_or(ToneError::Unknown { name: tone })?;
+    Ok(pointing(t, &text))
+}
+
+/// [`point`] for a tone of your own, given as a tone block.
+#[uniffi::export]
+pub fn point_with_tone(text: String, tone: String) -> Result<Pointing, ToneError> {
+    let t = neuma_tones::Tone::parse(&tone).map_err(|e| ToneError::Invalid { reason: e.to_string() })?;
+    Ok(pointing(&t, &text))
+}
+
+fn verse_part(k: neuma_tones::PartKind) -> VersePart {
+    match k {
+        neuma_tones::PartKind::Flex => VersePart::Flex,
+        neuma_tones::PartKind::Mediant => VersePart::Mediant,
+        neuma_tones::PartKind::Termination => VersePart::Termination,
+    }
+}
+
+fn pointing(tone: &neuma_tones::Tone, text: &str) -> Pointing {
+    let p = neuma_tones::point_text(tone, text);
+    Pointing {
+        text: p.text(),
+        halves: p
+            .halves
+            .iter()
+            .map(|h| HalfPointing {
+                verse: h.verse as u32,
+                part: verse_part(h.part),
+                confidence: h.confidence,
+                kept: h.kept,
+            })
+            .collect(),
+        diagnostics: p.pointed.diagnostics.iter().map(diagnostic).collect(),
+    }
 }
 
 /// The built-in tones' names.
@@ -696,11 +760,7 @@ fn setting(tone: &neuma_tones::Tone, text: &str, intone: Intone) -> PsalmSetting
             .map(|n| PsalmNote {
                 verse: n.verse as u32,
                 number: n.number,
-                part: match n.part {
-                    neuma_tones::PartKind::Flex => VersePart::Flex,
-                    neuma_tones::PartKind::Mediant => VersePart::Mediant,
-                    neuma_tones::PartKind::Termination => VersePart::Termination,
-                },
+                part: verse_part(n.part),
                 role: match n.role {
                     neuma_tones::Role::Intonation => ToneRole::Intonation,
                     neuma_tones::Role::Tenor => ToneRole::Tenor,

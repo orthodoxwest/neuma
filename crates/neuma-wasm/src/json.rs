@@ -55,11 +55,7 @@ pub fn setting(out: &mut String, s: &neuma_tones::Setting) {
         if i > 0 {
             out.push(',');
         }
-        let part = match n.part {
-            neuma_tones::PartKind::Flex => "flex",
-            neuma_tones::PartKind::Mediant => "mediant",
-            neuma_tones::PartKind::Termination => "termination",
-        };
+        let part = part_name(n.part);
         let role = match n.role {
             neuma_tones::Role::Intonation => "intonation",
             neuma_tones::Role::Tenor => "tenor",
@@ -82,6 +78,32 @@ pub fn setting(out: &mut String, s: &neuma_tones::Setting) {
     }
     out.push_str("],\"diagnostics\":");
     diagnostics(out, &s.diagnostics);
+    out.push('}');
+}
+
+fn part_name(k: neuma_tones::PartKind) -> &'static str {
+    match k {
+        neuma_tones::PartKind::Flex => "flex",
+        neuma_tones::PartKind::Mediant => "mediant",
+        neuma_tones::PartKind::Termination => "termination",
+    }
+}
+
+/// A pointing: `{ text, halves: [{ verse, part, confidence, kept }], diagnostics }`.
+pub fn pointing(out: &mut String, p: &neuma_tones::Pointing) {
+    out.push_str("{\"text\":");
+    string(out, &p.text());
+    out.push_str(",\"halves\":[");
+    for (i, h) in p.halves.iter().enumerate() {
+        if i > 0 {
+            out.push(',');
+        }
+        let _ = write!(out, r#"{{"verse":{},"part":"{}","confidence":"#, h.verse, part_name(h.part));
+        number(out, h.confidence);
+        let _ = write!(out, r#","kept":{}}}"#, h.kept);
+    }
+    out.push_str("],\"diagnostics\":");
+    diagnostics(out, &p.pointed.diagnostics);
     out.push('}');
 }
 

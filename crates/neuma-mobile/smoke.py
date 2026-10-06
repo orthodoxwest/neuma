@@ -52,5 +52,7 @@ try:
     raise AssertionError("unknown tone accepted")
 except neuma.ToneError.Unknown:
     pass
+pt = neuma.point("O come, let us sing unto the Lord * let us heartily rejoice in the strength of our salvation.", "8.G")
+assert len(pt.halves) == 2 and "·" in pt.text and pt.halves[0].part == neuma.VersePart.MEDIANT
 
 print(f"ok: {len(narrow.notes)} notes, {len(narrow.lines)} lines at 120, {len(glyphs)} glyphs")

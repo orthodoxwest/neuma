@@ -169,3 +169,21 @@ fn sets_psalms() {
     ));
     assert!(tone_names().contains(&"8.G".to_string()));
 }
+
+#[test]
+fn points_psalms() {
+    let plain = "O come, let us sing unto the Lord * let us heartily rejoice in the strength of our salvation.";
+    let p = point(plain.to_string(), "8.G".to_string()).unwrap();
+    assert_eq!(p.halves.len(), 2);
+    assert!(p.halves.iter().all(|h| !h.kept && h.confidence > 0.0 && h.confidence <= 1.0));
+    assert_eq!(p.halves[1].part, VersePart::Termination);
+    assert!(p.text.contains('·'));
+    // Setting the plain text points it the same way.
+    let a = psalm(plain.to_string(), "8.G".to_string(), Intone::FirstVerse).unwrap();
+    let b = psalm(p.text.clone(), "8.G".to_string(), Intone::FirstVerse).unwrap();
+    assert_eq!(a.gabc, b.gabc);
+    assert!(matches!(
+        point(plain.to_string(), "9.z".to_string()),
+        Err(ToneError::Unknown { .. })
+    ));
+}

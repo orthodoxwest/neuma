@@ -150,39 +150,61 @@ pub extern "C" fn neuma_summarize() {
     output(&out);
 }
 
-/// Sets pointed psalm text to a tone. The input buffer holds the tone and the text separated
-/// by a NUL: the tone is a built-in name (`8.G`) when `custom` is 0, else a tone block in the
-/// tone file syntax. Leaves the setting JSON, or `{"error": …}`, in the output buffer.
-#[allow(unsafe_code)]
-#[unsafe(no_mangle)]
-pub extern "C" fn neuma_psalm(custom: u32, intone: u32) {
+/// The tone and text in the input buffer, separated by a NUL: the tone is a built-in name
+/// (`8.G`) when `custom` is 0, else a tone block in the tone file syntax.
+fn tone_and_text(custom: u32) -> Result<(neuma_tones::Tone, String), String> {
     let all = input();
     let (tone_src, text) = all.split_once('\0').unwrap_or((all.as_str(), ""));
-    let parsed;
     let tone = if custom == 0 {
-        neuma_tones::Tone::named(tone_src).ok_or_else(|| format!("no built-in tone {tone_src}"))
+        neuma_tones::Tone::named(tone_src)
+            .cloned()
+            .ok_or_else(|| format!("no built-in tone {tone_src}"))
     } else {
-        parsed = neuma_tones::Tone::parse(tone_src);
-        parsed.as_ref().map_err(|e| e.to_string())
-    };
+        neuma_tones::Tone::parse(tone_src).map_err(|e| e.to_string())
+    }?;
+    Ok((tone, text.to_string()))
+}
+
+fn error(out: &mut String, e: &str) {
+    out.push_str("{\"error\":");
+    crate::json::string(out, e);
+    out.push('}');
+}
+
+/// Sets psalm text to a tone (see [`tone_and_text`]); `intone` is 0 for the first verse, 1
+/// for every verse, 2 for none, and `manual` 1 leaves unpointed halves unpointed. Leaves the
+/// setting JSON, or `{"error": …}`, in the output buffer.
+#[allow(unsafe_code)]
+#[unsafe(no_mangle)]
+pub extern "C" fn neuma_psalm(custom: u32, intone: u32, manual: u32) {
     let mut out = String::new();
-    match tone {
-        Ok(tone) => {
+    match tone_and_text(custom) {
+        Ok((tone, text)) => {
             let options = neuma_tones::Options {
                 intone: match intone {
                     1 => neuma_tones::Intone::EveryVerse,
                     2 => neuma_tones::Intone::Never,
                     _ => neuma_tones::Intone::FirstVerse,
                 },
+                no_auto_point: manual == 1,
                 ..neuma_tones::Options::default()
             };
-            crate::json::setting(&mut out, &neuma_tones::apply_text(tone, text, &options));
+            crate::json::setting(&mut out, &neuma_tones::apply_text(&tone, &text, &options));
         }
-        Err(e) => {
-            out.push_str("{\"error\":");
-            crate::json::string(&mut out, &e);
-            out.push('}');
-        }
+        Err(e) => error(&mut out, &e),
+    }
+    output(&out);
+}
+
+/// Points psalm text for a tone (see [`tone_and_text`]), leaving the pointing JSON, or
+/// `{"error": …}`, in the output buffer.
+#[allow(unsafe_code)]
+#[unsafe(no_mangle)]
+pub extern "C" fn neuma_point(custom: u32) {
+    let mut out = String::new();
+    match tone_and_text(custom) {
+        Ok((tone, text)) => crate::json::pointing(&mut out, &neuma_tones::point_text(&tone, &text)),
+        Err(e) => error(&mut out, &e),
     }
     output(&out);
 }
