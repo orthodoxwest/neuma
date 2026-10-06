@@ -1,7 +1,9 @@
 //! Syllable text: style tags, special characters, centering braces and escapes.
 
 use super::LyricState;
-use crate::diag::Sink;
+use std::ops::Range;
+
+use crate::diag::{Fix, Sink};
 use crate::score::{Lyric, LyricRun, TextStyle};
 
 /// Parses one syllable's text. `offset` is the text's byte offset in the source, for spans.
@@ -58,6 +60,24 @@ pub(super) fn parse(text: &str, offset: usize, state: &mut LyricState, sink: &mu
                 };
                 let tag = &text[i + 1..i + close];
                 let after = i + close + 1;
+                track_style(state, tag, offset + i..offset + after, offset + text.len());
+                // `<sp>`, `<v>` and `<alt>` run to their closer, or to the end of the syllable.
+                let verbatim = ["sp", "v", "alt"].into_iter().find(|t| *t == tag);
+                if let Some(t) = verbatim
+                    && !text[after..].contains(&format!("</{t}>"))
+                {
+                    sink.warn(
+                        offset + i..offset + after,
+                        "gabc::unclosed-tag",
+                        format!("`<{t}>` has no `</{t}>` in its syllable, so it runs to the syllable's end"),
+                    );
+                    let end = offset + text.len();
+                    sink.fix(Fix::new(
+                        end..end,
+                        format!("</{t}>"),
+                        format!("Close `<{t}>` at the end of its syllable"),
+                    ));
+                }
                 i = match tag {
                     "i" => bump(&mut state.italic, after),
                     "/i" => drop(&mut state.italic, after),
@@ -179,6 +199,20 @@ pub(super) fn parse(text: &str, offset: usize, state: &mut LyricState, sink: &mu
         }
     }
     out.finish()
+}
+
+/// The style tags, which stay open across syllables until closed.
+const STYLE_TAGS: [&str; 6] = ["i", "b", "sc", "ul", "c", "e"];
+
+/// Keeps `state.open` in step with a style tag opening or closing.
+fn track_style(state: &mut LyricState, tag: &str, span: Range<usize>, syllable_end: usize) {
+    if let Some(name) = STYLE_TAGS.into_iter().find(|t| *t == tag) {
+        state.open.push((name, span, syllable_end));
+    } else if let Some(name) = tag.strip_prefix('/')
+        && let Some(k) = state.open.iter().rposition(|o| o.0 == name)
+    {
+        state.open.remove(k);
+    }
 }
 
 fn bump(n: &mut u8, after: usize) -> usize {

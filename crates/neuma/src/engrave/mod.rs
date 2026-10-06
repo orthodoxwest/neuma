@@ -8,7 +8,7 @@ pub(crate) mod neume;
 pub use initial::Initial;
 pub(crate) use initial::{CAP_HEIGHT, strip_tex};
 
-use crate::diag::{Diagnostic, Sink};
+use crate::diag::{Diagnostic, Fix, Sink};
 use crate::glyphs::GlyphId as G;
 use crate::notes::PauseKind;
 use crate::score::{
@@ -675,7 +675,7 @@ impl Score {
             && VowelRules::builtin(lang).is_none()
         {
             e.sink.info(
-                0..0,
+                self.header.span("language").unwrap_or(0..0),
                 "engrave::vowel-rules",
                 format!("no vowel rules for `{lang}`; centering with the Latin rules"),
             );
@@ -755,6 +755,7 @@ impl Score {
         let mut word = 0u32;
         let mut warned_face = false;
         let mut pending_break: Option<Break> = None;
+        let mut pending_span = 0..0;
         let mut nocustos = false;
 
         for (si, syl) in self.syllables.iter().enumerate() {
@@ -937,6 +938,7 @@ impl Score {
                         };
                         if open.empty {
                             pending_break = Some(brk);
+                            pending_span = b.span.clone();
                         } else {
                             let o = std::mem::replace(&mut open, Open::new());
                             if let Some(k) = e.close(o, si, first_seg, syl.word_start, space_before) {
@@ -1111,8 +1113,12 @@ impl Score {
         {
             let _ = brk;
             last.after = Break::Allowed;
-            e.sink
-                .info(0..0, "engrave::final-break", "a line break at the end of the score is dropped");
+            e.sink.info(
+                pending_span.clone(),
+                "engrave::final-break",
+                "a line break at the end of the score is dropped",
+            );
+            e.sink.fix(Fix::new(pending_span, "", "Remove the line break"));
         }
 
         let lowest = e.notes.iter().map(|n| n.position).min().unwrap_or(0);

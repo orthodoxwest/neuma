@@ -5,8 +5,10 @@ mod lyric;
 mod notes;
 mod write;
 
-use crate::diag::{Diagnostic, Sink};
-use crate::score::{Header, Score, Syllable};
+use std::ops::Range;
+
+use crate::diag::{Diagnostic, Fix, Sink};
+use crate::score::{Figure, Header, Score, Syllable};
 
 pub use write::to_gabc;
 
@@ -26,6 +28,7 @@ pub fn parse(src: &str) -> Parsed {
         body_start += '\u{feff}'.len_utf8();
     }
     let syllables = parse_body(src, body_start, &mut sink);
+    lint_clef(&syllables, &mut sink);
     // An NABC score has NABC in nearly every syllable, and a score that uses zero-width notes
     // often uses them in many places; one diagnostic says each, with how often it applies.
     for (code, all) in [
@@ -75,38 +78,64 @@ fn parse_header(src: &str, sink: &mut Sink) -> (Header, usize) {
     let Some((sep, body_start)) = find_separator(src) else {
         // No header: Gregorio requires one, but a bare body is common in snippets.
         if !src.trim().is_empty() && !src.trim_start().starts_with('(') && looks_like_header(src) {
-            sink.warn(0..0, "gabc::no-separator", "no `%%` line separates the header from the notes");
+            // The header is the run of `name: value;` lines at the top; the separator goes
+            // after it.
+            let mut end = 0;
+            for line in src.split_inclusive('\n') {
+                let l = line.trim();
+                if !(l.is_empty() || l.contains(':') && l.ends_with(';') && !l.contains('(')) {
+                    break;
+                }
+                end += line.len();
+            }
+            let insert = if end > 0 && !src[..end].ends_with('\n') { "\n%%\n" } else { "%%\n" };
+            sink.warn(
+                0..src[..end].trim_end().len(),
+                "gabc::no-separator",
+                "no `%%` line separates the header from the notes",
+            );
+            sink.fix(Fix::new(end..end, insert, "Insert the `%%` line after the header"));
         }
         return (Header::default(), 0);
     };
     let mut header = Header::default();
     let text = &src[..sep];
     let mut offset = 0;
-    let mut pending: Option<(String, String, usize)> = None;
+    // A field still open: its name, value, start, and where its value's text ends so far.
+    let mut pending: Option<(String, String, usize, usize)> = None;
     for raw in text.split_inclusive('\n') {
         let line_start = offset;
         offset += raw.len();
         let line = strip_comment(raw.trim_end_matches(['\r', '\n']));
-        if let Some((name, mut value, start)) = pending.take() {
+        if let Some((name, mut value, start, value_end)) = pending.take() {
             // Continuing a multi-line value, which ends with `;;`, or like Gregorio, at a `;` that
             // ends a line.
             if is_header_line(line) {
                 // A forgotten `;`: the next field starts here, not more of this value.
                 sink.warn(
-                    start..line_start,
+                    start..value_end,
                     "gabc::unterminated-header",
                     format!("header `{name}` has no closing `;` or `;;`"),
                 );
-                header.fields.push((name, value.trim().to_string()));
+                sink.fix(Fix::new(value_end..value_end, ";", "Insert `;`"));
+                push(&mut header, name, &value, start..value_end);
             } else {
-                let end = line.find(";;").or_else(|| line.trim_end().strip_suffix(';').map(str::len));
+                let end = line
+                    .find(";;")
+                    .map(|e| (e, e + 2))
+                    .or_else(|| line.trim_end().strip_suffix(';').map(|v| (v.len(), v.len() + 1)));
                 value.push('\n');
-                if let Some(end) = end {
+                if let Some((end, close)) = end {
                     value.push_str(&line[..end]);
-                    header.fields.push((name, value.trim().to_string()));
+                    push(&mut header, name, &value, start..line_start + close);
                 } else {
                     value.push_str(line);
-                    pending = Some((name, value, start));
+                    let value_end = if line.trim().is_empty() {
+                        value_end
+                    } else {
+                        line_start + line.trim_end().len()
+                    };
+                    pending = Some((name, value, start, value_end));
                 }
                 continue;
             }
@@ -124,49 +153,58 @@ fn parse_header(src: &str, sink: &mut Sink) -> (Header, usize) {
         };
         // A byte-order mark before the first header isn't part of its name.
         let name = line[..colon].trim().trim_start_matches('\u{feff}').trim().to_string();
+        let start = line_start + (line.len() - line.trim_start_matches(|c: char| c.is_whitespace() || c == '\u{feff}').len());
         let rest = &line[colon + 1..];
         if let Some(value) = rest.trim_end().strip_suffix(";;") {
             // A one-line value that itself contains `;`, as `to_gabc` writes it.
-            header.fields.push((name, value.trim().to_string()));
+            push(&mut header, name, value, start..line_start + colon + 1 + rest.trim_end().len());
         } else if let Some(end) = rest.find(';') {
-            header.fields.push((name, rest[..end].trim().to_string()));
+            push(&mut header, name, &rest[..end], start..line_start + colon + 1 + end + 1);
         } else {
-            pending = Some((name, rest.trim().to_string(), line_start));
+            let value_end = line_start + line.trim_end().len();
+            pending = Some((name, rest.trim().to_string(), start, value_end));
         }
     }
-    if let Some((name, value, start)) = pending {
+    if let Some((name, value, start, value_end)) = pending {
         sink.warn(
-            start..sep,
+            start..value_end,
             "gabc::unterminated-header",
             format!("header `{name}` has no closing `;` or `;;`"),
         );
-        header.fields.push((name, value.trim().to_string()));
+        sink.fix(Fix::new(value_end..value_end, ";", "Insert `;`"));
+        push(&mut header, name, &value, start..value_end);
     }
-    for (name, value) in &header.fields {
+    for ((name, value), span) in header.fields.iter().zip(&header.spans) {
         let lower = name.to_ascii_lowercase();
+        let span = span.clone();
         if lower.starts_with("def-m") {
             sink.info(
-                0..0,
+                span,
                 "gabc::macro-ignored",
                 format!("`{name}` defines TeX, which neuma doesn't run"),
             );
         } else if lower == "oriscus-orientation" && value == "legacy" {
             sink.warn(
-                0..0,
+                span,
                 "gabc::legacy-oriscus",
                 "legacy oriscus orientation isn't supported; using the default rules",
             );
         } else if lower == "staff-lines" && value.trim() != "4" {
             sink.warn(
-                0..0,
+                span,
                 "gabc::staff-lines",
                 format!("only four-line staves are supported; `staff-lines: {value}` is drawn on four lines"),
             );
         } else if lower == "nabc-lines" {
-            sink.warn(0..0, "gabc::nabc", "NABC notation isn't supported and is skipped");
+            sink.warn(span, "gabc::nabc", "NABC notation isn't supported and is skipped");
         }
     }
     (header, body_start)
+}
+
+fn push(header: &mut Header, name: String, value: &str, span: Range<usize>) {
+    header.fields.push((name, value.trim().to_string()));
+    header.spans.push(span);
 }
 
 /// A `name:` line, named as Gregorio names header fields.
@@ -198,6 +236,8 @@ pub(crate) struct LyricState {
     pub elision: u8,
     pub nlba: bool,
     pub euouae: bool,
+    /// Style tags not yet closed: the tag, its span, and where its syllable's text ends.
+    pub open: Vec<(&'static str, Range<usize>, usize)>,
 }
 
 fn parse_body(src: &str, start: usize, sink: &mut Sink) -> Vec<Syllable> {
@@ -253,11 +293,9 @@ fn parse_body(src: &str, start: usize, sink: &mut Sink) -> Vec<Syllable> {
                 let lyric = lyric::parse(&trimmed, text_offset, &mut state, sink);
                 let notation = notes::parse(notes_src, start + i + 1, sink);
                 if close >= body.len() {
-                    sink.error(
-                        start + i..start + body.len(),
-                        "gabc::unclosed-notes",
-                        "notes opened with `(` never close",
-                    );
+                    let end = start + body.trim_end().len();
+                    sink.error(start + i..end, "gabc::unclosed-notes", "notes opened with `(` never close");
+                    sink.fix(Fix::new(end..end, ")", "Insert `)`"));
                 }
                 let word_start = saw_space || syllables.is_empty();
                 syllables.push(Syllable {
@@ -293,6 +331,18 @@ fn parse_body(src: &str, start: usize, sink: &mut Sink) -> Vec<Syllable> {
             }
         }
     }
+    for (tag, span, end) in std::mem::take(&mut state.open) {
+        sink.warn(
+            span,
+            "gabc::unclosed-tag",
+            format!("`<{tag}>` is never closed, so it styles the rest of the score"),
+        );
+        sink.fix(Fix::new(
+            end..end,
+            format!("</{tag}>"),
+            format!("Close `<{tag}>` at the end of its syllable"),
+        ));
+    }
     if !text.trim().is_empty() {
         sink.warn(
             start + text_start..start + body.len(),
@@ -325,6 +375,26 @@ fn find_close(body: &str, from: usize) -> usize {
     body[from..].find(')').map_or(body.len(), |n| from + n)
 }
 
+/// Notes before any clef are read in `c4`, as a missing clef is usually forgotten.
+fn lint_clef(syllables: &[Syllable], sink: &mut Sink) {
+    for f in syllables.iter().flat_map(|s| &s.notation) {
+        match f {
+            Figure::Clef(_) => return,
+            Figure::Note(n) => {
+                sink.warn(
+                    n.span.clone(),
+                    "gabc::no-clef",
+                    "no clef before the first note; the notes are read in a do clef on the fourth line (`c4`)",
+                );
+                let at = syllables[0].span.start;
+                sink.fix(Fix::new(at..at, "(c4) ", "Insert a `c4` clef"));
+                return;
+            }
+            _ => {}
+        }
+    }
+}
+
 fn lint_hyphens(text: &str, offset: usize, sink: &mut Sink) {
     // `<sp>-</sp>` is Gregorio's zero-width hyphen and is fine.
     if text.starts_with('-') {
@@ -333,6 +403,7 @@ fn lint_hyphens(text: &str, offset: usize, sink: &mut Sink) {
             "gabc::hyphen-in-syllable",
             "a hyphen at the start of a syllable prints in addition to the hyphen the engine draws; remove it",
         );
+        sink.fix(Fix::new(offset..offset + 1, "", "Remove the hyphen"));
     }
     if text.ends_with('-') && !text.ends_with("<sp>-</sp>") && !text.ends_with("$-") {
         let end = offset + text.len();
@@ -341,6 +412,7 @@ fn lint_hyphens(text: &str, offset: usize, sink: &mut Sink) {
             "gabc::hyphen-in-syllable",
             "a hyphen at the end of a syllable prints in addition to the hyphen the engine draws; remove it",
         );
+        sink.fix(Fix::new(end - 1..end, "", "Remove the hyphen"));
     }
 }
 

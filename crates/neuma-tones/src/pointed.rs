@@ -168,6 +168,7 @@ fn diag(diags: &mut Vec<Diagnostic>, severity: Severity, span: Range<usize>, cod
         span,
         code,
         message: message.to_string(),
+        fix: None,
     });
 }
 

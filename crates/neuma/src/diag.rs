@@ -1,4 +1,6 @@
-//! Diagnostics: every problem the engine finds, with a code, a severity and a source span.
+//! Diagnostics: every problem the engine finds, with a code, a severity and a source span,
+//! and an edit that fixes it when there is only one sensible edit. `docs/diagnostics.md`
+//! lists every code.
 
 use std::fmt;
 use std::ops::Range;
@@ -22,6 +24,35 @@ pub struct Diagnostic {
     /// A stable code such as `gabc::hyphen-in-syllable`.
     pub code: &'static str,
     pub message: String,
+    /// An edit that fixes the problem, where there is only one sensible edit.
+    pub fix: Option<Fix>,
+}
+
+/// A source edit: replace the bytes in `span` (empty to insert) with `replacement`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Fix {
+    /// Byte range in the source.
+    pub span: Range<usize>,
+    pub replacement: String,
+    /// What the edit does, for a quick-fix menu: "Insert `)`".
+    pub title: String,
+}
+
+impl Fix {
+    pub fn new(span: Range<usize>, replacement: impl Into<String>, title: impl Into<String>) -> Fix {
+        Fix {
+            span,
+            replacement: replacement.into(),
+            title: title.into(),
+        }
+    }
+
+    /// `src` with the fix applied. `None` if the span isn't on character boundaries in `src`.
+    pub fn apply(&self, src: &str) -> Option<String> {
+        let before = src.get(..self.span.start)?;
+        let after = src.get(self.span.end..)?;
+        Some([before, &self.replacement, after].concat())
+    }
 }
 
 impl fmt::Display for Diagnostic {
@@ -52,7 +83,14 @@ impl Sink {
             span,
             code,
             message: message.into(),
+            fix: None,
         });
+    }
+    /// Attaches a fix to the diagnostic pushed last.
+    pub fn fix(&mut self, fix: Fix) {
+        if let Some(d) = self.items.last_mut() {
+            d.fix = Some(fix);
+        }
     }
     pub fn info(&mut self, span: Range<usize>, code: &'static str, message: impl Into<String>) {
         self.push(Severity::Info, span, code, message);

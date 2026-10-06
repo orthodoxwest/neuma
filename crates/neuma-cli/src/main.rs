@@ -192,6 +192,9 @@ fn main() -> ExitCode {
             for d in parsed.diagnostics.iter().chain(&engraving.diagnostics) {
                 let (line, col) = neuma::diag::line_col(&src, d.span.start);
                 out!("{line}:{col}: {d}");
+                if let Some(fix) = &d.fix {
+                    out!("    fix: {}", fix.title);
+                }
                 errors |= d.severity == Severity::Error;
             }
             if errors { ExitCode::FAILURE } else { ExitCode::SUCCESS }

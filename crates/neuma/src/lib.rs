@@ -24,7 +24,7 @@ pub mod svg;
 pub mod text;
 pub mod vowel;
 
-pub use diag::{Diagnostic, Severity};
+pub use diag::{Diagnostic, Fix, Severity};
 pub use display::{DisplayList, Item, LineBox, NoteRef, TextRole, TextRun};
 pub use engrave::{AlterationScope, CustosPolicy, Engraving, Initial, Ink, StyleOptions};
 #[cfg(feature = "fonts")]
