@@ -168,6 +168,8 @@ pub(crate) struct LyricBox {
     pub width: f32,
     /// The syllable ends its word, so no hyphen follows it.
     pub word_end: bool,
+    /// The text ends with a hyphen of its own (`Giê-(f)su(g)`), so none is added after it.
+    pub hyphenated: bool,
     pub syllable: u32,
 }
 
@@ -1005,6 +1007,7 @@ impl Score {
                     left: anchor - center,
                     width,
                     word_end: next_word,
+                    hyphenated: text.plain().ends_with(['-', '\u{2010}']),
                     syllable: si,
                 });
             }

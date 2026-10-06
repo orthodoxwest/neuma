@@ -128,6 +128,8 @@ struct Cursor {
     ink_right: Option<f32>,
     lyric_right: Option<f32>,
     word_continues: bool,
+    /// The last text ends with a hyphen of its own.
+    own_hyphen: bool,
     x: f32,
 }
 
@@ -159,6 +161,11 @@ fn place(cur: &Cursor, seg: &Segment, hyphen: f32, word_space: f32, line_start: 
     let mut touching = false;
     if let Some(t) = &seg.lyric {
         match cur.lyric_right {
+            // A text with its own hyphen may touch the next one, and needs no other.
+            Some(r) if cur.word_continues && cur.own_hyphen => {
+                x = x.max(r - t.left);
+                touching = x + t.left - r <= HYPHEN_MIN_GAP;
+            }
             Some(r) if cur.word_continues => {
                 // Within a word the texts may touch. If the notes hold them apart, a hyphen
                 // follows the first text, and the second must clear it.
@@ -197,6 +204,7 @@ fn advance(cur: &Cursor, seg: &Segment, x: f32) -> Cursor {
     if let Some(t) = &seg.lyric {
         next.lyric_right = Some(x + t.left + t.width);
         next.word_continues = !t.word_end;
+        next.own_hyphen = t.hyphenated;
     }
     next
 }
@@ -249,6 +257,7 @@ impl Engraving {
             ink_right: None,
             lyric_right: None,
             word_continues: false,
+            own_hyphen: false,
             x: start,
         };
         let mut xs = Vec::with_capacity(last - first + 1);
@@ -281,6 +290,7 @@ impl Engraving {
     /// custos.
     fn natural(&self, cur: &Cursor, mut right: f32, ink_end: f32, last: usize) -> f32 {
         if cur.word_continues
+            && !cur.own_hyphen
             && let Some(r) = cur.lyric_right
         {
             right = right.max(r + self.hyphen);
@@ -364,6 +374,7 @@ impl Engraving {
                     ink_right: None,
                     lyric_right: None,
                     word_continues: false,
+                    own_hyphen: false,
                     x: start,
                 };
                 let mut right = 0.0f32;
@@ -495,7 +506,7 @@ impl Engraving {
                     {
                         hyphens.push(r + self.hyphen / 2.0);
                     }
-                    prev_lyric = Some((l + t.width, !t.word_end));
+                    prev_lyric = Some((l + t.width, !t.word_end && !t.hyphenated));
                 }
             }
             let hyphen = match prev_lyric {

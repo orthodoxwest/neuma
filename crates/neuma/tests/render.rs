@@ -654,3 +654,14 @@ fn notes_keep_gregorios_space_between_syllables_and_words() {
     assert!((gaps("(c4) i(g)i(g)") - 1.67).abs() < 0.01);
     assert!((gaps("(c4) i(g) i(g)") - 2.0).abs() < 0.01);
 }
+
+#[test]
+fn a_syllable_with_its_own_hyphen_gets_no_other() {
+    // As in Gregorio, "Giê-su" written with the hyphen keeps that one only, inside a line and
+    // at its end.
+    let t = texts("(c4) Giê-(ghghgh)su(g) Vua(g)", 2000.0, &LayoutOptions::default());
+    assert!(t.iter().all(|t| t.3 != TextRole::Hyphen), "{t:?}");
+    let src = format!("(c4) {} (::)", ["Ma-(g)đa-(h)le-(g)na(h)"; 12].join(" "));
+    let t = texts(&src, 300.0, &LayoutOptions::default());
+    assert!(t.iter().all(|t| t.3 != TextRole::Hyphen), "{t:?}");
+}
