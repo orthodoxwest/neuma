@@ -460,8 +460,9 @@ fn max_lines_keeps_the_first_lines_as_broken() {
 
 #[test]
 fn clefs_fit_their_lines() {
-    // A do clef on the top line rises above the staff; its line makes room for it.
-    for src in ["(c4) a(f) b(g)"] {
+    // A do clef on the top line rises above the staff; its line makes room for it. A score of
+    // only a clef draws its staff, as Gregorio does, rather than nothing.
+    for src in ["(c4) a(f) b(g)", "(c4)", "name: a;\n%%\n(f3) ()"] {
         let eng = parse(src).score.engrave(&ApproxMeasure, &NO_INITIAL);
         let list = eng.layout(300.0, &LayoutOptions::default()).display();
         assert_eq!(list.lines.len(), 1, "{src}");

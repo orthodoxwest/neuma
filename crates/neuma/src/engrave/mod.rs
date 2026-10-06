@@ -1001,6 +1001,11 @@ impl Score {
                 });
             }
         }
+        // A score of only a clef still draws its staff and clef, as Gregorio does.
+        if e.segments.is_empty() && e.initial_clef.is_some() {
+            let last = self.syllables.len().saturating_sub(1) as u32;
+            e.close(Open::new(), last, true, true, 0.0);
+        }
         if let Some(brk) = pending_break
             && let Some(last) = e.segments.last_mut()
         {
