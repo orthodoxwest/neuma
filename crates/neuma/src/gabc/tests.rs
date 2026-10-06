@@ -375,3 +375,19 @@ fn comma_digit_is_a_dominican_bar() {
     assert!(p.diagnostics.iter().any(|d| d.code == "gabc::dominican-bar"));
     assert!(parse("(c4) a(f;3)").diagnostics.is_empty());
 }
+
+#[test]
+fn episema_tuning_is_only_a_note() {
+    // From GregoBase: `[oh:h]` after an episema, `[ll:1]` on a stem, and an `[oh:h{]…[oh}]` block.
+    let p = parse("(c4) a(d_[oh:h]e_[uh:l] e[ll:1]d ix[oh:h{]g_d//f_eg.[oh}])");
+    assert!(!p.diagnostics.is_empty());
+    assert!(
+        p.diagnostics
+            .iter()
+            .all(|d| d.code == "gabc::tuning-ignored" && d.severity == crate::diag::Severity::Info),
+        "{:?}",
+        p.diagnostics
+    );
+    let p = parse("(c4) a(g[oll:1]h[nv:x])");
+    assert_eq!(p.diagnostics.iter().filter(|d| d.code == "gabc::unsupported-tag").count(), 2);
+}

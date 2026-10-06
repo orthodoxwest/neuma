@@ -280,7 +280,8 @@ tokens real AWRV material uses and moves rows between E1 and E2.
 | `'` `'0` `'1` vertical episema | E1 |
 | `+` custos at a pitch, `z0` automatic custos | E1 |
 | `[nocustos]` | E1 |
-| `[ll:0/1]`, `[oll:]`, `[ull:]`, `[oh:]`, `[uh:]`, `[shape:]`, `[cs:]`, `[cn:]`, braces (`[ob:]` etc.), `[nv:]` `[gv:]` `[ev:]`, slurs | U |
+| `[ll:0/1]` stem and ledger hints, `[oh:]` `[uh:]` episema tuning | A (default placement, with an info note) |
+| `[oll:]`, `[ull:]`, `[shape:]`, `[cs:]`, `[cn:]`, braces (`[ob:]` etc.), `[nv:]` `[gv:]` `[ev:]`, slurs | U |
 
 ### 6.4 Grouping, spacing, bars, clefs and breaks
 

@@ -281,11 +281,21 @@ impl Parser<'_, '_> {
             self.out.push(Figure::NoCustos);
         } else {
             let name = inner.split([':', '{', '}']).next().unwrap_or(inner);
-            self.sink.warn(
-                self.span(start),
-                "gabc::unsupported-tag",
-                format!("`[{name}:…]` isn't supported and is skipped"),
-            );
+            if matches!(name, "oh" | "uh" | "ll") {
+                // Fine-tuning of where an episema sits or how long a stem is: the default
+                // placement stands, so it's worth a note rather than a warning.
+                self.sink.info(
+                    self.span(start),
+                    "gabc::tuning-ignored",
+                    format!("`[{name}:…]` fine-tunes placement; the default placement is used"),
+                );
+            } else {
+                self.sink.warn(
+                    self.span(start),
+                    "gabc::unsupported-tag",
+                    format!("`[{name}:…]` isn't supported and is skipped"),
+                );
+            }
         }
     }
 
