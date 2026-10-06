@@ -48,6 +48,10 @@ fn main() -> ExitCode {
         eprintln!("{USAGE}");
         return ExitCode::from(2);
     };
+    // `book` has flags of its own; the rendering flags below don't apply to it.
+    if cmd == "book" {
+        return book_command(&args[1..]);
+    }
     let mut width = 800.0f32;
     let mut scale = LayoutOptions::default().scale;
     let mut style = StyleOptions::default();
@@ -107,9 +111,6 @@ fn main() -> ExitCode {
             },
             f => files.push(f.to_string()),
         }
-    }
-    if cmd == "book" {
-        return book_command(&args[1..]);
     }
     if cmd == "tones" {
         for t in neuma_tones::Tone::builtin() {
@@ -300,6 +301,10 @@ fn book_command(args: &[String]) -> ExitCode {
             "-o" | "--output" => pdf_out = it.next().cloned(),
             "--svg" => svg_dir = it.next().cloned(),
             "--text-as-paths" => paths = true,
+            "-h" | "--help" => {
+                out!("{USAGE}");
+                return ExitCode::SUCCESS;
+            }
             f if file.is_none() && !f.starts_with('-') => file = Some(f.to_string()),
             other => {
                 eprintln!("neuma: book: unexpected `{other}`\n{USAGE}");
