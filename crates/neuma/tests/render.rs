@@ -786,3 +786,15 @@ fn an_end_of_line_custos_keeps_gregorios_gap() {
     let gap = (custos - first_line_end) / opts.scale;
     assert!(gap > 1.5 && gap < 1.8, "{gap}");
 }
+
+#[test]
+fn versicle_signs_are_drawn_heavier() {
+    // GregorioTeX's ℣ and ℟ are heavier than a text face's; the SVG strokes them.
+    let eng = parse("(c4) <sp>V/</sp> Ve(g)ni(h) <sp>R/</sp> Do(g)")
+        .score
+        .engrave(&ApproxMeasure, &NO_INITIAL);
+    let svg = eng.layout(400.0, &LayoutOptions::default()).svg(&SvgOptions::default());
+    assert!(svg.contains(r#"class="neuma-rubric neuma-sign">℣"#), "{svg}");
+    assert!(svg.contains(r#"class="neuma-rubric neuma-sign">℟"#), "{svg}");
+    assert!(svg.contains(".neuma .neuma-sign{stroke:currentColor;stroke-width:.04em}"));
+}
