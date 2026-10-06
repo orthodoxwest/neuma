@@ -452,13 +452,15 @@ impl Engraving {
             let first = lines.first()?;
             let last = &lines[init.lines.min(lines.len()) - 1];
             let cap = (last.staff + 3.0) - (first.staff - 3.0);
-            let size = cap / CAP_HEIGHT;
+            let mut size = cap / CAP_HEIGHT;
+            if init.advance_em > 0.0 {
+                size = size.min(column / init.advance_em);
+            }
             let width = init.advance_em * size;
             let baseline = last.staff + 3.0;
             height = height.max(baseline + init.descent * size);
             Some(PlacedInitial {
-                // Centered in the column; wider than it only on the first pass.
-                x: ((column - width) / 2.0).max(0.0),
+                x: (column - width) / 2.0,
                 baseline,
                 size,
                 column,
