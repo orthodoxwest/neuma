@@ -536,6 +536,65 @@ fn a_clef_change_right_after_the_opening_clef_shows_both() {
     assert_eq!(clefs("a(c4g)"), 1);
 }
 
+/// The lyric and hyphen texts of a layout, with their left edges and sizes, in drawing order.
+fn texts(src: &str, width: f32, opts: &LayoutOptions) -> Vec<(String, f32, f32, TextRole)> {
+    let eng = parse(src).score.engrave(&ApproxMeasure, &NO_INITIAL);
+    eng.layout(width, opts)
+        .display()
+        .items
+        .iter()
+        .filter_map(|i| match i {
+            Item::Text { runs, x, size, role, .. } => Some((runs.iter().map(|r| r.text.as_str()).collect(), *x, *size, *role)),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn hyphens_follow_the_text_and_only_where_syllables_part() {
+    use neuma::TextMeasure;
+    let opts = LayoutOptions::default();
+    // Syllables whose texts touch need no hyphen, as in Gregorio's "Dómi-nus".
+    let t = texts("(c4) Dó(g)mi(g)nus(g)", 2000.0, &opts);
+    assert!(t.iter().all(|t| t.3 != TextRole::Hyphen), "{t:?}");
+    // A melisma holds the next syllable away: the hyphen sits right after the first text.
+    let t = texts("(c4) a(ghghghgh)b(g)", 2000.0, &opts);
+    let hyphens: Vec<_> = t.iter().filter(|t| t.3 == TextRole::Hyphen).collect();
+    assert_eq!(hyphens.len(), 1, "{t:?}");
+    let a = t.iter().find(|t| t.0 == "a").unwrap();
+    let a_right = a.1 + ApproxMeasure.advance("a", Default::default()) * a.2;
+    assert!((hyphens[0].1 - a_right).abs() < 0.01, "{t:?}");
+    let b = t.iter().find(|t| t.0 == "b").unwrap();
+    let hyphen_right = hyphens[0].1 + ApproxMeasure.advance("-", Default::default()) * a.2;
+    assert!(b.1 >= hyphen_right - 0.01, "{t:?}");
+}
+
+#[test]
+fn touching_syllables_stay_together_on_a_justified_line() {
+    // Justifying a line widens the gaps between words, not between syllables whose texts touch.
+    let src = format!("(c4) {} (::)", ["Dó(g)mi(g)nus(g)"; 12].join(" "));
+    let t = texts(&src, 500.0, &LayoutOptions::default());
+    assert!(t.iter().all(|t| t.3 != TextRole::Hyphen), "{t:?}");
+}
+
+#[test]
+fn a_hyphen_ends_a_line_inside_a_word() {
+    use neuma::TextMeasure;
+    let src = format!("(c4) {} (::)", ["la(g)ta(h)"; 30].join("-").replace("-", ""));
+    let t = texts(&src, 300.0, &LayoutOptions::default());
+    // Every hyphen sits right after a syllable's text, the one ending each line included.
+    let rights: Vec<f32> = t
+        .iter()
+        .filter(|t| t.3 == TextRole::Lyric)
+        .map(|l| l.1 + ApproxMeasure.advance(&l.0, Default::default()) * l.2)
+        .collect();
+    let hyphens: Vec<f32> = t.iter().filter(|t| t.3 == TextRole::Hyphen).map(|h| h.1).collect();
+    assert!(hyphens.len() >= 3, "{t:?}");
+    for h in hyphens {
+        assert!(rights.iter().any(|r| (h - r).abs() < 0.01), "{h} {t:?}");
+    }
+}
+
 #[test]
 fn a_preview_draws_its_staves_as_wide_as_the_whole_score() {
     // The second line holds a word too wide for the column, which widens the layout; the
