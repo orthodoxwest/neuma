@@ -2,7 +2,7 @@
 
 use crate::engrave::{Ink, Mark, Piece, clef_pieces, custos_piece};
 use crate::glyphs::UNITS_PER_SPACE;
-use crate::layout::Layout;
+use crate::layout::{ANNOTATION_GAP, Layout};
 use crate::score::{LyricRun, TextStyle};
 
 /// The note a piece of ink belongs to, by score-wide note index.
@@ -123,9 +123,9 @@ impl Layout<'_> {
             for k in [-3.0f32, -1.0, 1.0, 3.0] {
                 let y = line.staff + k - staff_weight / 2.0;
                 items.push(Item::Rect {
-                    x: 0.0,
+                    x: line.indent * s,
                     y: y * s,
-                    w: self.width * s,
+                    w: (self.width - line.indent) * s,
                     h: staff_weight * s,
                     role: Ink::Staff,
                     note: None,
@@ -134,7 +134,7 @@ impl Layout<'_> {
             if let Some(clef) = &line.clef {
                 let (pieces, _) = clef_pieces(clef, 0.0);
                 for p in &pieces {
-                    push(&mut items, p, 0.0, line.staff, s);
+                    push(&mut items, p, line.indent, line.staff, s);
                 }
             }
             for (i, seg) in eng.segments[line.first..=line.last].iter().enumerate() {
@@ -188,6 +188,35 @@ impl Layout<'_> {
             if let Some((p, x)) = line.custos {
                 let (piece, _) = custos_piece(p, x);
                 push(&mut items, &piece, 0.0, line.staff, s);
+            }
+        }
+        if let (Some(init), Some(placed), Some(first)) = (&eng.initial, &self.initial, self.lines.first()) {
+            let column = placed.column;
+            items.push(Item::Text {
+                x: placed.x * s,
+                baseline: placed.baseline * s,
+                size: placed.size * s,
+                runs: vec![TextRun {
+                    text: init.text.clone(),
+                    style: TextStyle::REGULAR,
+                }],
+                role: TextRole::Initial,
+                syllable: Some(init.syllable),
+            });
+            let count = init.annotations.len();
+            for (i, (text, w)) in init.annotations.iter().enumerate() {
+                let above = (count - 1 - i) as f32 * init.annotation_size * 1.1;
+                items.push(Item::Text {
+                    x: (column - w) / 2.0 * s,
+                    baseline: (first.staff - 3.0 - init.accent_room - ANNOTATION_GAP - above) * s,
+                    size: init.annotation_size * s,
+                    runs: vec![TextRun {
+                        text: text.clone(),
+                        style: TextStyle::REGULAR,
+                    }],
+                    role: TextRole::Annotation,
+                    syllable: None,
+                });
             }
         }
         DisplayList {

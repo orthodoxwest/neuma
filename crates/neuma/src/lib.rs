@@ -21,7 +21,7 @@ pub mod vowel;
 
 pub use diag::{Diagnostic, Severity};
 pub use display::{DisplayList, Item, LineBox, NoteRef, TextRole, TextRun};
-pub use engrave::{AlterationScope, CustosPolicy, Engraving, Ink, StyleOptions};
+pub use engrave::{AlterationScope, CustosPolicy, Engraving, Initial, Ink, StyleOptions};
 pub use gabc::{Parsed, parse, to_gabc};
 pub use glyphs::{GlyphOutline, glyph_outline};
 pub use layout::{LastLine, Layout, LayoutOptions};
