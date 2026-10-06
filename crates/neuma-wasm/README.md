@@ -111,7 +111,9 @@ const lit = chant.elementsAt(textarea.selectionStart); // what to highlight for 
   `<g transform="translate(0 top)">`. A line that only moved keeps its `svg` string, and with
   `ids: false` (no `data-note` or `data-syllable`) so does a line after notes added above it,
   so an editor can replace only the lines whose string changed. On a long score, replacing
-  the whole SVG costs the browser far more than the engine's work.
+  the whole SVG costs the browser far more than the engine's work. Giving each line its own
+  `<svg>` (`<use>` finds the glyphs in one shared `<defs>` anywhere in the page) keeps the
+  browser's work to the changed line as well; the example below does.
 - **`chant.sourceAt(x, y)`** returns what is under a point of the last layout, most specific
   first: a notehead, a bar (within half a staff space), a syllable's box, or the nearest
   syllable on that line; `null` outside the lines. The result is
@@ -122,6 +124,13 @@ const lit = chant.elementsAt(textarea.selectionStart); // what to highlight for 
 - **`chant.elementsAt(caret)`** returns what to highlight for a caret: the notes and bar
   whose source holds it, then a box per line for its syllable. A caret just after a note,
   as after typing it, counts as on it. Pass `{ units: "utf8" }` to give a byte offset.
+
+[`examples/editor.html`](examples/editor.html) is a dependency-free editor built on these: a textarea, the score
+redrawn on each keystroke (coalesced to animation frames, patching only changed lines),
+diagnostics underlined in the source with their messages on hover and one-click fixes,
+click-to-select from the score, and the caret's note, bar and syllable highlighted. Serve
+the repository root over HTTP and open `crates/neuma-wasm/examples/editor.html` after
+building `dist/neuma.mjs`.
 
 ### CodeMirror 6
 
