@@ -393,8 +393,9 @@ pub(crate) fn custos_piece(position: StaffPosition, left: f32) -> (Piece, f32) {
     ink_at(glyph, left, -(position as f32), Ink::Custos, None)
 }
 
-/// The distance between the two bars of a `::`, measured from GregorioTeX's output.
-const FINALIS_SEP: f32 = 0.94;
+/// The distance between the centres of the two bars of a `::`: GregorioTeX's
+/// `divisiofinalissep` (0.109 cm, 0.76 staff spaces) between them, plus a bar's width.
+const FINALIS_SEP: f32 = 0.76 + STEM;
 
 fn bar_pieces(kind: BarKind, high: bool, left: f32) -> (Vec<Piece>, f32) {
     let shift = if high { -2 } else { 0 };
@@ -428,7 +429,7 @@ fn bar_pieces(kind: BarKind, high: bool, left: f32) -> (Vec<Piece>, f32) {
             (out, STEM)
         }
         BarKind::Finalis => {
-            // Two thin bars, as GregorioTeX draws `::`, their centres 0.94 staff spaces apart.
+            // Two thin bars, as GregorioTeX draws `::`.
             let second = left + FINALIS_SEP;
             (vec![bar(3, -3), rect(second, 3 + shift, -3 + shift, Ink::Bar)], FINALIS_SEP + STEM)
         }
