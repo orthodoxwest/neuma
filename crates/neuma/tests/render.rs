@@ -219,6 +219,23 @@ fn long_melismas_break_between_note_groups() {
 }
 
 #[test]
+fn one_syllable_nlba_keeps_its_melisma_whole() {
+    // The region holds only this syllable, so no other syllable carries the no-break mark.
+    let src = "(c4) <nlba>To(g/h/g/h/g/h/g/h/g/h/g/h/g/h/g/h/g/h)</nlba> (::)";
+    // Its line: the clef, the whole melisma, and the final bar on a line of its own.
+    let eng = parse(src).score.engrave(&ApproxMeasure, &NO_INITIAL);
+    assert_eq!(eng.layout(100.0, &LayoutOptions::default()).line_count(), 2);
+    // Without the region the same melisma breaks.
+    let eng = parse("(c4) To(g/h/g/h/g/h/g/h/g/h/g/h/g/h/g/h/g/h) (::)")
+        .score
+        .engrave(&ApproxMeasure, &NO_INITIAL);
+    assert_eq!(eng.layout(100.0, &LayoutOptions::default()).line_count(), 3);
+    // And the region survives a round trip through GABC.
+    let gabc = parse(src).score.to_gabc();
+    assert!(gabc.contains("<nlba>To("), "{gabc}");
+}
+
+#[test]
 fn forced_breaks_keep_lines_balanced() {
     // Short syllables before a written break share a line rather than taking one each.
     assert_eq!(line_texts("(c4) A(g) B(h) C(gz) D(h)", 400.0), [vec!["A", "B", "C"], vec!["D"]]);

@@ -265,6 +265,7 @@ fn parse_body(src: &str, start: usize, sink: &mut Sink) -> Vec<Syllable> {
                     notation,
                     span: syl_start..start + (close + 1).min(body.len()),
                     no_break_before: nlba_before && state.nlba,
+                    no_break_within: state.nlba,
                     euouae: state.euouae,
                 });
                 text.clear();

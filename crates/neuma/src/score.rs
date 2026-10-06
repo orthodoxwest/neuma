@@ -45,6 +45,9 @@ pub struct Syllable {
     pub span: Range<usize>,
     /// The syllable lies inside `<nlba>…</nlba>`: no line break before it.
     pub no_break_before: bool,
+    /// The syllable's notes lie inside `<nlba>…</nlba>`: no line break among them, even when
+    /// the region holds only this syllable.
+    pub no_break_within: bool,
     /// Inside `<eu>…</eu>`.
     pub euouae: bool,
 }

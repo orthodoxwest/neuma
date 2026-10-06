@@ -728,7 +728,8 @@ impl Score {
             let mut seg_ids: Vec<usize> = Vec::new();
             let only_clef = syl.text.is_empty() && syl.notation.iter().all(|f| matches!(f, Figure::Clef(_) | Figure::Space(_)));
             let total_notes = syl.notation.iter().filter(|f| matches!(f, Figure::Note(_))).count();
-            let glued = syl.no_break_before || self.syllables.get(si as usize + 1).is_some_and(|s| s.no_break_before);
+            let glued =
+                syl.no_break_within || syl.no_break_before || self.syllables.get(si as usize + 1).is_some_and(|s| s.no_break_before);
             let mut notes_before = 0usize;
             // A break between note groups is allowed only inside a long melisma, away from its ends.
             let melisma_break = |notes_before: usize| {
