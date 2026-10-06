@@ -309,7 +309,12 @@ impl<'a> Fonts<'a> {
     }
 
     pub fn has_char(&self, c: char) -> bool {
-        match self.face(REGULAR) {
+        self.has_char_in(c, false, false)
+    }
+
+    /// Whether the face text in this style is drawn in has a glyph for `c`.
+    pub fn has_char_in(&self, c: char, italic: bool, bold: bool) -> bool {
+        match self.face(self.resolve(italic, bold)) {
             Some(f) => f.has_char(c),
             None => winansi(c).is_some(),
         }

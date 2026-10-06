@@ -68,7 +68,7 @@ pub fn markup(src: &str, base: Style, fonts: &Fonts) -> Vec<Span> {
         let mut matched_sign = false;
         for (sign, glyph, fallback) in [("V/", "℣", "V."), ("R/", "℟", "R.")] {
             if let Some(r) = rest.strip_prefix(sign) {
-                let text = if fonts.has_char(glyph.chars().next().unwrap_or(' ')) {
+                let text = if fonts.has_char_in(glyph.chars().next().unwrap_or(' '), st.italic, st.bold) {
                     glyph
                 } else {
                     fallback
@@ -327,6 +327,26 @@ mod tests {
             &f,
         );
         assert_eq!(s.len(), 1);
+    }
+
+    #[test]
+    fn signs_fall_back_in_faces_without_them() {
+        // EB Garamond 12 Italic has no ℣, though the regular face does.
+        let Some(files) = crate::font::FontFiles::find_default() else {
+            return;
+        };
+        let f = Fonts::new(&files);
+        let italic = Style {
+            italic: true,
+            ..Style::default()
+        };
+        let text: String = markup("V/ Let us pray.", italic, &f).iter().map(|s| s.text.as_str()).collect();
+        let expected = if f.has_char_in('℣', true, false) {
+            "℣ Let us pray."
+        } else {
+            "V. Let us pray."
+        };
+        assert_eq!(text, expected);
     }
 
     fn para(text: &str, align: Align, dropcap: bool) -> Para {
