@@ -290,3 +290,60 @@ fn repeated_underscores_extend_the_episema() {
     };
     assert_eq!(below("(c4) a(fgf__0)"), [false, true, true]);
 }
+
+#[test]
+fn parentheses_in_verbatim_and_alt_text_are_lyric() {
+    // From GregoBase: an editorial note in parentheses set with `<v>`.
+    let p = parse("(c4) <i><v>(</v>Non repetitur.<v>)</v></i>(d) A(g)\n");
+    let s = &p.score.syllables;
+    assert_eq!(s.len(), 3);
+    assert_eq!(s[1].text.plain(), "(Non repetitur.)");
+    assert!(s[1].text.runs[0].style.italic);
+    assert!(p.diagnostics.is_empty(), "{:?}", p.diagnostics);
+    let p = parse("(c4) A<alt>(octava)</alt>(g) B(h)\n");
+    assert_eq!(p.score.syllables.len(), 3);
+    assert_eq!(p.score.syllables[1].text.plain(), "A");
+    // An unclosed tag doesn't swallow the rest of the score.
+    let p = parse("(c4) A<v>(g) B(h)\n");
+    assert_eq!(p.score.syllables.len(), 3);
+}
+
+#[test]
+fn header_missing_semicolon_ends_at_next_field() {
+    // From GregoBase: `name` lacks its `;`, which hid every field after it.
+    let p = parse("initial-style: 1;\nname: Angelus Domini\nbook: Antiphonale, p. 15;\nannotation: 1f;\n%%\n(c4) A(g)\n");
+    assert_eq!(p.score.header.get("name"), Some("Angelus Domini"));
+    assert_eq!(p.score.header.get("book"), Some("Antiphonale, p. 15"));
+    assert_eq!(p.score.header.get("annotation"), Some("1f"));
+    let n = p.diagnostics.iter().filter(|d| d.code == "gabc::unterminated-header").count();
+    assert_eq!(n, 1);
+    // Gregorio also ends a multi-line value at a `;` that ends a line.
+    let p = parse("commentary: one\ntwo;\nmode: 1;\n%%\n(c4) A(g)\n");
+    assert_eq!(p.score.header.get("commentary"), Some("one\ntwo"));
+    assert_eq!(p.score.header.get("mode"), Some("1"));
+    assert!(p.diagnostics.is_empty(), "{:?}", p.diagnostics);
+}
+
+#[test]
+fn notes_with_gregorio_6_syntax() {
+    // `//[-0.5]` is a cut and then a scaled space, not a medium space and a tag.
+    let f = notes("(c4) a(jH0//[-0.5]{ix}F0hi)");
+    let spaces: Vec<Space> = f
+        .iter()
+        .filter_map(|f| if let Figure::Space(s) = f { Some(*s) } else { None })
+        .collect();
+    assert_eq!(spaces, [Space::Small, Space::Scaled(-0.5)]);
+    // `<nlba>` inside notes keeps its notes on one line and adds none.
+    let p = parse("(c4) a(f.___</nlba>) b(<nlba>g h</nlba> i)\n");
+    let count = |s: &Syllable| s.notation.iter().filter(|f| matches!(f, Figure::Note(_))).count();
+    assert_eq!(count(&p.score.syllables[1]), 1);
+    assert_eq!(count(&p.score.syllables[2]), 3);
+    assert!(matches!(&p.score.syllables[1].notation[0], Figure::Note(n) if n.liquescent == Liquescent::None));
+    let spaces: Vec<&Figure> = p.score.syllables[2]
+        .notation
+        .iter()
+        .filter(|f| matches!(f, Figure::Space(_)))
+        .collect();
+    assert_eq!(spaces, [&Figure::Space(Space::LargeNoBreak), &Figure::Space(Space::Large)]);
+    assert!(p.diagnostics.is_empty(), "{:?}", p.diagnostics);
+}

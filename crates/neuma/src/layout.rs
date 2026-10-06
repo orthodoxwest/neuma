@@ -302,6 +302,8 @@ impl Engraving {
                 };
                 let mut right = 0.0f32;
                 let mut ink_end = start;
+                // Whether this line has passed a boundary where it may end.
+                let mut breakable_seen = false;
                 for last in first..n {
                     let seg = &self.segments[last];
                     let end_of_score = last + 1 == n;
@@ -315,12 +317,17 @@ impl Engraving {
                     }
                     let natural = self.natural(&cur, right, ink_end, last);
                     let over = natural > target;
-                    if breakable {
+                    // Past the width with only forbidden breaks behind it, as in an unclosed
+                    // `<nlba>`: the line ends at the last of them rather than nowhere, which left
+                    // the walk back to set every segment on a line of its own.
+                    let stuck = over && !breakable_seen && last > first;
+                    if breakable || stuck {
+                        let end = if stuck { last - 1 } else { last };
                         let gaps = (last - first) as f32;
                         let ragged =
                             end_of_score && opts.last_line == LastLine::Ragged || matches!(seg.after, Break::Forced { justify: false, .. });
                         let badness = if over {
-                            if last == first { 10000.0 } else { f32::INFINITY }
+                            if last == first || stuck { 10000.0 } else { f32::INFINITY }
                         } else if ragged {
                             0.0
                         } else if gaps == 0.0 {
@@ -334,15 +341,16 @@ impl Engraving {
                         if badness.is_finite() {
                             let d = (10.0 + badness) * (10.0 + badness);
                             let total = base + d;
-                            let better = best[last + 1][next].is_none_or(|(b, _, _)| total < b);
+                            let better = best[end + 1][next].is_none_or(|(b, _, _)| total < b);
                             if better {
-                                best[last + 1][next] = Some((total, first, j));
+                                best[end + 1][next] = Some((total, first, j));
                             }
                         }
                     }
                     if forced || over {
                         break;
                     }
+                    breakable_seen |= breakable;
                 }
             }
         }

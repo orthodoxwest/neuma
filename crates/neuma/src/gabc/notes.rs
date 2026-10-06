@@ -18,6 +18,7 @@ pub(super) fn parse(src: &str, offset: usize, sink: &mut Sink) -> Vec<Figure> {
         out: Vec::new(),
         sink,
         initio: false,
+        nlba: false,
     };
     p.run();
     p.out
@@ -32,6 +33,8 @@ struct Parser<'a, 's> {
     sink: &'s mut Sink,
     /// A `-` before the next pitch: initio debilis.
     initio: bool,
+    /// Inside `<nlba>…</nlba>`: no line break at a space.
+    nlba: bool,
 }
 
 impl Parser<'_, '_> {
@@ -48,6 +51,11 @@ impl Parser<'_, '_> {
     }
 
     fn space(&mut self, space: Space) {
+        let space = if space == Space::Large && self.nlba {
+            Space::LargeNoBreak
+        } else {
+            space
+        };
         // Collapse runs of large spaces.
         if space == Space::Large && matches!(self.out.last(), Some(Figure::Space(Space::Large))) {
             return;
@@ -150,6 +158,19 @@ impl Parser<'_, '_> {
                     }
                 }
                 b'[' => self.bracket(),
+                b'{' | b'}' => {
+                    // Gregorio sets notes inside braces in a zero-width box, to overlap what follows.
+                    self.i += 1;
+                    self.sink.info(
+                        self.span(start),
+                        "gabc::zero-width",
+                        "notes in `{…}` are drawn with their own width",
+                    );
+                }
+                b'<' if self.at_nlba_tag() => {
+                    self.nlba = !self.src[self.i..].starts_with("</");
+                    self.i += self.src[self.i..].find('>').map_or(1, |n| n + 1);
+                }
                 b'-' => {
                     self.i += 1;
                     self.initio = true;
@@ -176,6 +197,11 @@ impl Parser<'_, '_> {
                 }
             }
         }
+    }
+
+    fn at_nlba_tag(&self) -> bool {
+        let rest = &self.src[self.i..];
+        rest.starts_with("<nlba>") || rest.starts_with("</nlba>")
     }
 
     fn take(&mut self, b: u8) -> bool {
@@ -211,6 +237,8 @@ impl Parser<'_, '_> {
     fn slash(&mut self) {
         self.i += 1;
         let space = match self.peek() {
+            // `//[2]` is a neumatic cut and then a scaled space, as Gregorio reads it.
+            Some(b'/') if self.peek_at(1) == Some(b'[') => Space::Small,
             Some(b'/') => {
                 self.i += 1;
                 Space::Medium
@@ -250,7 +278,7 @@ impl Parser<'_, '_> {
         if inner == "nocustos" {
             self.out.push(Figure::NoCustos);
         } else {
-            let name = inner.split(':').next().unwrap_or(inner);
+            let name = inner.split([':', '{', '}']).next().unwrap_or(inner);
             self.sink.warn(
                 self.span(start),
                 "gabc::unsupported-tag",
@@ -461,7 +489,7 @@ impl Parser<'_, '_> {
                     self.i += 1;
                     note.liquescent = Liquescent::Deminutus;
                 }
-                Some(b'<') => {
+                Some(b'<') if !self.at_nlba_tag() => {
                     self.i += 1;
                     note.liquescent = Liquescent::Augmented;
                 }

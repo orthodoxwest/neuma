@@ -254,7 +254,7 @@ tokens real AWRV material uses and moves rows between E1 and E2.
 | `<pr>`, `<pr:n>` | A |
 | `<alt>…</alt>` above-lines text | E2 |
 | `[…]` and `[/]` translations | E2 |
-| `<v>…</v>` verbatim TeX | A (dropped, with a warning when it held visible text) |
+| `<v>…</v>` verbatim TeX | A (printed as it stands when it holds no TeX, as `<v>(</v>`; otherwise dropped, with a warning when it held visible text) |
 
 ### 6.3 Notes, shapes and signs
 
@@ -287,8 +287,10 @@ tokens real AWRV material uses and moves rows between E1 and E2.
 | Item | Treatment |
 |---|---|
 | Space inside notes (large separation, breakable) | E1 |
-| `/` `//` `/0` `/!` `/[f]` (a negative `f` is a backspace) | E1 |
+| `/` `//` `/0` `/!` `/[f]` (a negative `f` is a backspace; `//[f]` is `/` then `/[f]`) | E1 |
 | `!` alone (zero-width split) and `!` before a space (non-breaking) | E1 |
+| `<nlba>…</nlba>` inside notes (its spaces don't break) | E1 |
+| `{…}` zero-width notes | A (drawn with their own width) |
 | `@` manual fusion, `@[…]` auto fusion | E2 |
 | `` ` `` `` `0 `` `^` `^0` `,` `,0` `;` `:` `:?` `::` | E1 |
 | `;1`–`;8` Dominican bars | E2 |
@@ -301,7 +303,9 @@ tokens real AWRV material uses and moves rows between E1 and E2.
 **Line-breaking inputs.** `z` and `Z` both force a break. `z` justifies the
 line it ends, and `Z` leaves that line ragged. A `+` or `-` suffix forces or
 suppresses that break's custos. The only ways to forbid a break are `<nlba>`
-regions and `!` before a space. (v1's claim that `Z` forbids a break was
+regions and `!` before a space. A line that can't end anywhere else within the
+width, as after an unclosed `<nlba>`, ends at its last forbidden break rather
+than running past the width. (v1's claim that `Z` forbids a break was
 wrong.)
 
 **Alteration scope.** GABC itself only says where an alteration sign is drawn.

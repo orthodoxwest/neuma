@@ -121,7 +121,12 @@ pub(super) fn parse(text: &str, offset: usize, state: &mut LyricState, sink: &mu
                     "v" => {
                         let end = text[after..].find("</v>").map_or(text.len(), |n| after + n);
                         let inner = &text[after..end];
-                        if inner.chars().any(char::is_alphanumeric) {
+                        if !inner.contains(['\\', '{', '}', '$', '~', '^', '_', '%', '&', '#']) {
+                            // No TeX in it, so TeX would print it as it stands: `<v>(</v>`.
+                            for ch in inner.chars() {
+                                out.push(ch, style(state), state.elision > 0);
+                            }
+                        } else if inner.chars().any(char::is_alphanumeric) {
                             sink.warn(offset + i..offset + end, "gabc::verbatim-dropped", "verbatim TeX is dropped");
                         }
                         (end + "</v>".len()).min(text.len())

@@ -70,17 +70,28 @@ fn parse_header(src: &str, sink: &mut Sink) -> (Header, usize) {
         offset += raw.len();
         let line = strip_comment(raw.trim_end_matches(['\r', '\n']));
         if let Some((name, mut value, start)) = pending.take() {
-            // Continuing a multi-line value, which ends with `;;`.
-            if let Some(end) = line.find(";;") {
-                value.push('\n');
-                value.push_str(&line[..end]);
+            // Continuing a multi-line value, which ends with `;;`, or like Gregorio, at a `;` that
+            // ends a line.
+            if is_header_line(line) {
+                // A forgotten `;`: the next field starts here, not more of this value.
+                sink.warn(
+                    start..line_start,
+                    "gabc::unterminated-header",
+                    format!("header `{name}` has no closing `;` or `;;`"),
+                );
                 header.fields.push((name, value.trim().to_string()));
             } else {
+                let end = line.find(";;").or_else(|| line.trim_end().strip_suffix(';').map(str::len));
                 value.push('\n');
-                value.push_str(line);
-                pending = Some((name, value, start));
+                if let Some(end) = end {
+                    value.push_str(&line[..end]);
+                    header.fields.push((name, value.trim().to_string()));
+                } else {
+                    value.push_str(line);
+                    pending = Some((name, value, start));
+                }
+                continue;
             }
-            continue;
         }
         if line.trim().is_empty() {
             continue;
@@ -140,6 +151,17 @@ fn parse_header(src: &str, sink: &mut Sink) -> (Header, usize) {
     (header, body_start)
 }
 
+/// A `name:` line, named as Gregorio names header fields.
+fn is_header_line(line: &str) -> bool {
+    line.split_once(':').is_some_and(|(name, rest)| {
+        let name = name.trim();
+        !name.is_empty()
+            && !rest.starts_with("//")
+            && !name.starts_with('-')
+            && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    })
+}
+
 fn looks_like_header(src: &str) -> bool {
     src.lines().next().is_some_and(|l| {
         let l = l.trim();
@@ -189,6 +211,15 @@ fn parse_body(src: &str, start: usize, sink: &mut Sink) -> Vec<Syllable> {
                 } else {
                     i += 1;
                 }
+            }
+            '<' if let Some(end) = verbatim_end(&body[i..]) => {
+                // Gregorio reads `<v>`, `<alt>` and `<sp>` to their closing tag, so a `(` inside
+                // is text, not notes: `<v>(</v>` prints a parenthesis.
+                if text.is_empty() {
+                    text_start = i;
+                }
+                text.push_str(&body[i..i + end]);
+                i += end;
             }
             '(' => {
                 let close = find_close(body, i + 1);
@@ -249,6 +280,20 @@ fn parse_body(src: &str, start: usize, sink: &mut Sink) -> Vec<Syllable> {
         );
     }
     syllables
+}
+
+/// For text starting with `<v>`, `<alt>` or `<sp>`, the length through its closing tag. `None`
+/// for other text, or when the tag never closes.
+fn verbatim_end(text: &str) -> Option<usize> {
+    let close = ["v", "alt", "sp"]
+        .into_iter()
+        .find(|t| {
+            text.strip_prefix('<')
+                .and_then(|r| r.strip_prefix(t))
+                .is_some_and(|r| r.starts_with('>'))
+        })
+        .map(|t| format!("</{t}>"))?;
+    text.find(&close).map(|n| n + close.len())
 }
 
 /// The index of the `)` that closes notes opened before `from`, or the end of the body.

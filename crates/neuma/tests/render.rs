@@ -179,6 +179,18 @@ fn line_texts(src: &str, width: f32) -> Vec<Vec<String>> {
 }
 
 #[test]
+fn unclosed_nlba_still_fills_lines() {
+    // From GregoBase: a `<nlba>` never closed forbids every later break. The lines still fill
+    // the width instead of taking one syllable each.
+    let src = format!("(c4) <nlba>{} (::)", vec!["la(g)"; 60].join(" "));
+    let eng = parse(&src).score.engrave(&ApproxMeasure, &NO_INITIAL);
+    let layout = eng.layout(300.0, &LayoutOptions::default());
+    let lines = layout.display().lines.len();
+    assert!((2..10).contains(&lines), "{lines} lines");
+    assert!(layout.size().0 <= 300.01);
+}
+
+#[test]
 fn forced_breaks_keep_lines_balanced() {
     // Short syllables before a written break share a line rather than taking one each.
     assert_eq!(line_texts("(c4) A(g) B(h) C(gz) D(h)", 400.0), [vec!["A", "B", "C"], vec!["D"]]);
