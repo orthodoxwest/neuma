@@ -199,6 +199,8 @@ fn parse_body(src: &str, start: usize, sink: &mut Sink) -> Vec<Syllable> {
     let mut saw_space = true;
     let mut text_start = 0;
     let mut text = String::new();
+    // Tags found to have no closer ahead, so each is searched for once rather than per opener.
+    let mut unclosed = [false; 3];
     while i < bytes.len() {
         let c = body[i..].chars().next().unwrap_or('\0');
         match c {
@@ -220,7 +222,7 @@ fn parse_body(src: &str, start: usize, sink: &mut Sink) -> Vec<Syllable> {
                     i += 1;
                 }
             }
-            '<' if let Some(end) = verbatim_end(&body[i..]) => {
+            '<' if let Some(end) = verbatim_end(&body[i..], &mut unclosed) => {
                 // Gregorio reads `<v>`, `<alt>` and `<sp>` to their closing tag, so a `(` inside
                 // is text, not notes: `<v>(</v>` prints a parenthesis.
                 if text.is_empty() {
@@ -291,17 +293,20 @@ fn parse_body(src: &str, start: usize, sink: &mut Sink) -> Vec<Syllable> {
 }
 
 /// For text starting with `<v>`, `<alt>` or `<sp>`, the length through its closing tag. `None`
-/// for other text, or when the tag never closes.
-fn verbatim_end(text: &str) -> Option<usize> {
-    let close = ["v", "alt", "sp"]
-        .into_iter()
-        .find(|t| {
-            text.strip_prefix('<')
-                .and_then(|r| r.strip_prefix(t))
-                .is_some_and(|r| r.starts_with('>'))
-        })
-        .map(|t| format!("</{t}>"))?;
-    text.find(&close).map(|n| n + close.len())
+/// for other text, or when the tag never closes, which `unclosed` remembers per tag.
+fn verbatim_end(text: &str, unclosed: &mut [bool; 3]) -> Option<usize> {
+    let k = ["v", "alt", "sp"].into_iter().position(|t| {
+        text.strip_prefix('<')
+            .and_then(|r| r.strip_prefix(t))
+            .is_some_and(|r| r.starts_with('>'))
+    })?;
+    if unclosed[k] {
+        return None;
+    }
+    let close = ["</v>", "</alt>", "</sp>"][k];
+    let end = text.find(close).map(|n| n + close.len());
+    unclosed[k] = end.is_none();
+    end
 }
 
 /// The index of the `)` that closes notes opened before `from`, or the end of the body.

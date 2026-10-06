@@ -399,3 +399,15 @@ fn nabc_is_reported_once() {
     assert_eq!(nabc.len(), 1, "{:?}", p.diagnostics);
     assert_eq!(p.score.syllables.len(), 4);
 }
+
+#[test]
+fn unclosed_verbatim_tags_parse_in_linear_time() {
+    // Each unclosed `<alt>` used to rescan the rest of the score for a closer.
+    let src = format!("(c4) {}", "a<alt>(g) ".repeat(50_000));
+    let t = std::time::Instant::now();
+    let p = parse(&src);
+    assert_eq!(p.score.syllables.len(), 50_001);
+    // Linear parsing takes well under a second here, even unoptimized; the quadratic scan took
+    // seconds in a release build. The bound is loose so a slow runner can't trip it.
+    assert!(t.elapsed().as_secs() < 20, "{:?}", t.elapsed());
+}
