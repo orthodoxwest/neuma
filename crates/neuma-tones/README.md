@@ -26,7 +26,7 @@ One verse per line, in the marks a hand-pointed psalter prints:
 | `†` | The flex, before the mediant in a long first half. |
 | `·` | The cadence starts at the next syllable. Inside a word it also splits it (`e·ver`). |
 | acute (`á`) | An accented syllable: it takes one of the cadence's accents. |
-| `–` (en dash) | A cadence note with no syllable of its own: the syllable before is held (`thou · árt – mý God`). |
+| `–` (en dash) | A cadence note with no syllable of its own: the syllable before is held (`thou · árt – mý God`, `re·member Dávid, – – *`). Before a half's first syllable it leaves a note out instead (`* – · – – práise the Lord`). |
 | `-` in a word | A sung syllable split (`judg-ed`). `\-` is a hyphen that is only spelling. |
 | `[…]` | A rubric such as a posture cue: kept, never sung. |
 | a leading number | The verse number. |

@@ -6,7 +6,7 @@
 //! | `†` | The flex: a short drop before the mediant, in long first halves. |
 //! | `·` | The cadence starts at the next syllable. Inside a word it also splits it ("e·ver"). |
 //! | acute (`á`) | An accented syllable, which takes an accent of the tone's cadence. |
-//! | `–` (en dash) between words | A note of the cadence with no syllable of its own: the syllable before it is held ("thou · árt – mý God"). |
+//! | `–` (en dash) | A note of the cadence with no syllable of its own: the syllable before it is held ("thou · árt – mý God", "Dávid, – – *"). Before a half's first syllable it leaves a note out instead ("* – · – – práise the Lord"). |
 //! | `-` inside a word | A sung syllable split ("judg-ed"). Write `\-` for a hyphen that is only spelling ("blood\-guiltiness"). |
 //! | `[…]` | A rubric, such as a posture cue: kept, never sung. |
 //! | `12` at the start of a line | The verse number. |
@@ -53,6 +53,11 @@ pub enum PartKind {
 pub struct Part {
     pub kind: PartKind,
     pub syllables: Vec<Syllable>,
+    /// Dashes before the first syllable: notes of the tone the pointing leaves out, such as
+    /// the preparatory notes of a half-verse too short for them ("– · – – práise the Lord").
+    pub omitted: usize,
+    /// Dashes after the last syllable, which hold it for the notes left ("Dá-vid, – – *").
+    pub held_end: usize,
 }
 
 /// How a syllable joins the one before it.
@@ -135,6 +140,22 @@ fn tokens(line: &str) -> Vec<Range<usize>> {
             while i < b.len() && !b[i].is_ascii_whitespace() {
                 i += 1;
             }
+            // `*` and `†` are marks of their own even when typed against a word ("Lord,*").
+            let mut from = s;
+            for (k, c) in line[s..i].char_indices() {
+                if c == '*' || c == '†' {
+                    let at = s + k;
+                    if from < at {
+                        out.push(from..at);
+                    }
+                    out.push(at..at + c.len_utf8());
+                    from = at + c.len_utf8();
+                }
+            }
+            if from < i {
+                out.push(from..i);
+            }
+            continue;
         }
         out.push(s..i);
     }
@@ -167,6 +188,8 @@ fn parse_verse(line: &str, base: usize, diags: &mut Vec<Diagnostic>) -> Option<V
     let mut part = Part {
         kind: PartKind::Mediant,
         syllables: Vec::new(),
+        omitted: 0,
+        held_end: 0,
     };
     let mut seen_mediant = false;
     let mut seen_flex = false;
@@ -190,6 +213,8 @@ fn parse_verse(line: &str, base: usize, diags: &mut Vec<Diagnostic>) -> Option<V
             Part {
                 kind: next,
                 syllables: Vec::new(),
+                omitted: 0,
+                held_end: 0,
             },
         );
         verse.parts.push(done);
@@ -237,17 +262,11 @@ fn parse_verse(line: &str, base: usize, diags: &mut Vec<Diagnostic>) -> Option<V
                 close(&mut verse, &mut part, PartKind::Flex, PartKind::Mediant, span, diags);
             }
             "·" => cadence = true,
+            // Before the first syllable a dash leaves a note out; after one it holds it.
+            "–" if part.syllables.is_empty() => part.omitted += 1,
             "–" => {
-                if part.syllables.is_empty() {
-                    diag(
-                        diags,
-                        Severity::Info,
-                        span,
-                        "pointed::leading-dash",
-                        "a dash before the first syllable has no syllable to hold, so it is kept and not sung",
-                    );
-                }
                 held = true;
+                part.held_end += 1;
             }
             _ if tok.starts_with('[') => {
                 if !tok.ends_with(']') || tok.len() < 2 {
@@ -262,6 +281,7 @@ fn parse_verse(line: &str, base: usize, diags: &mut Vec<Diagnostic>) -> Option<V
                 rubrics.push(tok.trim_start_matches('[').trim_end_matches(']').to_string());
             }
             _ => {
+                part.held_end = 0;
                 word(tok, base + r.start, &mut part, &mut cadence, &mut held, &mut rubrics, diags);
             }
         }
@@ -318,14 +338,16 @@ fn parse_verse(line: &str, base: usize, diags: &mut Vec<Diagnostic>) -> Option<V
     Some(verse)
 }
 
-fn pending_mark(cadence: bool, held: bool, span: &Range<usize>, diags: &mut Vec<Diagnostic>) {
-    if cadence || held {
+/// A `·` needs a syllable after it. Dashes at the end of a half hold its last syllable for
+/// the notes left ("re-member · Dá-vid, – – *").
+fn pending_mark(cadence: bool, _held: bool, span: &Range<usize>, diags: &mut Vec<Diagnostic>) {
+    if cadence {
         diag(
             diags,
             Severity::Warning,
             span.clone(),
             "pointed::dangling-mark",
-            "a `·` or `–` needs a syllable after it in the same half-verse",
+            "a `·` needs a syllable after it in the same half-verse",
         );
     }
 }
@@ -382,7 +404,10 @@ fn word(
             i += 2;
             continue;
         }
-        let split = if rest.starts_with('-') && !text.is_empty() && i + 1 < body.len() {
+        // A hyphen and a dot together ("well-·tuned", "hon·-our") are one dotted split.
+        let split = if (rest.starts_with("-·") || rest.starts_with("·-")) && !text.is_empty() {
+            Some((Joint::Dot, 1 + '·'.len_utf8()))
+        } else if rest.starts_with('-') && !text.is_empty() && i + 1 < body.len() {
             Some((Joint::Hyphen, 1))
         } else if rest.starts_with('·') && !text.is_empty() {
             Some((Joint::Dot, '·'.len_utf8()))
@@ -437,6 +462,13 @@ impl Pointed {
                 first = false;
             }
             for p in &v.parts {
+                for k in 0..p.omitted {
+                    if !first || k > 0 {
+                        out.push(' ');
+                    }
+                    out.push('–');
+                }
+                first &= p.omitted == 0;
                 for s in &p.syllables {
                     if s.joint == Joint::Word {
                         if !first {
@@ -461,6 +493,9 @@ impl Pointed {
                     }
                     first = false;
                     out.push_str(&s.text.replace('-', "\\-"));
+                }
+                for _ in 0..p.held_end {
+                    out.push_str(" –");
                 }
                 match p.kind {
                     PartKind::Flex => out.push_str(" †"),
@@ -616,6 +651,29 @@ mod tests {
         assert_eq!(parse(&p.to_text()), p);
         let odd = "Wash me from my · wíck\\-edness, * and [Stand.] · cleanse me fróm my sin. [Bow.]\n";
         assert_eq!(parse(odd).to_text(), odd);
+        // Dashes that leave notes out or hold the last syllable.
+        let dashes = "Lord, remember · Dávid, – – * – – – · práise the Lord.\n";
+        let p = parse(dashes);
+        assert!(p.diagnostics.is_empty(), "{:?}", p.diagnostics);
+        assert_eq!((p.verses[0].parts[0].held_end, p.verses[0].parts[1].omitted), (2, 3));
+        assert!(!p.verses[0].parts[1].syllables[0].held);
+        assert_eq!(p.to_text(), dashes);
+        // A hyphen and a dot together are one dotted split.
+        let both = parse("Praise him upon the well-·tún-ed cýmbals: * such hon·-our.");
+        assert!(both.diagnostics.is_empty(), "{:?}", both.diagnostics);
+        let t: Vec<(&str, Joint)> = both.verses[0].parts[0]
+            .syllables
+            .iter()
+            .map(|s| (s.text.as_str(), s.joint))
+            .skip(4)
+            .take(3)
+            .collect();
+        assert_eq!(t, [("well", Joint::Word), ("tún", Joint::Dot), ("ed", Joint::Hyphen)]);
+        // Marks typed against a word.
+        let tight = parse("It is better to trust · ín the Lord,* than to put any · confidénce in man.");
+        assert!(tight.diagnostics.is_empty(), "{:?}", tight.diagnostics);
+        assert_eq!(tight.verses[0].parts.len(), 2);
+        assert_eq!(parse("a b,†c *d").verses[0].parts.len(), 3);
     }
 
     #[test]

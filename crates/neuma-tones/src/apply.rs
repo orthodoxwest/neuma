@@ -349,17 +349,20 @@ fn set_part(part: &Part, cadence: &Cadence, lead: &[String], diags: &mut Vec<Dia
             );
         }
     } else if preps < fixed.len() {
-        // Fewer: the first preparatory notes are left out.
+        // Fewer: the first preparatory notes are left out, which dashes before the first
+        // syllable say on purpose.
         for (j, f) in fixed[fixed.len() - preps..].iter().enumerate() {
             out[start + j].push(((*f).clone(), Role::Preparatory));
         }
-        warn(
-            diags,
-            Severity::Warning,
-            syls[start.min(n - 1)].span.clone(),
-            "apply::few-preparatory",
-            &format!("the tone has {} preparatory note(s) but the pointing gives {preps}", fixed.len()),
-        );
+        if part.omitted < fixed.len() - preps {
+            warn(
+                diags,
+                Severity::Warning,
+                syls[start.min(n - 1)].span.clone(),
+                "apply::few-preparatory",
+                &format!("the tone has {} preparatory note(s) but the pointing gives {preps}", fixed.len()),
+            );
+        }
     } else {
         fill(&mut out[start..first], prep, Role::Preparatory);
     }
