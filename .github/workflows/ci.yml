@@ -32,3 +32,30 @@ jobs:
         with:
           name: neuma-browser
           path: crates/neuma-wasm/dist/neuma.mjs
+  mobile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android, x86_64-linux-android, aarch64-apple-ios, aarch64-apple-ios-sim
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - run: cargo check -p neuma-mobile --target aarch64-linux-android --target x86_64-linux-android --target aarch64-apple-ios --target aarch64-apple-ios-sim
+      - name: Fetch the Kotlin compiler and JNA
+        run: |
+          curl -sSfL -o kotlinc.zip https://github.com/JetBrains/kotlin/releases/download/v2.1.0/kotlin-compiler-2.1.0.zip
+          unzip -q kotlinc.zip -d "$RUNNER_TEMP"
+          curl -sSfL -o "$RUNNER_TEMP/jna.jar" https://repo1.maven.org/maven2/net/java/dev/jna/jna/5.14.0/jna-5.14.0.jar
+      - run: crates/neuma-mobile/test.sh
+        env:
+          NEUMA_KOTLINC: ${{ runner.temp }}/kotlinc/bin/kotlinc
+          NEUMA_JNA: ${{ runner.temp }}/jna.jar
+  mobile-swift:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: crates/neuma-mobile/test.sh

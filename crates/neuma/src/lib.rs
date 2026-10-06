@@ -8,6 +8,8 @@
 pub mod diag;
 pub mod display;
 pub mod engrave;
+#[cfg(feature = "fonts")]
+pub mod fonts;
 pub mod gabc;
 pub mod glyphs;
 pub mod layout;
@@ -22,6 +24,8 @@ pub mod vowel;
 pub use diag::{Diagnostic, Severity};
 pub use display::{DisplayList, Item, LineBox, NoteRef, TextRole, TextRun};
 pub use engrave::{AlterationScope, CustosPolicy, Engraving, Initial, Ink, StyleOptions};
+#[cfg(feature = "fonts")]
+pub use fonts::Font;
 pub use gabc::{Parsed, parse, to_gabc};
 pub use glyphs::{GlyphOutline, glyph_outline};
 pub use layout::{LastLine, Layout, LayoutOptions};

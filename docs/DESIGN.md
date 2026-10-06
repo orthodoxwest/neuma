@@ -82,12 +82,14 @@ neuma/
         metrics.rs           reader for prebuilt metrics tables (implements TextMeasure)
         svg.rs               SVG writer (feature "svg", default on)
       vowels/                la.vowels, en.vowels in Gregorio's vowel-file format
+      fonts/                 built-in EB Garamond metrics tables (feature "fonts", default on)
     neuma-metrics/           builds metrics tables from TTF/OTF (ttf-parser), pinned to the font
                              files' hashes; can also measure from font files at runtime
     neuma-tones/             psalm tones as data, the pointed-text parser and writer,
                              tone + pointed text → Score (section 15)
-    neuma-wasm/              wasm-bindgen bindings (--target web) + TypeScript types; npm
-                             package @orthodoxwest/neuma with a small DOM helper
+    neuma-wasm/              browser package: a hand-written C ABI and one ES module with
+                             the wasm inlined
+    neuma-mobile/            UniFFI bindings for Swift and Kotlin
     neuma-cli/               `neuma render|check|notes|fmt|point`
   tools/
     gen-glyphs/              exsurge Glyphs.js → normalized glyphs/table.rs (checked in)
