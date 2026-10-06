@@ -193,6 +193,15 @@ pub fn blocks(book: &Book, fonts: &Fonts) -> (Vec<Block>, Vec<Problem>) {
         {
             b.keep_with_next = true;
         }
+        let right = out[start..].iter().flat_map(|b| &b.ops).map(Op::right).fold(0.0, f32::max);
+        if right > m.width + 0.5 {
+            diags.push(Diagnostic {
+                severity: Severity::Warning,
+                span: 0..0,
+                code: "book::overflow",
+                message: format!("runs {:.1}pt past the right margin", right - m.width),
+            });
+        }
         problems.extend(diags.into_iter().map(|diagnostic| Problem { piece: i, diagnostic }));
     }
     (out, problems)
@@ -724,6 +733,17 @@ mod tests {
             .unwrap();
         assert!(verse_one <= chain_end);
         assert!(chain_end + 1 < blocks.len());
+    }
+
+    #[test]
+    fn content_wider_than_the_measure_is_reported() {
+        let fonts = Fonts::standard();
+        let book =
+            Book::parse("page: a6\nmargins: 30mm\ntext: Supercalifragilisticexpialidocious-and-then-some-more\ntext: Short.\n").unwrap();
+        let (_, problems) = blocks(&book, &fonts);
+        assert_eq!(problems.len(), 1, "{problems:?}");
+        assert_eq!(problems[0].piece, 0);
+        assert_eq!(problems[0].diagnostic.code, "book::overflow");
     }
 
     #[test]

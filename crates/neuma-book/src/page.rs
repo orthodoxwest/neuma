@@ -54,7 +54,10 @@ impl Op {
     /// The op's horizontal extent, roughly, for overflow checks.
     pub fn right(&self) -> f32 {
         match self {
-            Op::Neume { x, .. } => *x,
+            Op::Neume { glyph, x, scale, .. } => {
+                // The outline's width is in staff spaces of 100 glyph units.
+                x + neuma::glyph_outline(*glyph).map_or(0.0, |o| o.width * 100.0 * scale)
+            }
             Op::Rect { x, w, .. } => x + w,
             Op::Text { x, size, run, .. } => x + run.width * size,
         }
