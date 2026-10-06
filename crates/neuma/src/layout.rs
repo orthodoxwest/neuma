@@ -320,11 +320,12 @@ impl Engraving {
                     let natural = self.natural(&cur, right, ink_end, last);
                     let over = natural > target;
                     // Past the width with only forbidden breaks behind it, as in an unclosed
-                    // `<nlba>`: the line ends at the last of them rather than nowhere, which left
-                    // the walk back to set every segment on a line of its own.
-                    let stuck = over && !breakable_seen && last > first;
+                    // `<nlba>`: the line ends at the last of them, or after this segment when it
+                    // alone is too wide, rather than nowhere, which left the walk back to set every
+                    // segment on a line of its own.
+                    let stuck = over && !breakable_seen;
                     if breakable || stuck {
-                        let end = if stuck { last - 1 } else { last };
+                        let end = if stuck && last > first { last - 1 } else { last };
                         let gaps = (last - first) as f32;
                         let ragged =
                             end_of_score && opts.last_line == LastLine::Ragged || matches!(seg.after, Break::Forced { justify: false, .. });

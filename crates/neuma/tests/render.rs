@@ -188,6 +188,12 @@ fn unclosed_nlba_still_fills_lines() {
     let lines = layout.display().lines.len();
     assert!((2..10).contains(&lines), "{lines} lines");
     assert!(layout.size().0 <= 300.01);
+    // A syllable wider than the column inside the run gets an overfull line of its own, and
+    // the syllables after it still share lines.
+    let src = "(c4) <nlba>Ab(g) c(h) d(g) e(h) f(g) g(h) h(g) Supercalifragilistic(ghghghghghghghghghghghghgh) i(g) j(h) k(g) l(h) m(g) n(h) o(g) p(h) q(g)</nlba>(::)";
+    let eng = parse(src).score.engrave(&ApproxMeasure, &NO_INITIAL);
+    let lines = eng.layout(200.0, &LayoutOptions::default()).display().lines.len();
+    assert!((3..8).contains(&lines), "{lines} lines");
 }
 
 #[test]
