@@ -1,7 +1,7 @@
 # neuma for the browser
 
 One ES module, `dist/neuma.mjs`, with the engine inlined as gzipped WebAssembly (about
-150 KB). It fetches nothing, so it works inside sandboxed pages that block other origins.
+190 KB). It fetches nothing, so it works inside sandboxed pages that block other origins.
 
 ```sh
 cargo build -p neuma-wasm --target wasm32-unknown-unknown --profile wasm
