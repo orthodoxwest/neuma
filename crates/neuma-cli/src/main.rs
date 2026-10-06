@@ -4,17 +4,17 @@ use std::io::Read as _;
 use std::process::ExitCode;
 
 use neuma::{Initial, LayoutOptions, MetricsTable, Severity, StyleOptions, SvgOptions, Weights};
+use neuma_wasm::{Chant, ChantOptions, Font};
 
-/// Metrics for EB Garamond 12, the lyric face the SVG output asks for.
-const EB_GARAMOND: &[u8] = include_bytes!("../../neuma-metrics/tables/eb-garamond-12.bin");
-
-const USAGE: &str = "usage: neuma <render|check|notes> [--width PX] [--scale PX] [--initial LINES] [FILE|-]
+const USAGE: &str = "usage: neuma <render|check|notes> [--width PX] [--scale PX] [--initial LINES] [--font FONT] [FILE|-]
 
   render   write SVG to stdout
   check    print diagnostics; exit 1 on errors
-  notes    print the note map as JSON lines
+  notes    print the layout and playback timeline as JSON, as the browser package does
 
-  --initial LINES   drop-cap height in staves, 0 to 4; 0 for none (default 1)";
+  --initial LINES   drop-cap height in staves, 0 to 4; 0 for none (default 1)
+  --font FONT       the EB Garamond the lyrics are measured for: google (Google Fonts,
+                    the default) or eb-garamond-12";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -25,6 +25,8 @@ fn main() -> ExitCode {
     let mut width = 800.0f32;
     let mut scale = LayoutOptions::default().scale;
     let mut style = StyleOptions::default();
+    let mut initial_lines = 1u8;
+    let mut font = Font::Google;
     let mut file = None;
     let mut it = args[1..].iter();
     while let Some(a) = it.next() {
@@ -32,9 +34,20 @@ fn main() -> ExitCode {
             "--width" => width = it.next().and_then(|v| v.parse().ok()).unwrap_or(width),
             "--scale" => scale = it.next().and_then(|v| v.parse().ok()).unwrap_or(scale),
             "--initial" => match it.next().and_then(|v| v.parse::<u8>().ok()).filter(|n| *n <= 4) {
-                Some(n) => style.initial = if n == 0 { Initial::None } else { Initial::Lines(n) },
+                Some(n) => {
+                    initial_lines = n;
+                    style.initial = if n == 0 { Initial::None } else { Initial::Lines(n) };
+                }
                 None => {
                     eprintln!("neuma: --initial takes a number of staves from 0 to 4\n{USAGE}");
+                    return ExitCode::from(2);
+                }
+            },
+            "--font" => match it.next().map(String::as_str) {
+                Some("google") => font = Font::Google,
+                Some("eb-garamond-12") => font = Font::Garamond12,
+                _ => {
+                    eprintln!("neuma: --font takes google or eb-garamond-12\n{USAGE}");
                     return ExitCode::from(2);
                 }
             },
@@ -63,7 +76,7 @@ fn main() -> ExitCode {
         },
     };
     let parsed = neuma::parse(&src);
-    let metrics = match MetricsTable::from_bytes(EB_GARAMOND) {
+    let metrics = match MetricsTable::from_bytes(font.table_bytes()) {
         Ok(m) => m,
         Err(e) => {
             eprintln!("neuma: built-in metrics: {e}");
@@ -93,12 +106,21 @@ fn main() -> ExitCode {
             if errors { ExitCode::FAILURE } else { ExitCode::SUCCESS }
         }
         "notes" => {
-            for n in layout.notes(&Weights::SOLESMES).notes {
-                println!(
-                    "{{\"id\":{},\"syllable\":{},\"line\":{},\"x\":{:.2},\"y\":{:.2},\"staff_position\":{},\"semitones\":{},\"weight\":{},\"text\":{:?}}}",
-                    n.id, n.syllable, n.line, n.x, n.y, n.staff_position, n.semitones, n.weight, n.syllable_text
-                );
-            }
+            // The browser package's layout JSON, without the SVG, with the same note ids.
+            let mut chant = Chant::new(
+                &src,
+                ChantOptions {
+                    initial: initial_lines,
+                    font,
+                    ..ChantOptions::default()
+                },
+            );
+            let opts = LayoutOptions {
+                scale,
+                ..LayoutOptions::default()
+            };
+            chant.layout(width, &opts, &Weights::SOLESMES, &SvgOptions::default());
+            println!("{}", chant.layout_json());
             ExitCode::SUCCESS
         }
         _ => {

@@ -104,6 +104,7 @@ name = "neuma-cli"
 version = "0.1.0"
 dependencies = [
  "neuma",
+ "neuma-wasm",
 ]
 
 [[package]]
@@ -113,6 +114,13 @@ dependencies = [
  "neuma",
  "rustybuzz",
  "sha2",
+]
+
+[[package]]
+name = "neuma-wasm"
+version = "0.1.0"
+dependencies = [
+ "neuma",
 ]
 
 [[package]]

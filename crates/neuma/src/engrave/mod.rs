@@ -10,6 +10,7 @@ pub use initial::Initial;
 
 use crate::diag::{Diagnostic, Sink};
 use crate::glyphs::GlyphId as G;
+use crate::notes::PauseKind;
 use crate::score::{
     AlterationKind, BarKind, Clef, ClefKind, CustosRule, Figure, Lyric, LyricRun, Note, NoteShape, Score, Space, StaffPosition, TextStyle,
 };
@@ -74,6 +75,8 @@ pub(crate) struct Piece {
     pub role: Ink,
     /// Score-wide index of the note this ink belongs to.
     pub note: Option<u32>,
+    /// For ink that draws several notes at once (a porrectus swash), the last of them.
+    pub through: Option<u32>,
 }
 
 impl Piece {
@@ -266,7 +269,7 @@ pub struct Engraving {
     pub(crate) ascent: f32,
     pub(crate) descent: f32,
     pub(crate) alt_text: String,
-    pub(crate) pauses: Vec<(u32, BarKind)>,
+    pub(crate) pauses: Vec<(u32, PauseKind)>,
     pub(crate) custos_never: bool,
     pub diagnostics: Vec<Diagnostic>,
 }
@@ -305,6 +308,7 @@ fn ink_at(glyph: G, left: f32, y: f32, role: Ink, note: Option<u32>) -> (Piece, 
             mark: Mark::Glyph { glyph, x: left - a, y },
             role,
             note,
+            through: None,
         },
         c - a,
     )
@@ -321,6 +325,7 @@ fn rect(x: f32, top: StaffPosition, bottom: StaffPosition, role: Ink) -> Piece {
         },
         role,
         note: None,
+        through: None,
     }
 }
 
@@ -381,6 +386,7 @@ fn bar_pieces(kind: BarKind, high: bool, left: f32) -> (Vec<Piece>, f32) {
                     },
                     role: Ink::Bar,
                     note: None,
+                    through: None,
                 });
                 y += 1.0;
             }
@@ -424,7 +430,7 @@ struct Engraver<'a> {
     notes: Vec<NoteInfo>,
     clef: Clef,
     initial_clef: Option<Clef>,
-    pauses: Vec<(u32, BarKind)>,
+    pauses: Vec<(u32, PauseKind)>,
     alteration: Vec<(StaffPosition, i8)>,
     /// Positions of every note in source order, for automatic custodes.
     note_positions: Vec<StaffPosition>,
@@ -495,12 +501,13 @@ impl Engraver<'_> {
             }
             for h in &built.heads {
                 let y = -(h.position as f32);
+                let (w, height) = h.size();
                 open.heads.push(HeadBox {
                     note: base + h.index as u32,
                     x: h.center() + x,
                     y,
-                    w: h.w.max(0.5),
-                    h: h.bottom - h.top,
+                    w,
+                    h: height,
                 });
             }
             if open.first_note.is_none() {
@@ -694,6 +701,7 @@ impl Score {
             }
             syllable_text.push(plain);
             e.reset_alterations(syl.word_start, false);
+            let pauses_before = e.pauses.len();
 
             let mut open = Open::new();
             let mut run = Run {
@@ -792,7 +800,7 @@ impl Score {
                         let (pieces, w) = bar_pieces(b.kind, b.high, x);
                         open.pieces.extend(pieces);
                         open.x = x + w;
-                        e.pauses.push((e.notes.len() as u32, b.kind));
+                        e.pauses.push((e.notes.len() as u32, PauseKind::Bar(b.kind)));
                     }
                     Figure::Custos { position, .. } => {
                         e.flush(&mut run, &mut open, si);
@@ -824,6 +832,19 @@ impl Score {
                     }
                     Figure::NoCustos => nocustos = true,
                 }
+            }
+            // The psalm marks pause after this syllable's notes, ahead of a bar written after
+            // them, since the text marks the end of the half-verse.
+            let end = e.notes.len() as u32;
+            let mut at = e.pauses.iter().rposition(|p| p.0 < end).map_or(0, |i| i + 1).max(pauses_before);
+            for c in syllable_text.last().map_or("", String::as_str).chars() {
+                let kind = match c {
+                    '*' => PauseKind::Mediant,
+                    '†' => PauseKind::Flex,
+                    _ => continue,
+                };
+                e.pauses.insert(at, (end, kind));
+                at += 1;
             }
             e.flush(&mut run, &mut open, si);
             if only_clef && e.initial_clef.as_ref().is_some_and(|c| *c == e.clef) && e.segments.is_empty() {

@@ -26,7 +26,7 @@ pub use gabc::{Parsed, parse, to_gabc};
 pub use glyphs::{GlyphOutline, glyph_outline};
 pub use layout::{LastLine, Layout, LayoutOptions};
 pub use metrics::MetricsTable;
-pub use notes::{MappedNote, NoteMap, Pause, Weights};
+pub use notes::{MappedNote, NoteMap, Pause, PauseKind, Weights};
 pub use score::{Score, ScoreBuilder};
 #[cfg(feature = "svg")]
 pub use svg::SvgOptions;

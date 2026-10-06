@@ -1,0 +1,22 @@
+[package]
+name = "neuma-wasm"
+description = "The neuma chant engine for the browser: one self-contained ES module"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+neuma = { path = "../neuma" }
+
+# The exports need `#[unsafe(no_mangle)]`, so this crate can't inherit the workspace's
+# `forbid(unsafe_code)`; it denies it instead and allows it only on those items.
+[lints.rust]
+unsafe_code = "deny"
+missing_debug_implementations = "warn"
+

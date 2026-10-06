@@ -3,7 +3,7 @@
 
 use std::ops::Range;
 
-use crate::display::NoteRef;
+use crate::display::{LineBox, NoteRef};
 use crate::layout::Layout;
 use crate::score::{BarKind, ClefKind, NoteShape};
 
@@ -11,6 +11,21 @@ use crate::score::{BarKind, ClefKind, NoteShape};
 pub struct NoteMap {
     pub notes: Vec<MappedNote>,
     pub pauses: Vec<Pause>,
+    /// Each line's box, staff center and lyric baseline, in output units.
+    pub lines: Vec<LineBox>,
+    /// The whole timeline's length, in weight units.
+    pub duration: f32,
+}
+
+/// Why the singing pauses.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum PauseKind {
+    Bar(BarKind),
+    /// A `*` in the text: the mediant of a psalm verse, or where the soloist's intonation
+    /// ends in other chants.
+    Mediant,
+    /// The flex `†`.
+    Flex,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -32,6 +47,10 @@ pub struct MappedNote {
     /// Semitones above the clef's do, alterations applied.
     pub semitones: i16,
     pub weight: f32,
+    /// When the note starts and how long it lasts, in weight units: notes and pauses laid
+    /// end to end with the caller's weights.
+    pub start: f32,
+    pub duration: f32,
     pub syllable_text: String,
     pub word: u32,
     /// The vowel the engine centered the syllable on.
@@ -39,14 +58,27 @@ pub struct MappedNote {
     pub shape: NoteShape,
     pub liquescent: bool,
     pub quilisma: bool,
+    /// The note's syllable has an acute accent in the source.
+    pub accent: bool,
+    /// The first note of its syllable.
+    pub new_syllable: bool,
+    /// Inferred: part of a run of three or more single-note syllables on one pitch, which a
+    /// player can time at speech pace.
+    pub recitation: bool,
+    /// Phrase counters: `verse` advances after each full or double bar, and `half` is 1
+    /// after the verse's mediant `*`, else 0.
+    pub verse: u32,
+    pub half: u8,
 }
 
 /// A pause before note `before_note` (`notes.len()` means after the last note).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Pause {
     pub before_note: u32,
-    pub kind: BarKind,
+    pub kind: PauseKind,
     pub weight: f32,
+    /// When the pause starts, in weight units.
+    pub start: f32,
 }
 
 /// Relative durations: multipliers per sign. Not beats; tools choose the tempo.
@@ -60,6 +92,8 @@ pub struct Weights {
     pub minor: f32,
     pub maior: f32,
     pub finalis: f32,
+    pub mediant: f32,
+    pub flex: f32,
 }
 
 impl Weights {
@@ -74,9 +108,16 @@ impl Weights {
         minor: 1.0,
         maior: 2.0,
         finalis: 3.0,
+        mediant: 2.0,
+        flex: 1.0,
     };
 
-    fn bar(&self, kind: BarKind) -> f32 {
+    fn pause(&self, kind: PauseKind) -> f32 {
+        let kind = match kind {
+            PauseKind::Bar(b) => b,
+            PauseKind::Mediant => return self.mediant,
+            PauseKind::Flex => return self.flex,
+        };
         match kind {
             BarKind::Virgula | BarKind::Minimis => self.virgula,
             BarKind::Minima => self.minima,
@@ -129,6 +170,9 @@ impl Layout<'_> {
             } else {
                 weights.note
             };
+            let syllable_text = eng.syllable_text.get(info.syllable as usize).cloned().unwrap_or_default();
+            let accent = syllable_text.chars().any(|c| "áéíóúýǽÁÉÍÓÚÝǼ\u{0301}".contains(c));
+            let new_syllable = id == 0 || eng.notes[id - 1].syllable != info.syllable;
             notes.push(MappedNote {
                 id: id as u32,
                 syllable: info.syllable,
@@ -142,24 +186,130 @@ impl Layout<'_> {
                 degree,
                 semitones: semitones(degree) + info.alteration as i16,
                 weight,
-                syllable_text: eng.syllable_text.get(info.syllable as usize).cloned().unwrap_or_default(),
+                start: 0.0,
+                duration: weight,
+                syllable_text,
                 word: eng.syllable_word.get(info.syllable as usize).copied().unwrap_or(0),
                 vowel: info.vowel,
                 shape: info.shape,
                 liquescent: info.liquescent,
                 quilisma: info.shape == NoteShape::Quilisma,
+                accent,
+                new_syllable,
+                recitation: false,
+                verse: 0,
+                half: 0,
             });
         }
-        let pauses = eng
+        let paused: Vec<u32> = eng.pauses.iter().map(|&(before, _)| before).collect();
+        mark_recitations(&mut notes, &paused);
+
+        // Lay notes and pauses end to end, and count phrases.
+        let mut pauses: Vec<Pause> = eng
             .pauses
             .iter()
             .map(|&(before, kind)| Pause {
                 before_note: before,
                 kind,
-                weight: weights.bar(kind),
+                weight: weights.pause(kind),
+                start: 0.0,
             })
             .collect();
-        NoteMap { notes, pauses }
+        // A mediant or flex is the pause at its bar: the bar after it adds no time.
+        for i in 1..pauses.len() {
+            let mark = matches!(pauses[i - 1].kind, PauseKind::Mediant | PauseKind::Flex);
+            if mark && matches!(pauses[i].kind, PauseKind::Bar(_)) && pauses[i - 1].before_note == pauses[i].before_note {
+                pauses[i].weight = 0.0;
+            }
+        }
+        let mut t = 0.0f32;
+        let mut verse = 0u32;
+        let mut half = 0u8;
+        let mut p = 0;
+        for i in 0..=notes.len() {
+            let id = notes.get(i).map_or(u32::MAX, |n| n.id);
+            while p < pauses.len() && pauses[p].before_note <= id {
+                pauses[p].start = t;
+                t += pauses[p].weight;
+                // A full bar right after the mediant belongs to it and doesn't end the verse.
+                let after_mediant = p > 0 && pauses[p - 1].kind == PauseKind::Mediant && pauses[p - 1].before_note == pauses[p].before_note;
+                match pauses[p].kind {
+                    PauseKind::Bar(BarKind::Maior | BarKind::DottedMaior) if after_mediant => {}
+                    PauseKind::Bar(BarKind::Maior | BarKind::DottedMaior | BarKind::Finalis) => {
+                        verse += 1;
+                        half = 0;
+                    }
+                    PauseKind::Mediant => half = 1,
+                    _ => {}
+                }
+                p += 1;
+            }
+            if let Some(n) = notes.get_mut(i) {
+                n.start = t;
+                n.verse = verse;
+                n.half = half;
+                t += n.duration;
+            }
+        }
+        let lines = self
+            .lines
+            .iter()
+            .map(|l| LineBox {
+                top: l.top * s,
+                bottom: l.bottom * s,
+                staff: l.staff * s,
+                baseline: l.baseline * s,
+            })
+            .collect();
+        NoteMap {
+            notes,
+            pauses,
+            lines,
+            duration: t,
+        }
+    }
+}
+
+/// Marks runs of three or more consecutive single-note syllables on one pitch, not counting
+/// across a pause (`paused` holds the note ids pauses come before, in order).
+fn mark_recitations(notes: &mut [MappedNote], paused: &[u32]) {
+    let single = |i: usize, notes: &[MappedNote]| notes[i].new_syllable && notes.get(i + 1).is_none_or(|n| n.new_syllable);
+    let mut i = 0;
+    while i < notes.len() {
+        let mut j = i;
+        while j < notes.len()
+            && single(j, notes)
+            && notes[j].semitones == notes[i].semitones
+            && (j == i || paused.binary_search(&notes[j].id).is_err())
+        {
+            j += 1;
+        }
+        if j - i >= 3 {
+            for n in &mut notes[i..j] {
+                n.recitation = true;
+            }
+        }
+        i = j.max(i + 1);
+    }
+}
+
+impl NoteMap {
+    /// The note under (`x`, `y`) in output units: one whose box contains the point, else the
+    /// nearest note on the line the point falls in. `None` outside every line.
+    pub fn note_at(&self, x: f32, y: f32) -> Option<NoteRef> {
+        if let Some(n) = self
+            .notes
+            .iter()
+            .find(|n| (x - n.x).abs() <= n.w / 2.0 && (y - n.y).abs() <= n.h / 2.0)
+        {
+            return Some(n.id);
+        }
+        let line = self.lines.iter().position(|l| y >= l.top && y <= l.bottom)? as u32;
+        self.notes
+            .iter()
+            .filter(|n| n.line == line)
+            .min_by(|a, b| (a.x - x).abs().total_cmp(&(b.x - x).abs()))
+            .map(|n| n.id)
     }
 }
 

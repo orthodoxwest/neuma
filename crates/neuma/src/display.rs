@@ -34,6 +34,9 @@ pub enum Item {
         scale: f32,
         role: Ink,
         note: Option<NoteRef>,
+        /// For ink that draws several notes (a porrectus swash), the last of them; the ink
+        /// belongs to every note from `note` through this one.
+        through: Option<NoteRef>,
     },
     Rect {
         x: f32,
@@ -42,6 +45,9 @@ pub enum Item {
         h: f32,
         role: Ink,
         note: Option<NoteRef>,
+        /// For ink that draws several notes (a porrectus swash), the last of them; the ink
+        /// belongs to every note from `note` through this one.
+        through: Option<NoteRef>,
     },
     /// Text starting at x on `baseline`, `size` output units high.
     Text {
@@ -84,6 +90,7 @@ fn push(items: &mut Vec<Item>, p: &Piece, dx: f32, dy: f32, s: f32) {
             scale: s / UNITS_PER_SPACE,
             role: p.role,
             note: p.note,
+            through: p.through,
         }),
         Mark::Rect { x, y, w, h } => items.push(Item::Rect {
             x: (x + dx) * s,
@@ -92,6 +99,7 @@ fn push(items: &mut Vec<Item>, p: &Piece, dx: f32, dy: f32, s: f32) {
             h: h * s,
             role: p.role,
             note: p.note,
+            through: p.through,
         }),
     }
 }
@@ -129,6 +137,7 @@ impl Layout<'_> {
                     h: staff_weight * s,
                     role: Ink::Staff,
                     note: None,
+                    through: None,
                 });
             }
             if let Some(clef) = &line.clef {

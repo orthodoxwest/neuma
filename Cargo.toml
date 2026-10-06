@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/neuma", "crates/neuma-cli", "crates/neuma-metrics"]
+members = ["crates/neuma", "crates/neuma-cli", "crates/neuma-metrics", "crates/neuma-wasm"]
 
 [workspace.package]
 version = "0.1.0"
@@ -15,3 +15,12 @@ missing_debug_implementations = "warn"
 
 [workspace.lints.clippy]
 wildcard_enum_match_arm = "allow"
+
+# `cargo build --profile wasm --target wasm32-unknown-unknown -p neuma-wasm`: the browser module.
+[profile.wasm]
+inherits = "release"
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
