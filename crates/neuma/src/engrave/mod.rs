@@ -5,6 +5,7 @@
 mod initial;
 pub(crate) mod neume;
 
+pub(crate) use initial::CAP_HEIGHT;
 pub use initial::Initial;
 
 use crate::diag::{Diagnostic, Sink};
@@ -226,16 +227,21 @@ pub(crate) struct InitialBox {
     pub text: String,
     /// The syllable the letter came from.
     pub syllable: u32,
-    /// Font size of the initial, in staff spaces.
+    /// Font size and width of the initial at its nominal height, in staff spaces. They size
+    /// the column; layout scales the capital to the staves it spans.
     pub size: f32,
     pub width: f32,
+    /// The initial's advance in ems.
+    pub advance_em: f32,
+    /// Room above the first staff for an accent on the capital, in staff spaces.
+    pub accent_room: f32,
+    /// The face's descent in ems, for a capital with a tail.
+    pub descent: f32,
     pub lines: usize,
     /// Annotation lines, top first, with their widths.
     pub annotations: Vec<(String, f32)>,
     pub annotation_size: f32,
     pub annotation_ascent: f32,
-    /// The staff-to-staff distance the initial's size assumes, for `lines` above 1.
-    pub line_pitch: f32,
 }
 
 impl InitialBox {
@@ -270,9 +276,6 @@ pub(crate) const SYLLABLE_GAP: f32 = INTRA * 2.5;
 /// Extra gap between words.
 pub(crate) const WORD_GAP: f32 = INTRA;
 const ACCIDENTAL_GAP: f32 = INTRA * 2.0;
-/// Cap height of the lyric face, in ems (EB Garamond's is 0.65). It sizes the initial so its
-/// capital spans the staff.
-const CAP_HEIGHT: f32 = 0.65;
 /// Annotation size relative to the lyrics.
 const ANNOTATION_RATIO: f32 = 0.75;
 const DEFAULT_CLEF: Clef = Clef {
@@ -620,14 +623,22 @@ impl Score {
         // The drop cap comes off the first syllable with text; the rest of it is the lyric.
         let mut initial = None;
         let mut first_lyric: Option<(usize, Lyric)> = None;
+        // Only a syllable with no notes before it: the initial is drawn on the first line.
+        let first_texted = self.syllables.iter().position(|s| !s.text.is_empty()).filter(|&si| {
+            self.syllables[..si]
+                .iter()
+                .all(|s| !s.notation.iter().any(|f| matches!(f, Figure::Note(_))))
+        });
         if let Initial::Lines(n) = style.initial
             && n > 0
-            && let Some(si) = self.syllables.iter().position(|s| !s.text.is_empty())
+            && let Some(si) = first_texted
             && let Some((text, rest)) = initial::split_initial(&self.syllables[si].text)
         {
-            // A nominal staff-to-staff distance: the staff, lyrics below it, and the gaps.
+            // A nominal staff-to-staff distance (the staff, lyrics below it, and the gaps)
+            // sizes the column the breaker indents for; layout sizes the capital itself to
+            // the staves it actually spans.
             let line_pitch = 6.0 + 0.5 + 0.4 + ascent * size * 0.85 + descent * size + 1.0;
-            let lines = n as usize;
+            let lines = n.min(initial::MAX_LINES) as usize;
             let cap = 6.0 + line_pitch * (lines - 1) as f32;
             let initial_size = cap / CAP_HEIGHT;
             let annotation_size = size * ANNOTATION_RATIO;
@@ -642,8 +653,14 @@ impl Score {
             } else {
                 Vec::new()
             };
+            let advance_em = measure.advance(&text, TextStyle::REGULAR);
+            // An accent on the capital rises above its cap height; leave room for it.
+            let accented = !text.is_ascii();
             initial = Some(InitialBox {
-                width: measure.advance(&text, TextStyle::REGULAR) * initial_size,
+                width: advance_em * initial_size,
+                advance_em,
+                accent_room: if accented { 0.25 * initial_size } else { 0.0 },
+                descent,
                 text,
                 syllable: si as u32,
                 size: initial_size,
@@ -651,7 +668,6 @@ impl Score {
                 annotations,
                 annotation_size,
                 annotation_ascent: ascent * annotation_size,
-                line_pitch,
             });
             first_lyric = Some((si, rest));
         }

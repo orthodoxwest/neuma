@@ -5,7 +5,7 @@
 //! limited to add, subtract, multiply, divide and comparison (DESIGN section 13).
 
 use crate::engrave::neume::INTRA;
-use crate::engrave::{Break, Engraving, SYLLABLE_GAP, Segment, WORD_GAP, clef_pieces, custos_piece};
+use crate::engrave::{Break, CAP_HEIGHT, Engraving, SYLLABLE_GAP, Segment, WORD_GAP, clef_pieces, custos_piece};
 use crate::score::{Clef, CustosRule};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -70,11 +70,22 @@ pub(crate) struct PlacedLine {
     pub bottom: f32,
 }
 
+/// Where the initial's capital goes, in staff spaces.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct PlacedInitial {
+    pub x: f32,
+    pub baseline: f32,
+    pub size: f32,
+    /// Width of the column the initial and annotations share.
+    pub column: f32,
+}
+
 /// A layout at one width.
 #[derive(Clone, Debug)]
 pub struct Layout<'e> {
     pub(crate) eng: &'e Engraving,
     pub(crate) lines: Vec<PlacedLine>,
+    pub(crate) initial: Option<PlacedInitial>,
     pub(crate) width: f32,
     pub(crate) height: f32,
     pub(crate) scale: f32,
@@ -223,6 +234,18 @@ impl Engraving {
 
     /// Lays the engraving out at `width` output units.
     pub fn layout(&self, width: f32, opts: &LayoutOptions) -> Layout<'_> {
+        let first = self.layout_with(width, opts, None);
+        // A capital spanning staves farther apart than the nominal pitch is wider than the
+        // column the breaker left for it; break again with room for it.
+        match (&self.initial, &first.initial) {
+            (Some(init), Some(placed)) if placed.size * init.advance_em > placed.column + 0.01 => {
+                self.layout_with(width, opts, Some(placed.size * init.advance_em))
+            }
+            _ => first,
+        }
+    }
+
+    fn layout_with(&self, width: f32, opts: &LayoutOptions, column: Option<f32>) -> Layout<'_> {
         let scale = if opts.scale > 0.0 && opts.scale.is_finite() {
             opts.scale
         } else {
@@ -237,6 +260,7 @@ impl Engraving {
             return Layout {
                 eng: self,
                 lines: Vec::new(),
+                initial: None,
                 width: target,
                 height: 0.0,
                 scale,
@@ -245,7 +269,8 @@ impl Engraving {
         // The first `indented` lines make room for the initial, so the breaker tracks how many
         // lines came before, up to that count.
         let indented = self.initial.as_ref().map_or(0, |i| i.lines);
-        let indent = self.initial.as_ref().map_or(0.0, |i| i.column() + INITIAL_GAP);
+        let column = self.initial.as_ref().map_or(0.0, |i| column.unwrap_or(0.0).max(i.column()));
+        let indent = if indented > 0 { column + INITIAL_GAP } else { 0.0 };
         // best[k][j]: least demerits for lines ending just before segment k, with j lines so
         // far (capped at `indented`), and where the last line started and its own j.
         let mut best: Vec<Vec<Option<(f32, usize, usize)>>> = vec![vec![None; indented + 1]; n + 1];
@@ -385,13 +410,17 @@ impl Engraving {
                     ink_bottom = ink_bottom.max(b);
                 }
             }
-            // The annotations sit above the first staff, over the initial.
+            // The annotations sit above the first staff, over the initial and any accent on it.
             if li == 0
                 && let Some(init) = &self.initial
-                && !init.annotations.is_empty()
             {
-                let lines = init.annotations.len() as f32;
-                ink_top = ink_top.min(-3.0 - ANNOTATION_GAP - init.annotation_ascent - (lines - 1.0) * init.annotation_size * 1.1);
+                ink_top = ink_top.min(-3.0 - init.accent_room);
+                if !init.annotations.is_empty() {
+                    let lines = init.annotations.len() as f32;
+                    ink_top = ink_top.min(
+                        -3.0 - init.accent_room - ANNOTATION_GAP - init.annotation_ascent - (lines - 1.0) * init.annotation_size * 1.1,
+                    );
+                }
             }
             let has_lyrics = self.segments[first..=last].iter().any(|s| s.lyric.is_some());
             let top = y;
@@ -416,10 +445,29 @@ impl Engraving {
             });
             y = bottom + LINE_GAP;
         }
-        let height = lines.last().map_or(0.0, |l| l.bottom);
+        let mut height = lines.last().map_or(0.0, |l| l.bottom);
+        // The capital runs from the first staff's top line to the bottom line of the last
+        // staff it spans, narrowed if need be to fit the column the breaker left for it.
+        let initial = self.initial.as_ref().and_then(|init| {
+            let first = lines.first()?;
+            let last = &lines[init.lines.min(lines.len()) - 1];
+            let cap = (last.staff + 3.0) - (first.staff - 3.0);
+            let size = cap / CAP_HEIGHT;
+            let width = init.advance_em * size;
+            let baseline = last.staff + 3.0;
+            height = height.max(baseline + init.descent * size);
+            Some(PlacedInitial {
+                // Centered in the column; wider than it only on the first pass.
+                x: ((column - width) / 2.0).max(0.0),
+                baseline,
+                size,
+                column,
+            })
+        });
         Layout {
             eng: self,
             lines,
+            initial,
             width: target.max(max_width),
             height,
             scale,
