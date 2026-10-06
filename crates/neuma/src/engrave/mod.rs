@@ -382,6 +382,9 @@ pub(crate) fn custos_piece(position: StaffPosition, left: f32) -> (Piece, f32) {
     ink_at(glyph, left, -(position as f32), Ink::Custos, None)
 }
 
+/// The distance between the two bars of a `::`, measured from GregorioTeX's output.
+const FINALIS_SEP: f32 = 0.94;
+
 fn bar_pieces(kind: BarKind, high: bool, left: f32) -> (Vec<Piece>, f32) {
     let shift = if high { -2 } else { 0 };
     let bar = |top: StaffPosition, bottom: StaffPosition| rect(left, top + shift, bottom + shift, Ink::Bar);
@@ -414,21 +417,9 @@ fn bar_pieces(kind: BarKind, high: bool, left: f32) -> (Vec<Piece>, f32) {
             (out, STEM)
         }
         BarKind::Finalis => {
-            let w = INTRA * 2.0;
-            (
-                vec![bar(3, -3), rect(left + w - STEM * 2.0, 3, -3, Ink::Bar)]
-                    .into_iter()
-                    .map(|mut p| {
-                        if let Mark::Rect { w: rw, x, .. } = &mut p.mark
-                            && *x > left
-                        {
-                            *rw = STEM * 2.0;
-                        }
-                        p
-                    })
-                    .collect(),
-                w,
-            )
+            // Two thin bars, as GregorioTeX draws `::`, their centres 0.94 staff spaces apart.
+            let second = left + FINALIS_SEP;
+            (vec![bar(3, -3), rect(second, 3 + shift, -3 + shift, Ink::Bar)], FINALIS_SEP + STEM)
         }
         BarKind::Dominican(n) => {
             // `;1`–`;8`: a bar an interline and a half long, as GregorioTeX draws them. An odd
@@ -1099,6 +1090,23 @@ mod tests {
         let (pieces, _) = bar_pieces(kind, false, 0.0);
         let (top, bottom) = pieces[0].y_extent();
         (-top, -bottom)
+    }
+
+    #[test]
+    fn a_double_bar_is_two_thin_bars() {
+        let (pieces, w) = bar_pieces(BarKind::Finalis, false, 0.0);
+        let rects: Vec<(f32, f32)> = pieces
+            .iter()
+            .filter_map(|p| match p.mark {
+                Mark::Rect { x, w, .. } => Some((x, w)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(rects, [(0.0, STEM), (FINALIS_SEP, STEM)]);
+        assert_eq!(w, FINALIS_SEP + STEM);
+        for p in &pieces {
+            assert_eq!(p.y_extent(), (-3.0, 3.0));
+        }
     }
 
     #[test]
