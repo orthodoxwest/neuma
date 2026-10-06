@@ -417,3 +417,19 @@ fn plain_verbatim_text_collapses_spaces() {
     let p = parse("(c4) A<v>(non\n   repetitur)  </v>b(g)\n");
     assert_eq!(p.score.syllables[1].text.plain(), "A(non repetitur) b");
 }
+
+#[test]
+fn double_slash_before_a_tag_is_the_larger_space() {
+    // From GregoBase: `//` then a ledger-line tag, not a cut and a malformed scaled space.
+    let p = parse("(c4) a(jk//[oll:1{1]lkl[oll:}])");
+    let spaces: Vec<Space> = p.score.syllables[1]
+        .notation
+        .iter()
+        .filter_map(|f| if let Figure::Space(s) = f { Some(*s) } else { None })
+        .collect();
+    assert_eq!(spaces, [Space::Medium]);
+    let codes: Vec<&str> = p.diagnostics.iter().map(|d| d.code).collect();
+    assert_eq!(codes, ["gabc::unsupported-tag", "gabc::unsupported-tag"]);
+    let once = p.score.to_gabc();
+    assert_eq!(parse(&once).score.to_gabc(), once);
+}

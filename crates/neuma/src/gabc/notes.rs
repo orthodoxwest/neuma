@@ -239,8 +239,9 @@ impl Parser<'_, '_> {
     fn slash(&mut self) {
         self.i += 1;
         let space = match self.peek() {
-            // `//[2]` is a neumatic cut and then a scaled space, as Gregorio reads it.
-            Some(b'/') if self.peek_at(1) == Some(b'[') => Space::Small,
+            // `//[2]` is a neumatic cut and then a scaled space, as Gregorio reads it. Before
+            // anything but a number, `//` is the larger space and the `[…]` a tag.
+            Some(b'/') if self.peek_at(1) == Some(b'[') && self.scale_at(self.i + 1).is_some() => Space::Small,
             Some(b'/') => {
                 self.i += 1;
                 Space::Medium
@@ -256,11 +257,11 @@ impl Parser<'_, '_> {
             Some(b'[') => {
                 let start = self.i;
                 let end = self.src[self.i..].find(']').map_or(self.s.len(), |n| self.i + n);
-                let factor = self.src[self.i + 1..end].trim().parse::<f32>();
+                let factor = self.scale_at(self.i);
                 self.i = (end + 1).min(self.s.len());
                 match factor {
-                    Ok(f) if f.is_finite() => Space::Scaled(f),
-                    _ => {
+                    Some(f) => Space::Scaled(f),
+                    None => {
                         self.sink
                             .warn(self.span(start), "gabc::bad-space", "`/[…]` needs a number; using a small space");
                         Space::Small
@@ -270,6 +271,12 @@ impl Parser<'_, '_> {
             _ => Space::Small,
         };
         self.out.push(Figure::Space(space));
+    }
+
+    /// The factor in a `[f]` starting at byte `at`, if it is a finite number.
+    fn scale_at(&self, at: usize) -> Option<f32> {
+        let end = self.src[at..].find(']').map_or(self.s.len(), |n| at + n);
+        self.src[at + 1..end].trim().parse::<f32>().ok().filter(|f| f.is_finite())
     }
 
     fn bracket(&mut self) {
