@@ -16,6 +16,7 @@ pub struct Summary {
     pub office_part: Option<String>,
     pub kind: Option<OfficePart>,
     pub mode: Option<Mode>,
+    /// A short label for when the piece is sung; a calendar holds the full list of uses.
     pub occasion: Option<String>,
     pub book: Option<String>,
     pub language: Option<String>,
@@ -24,6 +25,10 @@ pub struct Summary {
     pub score_copyright: Option<String>,
     pub commentary: Option<String>,
     pub annotations: Vec<String>,
+    /// Every other header in source order, so a library can keep its own fields (`source`,
+    /// `translation-of`) in the score file. These are raw: values are only trimmed, so TeX
+    /// markup and empty values are kept.
+    pub other_headers: Vec<(String, String)>,
     /// The opening words: up to the first bar (other than a virgula) at or after the end of
     /// the second word, at most eight. An opening word in capitals (for the initial) is
     /// written in lower case after its first letter, here and in `text`.
@@ -57,6 +62,13 @@ pub enum OfficePart {
     Communion,
     Hymn,
     Responsory,
+    /// A short responsory (`Responsorium breve`, `R. br.`).
+    ShortResponsory,
+    Versicle,
+    /// The chapter (`Capitulum`).
+    Chapter,
+    /// The collect (`Oratio`).
+    Collect,
     Psalm,
     Canticle,
     Kyrie,
@@ -71,12 +83,35 @@ pub enum OfficePart {
 impl OfficePart {
     pub fn parse(value: &str) -> OfficePart {
         use OfficePart as P;
-        let lower = value.to_lowercase();
+        // The response and versicle signs abbreviate the words they stand for.
+        let lower = value.to_lowercase().replace('℟', "r ").replace('℣', "v ");
         let mut words = lower.split(|c: char| !c.is_alphabetic()).filter(|w| !w.is_empty());
         let word = words.next().unwrap_or("");
         match word {
             // The lesser doxology, not the Gloria of the Mass.
             "gloria" if words.next() == Some("patri") => P::Other,
+            "responsorium" | "responsoria" | "responsory" | "resp" | "re" | "r"
+                if words
+                    .next()
+                    .is_some_and(|w| matches!(w, "breve" | "brevia" | "brevis" | "br" | "brev")) =>
+            {
+                P::ShortResponsory
+            }
+            "short" if lower.contains("resp") => P::ShortResponsory,
+            "rb" => P::ShortResponsory,
+            // `V` alone is also the numeral five ("V. Ant."), so a kind spelled out or
+            // abbreviated after it wins; a response ("V. R.") or a two-letter word ("V. In
+            // omnem") does not. Only the next word is read, so this recurses once at most.
+            "v" => match words.next() {
+                Some(w) if w.len() > 2 && !matches!(w, "resp" | "responsorium" | "responsory" | "response") => match OfficePart::parse(w) {
+                    P::Other => P::Versicle,
+                    other => other,
+                },
+                _ => P::Versicle,
+            },
+            "versiculus" | "versiculi" | "versicle" | "versicles" => P::Versicle,
+            "capitulum" | "capitula" | "chapter" | "chapters" | "cap" => P::Chapter,
+            "oratio" | "orationes" | "collect" | "collects" | "collecta" | "collectae" | "or" => P::Collect,
             "antiphona" | "antiphonae" | "antiphon" | "antiphons" | "ant" | "an" => P::Antiphon,
             "introitus" | "introit" | "intr" | "in" => P::Introit,
             "graduale" | "gradual" | "grad" | "gr" => P::Gradual,
@@ -86,7 +121,7 @@ impl OfficePart {
             "offertorium" | "offertory" | "off" | "of" => P::Offertory,
             "communio" | "communion" | "comm" | "co" => P::Communion,
             "hymnus" | "hymni" | "hymn" | "hy" => P::Hymn,
-            "responsorium" | "responsoria" | "responsory" | "resp" | "re" | "rb" | "r" => P::Responsory,
+            "responsorium" | "responsoria" | "responsory" | "resp" | "re" | "r" => P::Responsory,
             "psalmus" | "psalmi" | "psalm" | "ps" => P::Psalm,
             "canticum" | "canticle" | "cant" => P::Canticle,
             "kyrie" | "ky" => P::Kyrie,
@@ -166,6 +201,23 @@ fn field(header: &Header, name: &str) -> Option<String> {
         .map(|v| v.trim().to_string())
         .filter(|v| !v.is_empty())
 }
+
+/// Headers the summary types; the rest go to `other_headers`.
+const TYPED: [&str; 13] = [
+    "name",
+    "office-part",
+    "mode",
+    "mode-modifier",
+    "mode-differentia",
+    "occasion",
+    "book",
+    "language",
+    "transcriber",
+    "gabc-copyright",
+    "score-copyright",
+    "commentary",
+    "annotation",
+];
 
 /// The most words an incipit takes when the score has no early bar.
 const INCIPIT_WORDS: usize = 8;
@@ -247,6 +299,12 @@ impl Engraving {
                 .map(|a| a.trim().to_string())
                 .filter(|a| !a.is_empty())
                 .collect(),
+            other_headers: header
+                .fields
+                .iter()
+                .filter(|(n, _)| !TYPED.iter().any(|t| n.eq_ignore_ascii_case(t)))
+                .map(|(n, v)| (n.clone(), v.trim().to_string()))
+                .collect(),
             incipit,
             text,
             range,
@@ -284,6 +342,15 @@ mod tests {
         assert_eq!(s.kind, Some(OfficePart::Introit));
         assert_eq!(s.mode.as_ref().and_then(|m| m.number), Some(7));
         assert_eq!(s.annotations, ["Intr."]);
+        assert!(s.other_headers.is_empty());
+        let other = summarize("name: x;\nsource: Vespers booklet, p. 7;\ntranslation-of: puer-natus;\nMode: 7;\n%%\n(c4) a(g)");
+        assert_eq!(
+            other.other_headers,
+            [
+                ("source".to_string(), "Vespers booklet, p. 7".to_string()),
+                ("translation-of".to_string(), "puer-natus".to_string())
+            ]
+        );
         assert_eq!(s.text, "Puer natus est nobis et fílius");
         assert_eq!(s.incipit, "Puer natus est");
         assert_eq!((s.words, s.syllables, s.notes), (6, 11, 14));
@@ -326,19 +393,47 @@ mod tests {
         for (v, k) in [
             ("Antiphona", OfficePart::Antiphon),
             ("Ant.", OfficePart::Antiphon),
-            ("Responsorium breve", OfficePart::Responsory),
+            ("Responsorium breve", OfficePart::ShortResponsory),
+            ("Responsorium", OfficePart::Responsory),
+            ("Short Responsory", OfficePart::ShortResponsory),
+            ("Versicle", OfficePart::Versicle),
+            ("V.", OfficePart::Versicle),
+            ("Capitulum", OfficePart::Chapter),
+            ("Chapter", OfficePart::Chapter),
+            ("Oratio", OfficePart::Collect),
+            ("Collect", OfficePart::Collect),
             ("hymn", OfficePart::Hymn),
             ("Communio", OfficePart::Communion),
             ("Varia", OfficePart::Other),
             ("Ant.ad Magn.", OfficePart::Antiphon),
-            ("R. br.", OfficePart::Responsory),
+            ("R. br.", OfficePart::ShortResponsory),
             ("Alleluja", OfficePart::Alleluia),
             ("Allelúia", OfficePart::Alleluia),
             ("Psalmi", OfficePart::Psalm),
             ("Gloria", OfficePart::Gloria),
             ("Gloria Patri", OfficePart::Other),
+            ("V. Ant.", OfficePart::Antiphon),
+            ("V Antiphona", OfficePart::Antiphon),
+            ("℣.", OfficePart::Versicle),
+            ("℟. br.", OfficePart::ShortResponsory),
+            ("Re. br.", OfficePart::ShortResponsory),
+            ("Short Resp.", OfficePart::ShortResponsory),
+            ("Responsorium brevis", OfficePart::ShortResponsory),
+            ("Versiculi", OfficePart::Versicle),
+            ("Capitula", OfficePart::Chapter),
+            ("Orationes", OfficePart::Collect),
+            ("Collects", OfficePart::Collect),
+            ("Versus", OfficePart::Other),
+            ("V. R.", OfficePart::Versicle),
+            ("℣. ℟.", OfficePart::Versicle),
+            ("V. In omnem terram", OfficePart::Versicle),
+            ("V. Resp.", OfficePart::Versicle),
         ] {
             assert_eq!(OfficePart::parse(v), k, "{v}");
+        }
+        // A long run of V is read in one pass.
+        for v in ["v ".repeat(50_000), "V. ".repeat(50_000) + "Ant."] {
+            assert_eq!(OfficePart::parse(&v), OfficePart::Versicle);
         }
     }
 

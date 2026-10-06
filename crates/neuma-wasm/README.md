@@ -84,11 +84,15 @@ have already loaded. Header fields are `null` when the source leaves them out, a
 markup is removed.
 
 - `name`, `officePart`, `occasion`, `book`, `language`, `transcriber`, `gabcCopyright`,
-  `scoreCopyright`, `commentary`, `annotations`: the headers as written.
+  `scoreCopyright`, `commentary`, `annotations`: the headers as written. `occasion` is a
+  short label; keep the full list of days a piece is sung in a calendar.
+- `otherHeaders`: every other header as `{ name, value }`, in source order, so a library can
+  keep its own fields (`source`, `translation-of`) in the score file. Values are only trimmed:
+  TeX markup and empty values are kept.
 - `kind`: what `officePart` names, in Latin or English, spelled out or abbreviated:
   `antiphon`, `introit`, `gradual`, `alleluia`, `tract`, `sequence`, `offertory`,
-  `communion`, `hymn`, `responsory`, `psalm`, `canticle`, `kyrie`, `gloria`, `credo`,
-  `sanctus`, `agnus` or `other`.
+  `communion`, `hymn`, `responsory`, `short-responsory`, `versicle`, `chapter`, `collect`,
+  `psalm`, `canticle`, `kyrie`, `gloria`, `credo`, `sanctus`, `agnus` or `other`.
 - `mode`: `{ number, name, modifier, differentia }`. `number` is 1 to 8 when the header
   starts with one (`8`, `VIII`, `1g`), else `null` (`per`).
 - `incipit`: the opening words, up to the first bar (not a virgula) at or after the end of

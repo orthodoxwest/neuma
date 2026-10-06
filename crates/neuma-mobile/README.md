@@ -99,7 +99,7 @@ cheap enough to index a library. `chant.summary()` gives the same entry for a lo
 The entry holds:
 
 - the typed headers: name, office part with its `OfficePart` kind, mode with number and
-  differentia, occasion and the rest;
+  differentia, occasion and the rest, plus `otherHeaders` for any other header;
 - the incipit and full text, for search;
 - the lowest, highest and final pitches, in semitones above do;
 - counts, and the length in pulses.

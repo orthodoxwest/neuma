@@ -220,6 +220,10 @@ pub fn office_part_name(k: OfficePart) -> &'static str {
         OfficePart::Communion => "communion",
         OfficePart::Hymn => "hymn",
         OfficePart::Responsory => "responsory",
+        OfficePart::ShortResponsory => "short-responsory",
+        OfficePart::Versicle => "versicle",
+        OfficePart::Chapter => "chapter",
+        OfficePart::Collect => "collect",
         OfficePart::Psalm => "psalm",
         OfficePart::Canticle => "canticle",
         OfficePart::Kyrie => "kyrie",
@@ -278,6 +282,19 @@ pub fn summary(out: &mut String, s: &Summary) {
             out.push(',');
         }
         string(out, a);
+    }
+    out.push(']');
+    field(out, &mut first, "otherHeaders");
+    out.push('[');
+    for (i, (n, v)) in s.other_headers.iter().enumerate() {
+        if i > 0 {
+            out.push(',');
+        }
+        out.push_str("{\"name\":");
+        string(out, n);
+        out.push_str(",\"value\":");
+        string(out, v);
+        out.push('}');
     }
     out.push(']');
     field(out, &mut first, "incipit");

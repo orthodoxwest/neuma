@@ -509,6 +509,10 @@ pub enum OfficePart {
     Communion,
     Hymn,
     Responsory,
+    ShortResponsory,
+    Versicle,
+    Chapter,
+    Collect,
     Psalm,
     Canticle,
     Kyrie,
@@ -548,6 +552,8 @@ pub struct Summary {
     pub score_copyright: Option<String>,
     pub commentary: Option<String>,
     pub annotations: Vec<String>,
+    /// Every other header, as written and in source order (`source`, `translation-of`).
+    pub other_headers: Vec<HeaderField>,
     /// The opening words: up to the first bar (other than a virgula) at or after the end of
     /// the second word, at most eight words.
     pub incipit: String,
@@ -563,6 +569,13 @@ pub struct Summary {
     pub words: u32,
     /// The length with the default weights, in pulses.
     pub duration: f32,
+}
+
+/// A header the summary doesn't type.
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct HeaderField {
+    pub name: String,
+    pub value: String,
 }
 
 /// Summarizes a score without engraving it for display: cheap enough to index a library.
@@ -587,6 +600,10 @@ fn summary(s: neuma::Summary) -> Summary {
             P::Communion => OfficePart::Communion,
             P::Hymn => OfficePart::Hymn,
             P::Responsory => OfficePart::Responsory,
+            P::ShortResponsory => OfficePart::ShortResponsory,
+            P::Versicle => OfficePart::Versicle,
+            P::Chapter => OfficePart::Chapter,
+            P::Collect => OfficePart::Collect,
             P::Psalm => OfficePart::Psalm,
             P::Canticle => OfficePart::Canticle,
             P::Kyrie => OfficePart::Kyrie,
@@ -610,6 +627,11 @@ fn summary(s: neuma::Summary) -> Summary {
         score_copyright: s.score_copyright,
         commentary: s.commentary,
         annotations: s.annotations,
+        other_headers: s
+            .other_headers
+            .into_iter()
+            .map(|(name, value)| HeaderField { name, value })
+            .collect(),
         incipit: s.incipit,
         text: s.text,
         lowest: s.range.map(|r| r.0),
