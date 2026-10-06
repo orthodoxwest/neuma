@@ -190,6 +190,15 @@ fn parse_body(src: &str, start: usize, sink: &mut Sink) -> Vec<Syllable> {
                     i += 1;
                 }
             }
+            '<' if let Some(end) = verbatim_end(&body[i..]) => {
+                // Gregorio reads `<v>`, `<alt>` and `<sp>` to their closing tag, so a `(` inside
+                // is text, not notes: `<v>(</v>` prints a parenthesis.
+                if text.is_empty() {
+                    text_start = i;
+                }
+                text.push_str(&body[i..i + end]);
+                i += end;
+            }
             '(' => {
                 let close = find_close(body, i + 1);
                 let notes_src = &body[i + 1..close];
@@ -249,6 +258,20 @@ fn parse_body(src: &str, start: usize, sink: &mut Sink) -> Vec<Syllable> {
         );
     }
     syllables
+}
+
+/// For text starting with `<v>`, `<alt>` or `<sp>`, the length through its closing tag. `None`
+/// for other text, or when the tag never closes.
+fn verbatim_end(text: &str) -> Option<usize> {
+    let close = ["v", "alt", "sp"]
+        .into_iter()
+        .find(|t| {
+            text.strip_prefix('<')
+                .and_then(|r| r.strip_prefix(t))
+                .is_some_and(|r| r.starts_with('>'))
+        })
+        .map(|t| format!("</{t}>"))?;
+    text.find(&close).map(|n| n + close.len())
 }
 
 /// The index of the `)` that closes notes opened before `from`, or the end of the body.

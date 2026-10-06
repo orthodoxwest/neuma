@@ -290,3 +290,20 @@ fn repeated_underscores_extend_the_episema() {
     };
     assert_eq!(below("(c4) a(fgf__0)"), [false, true, true]);
 }
+
+#[test]
+fn parentheses_in_verbatim_and_alt_text_are_lyric() {
+    // From GregoBase: an editorial note in parentheses set with `<v>`.
+    let p = parse("(c4) <i><v>(</v>Non repetitur.<v>)</v></i>(d) A(g)\n");
+    let s = &p.score.syllables;
+    assert_eq!(s.len(), 3);
+    assert_eq!(s[1].text.plain(), "(Non repetitur.)");
+    assert!(s[1].text.runs[0].style.italic);
+    assert!(p.diagnostics.is_empty(), "{:?}", p.diagnostics);
+    let p = parse("(c4) A<alt>(octava)</alt>(g) B(h)\n");
+    assert_eq!(p.score.syllables.len(), 3);
+    assert_eq!(p.score.syllables[1].text.plain(), "A");
+    // An unclosed tag doesn't swallow the rest of the score.
+    let p = parse("(c4) A<v>(g) B(h)\n");
+    assert_eq!(p.score.syllables.len(), 3);
+}
