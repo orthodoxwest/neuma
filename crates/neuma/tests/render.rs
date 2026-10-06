@@ -755,3 +755,34 @@ fn a_double_mora_on_a_clivis_dots_each_note() {
     assert_eq!(ys.len(), 2);
     assert_eq!(ys[0], ys[1]);
 }
+
+#[test]
+fn an_end_of_line_custos_keeps_gregorios_gap() {
+    // GregorioTeX's spacebeforeeolcustos: 0.23 cm, 1.6 staff spaces, from the last note.
+    let src = format!("(c4) {} (::)", ["la(g)"; 40].join(" "));
+    let eng = parse(&src).score.engrave(&ApproxMeasure, &NO_INITIAL);
+    let opts = LayoutOptions::default();
+    let layout = eng.layout(300.0, &opts);
+    let list = layout.display();
+    let map = layout.notes(&Weights::default());
+    let first_line_end = map
+        .notes
+        .iter()
+        .filter(|n| n.line == 0)
+        .map(|n| n.x + n.w / 2.0)
+        .fold(0.0, f32::max);
+    let custos = list
+        .items
+        .iter()
+        .find_map(|i| match i {
+            Item::Glyph {
+                x,
+                role: neuma::Ink::Custos,
+                ..
+            } => Some(*x),
+            _ => None,
+        })
+        .unwrap();
+    let gap = (custos - first_line_end) / opts.scale;
+    assert!(gap > 1.5 && gap < 1.8, "{gap}");
+}

@@ -52,8 +52,8 @@ const INITIAL_ANNOTATION_GAP: f32 = 1.6;
 pub(crate) const INITIAL_BEFORE: f32 = 1.39;
 /// Gap between the initial's column and the staff.
 const INITIAL_GAP: f32 = 1.0;
-/// Gap before an end-of-line custos.
-const CUSTOS_GAP: f32 = INTRA;
+/// Gap before an end-of-line custos: GregorioTeX's `spacebeforeeolcustos` (0.23 cm).
+const CUSTOS_GAP: f32 = 1.6;
 /// Two syllables of a word whose texts are closer than this touch, and no hyphen goes between
 /// them; any wider gap gets one, set right after the first syllable's text (GregorioTeX's
 /// `maximumspacewithoutdash` is zero).
