@@ -151,7 +151,22 @@ fn words(spans: &[Span], fonts: &Fonts, size: f32) -> Vec<Word> {
         }
     }
     flush(&mut cur, &mut out);
-    out
+    // A pointing mark standing alone (`the · Lórd`) belongs to the syllable after it: the
+    // line never breaks between them.
+    let space = fonts.width(" ", fonts.resolve(false, false), false) * size;
+    let mut glued: Vec<Word> = Vec::with_capacity(out.len());
+    let mut words = out.into_iter().peekable();
+    while let Some(mut w) = words.next() {
+        while w.pieces.iter().all(|(t, _)| t == "·") {
+            let Some(next) = words.next() else { break };
+            let style = w.pieces.last().map_or_else(Style::default, |p| Style { red: false, ..p.1 });
+            w.pieces.push((" ".into(), style));
+            w.pieces.extend(next.pieces);
+            w.width += space + next.width;
+        }
+        glued.push(w);
+    }
+    glued
 }
 
 fn color(s: Style) -> Color {
@@ -345,6 +360,24 @@ mod tests {
         assert_eq!(left(&lines[2]), 0.0);
         let short = set(&f, &para("Amen.", Align::Left, true), 150.0);
         assert_eq!(short.len(), 2);
+    }
+
+    /// The pointing mark never ends a line: it stays with the syllable it marks.
+    #[test]
+    fn point_stays_with_its_syllable() {
+        let f = Fonts::standard();
+        let text = "Hear me when I call, O God of my · ríghteousness * thou hast set me at liberty when I was in trouble; have mercy upon me, and hearken un·to my · práyer.";
+        let mut p = para(text, Align::Left, false);
+        p.spans = crate::compose::pointed_spans_for_test(text, &f);
+        for width in (120..360).step_by(3) {
+            for l in set(&f, &p, width as f32) {
+                let last = l.ops.iter().rev().find_map(|o| match o {
+                    Op::Text { run, .. } => Some(run.glyphs.iter().map(|g| g.text.as_str()).collect::<String>()),
+                    _ => None,
+                });
+                assert_ne!(last.as_deref(), Some("·"), "a line ends with the point at width {width}");
+            }
+        }
     }
 
     #[test]

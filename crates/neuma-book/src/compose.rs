@@ -697,6 +697,11 @@ fn split_number(line: &str) -> (Option<&str>, &str) {
     }
 }
 
+#[cfg(test)]
+pub(crate) fn pointed_spans_for_test(body: &str, fonts: &Fonts) -> Vec<Span> {
+    pointed_spans(body, fonts)
+}
+
 /// Pointed text with its marks in red: `·`, `*`, `†`, the held-note dash, and `[rubrics]`
 /// in red italic without their brackets.
 fn pointed_spans(body: &str, fonts: &Fonts) -> Vec<Span> {
