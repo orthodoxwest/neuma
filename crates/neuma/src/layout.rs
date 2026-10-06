@@ -86,6 +86,16 @@ const LOW_NOTE_DROP: f32 = 1.0;
 pub(crate) const BASELINE_PITCH: f32 = 13.43;
 /// Space between stacked lines, in staff spaces.
 const LINE_GAP: f32 = 1.0;
+/// Demerits for each line, which outweigh any line's own within the tolerance, so a score
+/// takes as few lines as it can, as GregorioTeX's `\looseness=-1` asks.
+const LINE_PENALTY: f32 = 1.0e6;
+/// The loosest line taken to save a line: GregorioTeX's tolerance of 9000 lets its word
+/// gaps stretch about 4.5 times their 0.05 cm glue, 1.6 staff spaces, which is badness 115
+/// here.
+const TOLERANCE: f32 = 115.0;
+/// Demerits for each point of badness past the tolerance: a line that loose is taken only
+/// to avoid one looser still, so lines before a written break share the slack.
+const TOO_LOOSE: f32 = 1.0e4;
 /// Extra demerits for a break inside a melisma: about a moderately loose line's worth.
 const MELISMA_DEMERITS: f32 = 2500.0;
 
@@ -488,7 +498,9 @@ impl Engraving {
                             (100.0 * r * r * r).min(10000.0)
                         };
                         if badness.is_finite() {
-                            let d = (10.0 + badness) * (10.0 + badness);
+                            // As GregorioTeX (looseness -1, tolerance 9000): as few lines as can be
+                            // set no looser than it allows, the best of those by demerits.
+                            let d = (10.0 + badness) * (10.0 + badness) + LINE_PENALTY + TOO_LOOSE * (badness - TOLERANCE).max(0.0);
                             // A syllable's end is a better break than a cut inside its melisma.
                             let total = base + d + break_cost;
                             let better = best[end + 1][next].is_none_or(|(b, _, _)| total < b);

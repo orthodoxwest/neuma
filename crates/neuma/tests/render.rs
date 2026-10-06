@@ -889,3 +889,24 @@ fn a_line_a_little_too_wide_shrinks_its_word_gaps() {
     assert!(gaps.iter().all(|g| *g < space - 0.05 && *g >= space - 0.35 - 0.01), "{gaps:?}");
     assert!(gaps.iter().all(|g| (g - gaps[0]).abs() < 0.01), "{gaps:?}");
 }
+
+#[test]
+fn a_score_takes_as_few_lines_as_gregorio_would() {
+    use neuma::TextMeasure;
+    // GregorioTeX sets \looseness=-1: rather than give a word a line of its own, it uses all
+    // the shrink its word gaps have. At the narrowest column that holds ten words on one line,
+    // each gap has given up nearly all of its 0.35 staff spaces.
+    let src = format!("(c4) {}", ["mum(g)"; 10].join(" "));
+    let eng = parse(&src).score.engrave(&ApproxMeasure, &NO_INITIAL);
+    let opts = LayoutOptions::default();
+    let mut w = 2000.0;
+    while eng.layout(w - 1.0, &opts).line_count() == 1 {
+        w -= 1.0;
+    }
+    let t = texts(&src, w, &opts);
+    let space = 0.48 * StyleOptions::default().lyric_size;
+    for p in t.windows(2) {
+        let gap = (p[1].1 - p[0].1 - ApproxMeasure.advance(&p[0].0, Default::default()) * p[0].2) / opts.scale;
+        assert!(gap < space - 0.3, "{gap}");
+    }
+}
