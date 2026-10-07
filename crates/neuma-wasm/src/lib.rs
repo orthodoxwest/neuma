@@ -217,7 +217,12 @@ impl Chant {
     /// What to highlight for a caret at `offset` (UTF-16 units if `utf16`, else UTF-8 bytes)
     /// in the last layout, as a JSON array, most specific first.
     pub fn elements_at_json(&self, offset: usize, utf16: bool) -> String {
-        let byte = if utf16 { self.utf16.to_utf8(offset) } else { offset };
+        // An offset past the end is the end.
+        let byte = if utf16 {
+            self.utf16.to_utf8(offset)
+        } else {
+            offset.min(self.source.len())
+        };
         let mut out = String::from("[");
         if let Some(map) = &self.sources {
             for (i, e) in map.at(byte).into_iter().enumerate() {
