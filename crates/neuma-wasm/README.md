@@ -95,7 +95,10 @@ textarea.addEventListener("input", () => {
   // page.svgParts: { head, defs, rest, lines: [{ top, svg }] }
 });
 host.addEventListener("click", (e) => {
-  const hit = chant.sourceAt(e.offsetX, e.offsetY);   // { kind, index, from, to, x, y, w, h, … }
+  // Layout coordinates from the score's top left: `offsetX`/`offsetY` would be relative to
+  // whichever line's <svg> was clicked.
+  const box = host.getBoundingClientRect();
+  const hit = chant.sourceAt(e.clientX - box.left, e.clientY - box.top); // { kind, index, from, to, x, y, w, h, … }
   if (hit) textarea.setSelectionRange(hit.from, hit.to);
 });
 const lit = chant.elementsAt(textarea.selectionStart); // what to highlight for the caret

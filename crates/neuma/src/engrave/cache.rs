@@ -324,7 +324,6 @@ fn same_state(now: &Resume, was: &Resume, shift: Shift) -> bool {
         && now.initial_clef == was.initial_clef.as_ref().map(|c| shift.clef(c))
         && now.alteration == was.alteration
         && now.pending_break == was.pending_break
-        && now.pending_span == shift.span(&was.pending_span)
         && now.nocustos == was.nocustos
         && now.warned_face == was.warned_face
         && now.last_after == was.last_after
@@ -337,7 +336,6 @@ fn restore(p: &mut Pass, r: &Resume, shift: Shift, d_word: isize) {
     p.e.initial_clef = r.initial_clef.as_ref().map(|c| shift.clef(c));
     p.e.alteration = r.alteration.clone();
     p.pending_break = r.pending_break;
-    p.pending_span = shift.span(&r.pending_span);
     p.nocustos = r.nocustos;
     p.warned_face = r.warned_face;
 }
@@ -358,7 +356,6 @@ fn moved_mark(r: &Resume, now: &Resume, was: &Resume, shift: Shift) -> Resume {
         initial_clef: r.initial_clef.as_ref().map(|c| shift.clef(c)),
         alteration: r.alteration.clone(),
         pending_break: r.pending_break,
-        pending_span: shift.span(&r.pending_span),
         nocustos: r.nocustos,
         warned_face: r.warned_face,
         last_after: r.last_after,

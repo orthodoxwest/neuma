@@ -9,6 +9,11 @@ use crate::score::{Lyric, LyricRun, TextStyle};
 /// Parses one syllable's text. `offset` is the text's byte offset in the source, for spans.
 pub(super) fn parse(text: &str, offset: usize, state: &mut LyricState, sink: &mut Sink) -> Lyric {
     let mut out = Builder::default();
+    // Where text runs on to the syllable's end (an unended translation, `<` or verbatim tag),
+    // so a closer appended there would be taken into it; and a style closer left without its
+    // `>` at the end, as `</i`.
+    let mut swallow: Option<usize> = None;
+    let mut half_closer: Option<&str> = None;
     let mut i = 0;
     let b = text.as_bytes();
     while i < b.len() {
@@ -33,7 +38,13 @@ pub(super) fn parse(text: &str, offset: usize, state: &mut LyricState, sink: &mu
             }
             '[' => {
                 // Translation text (E2): skipped for now.
-                let end = text[i..].find(']').map_or(text.len(), |n| i + n + 1);
+                let end = text[i..].find(']').map_or_else(
+                    || {
+                        swallow.get_or_insert(i);
+                        text.len()
+                    },
+                    |n| i + n + 1,
+                );
                 if &text[i..end] != "[/]" {
                     sink.info(
                         offset + i..offset + end,
@@ -54,6 +65,10 @@ pub(super) fn parse(text: &str, offset: usize, state: &mut LyricState, sink: &mu
             }
             '<' => {
                 let Some(close) = text[i..].find('>') else {
+                    swallow.get_or_insert(i);
+                    half_closer = text[i + 1..]
+                        .strip_prefix('/')
+                        .and_then(|name| STYLE_TAGS.into_iter().find(|t| *t == name));
                     out.push('<', style(state), state.elision > 0);
                     i += 1;
                     continue;
@@ -72,11 +87,18 @@ pub(super) fn parse(text: &str, offset: usize, state: &mut LyricState, sink: &mu
                         format!("`<{t}>` has no `</{t}>` in its syllable, so it runs to the syllable's end"),
                     );
                     let end = offset + text.len();
-                    sink.fix(Fix::new(
-                        end..end,
-                        format!("</{t}>"),
-                        format!("Close `<{t}>` at the end of its syllable"),
-                    ));
+                    // A closer left without its `>` (`<sp>ae</sp`) is completed; another would
+                    // only be taken into the text.
+                    if text.ends_with(&format!("</{t}")) {
+                        sink.fix(Fix::new(end..end, ">", format!("Complete `</{t}>`")));
+                    } else {
+                        sink.fix(Fix::new(
+                            end..end,
+                            format!("</{t}>"),
+                            format!("Close `<{t}>` at the end of its syllable"),
+                        ));
+                    }
+                    swallow.get_or_insert(i);
                 }
                 i = match tag {
                     "i" => bump(&mut state.italic, after),
@@ -198,7 +220,41 @@ pub(super) fn parse(text: &str, offset: usize, state: &mut LyricState, sink: &mu
             }
         }
     }
+    settle_fixes(state, text, offset, swallow, half_closer);
     out.finish()
+}
+
+/// A style tag not yet closed, and how to close it in its syllable, if that can be done.
+#[derive(Debug)]
+pub(crate) struct OpenTag {
+    pub name: &'static str,
+    pub span: Range<usize>,
+    syllable_end: usize,
+    pub fix: Option<Fix>,
+}
+
+/// Points the fixes of tags opened in a syllable past which text runs to its end at where that
+/// text starts, or completes a closer missing its `>`, or drops the fix when neither will do.
+fn settle_fixes(state: &mut LyricState, text: &str, offset: usize, swallow: Option<usize>, half_closer: Option<&str>) {
+    let end = offset + text.len();
+    for tag in state.open.iter_mut().filter(|t| t.syllable_end == end) {
+        tag.fix = if half_closer == Some(tag.name) {
+            Some(Fix::new(end..end, ">", format!("Complete `</{}>`", tag.name)))
+        } else {
+            match swallow {
+                None => continue,
+                Some(at) if offset + at >= tag.span.end => {
+                    let c = text[at..].chars().next().unwrap_or('[');
+                    Some(Fix::new(
+                        offset + at..offset + at,
+                        format!("</{}>", tag.name),
+                        format!("Close `<{}>` before `{c}`", tag.name),
+                    ))
+                }
+                Some(_) => None,
+            }
+        };
+    }
 }
 
 /// The style tags, which stay open across syllables until closed.
@@ -207,9 +263,19 @@ const STYLE_TAGS: [&str; 6] = ["i", "b", "sc", "ul", "c", "e"];
 /// Keeps `state.open` in step with a style tag opening or closing.
 fn track_style(state: &mut LyricState, tag: &str, span: Range<usize>, syllable_end: usize) {
     if let Some(name) = STYLE_TAGS.into_iter().find(|t| *t == tag) {
-        state.open.push((name, span, syllable_end));
+        let fix = Fix::new(
+            syllable_end..syllable_end,
+            format!("</{name}>"),
+            format!("Close `<{name}>` at the end of its syllable"),
+        );
+        state.open.push(OpenTag {
+            name,
+            span,
+            syllable_end,
+            fix: Some(fix),
+        });
     } else if let Some(name) = tag.strip_prefix('/')
-        && let Some(k) = state.open.iter().rposition(|o| o.0 == name)
+        && let Some(k) = state.open.iter().rposition(|o| o.name == name)
     {
         state.open.remove(k);
     }

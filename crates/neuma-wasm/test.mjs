@@ -144,6 +144,15 @@ assert.equal(ed.sourceAt(bar[0].x + bar[0].w / 2, bar[0].y + 1).kind, "bar");
 const bytes = new TextEncoder().encode(fixed.slice(0, hi + 1)).length;
 assert.deepEqual(ed.elementsAt(bytes, { units: "utf8" }), at);
 assert.equal(ed.sourceAt(-100, -100), null);
+// Carets past either end are at it, however far: none wraps around to the start.
+const atEnd = ed.elementsAt(fixed.length);
+for (const far of [fixed.length + 1, 2 ** 32, 2 ** 32 + 5, 2 ** 53, Infinity]) {
+  assert.deepEqual(ed.elementsAt(far), atEnd, String(far));
+  if (far > 2 ** 31) assert.deepEqual(ed.elementsAt(far, { units: "utf8" }), atEnd, String(far));
+}
+for (const before of [-1, -(2 ** 32), -Infinity, NaN]) {
+  assert.deepEqual(ed.elementsAt(before), ed.elementsAt(0), String(before));
+}
 
 // The SVG a line at a time, without ids, draws what the whole SVG draws.
 const parts = ed.layout(500, { svg: "lines", ids: false, timeline: false }).svgParts;

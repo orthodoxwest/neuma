@@ -10,7 +10,7 @@ pub use cache::EngraveCache;
 pub use initial::Initial;
 pub(crate) use initial::{CAP_HEIGHT, strip_tex};
 
-use crate::diag::{Diagnostic, Fix, Sink};
+use crate::diag::{Diagnostic, Sink};
 use crate::glyphs::GlyphId as G;
 use crate::notes::PauseKind;
 use crate::score::{
@@ -776,7 +776,6 @@ impl Score {
             word: 0,
             warned_face: false,
             pending_break: None,
-            pending_span: 0..0,
             nocustos: false,
             marks: marks.then(|| Vec::with_capacity(self.syllables.len() + 1)),
         }
@@ -804,7 +803,6 @@ struct Pass<'a> {
     warned_face: bool,
     /// A break written in a syllable of its own, for the next segment.
     pending_break: Option<Break>,
-    pending_span: std::ops::Range<usize>,
     nocustos: bool,
     /// The state before each syllable and after the last, when kept for an [`EngraveCache`].
     marks: Option<Vec<Resume>>,
@@ -826,7 +824,6 @@ struct Resume {
     initial_clef: Option<Clef>,
     alteration: Vec<(StaffPosition, i8)>,
     pending_break: Option<Break>,
-    pending_span: std::ops::Range<usize>,
     nocustos: bool,
     warned_face: bool,
     /// What may happen after the last segment so far, which a later syllable may change.
@@ -848,7 +845,6 @@ impl Pass<'_> {
             initial_clef: self.e.initial_clef.clone(),
             alteration: self.e.alteration.clone(),
             pending_break: self.pending_break,
-            pending_span: self.pending_span.clone(),
             nocustos: self.nocustos,
             warned_face: self.warned_face,
             last_after: self.e.segments.last().map(|s| s.after),
@@ -1036,7 +1032,6 @@ impl Pass<'_> {
                     };
                     if open.empty {
                         self.pending_break = Some(brk);
-                        self.pending_span = b.span.clone();
                     } else {
                         let o = std::mem::replace(&mut open, Open::new());
                         if let Some(k) = self.e.close(o, si, first_seg, syl.word_start, space_before) {
@@ -1220,18 +1215,9 @@ impl Pass<'_> {
             let last = score.syllables.len().saturating_sub(1) as u32;
             e.close(Open::new(), last, true, true, 0.0);
         }
-        if let Some(brk) = self.pending_break
-            && let Some(last) = e.segments.last_mut()
-        {
-            let _ = brk;
-            last.after = Break::Allowed;
-            e.sink.info(
-                self.pending_span.clone(),
-                "engrave::final-break",
-                "a line break at the end of the score is dropped",
-            );
-            e.sink.fix(Fix::new(self.pending_span.clone(), "", "Remove the line break"));
-        }
+        // A break pending here would have come from a syllable of its own at the end; but
+        // that syllable's empty segment takes it (and is dropped), so none is left.
+        debug_assert!(self.pending_break.is_none());
 
         let e = self.e;
         let lowest = e.notes.iter().map(|n| n.position).min().unwrap_or(0);

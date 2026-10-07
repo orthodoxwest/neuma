@@ -300,7 +300,10 @@ export class Chant {
   elementsAt(caret, { units = "utf16" } = {}) {
     const handle = this.#live();
     return guarded((w) => {
-      w.chant_elements_at(handle, Math.max(0, caret) >>> 0, units === "utf8" ? 0 : 1);
+      // Past either end means at it: saturate to a u32 (the engine clamps to the source's
+      // length) rather than let `>>>` wrap, and read NaN as 0.
+      const at = Math.min(Math.max(Math.trunc(Number(caret)) || 0, 0), 0xffffffff);
+      w.chant_elements_at(handle, at, units === "utf8" ? 0 : 1);
       return JSON.parse(takeOutput());
     });
   }
