@@ -523,3 +523,27 @@ fn unfinished_double_clef() {
     let p = parse("(c4@c3)");
     assert!(p.diagnostics.iter().any(|d| d.code == "gabc::double-clef"));
 }
+
+thread_local! {
+    /// How many times `parse` has parsed a source again to try a fix, on this thread.
+    pub(super) static RECHECKS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[test]
+fn only_verbatim_tag_fixes_are_tried_again() {
+    let rechecks = |src: &str| {
+        RECHECKS.with(|n| n.set(0));
+        let parsed = super::parse(src);
+        (
+            RECHECKS.with(|n| n.get()),
+            parsed.diagnostics.iter().filter(|d| d.fix.is_some()).count(),
+        )
+    };
+    // 500 unclosed `<i>`, each with a fix, in about 30 KB: none is parsed again, so parsing
+    // stays linear.
+    let src = format!("(c4) {}", "<i>Ky(g)ri(h)e(g) e(h)le(g)i(h)son(g) (,) ".repeat(500));
+    assert!(src.len() > 20_000);
+    assert_eq!(rechecks(&src), (0, 500));
+    // A verbatim tag's fix is tried, once.
+    assert_eq!(rechecks("(c4) <sp>V/ a(g) b(h) <sp>R/ c(g)"), (1, 1));
+}
