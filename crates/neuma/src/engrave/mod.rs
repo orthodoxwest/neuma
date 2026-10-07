@@ -180,10 +180,13 @@ pub(crate) struct LyricBox {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct HeadBox {
     pub note: u32,
+    /// The notehead's center and size.
     pub x: f32,
     pub y: f32,
     pub w: f32,
     pub h: f32,
+    /// The box hit testing uses (left, top, right, bottom), in the same coordinates.
+    pub hit: [f32; 4],
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -545,12 +548,14 @@ impl Engraver<'_> {
             }
             for h in &built.heads {
                 let (cx, y, w, height) = h.hit_box();
+                let [l, t, r, b] = h.hit_rect();
                 open.heads.push(HeadBox {
                     note: base + h.index as u32,
                     x: cx + x,
                     y,
                     w,
                     h: height,
+                    hit: [l + x, t, r + x, b],
                 });
             }
             if open.first_note.is_none() {

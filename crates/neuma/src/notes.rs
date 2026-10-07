@@ -40,6 +40,9 @@ pub struct MappedNote {
     /// Notehead box, output units.
     pub w: f32,
     pub h: f32,
+    /// The box [`NoteMap::note_at`] tests (left, top, right, bottom), output units: the
+    /// notehead box, less what overlaps a neighbour at a porrectus swash's ends.
+    hit: [f32; 4],
     /// Source span in GABC bytes.
     pub span: Range<usize>,
     pub staff_position: i8,
@@ -185,14 +188,17 @@ impl Layout<'_> {
     pub fn notes(&self, weights: &Weights) -> NoteMap {
         let eng = self.eng;
         let s = self.scale;
-        // (line, x, y, w, h) of each placed note.
-        type Placed = Option<(u32, f32, f32, f32, f32)>;
+        // (line, x, y, w, h, hit box) of each placed note.
+        type Placed = Option<(u32, f32, f32, f32, f32, [f32; 4])>;
         let mut placed: Vec<Placed> = vec![None; eng.notes.len()];
         for (li, line) in self.lines.iter().enumerate() {
             for (i, seg) in eng.segments[line.first..=line.last].iter().enumerate() {
                 for h in &seg.heads {
                     if let Some(slot) = placed.get_mut(h.note as usize) {
-                        *slot = Some((li as u32, (line.xs[i] + h.x) * s, (line.staff + h.y) * s, h.w * s, h.h * s));
+                        let [l, t, r, b] = h.hit;
+                        let (x0, y0) = (line.xs[i], line.staff);
+                        let hit = [(x0 + l) * s, (y0 + t) * s, (x0 + r) * s, (y0 + b) * s];
+                        *slot = Some((li as u32, (x0 + h.x) * s, (y0 + h.y) * s, h.w * s, h.h * s, hit));
                     }
                 }
             }
@@ -206,7 +212,7 @@ impl Layout<'_> {
         let mut kept = 0;
         for (id, info) in eng.notes.iter().enumerate() {
             let after = truncated && last_placed.is_none_or(|l| id > l);
-            let Some((line, x, y, w, h)) = placed[id].or(after.then_some((0, 0.0, 0.0, 0.0, 0.0))) else {
+            let Some((line, x, y, w, h, hit)) = placed[id].or(after.then_some((0, 0.0, 0.0, 0.0, 0.0, [0.0; 4]))) else {
                 continue;
             };
             if !after {
@@ -225,6 +231,7 @@ impl Layout<'_> {
                 y,
                 w,
                 h,
+                hit,
                 span: info.span.clone(),
                 staff_position: info.position,
                 degree,
@@ -334,7 +341,7 @@ impl NoteMap {
         if let Some(n) = self
             .notes
             .iter()
-            .find(|n| (x - n.x).abs() <= n.w / 2.0 && (y - n.y).abs() <= n.h / 2.0)
+            .find(|n| x >= n.hit[0] && x <= n.hit[2] && y >= n.hit[1] && y <= n.hit[3])
         {
             return Some(n.id);
         }

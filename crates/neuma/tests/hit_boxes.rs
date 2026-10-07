@@ -1,4 +1,5 @@
-//! Note hit boxes: a porrectus swash's ends don't overlap the notes around them.
+//! Note hit boxes: a porrectus swash's ends find themselves, except where a neighbour's
+//! notehead is.
 
 use neuma::{ApproxMeasure, Initial, LayoutOptions, MappedNote, NoteMap, StyleOptions, Weights, parse};
 
@@ -11,13 +12,13 @@ fn note_map(src: &str) -> NoteMap {
     eng.layout(2000.0, &LayoutOptions::default()).notes(&Weights::SOLESMES)
 }
 
-/// Overlap of two boxes along x and y; both positive means they share area.
-fn overlap(a: &MappedNote, b: &MappedNote) -> (f32, f32) {
-    ((a.w + b.w) / 2.0 - (a.x - b.x).abs(), (a.h + b.h) / 2.0 - (a.y - b.y).abs())
+/// Whether (`x`, `y`) is inside the note's notehead box.
+fn inside(n: &MappedNote, x: f32, y: f32) -> bool {
+    (x - n.x).abs() < n.w / 2.0 && (y - n.y).abs() < n.h / 2.0
 }
 
 #[test]
-fn porrectus_ends_do_not_overlap_their_neighbours() {
+fn porrectus_ends_hit_test_as_themselves_except_where_a_neighbour_is() {
     // Porrectus, porrectus flexus and torculus resupinus at each swash width, with the
     // note before reached by a stem, and liquescent ends; with where the swash starts.
     for (neume, first) in [
@@ -37,14 +38,28 @@ fn porrectus_ends_do_not_overlap_their_neighbours() {
         ("ghgh~", 1),
         ("fgfg", 1),
     ] {
-        let ns = note_map(&format!("(c4) a({neume}) b(g)")).notes;
+        let map = note_map(&format!("(c4) a({neume}) b(g)"));
+        let ns = &map.notes;
         for end in [first, first + 1] {
-            for (j, other) in ns.iter().enumerate() {
-                if j == end {
-                    continue;
+            // Sample the swash end's whole notehead box: a point inside a neighbour's box
+            // finds that neighbour, and any other point finds the swash end.
+            let e = &ns[end];
+            const N: usize = 24;
+            for i in 0..N {
+                for j in 0..N {
+                    let x = e.x - e.w / 2.0 + e.w * (i as f32 + 0.5) / N as f32;
+                    let y = e.y - e.h / 2.0 + e.h * (j as f32 + 0.5) / N as f32;
+                    let found = map.note_at(x, y);
+                    let neighbours: Vec<u32> = ns.iter().filter(|n| n.id != e.id && inside(n, x, y)).map(|n| n.id).collect();
+                    if neighbours.is_empty() {
+                        assert_eq!(found, Some(e.id), "{neume}: ({x}, {y}) in note {end}'s box");
+                    } else {
+                        assert!(
+                            found.is_some_and(|f| neighbours.contains(&f)),
+                            "{neume}: ({x}, {y}) is in {neighbours:?} but finds {found:?}"
+                        );
+                    }
                 }
-                let (ox, oy) = overlap(&ns[end], other);
-                assert!(ox <= 1e-3 || oy <= 1e-3, "{neume}: notes {end} and {j} overlap by {ox} x {oy}");
             }
         }
     }
@@ -62,6 +77,8 @@ fn porrectus_hit_testing_finds_each_note() {
     let (start, end) = (&ns[0], &ns[1]);
     assert_eq!(end.y - start.y, 6.0);
     assert!((end.x - start.x - (neuma::glyphs::GlyphId::Porrectus1.width() - 1.0) * 6.0).abs() < 1e-3);
+    // Off the swash's end on the side away from the stacked note: still the swash's end.
+    assert_eq!(map.note_at(end.x + 2.5, end.y + 2.3), Some(end.id));
     // Just above the swash's end, inside the stacked note's box: the stacked note.
     let (end, top) = (&ns[1], &ns[2]);
     let y = top.y + top.h / 2.0 - 0.05;

@@ -396,9 +396,9 @@ pub(crate) struct Head {
     pub top: f32,
     pub bottom: f32,
     pub position: i8,
-    /// The note's hit box size when it isn't [`Head::size`]: a porrectus end's box, shrunk
-    /// about the notehead's center off its neighbours.
-    pub hit: Option<(f32, f32)>,
+    /// The note's hit box (left, top, right, bottom) when it isn't its notehead box: a
+    /// porrectus end's box, trimmed on the side that faces a neighbour.
+    pub hit: Option<[f32; 4]>,
 }
 
 impl Head {
@@ -422,10 +422,18 @@ impl Head {
         }
     }
     /// The note's hit box: center x, center y, width and height.
-    /// Its center stays the notehead's center.
+    /// The notehead box: center x, center y, width and height.
     pub fn hit_box(&self) -> (f32, f32, f32, f32) {
-        let (w, h) = self.hit.unwrap_or_else(|| self.size());
+        let (w, h) = self.size();
         (self.center(), -(self.position as f32), w, h)
+    }
+    /// The box hit testing uses (left, top, right, bottom): the notehead box, or less of it
+    /// for a porrectus end.
+    pub fn hit_rect(&self) -> [f32; 4] {
+        self.hit.unwrap_or_else(|| {
+            let (x, y, w, h) = self.hit_box();
+            [x - w / 2.0, y - h / 2.0, x + w / 2.0, y + h / 2.0]
+        })
     }
     fn swash(&self) -> bool {
         matches!(
@@ -435,34 +443,37 @@ impl Head {
     }
 }
 
-/// Shrinks the boxes of a porrectus swash's two ends, about their centers, off the other
-/// noteheads of the neume (the note stacked on the swash's end, the punctum before it), along
-/// the axis where they overlap least, so that hit testing never finds two notes at one point
-/// and each box stays centered on its notehead.
+/// Trims the hit boxes of a porrectus swash's two ends off the other noteheads of the neume
+/// (the note stacked on the swash's end, the punctum before it), on the side facing each one,
+/// along the axis where they overlap least, so that hit testing never finds two notes at one
+/// point. The notehead's own box, and its center, stay as they are.
 fn trim_swash_boxes(heads: &mut [Head]) {
     for i in 0..heads.len() {
         if !heads[i].swash() {
             continue;
         }
-        let (cx, cy, w0, h0) = heads[i].hit_box();
-        let (mut w, mut h) = (w0, h0);
+        let whole = heads[i].hit_rect();
+        let [mut l, mut t, mut r, mut b] = whole;
+        let (cx, cy) = ((l + r) / 2.0, (t + b) / 2.0);
         for (j, o) in heads.iter().enumerate() {
             if j == i {
                 continue;
             }
-            let (ox, oy, ow, oh) = o.hit_box();
-            let (dx, dy) = ((w + ow) / 2.0 - (cx - ox).abs(), (h + oh) / 2.0 - (cy - oy).abs());
+            let [ol, ot, or, ob] = o.hit_rect();
+            let (dx, dy) = (r.min(or) - l.max(ol), b.min(ob) - t.max(ot));
             if dx <= 0.0 || dy <= 0.0 {
                 continue;
             }
             if dy <= dx {
-                h -= 2.0 * dy;
+                if (ot + ob) / 2.0 < cy { t = t.max(ob) } else { b = b.min(ot) }
+            } else if (ol + or) / 2.0 < cx {
+                l = l.max(or);
             } else {
-                w -= 2.0 * dx;
+                r = r.min(ol);
             }
         }
-        if (w, h) != (w0, h0) && w > 0.0 && h > 0.0 {
-            heads[i].hit = Some((w, h));
+        if [l, t, r, b] != whole && r > l && b > t {
+            heads[i].hit = Some([l, t, r, b]);
         }
     }
 }
