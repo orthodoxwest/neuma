@@ -547,3 +547,16 @@ fn only_verbatim_tag_fixes_are_tried_again() {
     // A verbatim tag's fix is tried, once.
     assert_eq!(rechecks("(c4) <sp>V/ a(g) b(h) <sp>R/ c(g)"), (1, 1));
 }
+
+#[test]
+fn notes_left_open_end_where_the_text_goes_on() {
+    // A `(` typed and the text continued: the group ends at the space, the next syllable is
+    // read as written, and only the unclosed group is reported.
+    let p = parse("(c4) A(fg men(f) (::)");
+    let syl: Vec<(String, usize)> = p.score.syllables.iter().map(|s| (s.text.plain(), s.notation.len())).collect();
+    assert_eq!(syl, [("".into(), 1), ("A".into(), 2), ("men".into(), 1), ("".into(), 1)]);
+    let codes: Vec<&str> = p.diagnostics.iter().map(|d| d.code).collect();
+    assert_eq!(codes, ["gabc::unclosed-notes"]);
+    let fixed = p.diagnostics[0].fix.as_ref().unwrap().apply("(c4) A(fg men(f) (::)").unwrap();
+    assert_eq!(fixed, "(c4) A(fg) men(f) (::)");
+}

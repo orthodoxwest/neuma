@@ -67,6 +67,9 @@ const FIXABLE: &[(&str, &str)] = &[
     ("gabc::unterminated-header", "name: Kyrie\nmode: 8;\n%%\n(c4) Ky(g)"),
     ("gabc::unterminated-header", "name: Kyrie % comment\n\n%%\n(c4) Ky(g)"),
     ("gabc::unclosed-notes", "(c4) Ky(g)ri(h\n"),
+    ("gabc::unclosed-notes", "(c4) A(fg men(f) (::)"),
+    ("gabc::unclosed-notes", "(c4) A(fg(f) b(g)"),
+    ("gabc::unclosed-notes", "(c4) Ky(g\nri(h)e(g)"),
     ("gabc::hyphen-in-syllable", "(c4) Ky-(g)ri(h)e(g)"),
     ("gabc::hyphen-in-syllable", "(c4) Ky(g) -ri(h)e(g)"),
     ("gabc::no-clef", "Ky(g)ri(h)e(g)"),
@@ -176,6 +179,12 @@ fn fixes_never_loop() {
             "(c4) <alt>x <sp>y(g) b(h) <sp>V/ c(g)",
             "(c4) a<sp>V/</sp% c\n>(g) b(h) <sp>R/ c(g)",
             "(c4) <v>\\greheightstar</% c\nv>(,) a(g) b(h) ú(l)ti(k)<v>que(kj) c(g) (::)",
+            // Notes left open while the text goes on.
+            "(c4) A(fg men(f) (::)",
+            "(c4) A(fg men(f) b(g (h)",
+            "(c4) A((f)",
+            "(c4) A(fgmen(f)",
+            "(c4) <v>(</v>A(fg men(f)",
             // A closer left without its `>`.
             "(c4) <i>a</i(g)",
             "(c4) <sp>a</sp(g)",

@@ -32,7 +32,7 @@ engine renders what it can and says what it did.
 | `gabc::staff-lines` | warning | the header field | | Only four-line staves are drawn. |
 | `gabc::nabc` | warning | the `nabc-lines` field, or the first `\|` in the notes | | NABC is skipped. Reported once per score. |
 | `gabc::no-clef` | warning | the first note | insert `(c4) ` before the first syllable | Notes come before any clef; they are read in `c4`. |
-| `gabc::unclosed-notes` | error | from the `(` to the end | insert `)` at the end | Notes opened with `(` never close. |
+| `gabc::unclosed-notes` | error | from the `(` to the end, or to the first space before the next `(` | insert `)` there | Notes opened with `(` never close, or text and another `(` follow before their `)` (`A(fg men(f)`). |
 | `gabc::trailing-text` | warning | the text | | Text after the last notes has no notes and is dropped. |
 | `gabc::hyphen-in-syllable` | warning | the hyphen | remove it | A syllable starts or ends with `-`, which prints in addition to the hyphen the engine draws. |
 | `gabc::unclosed-tag` | warning | the opening tag | insert the closing tag at the end of the syllable | A style tag (`<i>`, `<b>`, `<sc>`, `<ul>`, `<c>`, `<e>`) is never closed and styles the rest of the score, or a `<sp>`, `<v>` or `<alt>` has no closer in its syllable and runs to the syllable's end. |
