@@ -3,6 +3,10 @@
 
 use crate::score::TextStyle;
 
+/// Groups nested deeper than this are read as plain text, so input nested without end (a
+/// fuzzer's, or a paste gone wrong) can't run the parser out of stack.
+const MAX_DEPTH: usize = 32;
+
 /// A character of the text, its style, and whether it counts as a consonant (a sign).
 pub(super) type TexChar = (char, TextStyle, bool);
 
@@ -14,6 +18,7 @@ pub(super) fn text(inner: &str, style: TextStyle) -> (Vec<TexChar>, Option<Strin
         i: 0,
         out: Vec::new(),
         stack: vec![style],
+        flat: 0,
         unknown: None,
     };
     p.run(0);
@@ -26,6 +31,8 @@ struct Parser {
     out: Vec<TexChar>,
     /// The style of each open group, innermost last.
     stack: Vec<TextStyle>,
+    /// Braces open past [`MAX_DEPTH`], read as plain text: they style nothing.
+    flat: usize,
     unknown: Option<String>,
 }
 
@@ -48,7 +55,9 @@ impl Parser {
         while let Some(c) = self.peek() {
             self.i += 1;
             match c {
+                '{' if self.stack.len() >= MAX_DEPTH => self.flat += 1,
                 '{' => self.stack.push(*self.stack.last().expect("open")),
+                '}' if self.flat > 0 => self.flat -= 1,
                 '}' => {
                     if self.stack.len() > 1 {
                         self.stack.pop();
@@ -86,6 +95,14 @@ impl Parser {
     /// Reads a braced argument, in a group of its own styled by `f`.
     fn group(&mut self, f: impl FnOnce(&mut TextStyle)) {
         self.skip_spaces();
+        if self.stack.len() >= MAX_DEPTH {
+            // Too deep to style: the argument's text is read where it stands.
+            if self.peek() == Some('{') {
+                self.i += 1;
+                self.flat += 1;
+            }
+            return;
+        }
         let mut st = *self.stack.last().expect("open");
         f(&mut st);
         if self.peek() == Some('{') {
@@ -371,5 +388,24 @@ mod tests {
         // Styles reach the letters they apply to.
         let (out, _) = text(r"\textcolor{red}{A}b\emph{c}", TextStyle::REGULAR);
         assert!(out[0].1.rubric && !out[1].1.rubric && out[2].1.italic && !out[1].1.italic);
+    }
+
+    #[test]
+    fn nesting_without_end_is_read_as_text() {
+        let n = 100_000;
+        for src in [
+            format!("{}a{}", r"\textit{".repeat(n), "}".repeat(n)),
+            format!("{} a", r"\textit".repeat(n)),
+            format!("{}a{}", "{".repeat(n), "}".repeat(n)),
+            format!("{}a", r"\'".repeat(n)),
+        ] {
+            let (out, _) = text(&src, TextStyle::REGULAR);
+            assert!(out.iter().any(|c| c.0 == 'a'), "{}", &src[..40]);
+        }
+        // Text after deep nesting closes is read as usual.
+        let deep = format!("{}a{}b", r"\textit{".repeat(40), "}".repeat(40));
+        let (out, _) = text(&deep, TextStyle::REGULAR);
+        assert_eq!(out.iter().map(|c| c.0).collect::<String>(), "ab");
+        assert!(out[0].1.italic && !out[1].1.italic);
     }
 }
