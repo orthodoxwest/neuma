@@ -52,11 +52,18 @@ const svg = porrectusPage.svg;
 for (const id of [0, 1, 2]) assert.match(svg, new RegExp(`data-note="[0-9 ]*\\b${id}\\b`));
 assert.match(svg, /data-note="0 1"/);
 
-// A freed Chant throws rather than reaching another score's handle; its pages find nothing.
+// A freed Chant throws rather than reaching another score's handle; its pages keep answering.
+const swash = porrectusPage.timeline.notes[1];
 porrectus.free();
 assert.throws(() => porrectus.layout(400), /freed/);
-assert.equal(porrectusPage.noteAt(0, 0), null);
-assert.ok(porrectusPage.stale);
+assert.equal(porrectusPage.noteAt(swash.cx, swash.cy), 1);
+// A freed page throws, but what it already gave stays; freeing twice does nothing.
+porrectusPage.free();
+porrectusPage.free();
+assert.throws(() => porrectusPage.noteAt(0, 0), /Page was freed/);
+assert.throws(() => porrectusPage.elementsAt(0), /Page was freed/);
+assert.equal(porrectusPage.timeline.notes[1], swash);
+assert.ok(porrectusPage.svg.startsWith("<svg"));
 assert.equal(verse.layout(600, { weights: { note: null } }).timeline.notes[1].duration, 1);
 verse.free();
 
@@ -120,19 +127,18 @@ const psPage = fromPsalm.layout(500);
 const psNote = psPage.timeline.notes[accent];
 assert.equal(text.slice(psNote.sourceUtf16Start, psNote.sourceUtf16End), "pá");
 assert.equal(text.slice(...(({ utf16Start, utf16End }) => [utf16Start, utf16End])(psPage.sourceAt(psNote.cx, psNote.cy))), "pá");
-// After an edit the page on screen answers for the text it shows; after a second, it is stale.
+// After edits the page on screen is stale, but answers for the text it shows.
+assert.ok(!psPage.stale);
 assert.equal(fromPsalm.update(text.replace("glorious", "great")), true);
 assert.ok(fromPsalm.psalm.gabc.includes("great"));
+assert.ok(psPage.stale);
 assert.equal(fromPsalm.update(text.replace("glorious", "great")), false);
+for (const word of ["grand", "glad", "good"]) fromPsalm.update(text.replace("glorious", word));
+assert.ok(psPage.stale);
 assert.equal(psPage.noteAt(psNote.cx, psNote.cy), accent);
 assert.equal(text.slice(psPage.sourceAt(psNote.cx, psNote.cy).utf16Start, psNote.sourceUtf16End), "pá");
-assert.ok(!psPage.stale);
-fromPsalm.update(text.replace("glorious", "grand"));
-assert.ok(psPage.stale);
-assert.equal(psPage.noteAt(psNote.cx, psNote.cy), null);
-assert.equal(psPage.sourceAt(psNote.cx, psNote.cy), null);
-assert.deepEqual(psPage.elementsAt(0), []);
-assert.equal(psPage.timeline.notes[accent].id, accent, "a timeline made before stays");
+assert.equal(text.slice(...(({ utf16Start, utf16End }) => [utf16Start, utf16End])(psPage.elementsAt(psNote.sourceUtf16Start)[0])), "pá");
+assert.equal(psPage.timeline.notes[accent].id, accent);
 assert.ok(!fromPsalm.layout(500).stale);
 assert.ok(Chant.fromPsalm("Lord ! * God ?", "1.D").diagnostics.some((d) => d.code === "point::unsure"));
 assert.throws(() => Chant.fromPsalm(text, "9.z"), /no built-in tone/);
@@ -227,11 +233,67 @@ assert.equal(ed.layout(500), before);
 assert.equal(ed.setOptions({ initial: 0, lyricSize: 4 }), true);
 assert.ok(ed.layout(500).height > before.height);
 assert.equal(before.noteAt(tap.cx, tap.cy), tap.id);
+// A page answers for as long as it is held: through many layouts at other widths and
+// edits between, and after its chant is freed.
+const held = [500, 300, 400, 600, 700].map((w) => ed.layout(w));
+const kept = held[0].timeline.notes.at(-1);
+for (let i = 0; i < 6; i++) {
+  ed.update(edited + " a(g)".repeat(i + 1));
+  for (const w of [500, 300, 250]) ed.layout(w, { svg: i % 2 ? "lines" : "whole" });
+}
+assert.ok(held.every((p) => p.stale));
+assert.equal(held[0].noteAt(kept.cx, kept.cy), kept.id);
 const after = ed.layout(500);
+assert.ok(!after.stale);
 ed.free();
 assert.throws(() => ed.update(src), /freed/);
-assert.equal(after.sourceAt(0, 0), null);
-assert.deepEqual(after.elementsAt(0), []);
+assert.equal(after.noteAt(kept.cx, kept.cy), kept.id);
+assert.ok(after.elementsAt(0).length > 0);
+for (const p of [...held, after]) p.free();
+
+// Each view in parts, here a page and a thumbnail, reuses the lines of its own last page,
+// even when the caller has changed that page's parts.
+{
+  let body = "(c4) " + Array.from({ length: 30 }, (_, i) => `s${i}(${"fgh"[i % 3]})`).join(" ") + " (::)";
+  const doc = new Chant(body, { initial: 0 });
+  let main = doc.layout(300, { svg: "lines" });
+  let thumb = doc.layout(300, { svg: "lines", scale: 3 });
+  assert.ok(main.svgParts.lines.length > 2 && thumb.svgParts.lines.length > 1);
+  for (let i = 0; i < 4; i++) {
+    body = body.replace("(::)", "x(g) (::)");
+    assert.equal(doc.update(body), true);
+    assert.equal(doc.update(body), false);
+    const lines = main.svgParts.lines.map((l) => l.svg);
+    if (i === 2) main.svgParts.lines.length = 0;
+    const nextMain = doc.layout(300, { svg: "lines" });
+    const nextThumb = doc.layout(300, { svg: "lines", scale: 3 });
+    const fresh = new Chant(body, { initial: 0 });
+    assert.deepEqual(nextMain.svgParts, fresh.layout(300, { svg: "lines" }).svgParts, `main ${i}`);
+    assert.deepEqual(nextThumb.svgParts, fresh.layout(300, { svg: "lines", scale: 3 }).svgParts, `thumb ${i}`);
+    fresh.free();
+    // The first line didn't change, and comes back as the same string.
+    assert.equal(nextMain.svgParts.lines[0].svg, lines[0]);
+    main.free();
+    thumb.free();
+    [main, thumb] = [nextMain, nextThumb];
+  }
+  // The same arguments give the same page until it is freed, each view its own.
+  assert.equal(doc.layout(300, { svg: "lines" }), main);
+  assert.equal(doc.layout(300, { svg: "lines", scale: 3 }), thumb);
+  assert.equal(doc.layout(300, { svg: "lines" }), main);
+  main.free();
+  const again = doc.layout(300, { svg: "lines" });
+  assert.notEqual(again, main);
+  assert.ok(again.svgParts.lines.length > 2);
+  // A scale the engine reads as the default is the same view and the same page.
+  assert.equal(doc.layout(300, { svg: "lines", scale: NaN }), doc.layout(300, { svg: "lines", scale: NaN }));
+  if (typeof Symbol.dispose === "symbol") {
+    const p = doc.layout(200);
+    p[Symbol.dispose]();
+    assert.throws(() => p.noteAt(0, 0), /freed/);
+  }
+  doc.free();
+}
 
 // A RangeError from the caller's own arguments, before the engine runs, is rethrown and
 // leaves the engine and its Chants alive.

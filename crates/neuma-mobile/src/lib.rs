@@ -486,33 +486,49 @@ pub struct Chant {
 
 #[derive(Debug)]
 struct Inner {
-    chant: neuma::Chant,
+    source: Source,
     diagnostics: Vec<Diagnostic>,
-    psalm: Option<Psalm>,
+    /// For a chant set from a psalm, the setting as `psalm()` gives it.
+    psalm: Option<PsalmSetting>,
 }
 
-/// A psalm the chant was set from, to set again on each update.
+/// What a chant is made from.
 #[derive(Debug)]
-struct Psalm {
-    tone: neuma_tones::Tone,
-    options: neuma_tones::PsalmOptions,
-    setting: PsalmSetting,
+#[allow(clippy::large_enum_variant)] // one per chant, and never moved
+enum Source {
+    Gabc(neuma::Chant),
+    /// Psalm text, set to its tone again on each update.
+    Psalm(neuma_tones::PsalmChant),
 }
 
 impl Inner {
-    fn new(chant: neuma::Chant, psalm: Option<Psalm>) -> Inner {
+    fn new(source: Source) -> Inner {
         let mut inner = Inner {
-            chant,
+            source,
             diagnostics: Vec::new(),
-            psalm,
+            psalm: None,
         };
         inner.refresh();
         inner
     }
 
+    fn chant(&self) -> &neuma::Chant {
+        match &self.source {
+            Source::Gabc(c) => c,
+            Source::Psalm(p) => p,
+        }
+    }
+
     fn refresh(&mut self) {
-        let utf16 = self.chant.utf16();
-        self.diagnostics = self.chant.diagnostics().iter().map(|d| diagnostic(d, utf16)).collect();
+        let chant = self.chant();
+        let utf16 = chant.utf16();
+        let diagnostics = chant.diagnostics().iter().map(|d| diagnostic(d, utf16)).collect();
+        let psalm = match &self.source {
+            Source::Gabc(_) => None,
+            Source::Psalm(p) => Some(mobile_setting(p.setting(), p.source())),
+        };
+        self.diagnostics = diagnostics;
+        self.psalm = psalm;
     }
 }
 
@@ -520,7 +536,7 @@ impl Inner {
 impl Chant {
     #[uniffi::constructor]
     pub fn new(gabc: String, options: ChantOptions) -> Arc<Chant> {
-        Chant::wrap(Inner::new(neuma::Chant::with_options(&gabc, options.into()), None))
+        Chant::wrap(Inner::new(Source::Gabc(neuma::Chant::with_options(&gabc, options.into()))))
     }
 
     /// Sets psalm text to a tone, as [`psalm`] does, and engraves it with its spans in the
@@ -535,47 +551,42 @@ impl Chant {
         } else {
             neuma_tones::Tone::named(&tone)?.clone()
         };
-        let options_in = psalm_options(psalm);
-        let s = neuma_tones::psalm(&text, &tone, &options_in);
-        let psalm = Psalm {
-            tone,
-            options: options_in,
-            setting: mobile_setting(&s, &text),
-        };
-        Ok(Chant::wrap(Inner::new(s.into_chant(options.into()), Some(psalm))))
+        let chant = neuma_tones::PsalmChant::new(&text, &tone, &psalm_options(psalm), options.into());
+        Ok(Chant::wrap(Inner::new(Source::Psalm(chant))))
     }
 
     /// Replaces the score with `src` (GABC, or psalm text for a chant made with
     /// `from_psalm`), keeping the options, as an editor does on each change: only the
     /// syllables around the edit are engraved again, and the next layout reuses the line
-    /// breaks it can. Layouts made before keep showing the old score. The current source
-    /// changes nothing.
-    pub fn update(&self, src: String) {
+    /// breaks it can. Layouts made before keep showing the old score. Returns whether
+    /// anything changed: the current source changes nothing, so calling it again with the
+    /// same text is free. (Swift warns when the result goes unused; write `_ = chant.update(…)`.)
+    pub fn update(&self, src: String) -> bool {
         let mut inner = self.write();
-        let inner = &mut *inner;
-        if src == inner.chant.source() {
-            return;
+        let changed = match &mut inner.source {
+            Source::Gabc(c) => c.update(&src),
+            Source::Psalm(p) => p.update(&src),
+        };
+        if changed {
+            inner.refresh();
         }
-        match &mut inner.psalm {
-            None => {
-                inner.chant.update(&src);
-            }
-            Some(p) => {
-                let s = neuma_tones::psalm(&src, &p.tone, &p.options);
-                p.setting = mobile_setting(&s, &src);
-                inner.chant.update_score(s.score, &src, s.diagnostics);
-            }
-        }
-        inner.refresh();
+        changed
     }
 
     /// Engraves the score again with new options, as when the reader changes the text size
-    /// (Dynamic Type, say). Options that engrave as the current ones change nothing.
-    pub fn set_options(&self, options: ChantOptions) {
+    /// (Dynamic Type, say). Returns whether anything changed: options that engrave as the
+    /// current ones change nothing.
+    pub fn set_options(&self, options: ChantOptions) -> bool {
         let mut inner = self.write();
-        if inner.chant.set_options(options.into()) {
+        let options = options.into();
+        let changed = match &mut inner.source {
+            Source::Gabc(c) => c.set_options(options),
+            Source::Psalm(p) => p.set_options(options),
+        };
+        if changed {
             inner.refresh();
         }
+        changed
     }
 
     /// Problems found while reading the score.
@@ -585,13 +596,13 @@ impl Chant {
 
     /// The score's library entry.
     pub fn summary(&self) -> Summary {
-        summary(self.read().chant.summary())
+        summary(self.read().chant().summary())
     }
 
     /// For a chant made with `from_psalm`, the setting as [`psalm`] gives it, following each
     /// `update`: `psalm()!!.notes[i]` is note `i`'s place in the tone. Null otherwise.
     pub fn psalm(&self) -> Option<PsalmSetting> {
-        self.read().psalm.as_ref().map(|p| p.setting.clone())
+        self.read().psalm.clone()
     }
 
     /// Lays the score out `width` output units wide. The chant remembers its last few
@@ -604,7 +615,7 @@ impl Chant {
     /// reference.
     pub fn layout(&self, width: f32, options: LayoutOptions) -> Arc<ChantLayout> {
         let inner = self.read();
-        let layout = inner.chant.layout_with(width, &options.into());
+        let layout = inner.chant().layout_with(width, &options.into());
         Arc::new(ChantLayout {
             layout,
             page: OnceLock::new(),

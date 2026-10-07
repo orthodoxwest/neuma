@@ -75,18 +75,20 @@ val layout = chant.layout(width, LayoutOptions(scale = 8f))
 val page = layout.page()      // keep it: each call copies the display list across
 val timeline = layout.timeline(Weights(mediant = 3f))
 val id = layout.noteAt(x, y)  // the note under a tap, or null
-chant.update(edited)          // after an edit; lay it out again to see it
-chant.setOptions(ChantOptions(initial = 2, lyricSize = 3f)) // a new text size
+chant.update(edited)          // after an edit (true if it changed); lay it out again to see it
+chant.setOptions(ChantOptions(initial = 2, lyricSize = 3f)) // a new text size, likewise
 layout.close()                // when a new layout replaces it
 chant.close()
 ```
 
 **A layout's lifetime.** A `ChantLayout` holds on to the engraving it was made from; after
-an edit that is a copy of the whole old score, and it lives until the layout is freed. Close
+an edit that is a copy of the whole old score (the edit makes it, which on the longest
+scores adds about a quarter to the edit's time), and it lives until the layout is freed. Close
 the layout a view has replaced instead of leaving it to the garbage collector: `close()`,
 `layout.use { }`, or in Compose a `DisposableEffect`. In Swift, drop the reference. `page()`
 is made once per layout, but each call copies it across the boundary, so keep the value
-rather than calling it on each recomposition or `body`:
+rather than calling it on each recomposition or `body`. Here `version` counts the app's
+changes to the chant, bumped when `update` or `setOptions` returns true:
 
 ```kotlin
 @Composable
@@ -192,5 +194,6 @@ same tone and updates it. It is null for a chant made from GABC.
 
 On each edit, call `chant.update(src)` and lay it out again: the engraving around the edit
 is redone, and the rest, and the line breaks it can, are reused. A tap waits on no layout
-in progress: hit tests run on the `ChantLayout`, not the `Chant`. The source or options the
-chant already has change nothing.
+in progress: hit tests run on the `ChantLayout`, not the `Chant`. `update` and `setOptions`
+return whether anything changed: the source or options the chant already has change
+nothing. Swift warns when that result goes unused; write `_ = chant.update(src: edited)`.

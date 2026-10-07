@@ -39,16 +39,23 @@ widths the layout planned for.
 hit tests (below). Every position is in output units (staff spaces times `scale`, the SVG's
 user units) from the layout's top left, with y down. A box is `x`, `y`, `w`, `h` from its
 top-left corner; a point that is a center is named `cx`, `cy`. Laying out again with the same
-arguments and no change between returns the same page.
+arguments and no change to the chant between returns the same page, while you hold it.
 
-A page answers for the score it shows, whatever the chant has laid out since: a thumbnail
-made with `maxLines: 1` leaves the main page's hit tests alone, and after `chant.update` or
-`chant.setOptions` a page made before still answers for the score it shows, so a click or a
-caret move between an edit and the next frame finds what is on screen. After a second change
-the page is `stale` (`page.stale` is true): its hit tests find nothing (`null`, `[]`), its
-timeline is `null` unless it had made it, and none of them throws; lay out again. `update`
-and `setOptions` return whether anything changed: the same source or options leave the
-chant, and its pages, as they were.
+A page answers for the score it shows for as long as you hold it, whatever the chant has
+laid out or become since: a thumbnail made with `maxLines: 1` leaves the main page's hit
+tests alone, and after `chant.update` or `chant.setOptions` a page made before still answers
+for the score it shows, so a click or a caret move between an edit and the next frame finds
+what is on screen. `page.stale` is true once the chant has changed since the page was laid
+out: lay out again to show the new score. `update` and `setOptions` return whether anything
+changed: the same source or options leave the chant, and its pages, as they were.
+
+Each page keeps its layout in the engine until the page is garbage collected (through a
+`FinalizationRegistry`). `page.free()`, or `using page = chant.layout(…)` where the runtime
+has explicit resource management, releases it sooner; a freed page throws, though its `svg`,
+`svgParts` and a `timeline` already read stay. Release a page once nothing shows it: a page
+held keeps its engraving alive, so the chant's next edit copies the engraving rather than
+changing it in place, which on the longest scores adds about a quarter to the edit's time
+and on typical ones next to nothing.
 
 - **`timeline.notes`**: one entry per note, in singing order, with these fields:
   - `id`: stable across layouts of one `Chant`. Each SVG element lists the notes it draws
@@ -94,7 +101,7 @@ Each diagnostic has a `code` that stays stable across versions (see
 `page.noteAt(x, y)` returns the note under a point, or the nearest note on that line, or
 `null`. `chant.setOptions({ lyricSize: 3 })` engraves again with new options (those the
 constructor takes). `chant.free()` releases the score; using a freed `Chant` throws, and its
-pages are stale.
+pages keep answering for what they show.
 
 Weights default to `DEFAULT_WEIGHTS`: one pulse per note, two for a dotted note, and pauses
 that grow with the bar. Any key you pass with a number overrides its default, except a negative one; no weight
@@ -114,8 +121,12 @@ const chant = new Chant(textarea.value, { initial: 1 });
 let page = chant.layout(host.clientWidth, { svg: "lines", ids: false });
 textarea.addEventListener("input", () => {
   chant.update(textarea.value);    // keeps the options; diagnostics follow the new source
-  page = chant.layout(host.clientWidth, { svg: "lines", ids: false });
-  // page.svgParts: { head, defs, rest, lines: [{ top, svg }] }
+  const next = chant.layout(host.clientWidth, { svg: "lines", ids: false });
+  // next.svgParts: { head, defs, rest, lines: [{ top, svg }] }
+  if (next !== page) {
+    page.free();                   // the page it replaces, so the next edit needn't copy
+    page = next;
+  }
 });
 host.addEventListener("click", (e) => {
   // Layout coordinates from the score's top left: `offsetX`/`offsetY` would be relative to
@@ -142,7 +153,10 @@ const lit = page.elementsAt(textarea.selectionStart); // what to highlight for t
   so an editor can replace only the lines whose string changed. On a long score, replacing
   the whole SVG costs the browser far more than the engine's work. Giving each line its own
   `<svg>` (`<use>` finds the glyphs in one shared `<defs>` anywhere in the page) keeps the
-  browser's work to the changed line as well; the example below does.
+  browser's work to the changed line as well; the example below does. Each view (the
+  options but `width` and `weights`), such as the main page and a thumbnail, reuses the
+  lines of its own last page while that page is held. A page in parts keeps what the engine
+  needs to reuse its lines, about two thirds again the memory of the strings.
 - **`page.sourceAt(x, y)`** returns what is under a point of the page, most specific
   first: a notehead, a bar (within half a staff space), a syllable's box, or the nearest
   syllable on that line; `null` outside the lines. The result is
@@ -178,7 +192,10 @@ let page = null;                   // the page shown, which answers the caret an
 // Keep the chant and the preview in step with the document.
 function show(doc) {
   chant.update(doc);
-  page = chant.layout(host.clientWidth, { svg: "lines", ids: false });
+  const next = chant.layout(host.clientWidth, { svg: "lines", ids: false });
+  if (next === page) return;
+  page?.free();                    // release the page it replaces
+  page = next;
   draw(page);                      // patch the preview from page.svgParts, as below
 }
 const preview = EditorView.updateListener.of((u) => {
@@ -186,18 +203,23 @@ const preview = EditorView.updateListener.of((u) => {
   if (u.docChanged || u.selectionSet) highlight(page.elementsAt(u.state.selection.main.head));
 });
 
-// The linter reads the diagnostics the listener's update left on the chant.
-const gabcLint = linter(() => chant.diagnostics.map((d) => ({
-  from: d.utf16Start,
-  to: d.utf16End,
-  severity: d.severity,            // "error" | "warning" | "info"
-  message: d.message,
-  source: d.code,
-  actions: d.fix ? [{
-    name: d.fix.title,
-    apply: (v) => v.dispatch({ changes: { from: d.fix.utf16Start, to: d.fix.utf16End, insert: d.fix.replacement } }),
-  }] : [],
-})), { delay: 0 });
+// The linter brings the chant up to the document itself: when it already is, `update` is a
+// free no-op, and when the preview lags (laid out in an animation frame), it still lints
+// the text on screen.
+const gabcLint = linter((view) => {
+  chant.update(view.state.doc.toString());
+  return chant.diagnostics.map((d) => ({
+    from: d.utf16Start,
+    to: d.utf16End,
+    severity: d.severity,          // "error" | "warning" | "info"
+    message: d.message,
+    source: d.code,
+    actions: d.fix ? [{
+      name: d.fix.title,
+      apply: (v) => v.dispatch({ changes: { from: d.fix.utf16Start, to: d.fix.utf16End, insert: d.fix.replacement } }),
+    }] : [],
+  }));
+}, { delay: 0 });
 
 const view = new EditorView({ doc: gabc, extensions: [preview, gabcLint], parent: editorHost });
 show(view.state.doc.toString());
@@ -213,7 +235,7 @@ host.addEventListener("click", (e) => {
 `draw` patches the preview from `page.svgParts` and `highlight` draws the returned boxes
 over it, as the example page does. On a long score, laying out in an animation frame rather
 than on every keystroke saves work; a caret move in between is answered by the page still
-shown, for the score it shows.
+shown, for the score it shows (it is `stale` until the frame).
 
 ## Library entries
 

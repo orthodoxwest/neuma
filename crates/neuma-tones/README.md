@@ -14,10 +14,13 @@ let text = "1 The Lord is King, and hath put on glorious ap·pá-rel; * \
 let setting = psalm(text, tone, &PsalmOptions::default());
 // setting.gabc:    "(c4) The(g) Lord(h) is(j) King,(j) … ap(j)pá(k)rel;(j) *(:) …"
 // setting.notes[i] describes note i of the engraved score, and its `span` is the sung
-// syllable's bytes in `text`. So are the spans of `setting.score`, and the chant's:
-let mut chant = setting.into_chant(neuma::ChantOptions::default());
-// An edit to the text sets it to the same tone again.
-chant.update("O praise the Lord * all ye nations.");
+// syllable's bytes in `text`. So are the spans of `setting.score`.
+
+// A PsalmChant engraves it with its spans in the text, and keeps the setting in step:
+let options = neuma::ChantOptions::default();
+let mut chant = neuma_tones::PsalmChant::new(text, tone, &PsalmOptions::default(), options);
+chant.update("O praise the Lord * all ye nations."); // set to the same tone again
+assert_eq!(chant.setting().notes.len(), chant.layout(600.0).timeline().notes.len());
 ```
 
 `PsalmOptions::default().with_intone(Intone::EveryVerse)` sings the intonation on every

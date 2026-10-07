@@ -3,7 +3,7 @@
 use std::ops::Range;
 
 use neuma::score::{Bar, BarKind, Figure, Lyric};
-use neuma::{Chant, ChantOptions, Diagnostic, Parsed, Score, ScoreBuilder, Severity};
+use neuma::{Diagnostic, Score, ScoreBuilder, Severity};
 
 use crate::pointed::{self, Part, Pointed, Syllable, VersePart};
 use crate::syllable::fold;
@@ -118,7 +118,7 @@ pub struct PsalmSetting {
     pub text: String,
     /// The setting as a score whose spans count UTF-8 bytes of the psalm text: a note's is its
     /// sung syllable's, a syllable's its text, and a bar's is empty at the end of its
-    /// half-verse. Engrave it with [`into_chant`](Self::into_chant), and hit tests and the
+    /// half-verse. A [`PsalmChant`](crate::PsalmChant) engraves it, and its hit tests and
     /// timeline answer in the text.
     pub score: Score,
     /// The score as GABC, for a GABC editor or file (parsed again, its spans count GABC).
@@ -127,49 +127,6 @@ pub struct PsalmSetting {
     pub notes: Vec<PsalmNote>,
     /// Problems in the text and its pointing, with spans in the text.
     pub diagnostics: Vec<Diagnostic>,
-    /// The tone and options the text was set with, for `into_chant`'s updates.
-    tone: Tone,
-    options: PsalmOptions,
-}
-
-impl PsalmSetting {
-    /// Engraves the setting as a [`Chant`] whose source is the psalm text, so hit tests and
-    /// the timeline answer there, and whose diagnostics start with the setting's (such as
-    /// `point::unsure`). The chant's [`update`](Chant::update) takes new psalm text and sets
-    /// it to the same tone with the same options, as an editor of the text needs.
-    ///
-    /// ```
-    /// use neuma_tones::{PsalmOptions, Tone, psalm};
-    ///
-    /// let text = "O praise the Lord, all ye heathen * praise him, all ye nations.";
-    /// let mut chant = psalm(text, Tone::named("8.G").unwrap(), &PsalmOptions::default())
-    ///     .into_chant(neuma::ChantOptions::default());
-    /// let first = &chant.layout(600.0).timeline().notes[0];
-    /// assert_eq!(&chant.source()[first.span.clone()], "O");
-    /// chant.update("Praise the Lord * all ye nations.");
-    /// let first = &chant.layout(600.0).timeline().notes[0];
-    /// assert_eq!(&chant.source()[first.span.clone()], "Praise");
-    /// ```
-    #[must_use]
-    pub fn into_chant(self, options: ChantOptions) -> Chant {
-        let PsalmSetting {
-            text,
-            score,
-            diagnostics,
-            tone,
-            options: set,
-            ..
-        } = self;
-        let mut chant = Chant::from_score(score, &text, diagnostics, options);
-        chant.set_reader(move |text: &str| {
-            let s = psalm(text, &tone, &set);
-            Parsed {
-                score: s.score,
-                diagnostics: s.diagnostics,
-            }
-        });
-        chant
-    }
 }
 
 /// Sets psalm text (a verse a line, the mediant marked `*`, optionally pointed with `†`, `·`,
@@ -307,8 +264,6 @@ fn set_pointed(pointed: &Pointed, tone: &Tone, options: &PsalmOptions) -> PsalmS
         score,
         notes,
         diagnostics: diags,
-        tone: tone.clone(),
-        options: options.clone(),
     }
 }
 
@@ -779,7 +734,7 @@ mod tests {
         let text = "1 O praise the Lord, all ye · héathen * praise him, · all ye nátions.\n\
                     2 For his merciful kindness * and the truth of the Lord endureth for ever.";
         let s = set("8.G", text);
-        let chant = s.clone().into_chant(neuma::ChantOptions::default());
+        let chant = neuma::Chant::from_score(s.score.clone(), text, s.diagnostics.clone(), neuma::ChantOptions::default());
         assert_eq!(chant.source(), text);
         let layout = chant.layout(600.0);
         let timeline = layout.timeline();

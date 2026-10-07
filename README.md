@@ -277,8 +277,8 @@ an acute on each accented syllable, then sets the text as chant. Every note know
 the tone, for practice tools.
 
 ```rust
-use neuma::{Chant, ChantOptions};
-use neuma_tones::{PsalmOptions, Tone, ToneRole, point, psalm};
+use neuma::ChantOptions;
+use neuma_tones::{PsalmChant, PsalmOptions, Tone, ToneRole, point, psalm};
 
 let tone = Tone::named("8.G").unwrap();
 let text = "1 O praise the Lord, all ye heathen * praise him, all ye nations.\n\
@@ -297,8 +297,9 @@ let sure = pointing.halves.iter().all(|h| h.confidence >= 0.8); // per half-vers
 let setting = psalm(text, tone, &PsalmOptions::default());
 assert_eq!(setting.notes[0].role, ToneRole::Intonation);
 // Engrave it with its spans in the psalm text, so a tapped note's source is its syllable
-// in `text`, and the setting's diagnostics (such as `point::unsure`) are the chant's.
-let chant = setting.into_chant(ChantOptions::default());
+// in `text`, and the setting's diagnostics (such as `point::unsure`) are the chant's. Its
+// `update` sets new text to the same tone, and `setting()` follows.
+let chant = PsalmChant::new(text, tone, &PsalmOptions::default(), ChantOptions::default());
 let first = &chant.layout(600.0).timeline().notes[0];
 assert_eq!(&text[first.span.clone()], "O");
 ```

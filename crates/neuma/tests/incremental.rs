@@ -20,7 +20,7 @@ fn chant(style: &StyleOptions) -> Chant {
 
 /// Parts as they draw, leaving out which lines were reused.
 fn drawn(p: &SvgParts) -> (f32, f32, &str, &str, Vec<(f32, &str)>, &str) {
-    let lines = p.lines.iter().map(|l| (l.top, l.svg.as_str())).collect();
+    let lines = p.lines.iter().map(|l| (l.top, &*l.svg)).collect();
     (p.width, p.height, &p.head, &p.defs, lines, &p.rest)
 }
 

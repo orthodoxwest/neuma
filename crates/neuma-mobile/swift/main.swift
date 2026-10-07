@@ -79,8 +79,9 @@ for n in layout.timeline(weights: Weights()).notes {
 let caret = Int32((src as NSString).range(of: "hi").location + 1)
 let at = layout.elementsAt(offset: caret, unit: .utf16)
 check(at.map { $0.kind } == [.note, .syllable], "caret")
-ed.update(src: src.replacingOccurrences(of: "-(g)", with: "(g)"))
+check(ed.update(src: src.replacingOccurrences(of: "-(g)", with: "(g)")), "update changed")
+_ = ed.update(src: src.replacingOccurrences(of: "-(g)", with: "(g)")) // the same text: no change
 check(!ed.diagnostics().contains { $0.code == "gabc::hyphen-in-syllable" }, "update")
-ed.setOptions(options: ChantOptions(lyricSize: 4))
+check(ed.setOptions(options: ChantOptions(lyricSize: 4)), "set options changed")
 check(ed.layout(width: 500, options: LayoutOptions()).page().height > layout.page().height, "set options")
 print("ok: swift, \(notes.count) notes, \(glyphs.count) glyphs")

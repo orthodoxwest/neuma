@@ -3,15 +3,14 @@
 //! plain C ABI, so no generated glue is needed and the module can be inlined into a single
 //! file. Options, defaults and sanitizing are the core's; this crate only converts.
 //!
-//! A page in the glue is named by the chant's version when it was laid out and the width and
-//! options it was laid out with. Its timeline and hit tests ask again with those: the chant's
-//! memo of recent layouts answers without laying out again. After a change the layouts of the
-//! version before are kept, so a page still on screen answers for the score it shows until the
-//! next layout; a page older than that is stale and finds nothing.
+//! Each page in the glue owns a [`Page`] here, its layout (and its SVG in parts), so it
+//! answers for the score it shows for as long as it is kept, as a Rust `Layout` does. The
+//! glue frees it with the page.
 
 use std::fmt::Write as _;
 
 use neuma::{Element, Layout, LayoutOptions, SvgOptions, SvgParts, Utf16Index, Weights, json};
+use neuma_tones::PsalmChant;
 
 pub use neuma::{ChantOptions, Initial, LyricFont};
 
@@ -21,124 +20,108 @@ pub enum SvgOutput {
     Whole,
     /// The SVG in parts, a string per line (see [`neuma::Layout::svg_parts_with`]).
     Lines,
-    /// As `Lines`, but a line whose SVG is the same as a line's of the last layout in parts
+    /// As `Lines`, but a line whose SVG is the same as a line's of the previous page given
     /// is given as `\u{1}` and that line's index, for a page that kept them.
     ChangedLines,
 }
 
-/// A psalm the chant was set from, to set again on each update.
+/// What a chant is made from.
 #[derive(Debug)]
-struct Psalm {
-    tone: neuma_tones::Tone,
-    options: neuma_tones::PsalmOptions,
-    /// `{ gabc, notes, diagnostics }` (see [`setting_json`]).
-    json: String,
+#[allow(clippy::large_enum_variant)] // one per chant, and never moved
+enum Source {
+    Gabc(neuma::Chant),
+    Psalm(PsalmChant),
 }
-
-/// A layout's width (as bits) and options.
-type Asked = (u32, LayoutOptions);
-
-/// Layouts kept for each version: a page, a thumbnail and a little more.
-const KEPT: usize = 4;
 
 /// One score, with its answers kept as the JSON the glue reads.
 #[derive(Debug)]
 pub struct Chant {
-    chant: neuma::Chant,
+    source: Source,
     /// Parse (or psalm-setting) and engrave diagnostics, as JSON.
     diagnostics: String,
     /// The library entry, as JSON, made when first asked for.
     summary: Option<String>,
-    psalm: Option<Psalm>,
-    /// Bumped on each change.
-    version: u32,
-    /// The layouts laid out at this version, most recent last.
-    current: Vec<(Asked, Layout)>,
-    /// Those of the version before, which pages laid out then still answer from.
-    previous: Vec<(Asked, Layout)>,
-    /// The last SVG given in parts, whose lines the glue keeps.
-    shown: Option<SvgParts>,
+    /// For a psalm, the setting's `{ gabc, notes, diagnostics }` (see [`setting_json`]).
+    psalm: Option<String>,
+}
+
+/// A page's layout, and its SVG in parts if it was asked for them, for the next page of the
+/// same view to reuse.
+#[derive(Debug)]
+pub struct Page {
+    layout: Layout,
+    parts: Option<SvgParts>,
 }
 
 impl Chant {
     pub fn new(gabc: &str, options: ChantOptions) -> Chant {
-        Chant::wrap(neuma::Chant::with_options(gabc, options), None)
+        Chant::wrap(Source::Gabc(neuma::Chant::with_options(gabc, options)))
     }
 
     /// Psalm text set to `tone` and engraved, its spans in the text.
-    pub fn from_psalm(text: &str, tone: neuma_tones::Tone, psalm: neuma_tones::PsalmOptions, options: ChantOptions) -> Chant {
-        let s = neuma_tones::psalm(text, &tone, &psalm);
-        let json = psalm_json(&s, text);
-        let psalm = Psalm {
-            tone,
-            options: psalm,
-            json,
-        };
-        Chant::wrap(s.into_chant(options), Some(psalm))
+    pub fn from_psalm(text: &str, tone: &neuma_tones::Tone, psalm: &neuma_tones::PsalmOptions, options: ChantOptions) -> Chant {
+        Chant::wrap(Source::Psalm(PsalmChant::new(text, tone, psalm, options)))
     }
 
-    fn wrap(chant: neuma::Chant, psalm: Option<Psalm>) -> Chant {
+    fn wrap(source: Source) -> Chant {
         let mut out = Chant {
-            chant,
+            source,
             diagnostics: String::new(),
             summary: None,
-            psalm,
-            version: 0,
-            current: Vec::new(),
-            previous: Vec::new(),
-            shown: None,
+            psalm: None,
         };
         out.refresh();
         out
+    }
+
+    fn chant(&self) -> &neuma::Chant {
+        match &self.source {
+            Source::Gabc(c) => c,
+            Source::Psalm(p) => p,
+        }
     }
 
     /// Replaces the score with `src` (GABC, or psalm text for a chant set from a psalm),
     /// engraved with the same options, as an editor does on each change. Returns whether it
     /// changed anything (not when `src` is the current source).
     pub fn update(&mut self, src: &str) -> bool {
-        if src == self.chant.source() {
-            return false;
+        let changed = match &mut self.source {
+            Source::Gabc(c) => c.update(src),
+            Source::Psalm(p) => p.update(src),
+        };
+        if changed {
+            self.refresh();
         }
-        self.previous = std::mem::take(&mut self.current);
-        match &mut self.psalm {
-            None => {
-                self.chant.update(src);
-            }
-            Some(p) => {
-                let s = neuma_tones::psalm(src, &p.tone, &p.options);
-                p.json = psalm_json(&s, src);
-                self.chant.update_score(s.score, src, s.diagnostics);
-            }
-        }
-        self.changed();
-        true
+        changed
     }
 
     /// Engraves again with `options`. Returns whether that changed anything: options that
     /// engrave as the current ones don't.
     pub fn set_options(&mut self, options: ChantOptions) -> bool {
-        if !self.chant.set_options(options) {
-            return false;
+        let changed = match &mut self.source {
+            Source::Gabc(c) => c.set_options(options),
+            Source::Psalm(p) => p.set_options(options),
+        };
+        if changed {
+            self.refresh();
         }
-        self.previous = std::mem::take(&mut self.current);
-        self.changed();
-        true
-    }
-
-    fn changed(&mut self) {
-        self.version = self.version.wrapping_add(1);
-        self.refresh();
+        changed
     }
 
     fn refresh(&mut self) {
-        self.diagnostics.clear();
-        json::diagnostics(&mut self.diagnostics, self.chant.diagnostics(), Some(self.chant.utf16()));
+        let chant = self.chant();
+        let mut diagnostics = String::new();
+        json::diagnostics(&mut diagnostics, chant.diagnostics(), Some(chant.utf16()));
+        self.diagnostics = diagnostics;
         self.summary = None;
-    }
-
-    /// The version pages laid out now are named by.
-    pub fn version(&self) -> u32 {
-        self.version
+        self.psalm = match &self.source {
+            Source::Gabc(_) => None,
+            Source::Psalm(p) => {
+                let mut out = String::new();
+                setting_json(&mut out, p.setting(), p.utf16());
+                Some(out)
+            }
+        };
     }
 
     pub fn diagnostics_json(&self) -> &str {
@@ -147,87 +130,78 @@ impl Chant {
 
     /// For a chant set from a psalm, the setting's `{ gabc, notes, diagnostics }`.
     pub fn psalm_json(&self) -> Option<&str> {
-        self.psalm.as_ref().map(|p| p.json.as_str())
+        self.psalm.as_deref()
     }
 
     pub fn summary_json(&mut self) -> &str {
-        let chant = &self.chant;
-        self.summary.get_or_insert_with(|| {
+        if self.summary.is_none() {
             let mut out = String::new();
-            json::summary(&mut out, &chant.summary());
-            out
-        })
+            json::summary(&mut out, &self.chant().summary());
+            self.summary = Some(out);
+        }
+        self.summary.as_deref().unwrap_or_default()
     }
 
-    /// Lays the score out at `width` output units: `{ width, height, version }`, a NUL, then
-    /// the SVG (for `Lines` and `ChangedLines`, as `svg_lines` gives it).
-    pub fn layout(&mut self, width: f32, opts: &LayoutOptions, svg: &SvgOptions, mode: SvgOutput) -> String {
-        let layout = self.chant.layout_with(width, opts);
-        let asked = (width.to_bits(), *opts);
-        self.current.retain(|(a, _)| *a != asked);
-        if self.current.len() >= KEPT {
-            self.current.remove(0);
-        }
-        self.current.push((asked, layout.clone()));
+    /// Lays the score out at `width` output units: the page, and `{ width, height }`, a NUL,
+    /// then the SVG (for `Lines` and `ChangedLines`, as `svg_lines` gives it, reusing the lines
+    /// of `previous`, the view's last page).
+    pub fn layout(&self, width: f32, opts: &LayoutOptions, svg: &SvgOptions, mode: SvgOutput, previous: Option<&Page>) -> (Page, String) {
+        let layout = self.chant().layout_with(width, opts);
         let (w, h) = layout.size();
         let mut out = String::from("{\"width\":");
         json::number(&mut out, w);
         out.push_str(",\"height\":");
         json::number(&mut out, h);
-        let _ = write!(out, ",\"version\":{}}}\0", self.version);
-        match mode {
-            SvgOutput::Whole => out.push_str(&layout.svg_with(svg)),
-            SvgOutput::Lines | SvgOutput::ChangedLines => self.svg_lines(&mut out, &layout, svg, mode == SvgOutput::ChangedLines),
-        }
-        out
-    }
-
-    /// Head, definitions and the initial, then each line's top and SVG, all separated by
-    /// NULs, which SVG text never contains.
-    fn svg_lines(&mut self, out: &mut String, layout: &Layout, svg: &SvgOptions, changed: bool) {
-        let parts = match &self.shown {
-            Some(shown) => layout.svg_parts_reusing(shown, svg),
-            None => layout.svg_parts_with(svg),
-        };
-        out.reserve(parts.lines.iter().map(|l| l.svg.len() + 12).sum::<usize>() + 4096);
-        for s in [&parts.head, &parts.defs, &parts.rest] {
-            out.push_str(s);
-            out.push('\0');
-        }
-        for line in &parts.lines {
-            json::number(out, line.top);
-            out.push('\0');
-            match line.reused_from.filter(|_| changed) {
-                Some(k) => {
-                    out.push('\u{1}');
-                    let _ = write!(out, "{k}");
-                }
-                None => out.push_str(&line.svg),
+        out.push_str("}\0");
+        let parts = match mode {
+            SvgOutput::Whole => {
+                out.push_str(&layout.svg_with(svg));
+                None
             }
-            out.push('\0');
-        }
-        out.pop();
-        self.shown = Some(parts);
-    }
-
-    /// The layout of the page laid out at `version` with `width` and `opts`: of this version,
-    /// laid out again if need be (the chant's memo usually has it); of the version before,
-    /// if it was kept; else none, as the page is stale.
-    pub fn page(&self, version: u32, width: f32, opts: &LayoutOptions) -> Option<Layout> {
-        let asked = (width.to_bits(), *opts);
-        let kept = |v: &[(Asked, Layout)]| v.iter().rev().find(|(a, _)| *a == asked).map(|(_, l)| l.clone());
-        if version == self.version {
-            Some(kept(&self.current).unwrap_or_else(|| self.chant.layout_with(width, opts)))
-        } else if version.wrapping_add(1) == self.version {
-            kept(&self.previous)
-        } else {
-            None
-        }
+            SvgOutput::Lines | SvgOutput::ChangedLines => {
+                let parts = match previous.and_then(|p| p.parts.as_ref()) {
+                    Some(shown) => layout.svg_parts_reusing(shown, svg),
+                    None => layout.svg_parts_with(svg),
+                };
+                svg_lines(&mut out, &parts, mode == SvgOutput::ChangedLines);
+                Some(parts)
+            }
+        };
+        (Page { layout, parts }, out)
     }
 
     /// The source this Chant was made or last updated from.
     pub fn source(&self) -> &str {
-        self.chant.source()
+        self.chant().source()
+    }
+}
+
+/// Head, definitions and the initial, then each line's top and SVG, all separated by NULs,
+/// which SVG text never contains.
+fn svg_lines(out: &mut String, parts: &SvgParts, changed: bool) {
+    out.reserve(parts.lines.iter().map(|l| l.svg.len() + 12).sum::<usize>() + 4096);
+    for s in [&parts.head, &parts.defs, &parts.rest] {
+        out.push_str(s);
+        out.push('\0');
+    }
+    for line in &parts.lines {
+        json::number(out, line.top);
+        out.push('\0');
+        match line.reused_from.filter(|_| changed) {
+            Some(k) => {
+                out.push('\u{1}');
+                let _ = write!(out, "{k}");
+            }
+            None => out.push_str(&line.svg),
+        }
+        out.push('\0');
+    }
+    out.pop();
+}
+
+impl Page {
+    pub fn layout(&self) -> &Layout {
+        &self.layout
     }
 }
 
@@ -305,13 +279,6 @@ pub fn setting_json(out: &mut String, s: &neuma_tones::PsalmSetting, text: &Utf1
     out.push('}');
 }
 
-/// [`setting_json`] as a string, for the psalm `text`.
-fn psalm_json(s: &neuma_tones::PsalmSetting, text: &str) -> String {
-    let mut out = String::new();
-    setting_json(&mut out, s, &Utf16Index::new(text));
-    out
-}
-
 fn notes_json(out: &mut String, s: &neuma_tones::PsalmSetting, text: &Utf16Index) {
     out.push_str(",\"notes\":[");
     for (i, n) in s.notes.iter().enumerate() {
@@ -365,58 +332,65 @@ mod tests {
         page.split_once('\0').unwrap()
     }
 
+    fn page(c: &Chant, width: f32, opts: &LayoutOptions) -> Page {
+        c.layout(width, opts, &SvgOptions::default(), SvgOutput::Whole, None).0
+    }
+
     #[test]
     fn lays_out_and_hit_tests() {
-        let mut c = Chant::new(
+        let c = Chant::new(
             "mode: 8;\n%%\n(c4) Ky(g)ri(h)e(g) *() e(h)le(g)i(h)son(g) (::)",
             ChantOptions::default(),
         );
         assert_eq!(c.diagnostics_json(), "[]");
         let opts = LayoutOptions::default();
-        let page = c.layout(400.0, &opts, &SvgOptions::default(), SvgOutput::Whole);
-        let (size, svg) = split(&page);
-        assert!(
-            size.starts_with(r#"{"width":400,"height":"#) && size.ends_with(r#","version":0}"#),
-            "{size}"
-        );
+        let (p, out) = c.layout(400.0, &opts, &SvgOptions::default(), SvgOutput::Whole, None);
+        let (size, svg) = split(&out);
+        assert!(size.starts_with(r#"{"width":400,"height":"#), "{size}");
         assert!(svg.starts_with("<svg"));
-        let layout = c.page(0, 400.0, &opts).unwrap();
-        let j = timeline_json(&layout, &Weights::default());
+        let j = timeline_json(p.layout(), &Weights::default());
         assert!(j.contains("\"kind\":\"mediant\"") && j.contains("\"kind\":\"double\""), "{j}");
         assert!(
             j.contains(r#""sourceStart":20,"sourceEnd":21,"sourceUtf16Start":20,"sourceUtf16End":21"#),
             "{j}"
         );
-        let n = &layout.timeline().notes[0];
-        assert_eq!(layout.note_at(n.cx, n.cy), Some(0));
-        // A one-line preview laid out since doesn't change what the page finds.
-        let _ = c.layout(400.0, &opts.with_max_lines(1), &SvgOptions::default(), SvgOutput::Lines);
-        assert_eq!(c.page(0, 400.0, &opts).unwrap().note_at(n.cx, n.cy), Some(0));
+        let n = &p.layout().timeline().notes[0];
+        assert_eq!(p.layout().note_at(n.cx, n.cy), Some(0));
     }
 
     #[test]
     fn pages_answer_for_the_score_they_show() {
         let mut c = Chant::new("(c4) a(g)", ChantOptions::default());
         let opts = LayoutOptions::default();
-        let _ = c.layout(400.0, &opts, &SvgOptions::default(), SvgOutput::Whole);
-        let shown = c.page(0, 400.0, &opts).unwrap();
-        let n = shown.timeline().notes[0].clone();
-        // Nothing changes: the version stays.
+        let shown = page(&c, 400.0, &opts);
+        let before = elements_at_json(shown.layout(), 7, true);
         assert!(!c.update("(c4) a(g)"));
         assert!(!c.set_options(ChantOptions::default()));
-        assert_eq!(c.version(), 0);
-        // An edit: the page on screen still answers for its own score, until a second one.
-        assert!(c.update("(c4) b(h) a(g)"));
-        assert_eq!(c.version(), 1);
-        let old = c.page(0, 400.0, &opts).unwrap();
-        assert_eq!(elements_at_json(&old, 7, true), elements_at_json(&shown, 7, true));
-        assert_eq!(old.note_at(n.cx, n.cy), Some(0));
-        assert!(c.page(0, 300.0, &opts).is_none(), "never laid out");
-        assert!(c.page(1, 300.0, &opts).is_some(), "the current version lays out what it's asked");
-        let _ = c.layout(400.0, &opts, &SvgOptions::default(), SvgOutput::Whole);
-        assert!(c.set_options(ChantOptions::default().with_lyric_size(3.0)));
-        assert!(c.page(0, 400.0, &opts).is_none(), "two changes old");
-        assert!(c.page(1, 400.0, &opts).is_some());
+        // Any number of changes and other layouts later, the page answers as before.
+        for (i, src) in ["(c4) b(h) a(g)", "(c4) c(i) b(h) a(g)", "(c4) a(g) (::)"].iter().enumerate() {
+            assert!(c.update(src));
+            for w in [100.0, 200.0, 300.0, 500.0, 600.0] {
+                let _ = page(&c, w, &opts);
+            }
+            assert!(c.set_options(ChantOptions::default().with_lyric_size(3.0 + i as f32)));
+        }
+        assert_eq!(elements_at_json(shown.layout(), 7, true), before);
+    }
+
+    #[test]
+    fn each_view_reuses_its_own_lines() {
+        let mut c = Chant::new("(c4) a(g) b(h) (;) c(i) d(h) (:) e(g) f(h) (::)", ChantOptions::default());
+        let opts = LayoutOptions::default();
+        let thumb = opts.with_max_lines(1);
+        let svg = SvgOptions::default().with_ids(false);
+        let lines = |c: &Chant, o: &LayoutOptions, prev: Option<&Page>| c.layout(90.0, o, &svg, SvgOutput::ChangedLines, prev);
+        let (main, _) = lines(&c, &opts, None);
+        let (small, _) = lines(&c, &thumb, None);
+        c.update("(c4) a(g) b(h) (;) c(i) d(h) (:) e(g) f(hg) (::)");
+        let (_, out) = lines(&c, &opts, Some(&main));
+        assert!(out.contains("\u{1}0"), "the main view keeps its first line");
+        let (_, out) = lines(&c, &thumb, Some(&small));
+        assert!(out.contains("\u{1}0"), "so does the thumbnail");
     }
 
     #[test]
@@ -432,17 +406,17 @@ mod tests {
         c.update("(c4) é(g) b(h)");
         assert_eq!(c.diagnostics_json(), "[]");
         let opts = LayoutOptions::default();
-        let page = c.layout(400.0, &opts, &SvgOptions::default(), SvgOutput::Lines);
-        assert_eq!(split(&page).1.split('\0').count(), 3 + 2);
-        let layout = c.page(c.version(), 400.0, &opts).unwrap();
-        let b = elements_at_json(&layout, 12, true);
+        let (p, out) = c.layout(400.0, &opts, &SvgOptions::default(), SvgOutput::Lines, None);
+        assert_eq!(split(&out).1.split('\0').count(), 3 + 2);
+        let layout = p.layout();
+        let b = elements_at_json(layout, 12, true);
         assert!(
             b.starts_with(r#"[{"kind":"note","index":1,"start":13,"end":14,"utf16Start":12,"utf16End":13,"#),
             "{b}"
         );
-        assert_eq!(elements_at_json(&layout, 13, false), b);
-        assert_eq!(elements_at_json(&layout, usize::MAX, false), elements_at_json(&layout, 16, true));
-        assert_eq!(source_at_json(&layout, -5.0, -5.0), "null");
+        assert_eq!(elements_at_json(layout, 13, false), b);
+        assert_eq!(elements_at_json(layout, usize::MAX, false), elements_at_json(layout, 16, true));
+        assert_eq!(source_at_json(layout, -5.0, -5.0), "null");
         assert!(c.summary_json().contains("\"notes\":2"));
     }
 
@@ -457,10 +431,10 @@ mod tests {
             out.contains(r#""sourceStart":0,"sourceEnd":8,"sourceUtf16Start":0,"sourceUtf16End":7}"#),
             "{out}"
         );
-        let mut c = Chant::from_psalm(text, tone.clone(), neuma_tones::PsalmOptions::default(), ChantOptions::default());
+        let mut c = Chant::from_psalm(text, tone, &neuma_tones::PsalmOptions::default(), ChantOptions::default());
         assert_eq!(c.psalm_json().unwrap(), out);
         assert_eq!(c.source(), text);
-        c.update("Bléssed is he * that cómeth, and is.");
+        assert!(c.update("Bléssed is he * that cómeth, and is."));
         assert!(c.psalm_json().unwrap().contains("is.(g)"), "{}", c.psalm_json().unwrap());
     }
 }

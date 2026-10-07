@@ -78,9 +78,10 @@ caret = src.encode("utf-16-le").find("hi".encode("utf-16-le")) // 2 + 1
 at = layout.elements_at(caret, neuma.OffsetUnit.UTF16)
 assert [e.kind for e in at] == [neuma.ElementKind.NOTE, neuma.ElementKind.SYLLABLE]
 assert src.encode()[at[0].start:at[0].end] == b"i"
-ed.update(src.replace("-(g)", "(g)"))
+assert ed.update(src.replace("-(g)", "(g)"))
+assert not ed.update(src.replace("-(g)", "(g)"))
 assert all(d.code != "gabc::hyphen-in-syllable" for d in ed.diagnostics())
-ed.set_options(neuma.ChantOptions(lyric_size=4.0))
+assert ed.set_options(neuma.ChantOptions(lyric_size=4.0))
 assert ed.layout(500.0, neuma.LayoutOptions()).page().height > layout.page().height
 
 print(f"ok: {len(timeline.notes)} notes, {len(page.lines)} lines at 120, {len(glyphs)} glyphs")

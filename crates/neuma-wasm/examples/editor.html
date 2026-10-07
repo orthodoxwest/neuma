@@ -159,7 +159,13 @@ function render() {
   if (dirtySource) chant.update(text.value);
   if (dirtySource || dirtyLayout) {
     const width = Math.max(200, Math.floor(preview.clientWidth - 32));
-    page = chant.layout(width, { svg: "lines", ids: false });
+    const next = chant.layout(width, { svg: "lines", ids: false });
+    // Release the page this one replaces now, rather than when it is garbage collected: a
+    // page held keeps its engraving, which the next edit then copies.
+    if (next !== page) {
+      page?.free();
+      page = next;
+    }
     engine = performance.now() - t0;
     patched = patch(page.svgParts);
   }

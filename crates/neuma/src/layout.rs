@@ -209,7 +209,10 @@ impl<'a> IntoIterator for &'a Lines {
 ///
 /// A layout owns what it needs (it shares its engraving), so it can be kept, sent to another
 /// thread and cloned cheaply, and it keeps answering for the score it was laid out from
-/// after its [`Chant`](crate::Chant) is edited.
+/// after its [`Chant`](crate::Chant) is edited. Kept that long, it keeps that engraving
+/// alive, and the chant's next edit copies it instead of taking it back: about a quarter more
+/// time for an edit to the longest scores, next to nothing on typical ones. Drop a layout once
+/// nothing shows it.
 #[derive(Clone)]
 pub struct Layout {
     pub(crate) eng: Arc<Engraving>,
