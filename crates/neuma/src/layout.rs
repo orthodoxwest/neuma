@@ -346,6 +346,7 @@ struct Spot {
     touching: bool,
 }
 
+#[inline(always)]
 fn place(cur: &Cursor, seg: &Space, hyphen: f32, word_space: f32, line_start: f32) -> Spot {
     let mut x = cur.x;
     match (cur.ink_right, seg.ink) {
