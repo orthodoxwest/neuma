@@ -148,20 +148,22 @@ pub(crate) fn reparse(old_src: &str, old: &mut Score, keep: &mut ParseMarks, src
     if head == 0 {
         return None;
     }
-    let old_marks = std::mem::take(&mut keep.marks);
-    let old_syllables = std::mem::take(&mut old.syllables);
-    let m = old_syllables.len();
-    let mut old_syllables = old_syllables.into_iter();
-    let mut syllables: Vec<Syllable> = old_syllables.by_ref().take(head).collect();
-    let mut rest: Vec<Syllable> = old_syllables.collect();
-    let restart = &old_marks[head - 1];
+    // The old syllables and marks stay where they are, those the edit replaced spliced out.
+    let mut marks = std::mem::take(&mut keep.marks);
+    let mut syllables = std::mem::take(&mut old.syllables);
+    let m = syllables.len();
+    let restart = &marks[head - 1];
     let mut st = restart.state.clone();
+    let before = restart.read;
     let mut sink = Sink {
         items: keep.found[..restart.diagnostics].to_vec(),
     };
-    let mut marks: Vec<BodyMark> = old_marks[..head].to_vec();
+    let from = restart.end - body_start;
+    let mut fresh: Vec<Syllable> = Vec::new();
+    let mut fresh_marks: Vec<BodyMark> = Vec::new();
     // Past the edit, where a syllable ends as an old one did, in the same state.
     let mut met = None;
+    let old_marks = &marks;
     let mut meet = |end: usize, now: &BodyState| {
         if end < cut_new {
             return false;
@@ -176,44 +178,41 @@ pub(crate) fn reparse(old_src: &str, old: &mut Score, keep: &mut ParseMarks, src
         met = Some(k);
         true
     };
-    let from = restart.end - body_start;
     let read = read_body(
         src,
         body_start,
         from,
         &mut st,
-        &mut syllables,
+        &mut fresh,
         &mut sink,
-        Some(&mut marks),
+        Some(&mut fresh_marks),
+        Some(before),
         &mut meet,
     );
-    let fresh = syllables.len() - head;
     // The old syllables from `old_from` on hold, moved; the diagnostics before `found` are
     // those the body's reading found.
     let (old_from, found) = match (read, met) {
         (None, Some(k)) => {
             // The old syllables after `k`, their marks and diagnostics, moved.
-            let base = &old_marks[k];
-            let d_diag = sink.items.len() as isize - base.diagnostics as isize;
+            let base_diagnostics = marks[k].diagnostics;
+            let d_diag = sink.items.len() as isize - base_diagnostics as isize;
             sink.items
-                .extend(keep.found[base.diagnostics..].iter().cloned().map(|d| shift.diagnostic(d)));
-            let mut read = marks.last().map_or(0, |m| m.read);
-            for o in &old_marks[k + 1..] {
+                .extend(keep.found[base_diagnostics..].iter().cloned().map(|d| shift.diagnostic(d)));
+            let mut read = fresh_marks.last().map_or(before, |m| m.read);
+            for o in &mut marks[k + 1..] {
                 read = read.max(shift.at(o.read));
-                marks.push(BodyMark {
+                *o = BodyMark {
                     end: shift.at(o.end),
                     read,
                     diagnostics: o.diagnostics.wrapping_add_signed(d_diag),
                     state: shift.state(&o.state),
-                });
+                };
             }
             let found = sink.items.len();
             sink.items.extend(keep.end.iter().cloned().map(|d| shift.diagnostic(d)));
-            let moved = rest.split_off(k + 1 - head);
-            syllables.extend(moved.into_iter().map(|mut s| {
-                shift.syllable(&mut s);
-                s
-            }));
+            for s in &mut syllables[k + 1..] {
+                shift.syllable(s);
+            }
             (k + 1, found)
         }
         (Some(left), _) => {
@@ -223,21 +222,20 @@ pub(crate) fn reparse(old_src: &str, old: &mut Score, keep: &mut ParseMarks, src
         }
         (None, None) => unreachable!("reading stops only where it met the old syllables"),
     };
-    // The old syllables `head..old_from` were read again as the `fresh` new ones after `head`;
-    // some at either end may have come out the same, and are left alone too.
-    let n = syllables.len();
-    let reread = &syllables[head..head + fresh];
-    let replaced = &rest[..(old_from - head).min(rest.len())];
-    let same_head = reread.iter().zip(replaced).take_while(|(a, b)| a == b).count();
-    let moved_tail = n - (head + fresh);
+    // The old syllables `head..old_from` were read again as the fresh ones; some at either
+    // end may have come out the same, and are left alone too.
+    let replaced = &syllables[head..old_from];
+    let same_head = fresh.iter().zip(replaced).take_while(|(a, b)| a == b).count();
+    let moved_tail = m - old_from;
     // As the engraving moves an unchanged end: every offset by the same amount.
     let all = Shift { cut: 0, by };
-    let same_tail = reread[same_head..]
+    let same_tail = fresh[same_head..]
         .iter()
         .rev()
         .zip(replaced[same_head.min(replaced.len())..].iter().rev())
         .take_while(|(a, b)| same_moved(b, a, all))
         .count();
+    let n = m - (old_from - head) + fresh.len();
     let mut diff = Diff {
         head: head + same_head,
         tail: moved_tail + same_tail,
@@ -248,6 +246,8 @@ pub(crate) fn reparse(old_src: &str, old: &mut Score, keep: &mut ParseMarks, src
     if diff.head + diff.tail > n.min(m) {
         diff.tail = n.min(m) - diff.head;
     }
+    syllables.splice(head..old_from, fresh);
+    marks.splice(head..old_from, fresh_marks);
     *keep = ParseMarks {
         body_start,
         marks,

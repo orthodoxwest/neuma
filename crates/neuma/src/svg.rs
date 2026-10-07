@@ -4,13 +4,11 @@
 
 use std::collections::HashMap;
 use std::fmt::Write as _;
-use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use crate::display::{DisplayList, Item, TextRole};
-use crate::engrave::SegmentInk;
 use crate::glyphs::{GlyphId, UNITS_PER_SPACE};
-use crate::layout::{Layout, PlacedLine};
+use crate::layout::{Layout, LineShape, PlacedLine};
 
 /// How to write SVG. Build it with the `with_*` setters:
 /// `SvgOptions::default().with_prefix("intro").with_ids(false)`.
@@ -232,8 +230,23 @@ impl Layout {
             write_items(&mut rest, &items, &p, opts.ids);
         }
         let (width, height) = self.size();
-        let mut head = String::new();
-        write_head(&mut head, width, height, &self.eng.alt_text, &p, opts);
+        let head_of = HeadOf {
+            width: width.to_bits(),
+            height: height.to_bits(),
+            style: opts.style,
+            font_family: opts.font_family.clone(),
+            alt_text: self.eng.alt_text.clone(),
+        };
+        // The head writes the score's text, as its label, so is kept when that is unchanged.
+        let head = match previous {
+            Some(d) if d.head_of == head_of => d.head.clone(),
+            _ => {
+                let mut head = String::new();
+                write_head(&mut head, width, height, &self.eng.alt_text, &p, opts);
+                head
+            }
+        };
+        let kept_head = head.clone();
         let mut defs = String::new();
         write_defs(&mut defs, &used, s / UNITS_PER_SPACE, &p);
         SvgParts {
@@ -247,64 +260,42 @@ impl Layout {
                 prefix: p,
                 ids: opts.ids,
                 lines: drawn,
+                head: kept_head,
+                head_of,
             },
         }
     }
 
-    /// What a line's SVG is made from: its segments' ink, shared with the engraving, and
-    /// where the line places it. Two lines with equal keys draw the same.
+    /// What a line's SVG is made from: how it is set across (shared between layouts that set
+    /// it alike, from the same segments' ink), and where it is placed. Two lines with equal
+    /// keys draw the same.
     fn line_key(&self, line: &PlacedLine, ids: bool) -> LineKey {
         let eng = &*self.eng;
-        let segments = &eng.segments[line.first..=line.last];
-        let mut v: Vec<u32> =
-            Vec::with_capacity(16 + segments.len() * if ids { 3 } else { 1 } + line.hyphens.len() + line.bridges.len() * 3);
         let f = |x: f32| x.to_bits();
-        v.extend([
+        let mut words = Vec::with_capacity(if ids { 6 + 2 * (line.last + 1 - line.first) } else { 6 });
+        words.extend([
             f(self.scale),
             f(self.width),
             f(eng.lyric_size),
             f(eng.hyphen),
             f(line.staff - line.top),
             f(line.baseline - line.top),
-            f(line.indent),
-            u32::from(line.staffless),
         ]);
-        match &line.clef {
-            Some(c) => v.extend([1 + c.kind as u32, u32::from(c.line), u32::from(c.flat)]),
-            None => v.push(0),
-        }
-        match line.custos {
-            Some((pitch, x)) => v.extend([1, pitch as u8 as u32, f(x)]),
-            None => v.push(0),
-        }
-        match line.hyphen {
-            Some(x) => v.extend([1, f(x)]),
-            None => v.push(0),
-        }
-        v.push(line.hyphens.len() as u32);
-        v.extend(line.hyphens.iter().map(|&x| f(x)));
-        v.push(line.bridges.len() as u32);
-        for &(y, l, r) in &line.bridges {
-            v.extend([f(y), f(l), f(r)]);
-        }
-        v.push(segments.len() as u32);
-        v.extend(line.xs.iter().map(|&x| f(x)));
         if ids {
             // The note and syllable numbers the ids write.
-            for seg in segments {
-                v.extend([seg.note_base, seg.syllable]);
+            for seg in &eng.segments[line.first..=line.last] {
+                words.extend([seg.note_base, seg.syllable]);
             }
         }
-        let ink: Vec<Arc<SegmentInk>> = segments.iter().map(|seg| Arc::clone(&seg.body)).collect();
-        let mut h = v.len() as u64;
-        let mut mix = |x: u64| h = (h.rotate_left(5) ^ x).wrapping_mul(0x517c_c1b7_2722_0a95);
-        for &x in &v {
-            mix(u64::from(x));
+        let mut h = Arc::as_ptr(&line.shape) as usize as u64;
+        for &x in &words {
+            h = (h.rotate_left(5) ^ u64::from(x)).wrapping_mul(0x517c_c1b7_2722_0a95);
         }
-        for i in &ink {
-            mix(Arc::as_ptr(i) as usize as u64);
+        LineKey {
+            hash: h,
+            words,
+            shape: Arc::clone(&line.shape),
         }
-        LineKey { hash: h, words: v, ink }
     }
 }
 
@@ -316,6 +307,18 @@ struct Drawn {
     prefix: String,
     ids: bool,
     lines: Vec<DrawnLine>,
+    head: String,
+    head_of: HeadOf,
+}
+
+/// What the head was written from.
+#[derive(Clone, Default, PartialEq)]
+struct HeadOf {
+    width: u32,
+    height: u32,
+    style: bool,
+    font_family: String,
+    alt_text: String,
 }
 
 #[derive(Clone)]
@@ -326,28 +329,35 @@ struct DrawnLine {
     glyphs: Glyphs,
 }
 
-/// See [`Layout::line_key`]. The key holds the ink it was made from, so ink it names is never
-/// freed and its address taken by other ink while the key is kept.
+/// See [`Layout::line_key`]. A layout shares a line's shape only with lines set from the same
+/// segments' ink, which it holds while it does; the key holds the shape, so no other shape
+/// takes its address while the key is kept.
 #[derive(Clone)]
 struct LineKey {
     hash: u64,
     words: Vec<u32>,
-    ink: Vec<Arc<SegmentInk>>,
+    shape: Arc<LineShape>,
 }
 
 impl PartialEq for LineKey {
     fn eq(&self, other: &LineKey) -> bool {
-        self.hash == other.hash
-            && self.words == other.words
-            && self.ink.len() == other.ink.len()
-            && self.ink.iter().zip(&other.ink).all(|(a, b)| Arc::ptr_eq(a, b))
+        self.hash == other.hash && Arc::ptr_eq(&self.shape, &other.shape) && self.words == other.words
     }
 }
 
+/// A quick hash of `s`, to find a line's SVG among others: a match is confirmed by comparing
+/// the strings.
 fn hash_str(s: &str) -> u64 {
-    let mut h = std::hash::DefaultHasher::new();
-    s.hash(&mut h);
-    h.finish()
+    let mut h = s.len() as u64;
+    let mut mix = |x: u64| h = (h.rotate_left(5) ^ x).wrapping_mul(0x517c_c1b7_2722_0a95);
+    let mut chunks = s.as_bytes().chunks_exact(8);
+    for c in &mut chunks {
+        mix(u64::from_le_bytes(c.try_into().unwrap_or_default()));
+    }
+    for &b in chunks.remainder() {
+        mix(u64::from(b));
+    }
+    h
 }
 
 /// A set of glyphs, by id.

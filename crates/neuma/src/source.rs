@@ -203,8 +203,11 @@ impl Layout {
         let eng = &*self.eng;
         let s = self.scale;
         let mut map = SourceMap {
+            notes: Vec::with_capacity(eng.notes.len()),
+            bars: Vec::with_capacity(eng.bar_spans.len()),
+            syllables: Vec::with_capacity(eng.syllable_spans.len() + self.lines.len() + 1),
+            lines: Vec::with_capacity(self.lines.len()),
             staff_space: s,
-            ..SourceMap::default()
         };
         for (li, line) in self.lines.iter().enumerate() {
             let li = li as u32;
@@ -302,9 +305,12 @@ impl Layout {
                 cx: (placed.x + init.advance_em * placed.size / 2.0) * s,
             });
         }
-        map.notes.sort_by_key(|e| e.index);
-        map.bars.sort_by_key(|e| e.index);
-        map.syllables.sort_by_key(|e| e.index);
+        // Mostly in order already, as the lines are.
+        for list in [&mut map.notes, &mut map.bars, &mut map.syllables] {
+            if !list.is_sorted_by_key(|e| e.index) {
+                list.sort_by_key(|e| e.index);
+            }
+        }
         map
     }
 }

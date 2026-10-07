@@ -94,6 +94,7 @@ fn parse_marked(src: &str, keep: Option<&mut ParseMarks>) -> Parsed {
         &mut syllables,
         &mut sink,
         marks.as_mut(),
+        None,
         &mut |_, _| false,
     );
     let found = sink.items.len();
@@ -465,7 +466,9 @@ pub(crate) struct Rest {
 }
 
 /// Reads the body of `src`, which starts at `start`, from its byte `i` on (0, or where a
-/// syllable ends), with `state` carried from the syllables before, onto `syllables`. After
+/// syllable ends), with `state` carried from the syllables before, onto `syllables`.
+/// `before` is how far reading the syllables before looked, when there are any (they need
+/// not be in `syllables`). After
 /// each syllable, `meet` is told where it ended and the state then; when it returns true
 /// reading stops there, and `None` is returned. Otherwise reading goes to the end, and
 /// returns the text after the last syllable.
@@ -478,6 +481,7 @@ pub(crate) fn read_body(
     syllables: &mut Vec<Syllable>,
     sink: &mut Sink,
     mut marks: Option<&mut Vec<BodyMark>>,
+    before: Option<usize>,
     meet: &mut dyn FnMut(usize, &BodyState) -> bool,
 ) -> Option<Rest> {
     let body = &src[start..];
@@ -488,7 +492,7 @@ pub(crate) fn read_body(
     // Where each byte of `text` came from in the source: comments are left out of the text and
     // whitespace is read as one space, so text offsets aren't source offsets.
     let mut from: Vec<(usize, usize)> = Vec::new();
-    let mut read = marks.as_ref().and_then(|m| m.last()).map_or(0, |m| m.read);
+    let mut read = before.unwrap_or(0);
     while i < bytes.len() {
         let c = body[i..].chars().next().unwrap_or('\0');
         match c {
@@ -571,7 +575,7 @@ pub(crate) fn read_body(
                     sink.error(start + i..end, "gabc::unclosed-notes", "notes opened with `(` never close");
                     sink.fix(Fix::new(end..end, ")", "Insert `)`"));
                 }
-                let word_start = saw_space || syllables.is_empty();
+                let word_start = saw_space || before.is_none() && syllables.is_empty();
                 let end = if unclosed { close } else { (close + 1).min(body.len()) };
                 syllables.push(Syllable {
                     text: lyric,
