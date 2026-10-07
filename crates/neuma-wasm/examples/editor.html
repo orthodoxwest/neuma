@@ -54,6 +54,9 @@
   header h1 { font-size: 15px; margin: 0; font-weight: 600; }
   #stats { color: var(--muted); font-variant-numeric: tabular-nums; margin-left: auto; font-size: 12px; }
   main { display: grid; grid-template-columns: minmax(280px, 2fr) 3fr; min-height: 0; }
+  /* A column may narrow past its content (the preview's SVG), so the page never keeps a
+     horizontal scroll after the window narrows. */
+  main > * { min-width: 0; }
   @media (max-width: 760px) { main { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; } body { overflow: auto; } }
   #left { display: grid; grid-template-rows: 1fr auto; min-height: 0; border-right: 1px solid var(--line); }
 

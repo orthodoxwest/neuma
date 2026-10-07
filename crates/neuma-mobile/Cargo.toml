@@ -23,7 +23,7 @@ required-features = ["bindgen"]
 bindgen = ["uniffi/cli"]
 
 [dependencies]
-neuma = { path = "../neuma" }
+neuma = { path = "../neuma", default-features = false, features = ["fonts"] }
 neuma-tones = { path = "../neuma-tones" }
 uniffi = "0.32"
 

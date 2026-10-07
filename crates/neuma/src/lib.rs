@@ -58,7 +58,7 @@ pub(crate) mod decimal;
 pub mod diag;
 pub mod display;
 pub mod engrave;
-#[cfg(feature = "fonts")]
+#[cfg(any(feature = "font-google", feature = "font-garamond12"))]
 pub mod fonts;
 pub mod gabc;
 /// The glyph table generated from exsurge's outlines. Its names and variants follow the
@@ -83,7 +83,7 @@ pub use chant::{Chant, ChantOptions};
 pub use diag::{Diagnostic, Fix, Severity};
 pub use display::{DisplayList, Item, LineBox, NoteRef, TextRole, TextRun};
 pub use engrave::{AlterationScope, CustosPolicy, Engraving, Initial, Ink, StyleOptions};
-#[cfg(feature = "fonts")]
+#[cfg(any(feature = "font-google", feature = "font-garamond12"))]
 pub use fonts::LyricFont;
 pub use gabc::{Parsed, parse};
 pub use glyphs::{GlyphOutline, glyph_outline};

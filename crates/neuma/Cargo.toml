@@ -12,8 +12,13 @@ default = ["svg", "fonts"]
 svg = []
 # `neuma::json`: the outputs as the JSON the browser package and the CLI give (no dependencies).
 json = []
-# The built-in EB Garamond metrics tables (about 100 KB).
-fonts = []
+# The built-in EB Garamond metrics tables (about 108 KB): both, or one of them. A
+# `LyricFont` whose table is left out measures as the other.
+fonts = ["font-google", "font-garamond12"]
+# The table for the EB Garamond Google Fonts serves (about 85 KB).
+font-google = []
+# The table for the EB Garamond 12 release (about 23 KB).
+font-garamond12 = []
 
 [lints]
 workspace = true

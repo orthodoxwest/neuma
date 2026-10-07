@@ -214,6 +214,50 @@ assert.ok(psalmDisplay("Lord, remember · Dávid, – – * and all his trouble.
 assert.throws(() => psalmDisplay(plain, "8.G", { accents: "outside-flex" }), /accents must be/);
 assert.throws(() => psalm(plain, "8.G", { intone: "always" }), /intone must be/);
 assert.throws(() => Chant.fromPsalm(plain, "8.G", { accents: "None" }), /accents must be/);
+// A null option is its default, as an undefined one is.
+assert.deepEqual(psalm(plain, "8.G", { intone: null, accents: null, autoPoint: null }), psalm(plain, "8.G"));
+assert.deepEqual(psalmDisplay(plain, "8.G", null), psalmDisplay(plain, "8.G"));
+assert.equal(Chant.fromPsalm(plain, "8.G", { intone: null, initial: null }).psalm.gabc, psalm(plain, "8.G").gabc);
+// Errors say which they are by a code; options a function doesn't take, and values not among
+// those it takes, throw a TypeError.
+const invalid = { name: "TypeError", code: "invalid-option" };
+assert.throws(() => psalm(plain, "8.G", { intone: "always" }), invalid);
+assert.throws(() => psalm(plain, "8.G", { pointing: "auto" }), { ...invalid, message: /psalm has no option "pointing"; its options are intone, autoPoint, accents/ });
+assert.throws(() => psalm(plain, "8.G", "first"), invalid);
+assert.throws(() => psalm(plain, "9.z"), { name: "Error", code: "tone" });
+assert.throws(() => Chant.fromTone("9.z"), { code: "tone" });
+assert.throws(() => new Chant("(c4) a(g)", { intial: 1 }), { ...invalid, message: /Chant has no option "intial"/ });
+assert.throws(() => new Chant("(c4) a(g)", { font: "EB Garamond" }), { ...invalid, message: /font must be "google", "eb-garamond-12"/ });
+assert.throws(() => Chant.fromPsalm(plain, "8.G", { lyricsize: 3 }), invalid);
+assert.throws(() => Chant.fromTone("8.G", { annotaton: false }), invalid);
+{
+  const c = new Chant("(c4) a(g) b(h)", null);
+  assert.equal(c.layout(300, null).svg, new Chant("(c4) a(g) b(h)").layout(300).svg);
+  assert.equal(new Chant("(c4) a(g) b(h)", { initial: null, font: null }).layout(300).svg, c.layout(300).svg);
+  assert.throws(() => c.setOptions({ size: 3 }), invalid);
+  assert.throws(() => c.layout(300, { svg: "parts" }), { ...invalid, message: /svg must be "whole", "lines"/ });
+  assert.throws(() => c.layout(300, { lastLine: "justify" }), invalid);
+  assert.throws(() => c.layout(300, { timeline: false }), invalid);
+  assert.throws(() => c.layout(300, { weights: { notes: 2 } }), { ...invalid, message: /weights has no option "notes"/ });
+  assert.throws(() => c.view({ svg: "line" }), invalid);
+  assert.throws(() => c.view({ weights: {} }), invalid, "a view takes weights per layout");
+  const v = c.view();
+  assert.throws(() => v.layout(300, { scale: 2 }), invalid);
+  assert.equal(v.layout(300, { weights: { note: null } }).svg, c.layout(300).svg);
+  const p = v.layout(300);
+  assert.throws(() => p.elementsAt(5, { unit: "bytes" }), invalid);
+  assert.throws(() => p.elementsAt(5, { units: "utf8" }), invalid);
+  assert.deepEqual(p.elementsAt(5, { unit: null }), p.elementsAt(5));
+  assert.throws(() => setLayoutBudget({ layouts: 3 }), invalid);
+  assert.throws(() => new Page(), { name: "TypeError", code: "no-constructor" });
+  // Chants and views are disposable too.
+  if (typeof Symbol.dispose === "symbol") {
+    v[Symbol.dispose]();
+    assert.equal(v.layout(300), p, "a disposed view still knows its page");
+    c[Symbol.dispose]();
+    assert.ok(c.update("(c4) a(g) c(i)") && c.layout(300).svg.startsWith("<svg"), "a disposed chant still works");
+  }
+}
 // A line copied from the display sets as the text it came from.
 const copied = shown.verses.map((v) => `${v.number} ` + v.runs.map((r) => r.text).join("").replace("Sit.", "[Sit.]")).join("\n");
 assert.equal(psalm(copied, "8.G").gabc, psalm(verses, "8.G").gabc);
@@ -313,7 +357,11 @@ for (let i = 0; i < 40; i++) {
   ed.update(edited + " a(g)".repeat(i + 1));
   for (const w of [500, 300, 250]) ed.layout(w, { svg: i % 2 ? "lines" : "whole" });
 }
-assert.ok(engineStats().layouts <= engineStats().budget, "the engine keeps at most its budget");
+{
+  const { layouts, staleLayouts, budget } = engineStats();
+  assert.ok(staleLayouts <= budget.stale && layouts - staleLayouts <= budget.current, "the engine keeps at most its budget");
+  assert.ok(staleLayouts > 0, "the held pages are stale");
+}
 assert.ok(held.every((p) => p.stale));
 assert.deepEqual(held.map(answers), firstAnswers);
 assert.equal(held[0].noteAt(kept.cx, kept.cy), kept.id);
@@ -341,9 +389,13 @@ assert.equal(edView.layout(600).svg, new Chant(src, { initial: 0, lyricSize: 4 }
 assert.deepEqual(held.map(answers), firstAnswers);
 // A budget of one layout: every other page lays itself out again when asked.
 const budget = engineStats().budget;
-setLayoutBudget(1);
-assert.ok(engineStats().layouts <= 1);
+setLayoutBudget({ current: 1, stale: 1 });
+assert.ok(engineStats().layouts <= 2);
 assert.deepEqual(held.map(answers), firstAnswers);
+setLayoutBudget(budget);
+assert.deepEqual(engineStats().budget, { current: 64, stale: 2 });
+setLayoutBudget(3);
+assert.deepEqual(engineStats().budget, { current: 3, stale: 2 }, "a number sets the current pool's");
 setLayoutBudget(budget);
 
 // Each view in parts, here a page and a thumbnail, reuses the lines of its own last page,
@@ -430,14 +482,66 @@ setLayoutBudget(budget);
     ...section(7, [exports.length, ...exports.flat()]),
     ...section(10, [4, ...fn([0x10, 0]), ...fn([0x41, 0]), ...fn([0x41, 0]), ...fn([0x00])]),
   ]);
+  assert.throws(() => glue.summarize("x"), { code: "not-initialized" });
   glue.initSync(bytes);
+  // A build that leaves psalm tones out says so.
+  assert.throws(() => glue.psalm("a * b", "8.G"), { code: "unsupported", message: /no psalm tones/ });
+  assert.throws(() => glue.point("a * b", "8.G"), { code: "unsupported", message: /no automatic pointing/ });
   assert.throws(() => glue.summarize("x"), RangeError);
-  assert.throws(() => glue.summarize("x"), /stopped on an internal error; call init\(\) again/);
+  assert.throws(() => glue.summarize("x"), { code: "engine-stopped", message: /stopped on an internal error; call init\(\) again/ });
   await glue.init();
   assert.throws(() => glue.toneNames(), WebAssembly.RuntimeError);
   assert.throws(() => glue.toneNames(), /call init\(\) again/);
   await glue.init();
   assert.throws(() => glue.summarize("x"), RangeError);
+}
+
+// Versions keep growing across a restart of the engine, whose own count starts again: a copy
+// of the glue whose engine traps once, on demand.
+{
+  const Real = WebAssembly.Instance;
+  let trap = false;
+  WebAssembly.Instance = function (module, imports) {
+    const real = new Real(module, imports);
+    const summarize = real.exports.neuma_summarize;
+    return {
+      exports: {
+        ...real.exports,
+        neuma_summarize: () => {
+          if (!trap) return summarize();
+          trap = false;
+          throw new WebAssembly.RuntimeError("unreachable");
+        },
+      },
+    };
+  };
+  try {
+    const glue = await import("./dist/neuma.mjs?restart");
+    await glue.init();
+    const a = new glue.Chant("(c4) a(g)");
+    a.update("(c4) a(h)");
+    const seen = [a.version];
+    const page = a.layout(300);
+    trap = true;
+    assert.throws(() => glue.summarize("x"), WebAssembly.RuntimeError);
+    await glue.init();
+    const b = new glue.Chant("(c4) b(g)");
+    assert.ok(b.version > seen[0], "a chant made after the restart");
+    assert.equal(a.version, seen[0], "a chant made before keeps its state");
+    assert.ok(!page.stale);
+    a.update("(c4) a(i)");
+    assert.ok(a.version > b.version && page.stale);
+  } finally {
+    WebAssembly.Instance = Real;
+  }
+}
+
+// The module without the wasm inlined, given its bytes, works as the inlined one.
+{
+  const external = await import("./dist/neuma-external.mjs");
+  await external.init(readFileSync(new URL("./dist/neuma.wasm", import.meta.url)));
+  assert.equal(new external.Chant(gabc).layout(500).svg, chant.layout(500).svg);
+  assert.ok(readFileSync(new URL("./dist/neuma-external.mjs", import.meta.url)).length < 100_000);
 }
 
 assert.equal(DEFAULT_WEIGHTS.note, 1);

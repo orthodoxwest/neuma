@@ -2009,7 +2009,7 @@ mod tests {
     /// How often lines break inside a word, and how far justified lines stretch, over the
     /// reference scores at five widths: (mid-word breaks, breaks, mean stretch of a word gap,
     /// lines stretched more than a staff space a gap), counting the breaks the breaker chose.
-    #[cfg(feature = "fonts")]
+    #[cfg(any(feature = "font-google", feature = "font-garamond12"))]
     fn break_stats() -> (usize, usize, f32, usize) {
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
         let mut paths: Vec<_> = ["tests/golden", "tests/corpus", "../../examples/compline"]
@@ -2044,7 +2044,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "fonts")]
+    #[cfg(any(feature = "font-google", feature = "font-garamond12"))]
     fn lines_break_between_words_where_that_costs_little() {
         // GregorioTeX breaks about a quarter of its lines inside a word across GregoBase. Over
         // the reference scores at five widths (136 breaks), this breaker cuts 24% of them

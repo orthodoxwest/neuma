@@ -7,6 +7,12 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[features]
+default = ["pointing"]
+# Automatic pointing (`point`, `PsalmOptions::auto_point`): its stress dictionary and model,
+# about 50 KB. Without it, half-verses with no marks are set as `auto_point` off sets them.
+pointing = []
+
 [dependencies]
 neuma = { path = "../neuma", default-features = false }
 

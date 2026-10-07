@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex, MutexGuard, TryLockError};
 
 use crate::diag::Diagnostic;
 use crate::engrave::{AlterationScope, CustosPolicy, EngraveCache, Engraving, Initial, StyleOptions};
-#[cfg(feature = "fonts")]
+#[cfg(any(feature = "font-google", feature = "font-garamond12"))]
 use crate::fonts::LyricFont;
 use crate::gabc::{Diff, ParseMarks};
 use crate::layout::{Layout, LayoutCache, LayoutOptions, usable_width};
@@ -23,7 +23,7 @@ use crate::vowel::VowelRules;
 #[non_exhaustive]
 pub struct ChantOptions {
     /// The EB Garamond the lyrics will be drawn with; default [`LyricFont::Google`].
-    #[cfg(feature = "fonts")]
+    #[cfg(any(feature = "font-google", feature = "font-garamond12"))]
     pub font: LyricFont,
     /// Everything else about the engraving. A lyric size that isn't positive and finite
     /// falls back to the default.
@@ -34,7 +34,7 @@ pub struct ChantOptions {
 
 impl ChantOptions {
     /// Sets [`font`](Self::font).
-    #[cfg(feature = "fonts")]
+    #[cfg(any(feature = "font-google", feature = "font-garamond12"))]
     #[must_use]
     pub fn with_font(mut self, font: LyricFont) -> ChantOptions {
         self.font = font;
@@ -101,9 +101,9 @@ impl ChantOptions {
     fn measure(&self) -> &dyn TextMeasure {
         match &self.measure {
             Some(m) => m.as_ref(),
-            #[cfg(feature = "fonts")]
+            #[cfg(any(feature = "font-google", feature = "font-garamond12"))]
             None => self.font.metrics(),
-            #[cfg(not(feature = "fonts"))]
+            #[cfg(not(any(feature = "font-google", feature = "font-garamond12")))]
             None => &crate::text::ApproxMeasure,
         }
     }
@@ -130,7 +130,7 @@ impl ChantOptions {
 
 impl PartialEq for ChantOptions {
     fn eq(&self, other: &ChantOptions) -> bool {
-        #[cfg(feature = "fonts")]
+        #[cfg(any(feature = "font-google", feature = "font-garamond12"))]
         if self.font != other.font {
             return false;
         }
@@ -146,7 +146,7 @@ impl PartialEq for ChantOptions {
 impl fmt::Debug for ChantOptions {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut d = f.debug_struct("ChantOptions");
-        #[cfg(feature = "fonts")]
+        #[cfg(any(feature = "font-google", feature = "font-garamond12"))]
         d.field("font", &self.font);
         d.field("style", &self.style)
             .field("measure", &self.measure.as_ref().map(|_| "custom"))
