@@ -8,7 +8,7 @@
 //! (`fonts-ebgaramond`). The lyrics are measured with neuma's built-in EB Garamond 12 metrics
 //! and drawn as outlines from those font files, so the SVGs need no font where they are shown
 //! (GitHub shows SVG in `<img>`, which loads no fonts). Each image has a white background so
-//! it reads on light and dark pages alike. See `docs/images/README.md` for the other images.
+//! it reads on light and dark pages alike. See `tools/readme/README.md` for the other images.
 
 use std::collections::BTreeSet;
 use std::fmt::Write as _;

@@ -317,8 +317,8 @@ neuma book examples/compline/compline.book -o compline.pdf --svg pages/
 Psalms can be printed pointed under their tone (as above), with the first verse in chant, or
 in chant throughout. Pages keep a heading or rubric with what follows and an antiphon with its
 psalm, and never leave one staff alone at a page break. The PDF embeds the text face (EB
-Garamond 12 by default, or any TrueType or OpenType font), so its text can be searched and
-copied. The whole example is in
+Garamond 12 when it is installed, or any TrueType or OpenType font you name; without one it
+falls back to the standard Times fonts), and its text can be searched and copied. The whole example is in
 [examples/compline](examples/compline/compline.book); the format is in
 [crates/neuma-book](crates/neuma-book/README.md).
 
