@@ -7,7 +7,8 @@ pub mod json;
 
 use neuma::score::Header;
 use neuma::{
-    Engraving, Initial, LastLine, LayoutOptions, NoteMap, NoteRef, SourceMap, StyleOptions, SvgOptions, Utf16Index, Weights, parse,
+    Engraving, Initial, LastLine, LayoutCache, LayoutOptions, NoteMap, NoteRef, SourceMap, StyleOptions, SvgOptions, Utf16Index, Weights,
+    parse,
 };
 
 pub use neuma::Font;
@@ -76,6 +77,8 @@ pub struct Chant {
     sources: Option<SourceMap>,
     /// The layout as JSON: size, lines, notes and pauses (without the SVG).
     layout_json: String,
+    /// The line breaker's work, reused by the next layout after an edit.
+    layout_cache: LayoutCache,
 }
 
 impl Chant {
@@ -94,6 +97,7 @@ impl Chant {
             notes: None,
             sources: None,
             layout_json: String::new(),
+            layout_cache: LayoutCache::default(),
         };
         chant.update(gabc);
         chant
@@ -152,7 +156,7 @@ impl Chant {
 
     /// As [`Chant::layout`], choosing what to produce.
     pub fn layout_with(&mut self, width: f32, opts: &LayoutOptions, weights: &Weights, svg: &SvgOptions, outputs: Outputs) {
-        let layout = self.engraving.layout(width, opts);
+        let layout = self.engraving.layout_cached(width, opts, &mut self.layout_cache);
         self.svg = match outputs.svg {
             SvgOutput::Whole => layout.svg(svg),
             SvgOutput::Lines => {

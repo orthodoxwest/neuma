@@ -31,7 +31,7 @@ pub use engrave::{AlterationScope, CustosPolicy, Engraving, Initial, Ink, StyleO
 pub use fonts::Font;
 pub use gabc::{Parsed, parse, to_gabc};
 pub use glyphs::{GlyphOutline, glyph_outline};
-pub use layout::{LastLine, Layout, LayoutOptions};
+pub use layout::{LastLine, Layout, LayoutCache, LayoutOptions};
 pub use metrics::MetricsTable;
 pub use notes::{MappedNote, NoteMap, Pause, PauseKind, Weights};
 pub use score::{Score, ScoreBuilder};
