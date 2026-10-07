@@ -462,3 +462,22 @@ fn zero_width_notes_are_reported_once() {
     assert_eq!(zw.len(), 1, "{:?}", p.diagnostics);
     assert_eq!(zw[0].message, "notes in `{…}` are drawn with their own width");
 }
+
+/// Inputs the `round_trip` fuzz target found: writing the parsed score and parsing it again
+/// reaches a fixed point after one round.
+#[test]
+fn writer_is_stable_on_fuzz_finds() {
+    let cases = [
+        // An escaped line break or tab in a lyric is a space.
+        "$\ns(",
+        "us$\n- `psalm-13i) *() na(m) *(,",
+        "a$\tb(g)",
+        "a$\rb(g) c$\n(h)",
+    ];
+    for src in cases {
+        let once = parse(src).score.to_gabc();
+        assert_eq!(parse(&once).score.to_gabc(), once, "{src:?}");
+    }
+    let p = parse("a$\tb(g)");
+    assert_eq!(p.score.syllables[0].text.runs[0].text, "a b");
+}
