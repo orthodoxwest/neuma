@@ -62,7 +62,6 @@ engine renders what it can and says what it did.
 
 | Code | Severity | Span | Fix | Meaning |
 |---|---|---|---|---|
-| `engrave::final-break` | info | the break | remove it | A line break at the end of the score is dropped. |
 | `engrave::vowel-rules` | info | the `language` header field | | No vowel rules for the language; the Latin rules center the lyrics. |
 | `engrave::wide-porrectus` | info | the two notes | | No porrectus glyph spans more than a fifth; drawn as two puncta. |
 | `text::synthetic-face` | info | the first such syllable | | No font face for a style (such as bold); measured with the regular face, widened. Reported once per score. |
@@ -96,4 +95,5 @@ Spans count bytes of the psalm text.
 
 ## Retired codes
 
-None yet.
+- `engrave::final-break`: was to say a line break at the end of the score is dropped, but
+  no score could reach it; a break written last applies to the segment before it, as anywhere.
