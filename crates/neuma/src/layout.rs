@@ -805,6 +805,33 @@ mod tests {
     }
 
     #[test]
+    fn a_bar_with_text_is_spaced_as_a_bar() {
+        // Gregorio sets a bar's syllable at the bar spacing whether or not it carries text,
+        // and doesn't shrink around it.
+        let style = StyleOptions {
+            initial: Initial::None,
+            ..StyleOptions::default()
+        };
+        for src in [
+            "(c4) a(ghg) (;) b(ghg)",
+            "(c4) a(ghg) *(;) b(ghg)",
+            "(c4) a(ghg) <sp>V/</sp>.(::) b(ghg)",
+        ] {
+            let eng = parse(src).score.engrave(&ApproxMeasure, &style);
+            assert_eq!(eng.segments.len(), 3, "{src}");
+            let t = eng.trial(0, 2, 0.0);
+            let ink = |i: usize| {
+                let (l, r) = eng.segments[i].ink.unwrap();
+                (t.xs[i] + l, t.xs[i] + r)
+            };
+            assert!((ink(1).0 - ink(0).1 - BAR_GAP).abs() < 1e-4, "{src}");
+            // After the bar, the texts may hold the next syllable further off.
+            assert!(ink(2).0 - ink(1).1 >= BAR_GAP - 1e-4, "{src}");
+            assert_eq!(t.shrinks[1..], [0.0, 0.0], "{src}");
+        }
+    }
+
+    #[test]
     fn a_stuck_line_takes_the_break_it_ends_at() {
         // A line stuck behind forbidden breaks ends before the segment that overflowed, so its
         // cost and raggedness are those of the segment it ends after, not the overflowing one.

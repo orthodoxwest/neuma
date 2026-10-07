@@ -209,9 +209,9 @@ pub(crate) struct Segment {
 }
 
 impl Segment {
-    /// A bar standing in a syllable of its own, with no text.
+    /// A bar standing in a syllable of its own, its text (`*(;)`) or none.
     pub(crate) fn is_bar(&self) -> bool {
-        self.lyric.is_none() && !self.pieces.is_empty() && self.pieces.iter().all(|p| p.role == Ink::Bar)
+        !self.pieces.is_empty() && self.pieces.iter().all(|p| p.role == Ink::Bar)
     }
 
     pub(crate) fn right(&self) -> f32 {
