@@ -396,6 +396,9 @@ pub(crate) struct Head {
     pub top: f32,
     pub bottom: f32,
     pub position: i8,
+    /// The note's hit box (left, top, right, bottom) when it isn't [`Head::center`] and
+    /// [`Head::size`] around the note's position: a porrectus end trimmed off its neighbours.
+    pub hit: Option<[f32; 4]>,
 }
 
 impl Head {
@@ -416,6 +419,54 @@ impl Head {
         match self.glyph {
             Some(G::Porrectus1 | G::Porrectus2 | G::Porrectus3 | G::Porrectus4) | None => (1.0, 1.0),
             _ => (self.w.max(0.5), self.bottom - self.top),
+        }
+    }
+    /// The note's hit box: center x, center y, width and height.
+    pub fn hit_box(&self) -> (f32, f32, f32, f32) {
+        if let Some([l, t, r, b]) = self.hit {
+            return ((l + r) / 2.0, (t + b) / 2.0, r - l, b - t);
+        }
+        let (w, h) = self.size();
+        (self.center(), -(self.position as f32), w, h)
+    }
+    fn swash(&self) -> bool {
+        matches!(
+            self.glyph,
+            Some(G::Porrectus1 | G::Porrectus2 | G::Porrectus3 | G::Porrectus4) | None
+        )
+    }
+}
+
+/// Trims the boxes of a porrectus swash's two ends off the other noteheads of the neume (the
+/// note stacked on the swash's end, the punctum before it), along the axis where they overlap
+/// least, so that hit testing never finds two notes at one point.
+fn trim_swash_boxes(heads: &mut [Head]) {
+    for i in 0..heads.len() {
+        if !heads[i].swash() {
+            continue;
+        }
+        let (cx, cy, w, h) = heads[i].hit_box();
+        let [mut l, mut t, mut r, mut b] = [cx - w / 2.0, cy - h / 2.0, cx + w / 2.0, cy + h / 2.0];
+        for (j, o) in heads.iter().enumerate() {
+            if j == i {
+                continue;
+            }
+            let (ox, oy, ow, oh) = o.hit_box();
+            let [ol, ot, or, ob] = [ox - ow / 2.0, oy - oh / 2.0, ox + ow / 2.0, oy + oh / 2.0];
+            let (dx, dy) = (r.min(or) - l.max(ol), b.min(ob) - t.max(ot));
+            if dx <= 0.0 || dy <= 0.0 {
+                continue;
+            }
+            if dy <= dx {
+                if oy < cy { t = t.max(ob) } else { b = b.min(ot) }
+            } else if ox < cx {
+                l = l.max(or);
+            } else {
+                r = r.min(ol);
+            }
+        }
+        if [l, t, r, b] != [cx - w / 2.0, cy - h / 2.0, cx + w / 2.0, cy + h / 2.0] && r > l && b > t {
+            heads[i].hit = Some([l, t, r, b]);
         }
     }
 }
@@ -543,6 +594,7 @@ impl Builder {
             top,
             bottom: top + glyph.height(),
             position: note.position,
+            hit: None,
         });
     }
 
@@ -705,6 +757,7 @@ impl Builder {
             top: y - 0.6,
             bottom: y + 0.6,
             position: end.position,
+            hit: None,
         });
         self.last = Some(Last {
             position: end.position,
@@ -977,6 +1030,7 @@ pub(crate) fn build(kind: Kind, notes: &[Note], next_position: Option<i8>, note_
         }
     }
     let width = extent(&b.pieces).map_or(0.0, |(_, r)| r.max(0.0));
+    trim_swash_boxes(&mut b.heads);
     Built {
         pieces: b.pieces,
         heads: b.heads,

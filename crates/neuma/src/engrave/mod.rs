@@ -544,11 +544,10 @@ impl Engraver<'_> {
                 open.pieces.push(p.shifted(x));
             }
             for h in &built.heads {
-                let y = -(h.position as f32);
-                let (w, height) = h.size();
+                let (cx, y, w, height) = h.hit_box();
                 open.heads.push(HeadBox {
                     note: base + h.index as u32,
-                    x: h.center() + x,
+                    x: cx + x,
                     y,
                     w,
                     h: height,
