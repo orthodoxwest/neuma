@@ -3,7 +3,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use neuma::score::{Figure, Space};
+use neuma::score::{Bar, BarKind, Figure, Space};
 
 fn notes(score: &neuma::Score) -> usize {
     score
@@ -25,9 +25,19 @@ fn spells_nlba_in_notes(gabc: &str) -> bool {
     })
 }
 
-/// Whether the score has two spaces in a row that GABC writes as one: `/` before `/`, `//`,
-/// `/0` or `/!`, or `!` before a space, which reads back as `! `. Valid GABC never has them.
-fn ambiguous_spaces(score: &neuma::Score) -> bool {
+/// Whether the score has two figures in a row that GABC writes as one: `/` before `/`, `//`,
+/// `/0` or `/!`; `!` before a space, which reads back as `! `; or `:` before `:`, `:?` or
+/// `::`. Valid GABC never has them.
+fn ambiguous_neighbours(score: &neuma::Score) -> bool {
+    let colon = |f: &Figure| {
+        matches!(
+            f,
+            Figure::Bar(Bar {
+                kind: BarKind::Maior | BarKind::DottedMaior | BarKind::Finalis,
+                ..
+            })
+        )
+    };
     score.syllables.iter().any(|s| {
         s.notation.windows(2).any(|w| {
             matches!(
@@ -36,7 +46,14 @@ fn ambiguous_spaces(score: &neuma::Score) -> bool {
                     Figure::Space(Space::Small),
                     Figure::Space(Space::Small | Space::Medium | Space::Half | Space::Tiny)
                 ) | (Figure::Space(Space::Zero), Figure::Space(Space::Large | Space::LargeNoBreak))
-            )
+            ) || (matches!(
+                &w[0],
+                Figure::Bar(Bar {
+                    kind: BarKind::Maior,
+                    high: false,
+                    ..
+                })
+            ) && colon(&w[1]))
         })
     })
 }
@@ -45,7 +62,7 @@ fuzz_target!(|data: &[u8]| {
     let Ok(src) = std::str::from_utf8(data) else { return };
     let first = neuma::parse(src).score;
     let once = first.to_gabc();
-    if spells_nlba_in_notes(&once) || ambiguous_spaces(&first) {
+    if spells_nlba_in_notes(&once) || ambiguous_neighbours(&first) {
         return;
     }
     let second = neuma::parse(&once).score;
