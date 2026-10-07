@@ -12,7 +12,7 @@
 
 /// Where a word splits into sung syllables: byte offsets into the word, in order, each a
 /// boundary between two syllables.
-pub fn split_points(word: &str) -> Vec<usize> {
+pub(crate) fn split_points(word: &str) -> Vec<usize> {
     // Letters only, as plain lower-case ASCII with the byte offset of the character they came
     // from: accents dropped, ligatures spelt out ("ﬁ" → "fi"), and any other letter read as a
     // consonant, so the rules below can index letters as bytes.
@@ -130,7 +130,8 @@ fn compound_head(word: &str) -> Option<usize> {
 }
 
 /// Splits `word` into its sung syllables.
-pub fn syllables(word: &str) -> Vec<&str> {
+#[cfg(test)]
+fn syllables(word: &str) -> Vec<&str> {
     let mut out = Vec::new();
     let mut prev = 0;
     for p in split_points(word) {

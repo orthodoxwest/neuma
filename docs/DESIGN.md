@@ -53,9 +53,9 @@ without closing the door on Latin.
 | office-web | Axum server, Rust | Inline SVG for first paint, no-JS readers and print, sized so the client relayout doesn't shift the page (section 16). Themed through CSS (Nave/Apse, dark mode). |
 | Office web client | Browser; `app.js` is a classic deferred script | Relayout at the real column width, swapping SVG in place. WebAssembly loaded by dynamic `import()` only on pages with chant, and precached by `sw.js`. |
 | Office iOS/Android | `mobile-ffi` (UniFFI) | A display list at the device's width and text size, through a per-score handle. Glyph outlines once each, as absolute `M/L/C/Z` path data, because iOS's `SVG.swift` parses only `M L H V C A Z` and silently stops at anything else. |
-| Practice or playback tool | Browser (WebAssembly) | The same SVG, plus a note map: pitch, weight, x/y, line and source span per note, and which SVG element is which note, for highlighting. |
+| Practice or playback tool | Browser (WebAssembly) | The same SVG, plus a timeline: pitch, weight, position, line and source span per note, and which SVG element is which note, for highlighting. |
 | Psalm-tone pointer | Library, CLI and browser | Pointed psalm text plus a tone, turned into a score. Writes the same markup back out for print. |
-| Tooling (CLI, CI) | Native | Lint GABC (hyphens inside syllables, as in Psalm 134), render SVG/PNG for review, dump note maps as JSON. |
+| Tooling (CLI, CI) | Native | Lint GABC (hyphens inside syllables, as in Psalm 134), render SVG/PNG for review, dump timelines as JSON. |
 
 ## 3. Package layout
 
@@ -78,7 +78,7 @@ neuma/
         engrave.rs           width-independent stage: units with ink and lyric boxes
         lines.rs             optimal-fit breaking, justification, per-line clef and custos
         display.rs           display list (section 9)
-        notes.rs             note map (section 12)
+        notes.rs             timeline (section 12)
         metrics.rs           reader for prebuilt metrics tables (implements TextMeasure)
         svg.rs               SVG writer (feature "svg", default on)
       vowels/                la.vowels, en.vowels in Gregorio's vowel-file format
@@ -120,8 +120,11 @@ pointed text + tone ── neuma-tones ─────┘         (width-indepen
                                                        └── layout(width, opts) ──► Layout
                                                                 ├── display() ──► DisplayList
                                                                 ├── svg() ──────► String
-                                                                └── notes() ────► NoteMap
+                                                                └── timeline() ─► Timeline
 ```
+
+`Chant` (section 5) owns this pipeline for one score and keeps its caches, so most
+callers never name the stages.
 
 - **Score** is the one model. The GABC resolver, `neuma-tones` and
   `ScoreBuilder` all produce it, and `Score::to_gabc()` writes it back out.
@@ -146,6 +149,15 @@ because the same width then holds fewer staff spaces.
 ## 5. Public API sketch
 
 ```rust
+pub struct Chant { /* source, score, engraving, caches, last layout; Send + Sync */ }
+impl Chant {
+    pub fn new(gabc: &str) -> Chant;                    // with_options(gabc, ChantOptions) too
+    pub fn update(&mut self, gabc: &str);               // engraves again only around the edit
+    pub fn diagnostics(&self) -> &[Diagnostic];         // parse and engrave, one list
+    pub fn layout(&mut self, width: f32) -> Layout<'_>; // layout_with(width, &LayoutOptions)
+    pub fn note_at(&self, x: f32, y: f32) -> Option<NoteRef>; // and source_at, elements_at
+}
+
 pub fn parse(src: &str) -> Parsed;                      // never fails; carries diagnostics
 pub struct Parsed { pub score: Score, pub diagnostics: Vec<Diagnostic> }
 pub struct Diagnostic { pub severity: Severity, pub span: Range<usize>, pub code: &'static str, pub message: String }
@@ -182,29 +194,30 @@ impl Score {
 impl Engraving {
     /// `width` in output units; breaking runs at `width / opts.scale` staff spaces, so a uniform
     /// text-size change is a relayout, never a re-engrave. Buffers are reused across relayouts.
-    pub fn layout(&self, width: f32, opts: &LayoutOptions) -> Layout;
+    pub fn layout_with(&self, width: f32, opts: &LayoutOptions) -> Layout;
 }
 impl Layout {
     pub fn size(&self) -> (f32, f32);
     pub fn display(&self) -> DisplayList;
-    pub fn notes(&self, weights: &Weights) -> NoteMap;
-    #[cfg(feature = "svg")] pub fn svg(&self, opts: &SvgOptions) -> String;
+    pub fn timeline_with(&self, weights: &Weights) -> Timeline;   // timeline(): default weights
+    #[cfg(feature = "svg")] pub fn svg_with(&self, opts: &SvgOptions) -> String; // svg()
 }
 pub struct GlyphOutline { pub d: String, pub width: f32 }   // absolute M/L/C/Z, nonzero fill
 pub fn glyph_outline(id: u16) -> Option<GlyphOutline>;
 ```
 
 **Bindings.** The binding layer flattens types that UniFFI and wasm-bindgen
-can't carry: diagnostic codes become `String`, and spans become two `u64`s.
-Glyphs cross every FFI as `u16` ids with a lookup, not as an
+can't carry: diagnostic codes become `String`, and spans become two signed
+integers in UTF-8 bytes and two in UTF-16 units.
+Glyphs cross every FFI as integer ids with a lookup, not as an
 enum, so the glyph set can grow without breaking Swift or Kotlin `switch`
 statements (the Office denies wildcard arms). Strings are owned. Over UniFFI
-and wasm-bindgen, the engraving lives behind a handle:
-`Chant::new(source, kind, style)` (where `kind` is GABC, or pointed text with
-its tone id) `-> handle`, `handle.layout(width, options) -> size`,
-`handle.display() -> DisplayList`, `handle.svg() -> String`,
-`handle.notes() -> NoteMap`. A relayout at an unchanged width returns the
-cached result and copies nothing.
+and the browser's C ABI, the bindings wrap `neuma::Chant` and only convert
+types: `Chant(source, options)`, `chant.update(source)`,
+`chant.layout(width, options) -> Page` (the drawing and the timeline),
+`noteAt`, `sourceAt`, `elementsAt`. Defaults and the handling of values the
+engine can't use live in the core. A relayout at an unchanged width and
+options returns the cached layout.
 
 ## 6. GABC coverage
 
@@ -325,7 +338,7 @@ rather than GABC. That one setting drives three things:
 
 1. whether a soft alteration (`X ## Y`) is drawn: only when it would change
    the pitch in effect;
-2. `semitones` in the note map;
+2. `semitones` in the timeline;
 3. whether a flat is redrawn after a line break inside its scope. It's drawn
    there only when the author wrote a soft flat at that point, which is what
    Gregorio expects authors to do.
@@ -480,13 +493,13 @@ A browser consumer may instead pass a measurer backed by `measureText`. Text
 is then pixel-exact, but layouts are no longer identical across platforms.
 The Office web client uses the table, so its server and client layouts match.
 
-## 12. Note map
+## 12. Timeline
 
 ```rust
-pub struct NoteMap { pub notes: Vec<MappedNote>, pub pauses: Vec<Pause> }
-pub struct MappedNote {
+pub struct Timeline { pub notes: Vec<TimelineNote>, pub pauses: Vec<Pause> }
+pub struct TimelineNote {
     pub id: NoteRef, pub syllable: u32, pub line: u32,
-    pub x: f32, pub y: f32,                 // notehead center, output units
+    pub cx: f32, pub cy: f32,               // notehead center, output units
     pub span: Range<usize>,                 // source span (GABC bytes, or pointed-text bytes)
     pub staff_position: i8,
     pub degree: Degree,                     // scale degree from the clef's do or fa, with alteration
@@ -502,13 +515,13 @@ pub struct Weights { /* per-sign multipliers */ }
 impl Weights { pub const SOLESMES: Weights = /* 1 per note; mora 2; episema 1.5; bars by kind */; }
 ```
 
-Chant has no absolute pitch, so the map gives semitones from the clef's
+Chant has no absolute pitch, so the timeline gives semitones from the clef's
 reference. A practice tool picks a key, or detects the singer's, and adds an
 offset. Weights are relative durations, not beats. Tools choose the tempo and
 interpretation, and `SOLESMES` is one named table among others that could be
 added. Each pause names the note it comes before, with `notes.len()` meaning
 after the last, so a bar before the first note, or two bars in a row, can be
-represented. The note map carries the syllable text and vowel because the
+represented. The timeline carries the syllable text and vowel because the
 existing practice tools already use both, and they shouldn't have to find
 vowels again.
 
@@ -562,7 +575,7 @@ also runs a **pointed-markup survey** of the test psalter (section 15.1).
   - no line exceeds its width unless the overflow diagnostic was emitted;
   - lyric boxes on a line never overlap;
   - the ink of adjacent units never overlaps;
-  - each note appears exactly once in the note map;
+  - each note appears exactly once in the timeline;
   - layout at a given width is the same whether or not another width was laid
     out first.
 - **Text conformance** (section 11).
@@ -661,7 +674,7 @@ syllabification is an **M2b requirement**, not an M5 addition:
   `Continuation::RepeatTenor` (the default) repeats the reciting note at the
   line start, and `Continuation::None` leaves the continuation without a
   note. Words are set as a phrase, without hyphens or per-syllable spacing,
-  the way plainsong psalters print the tenor. In the note map, each
+  the way plainsong psalters print the tenor. In the timeline, each
   recitation syllable (from 15.2) is a note on the reciting pitch.
 - **`neuma-tones`:**
   - **Tone data:** one small text file per tone and differentia. Each gives

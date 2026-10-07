@@ -9,7 +9,10 @@ use crate::display::{DisplayList, Item, TextRole};
 use crate::glyphs::GlyphId;
 use crate::layout::Layout;
 
+/// How to write SVG. Build it with the `with_*` setters:
+/// `SvgOptions::default().with_prefix("intro").with_ids(false)`.
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub struct SvgOptions {
     /// CSS font-family for lyrics. Characters that could end the declaration or the
     /// `<style>` block (`< > & { } ;` and control characters) are dropped.
@@ -31,6 +34,36 @@ impl Default for SvgOptions {
             style: true,
             ids: true,
         }
+    }
+}
+
+impl SvgOptions {
+    /// Sets [`font_family`](Self::font_family).
+    #[must_use]
+    pub fn with_font_family(mut self, font_family: impl Into<String>) -> SvgOptions {
+        self.font_family = font_family.into();
+        self
+    }
+
+    /// Sets [`prefix`](Self::prefix).
+    #[must_use]
+    pub fn with_prefix(mut self, prefix: impl Into<String>) -> SvgOptions {
+        self.prefix = prefix.into();
+        self
+    }
+
+    /// Sets [`style`](Self::style).
+    #[must_use]
+    pub fn with_style(mut self, style: bool) -> SvgOptions {
+        self.style = style;
+        self
+    }
+
+    /// Sets [`ids`](Self::ids).
+    #[must_use]
+    pub fn with_ids(mut self, ids: bool) -> SvgOptions {
+        self.ids = ids;
+        self
     }
 }
 
@@ -69,19 +102,34 @@ fn escape(s: &str, out: &mut String) {
 }
 
 impl Layout<'_> {
-    pub fn svg(&self, opts: &SvgOptions) -> String {
-        self.display().svg(opts)
+    /// This layout as one SVG document, with the default [`SvgOptions`].
+    #[must_use]
+    pub fn svg(&self) -> String {
+        self.svg_with(&SvgOptions::default())
+    }
+
+    /// This layout as one SVG document.
+    #[must_use]
+    pub fn svg_with(&self, opts: &SvgOptions) -> String {
+        self.display().svg_with(opts)
     }
 
     /// The SVG in parts, for an editor that patches its page rather than replacing it: each
     /// line's SVG is positioned relative to the line's top, so a line that only moves up or
     /// down keeps the same string. With `opts.ids` off, a line also keeps its string when
     /// notes are added or removed before it.
-    pub fn svg_parts(&self, opts: &SvgOptions) -> SvgParts {
+    #[must_use]
+    pub fn svg_parts(&self) -> SvgParts {
+        self.svg_parts_with(&SvgOptions::default())
+    }
+
+    /// [`svg_parts`](Self::svg_parts) with `opts`.
+    #[must_use]
+    pub fn svg_parts_with(&self, opts: &SvgOptions) -> SvgParts {
         self.svg_parts_cached(opts, &mut SvgCache::default())
     }
 
-    /// As [`Layout::svg_parts`], taking each line's SVG from `cache` when the line draws the
+    /// As [`Layout::svg_parts_with`], taking each line's SVG from `cache` when the line draws the
     /// same as one the cache saw last time (and keeping this layout's lines there for the
     /// next). After a small edit most lines draw as before, so only the lines it touched
     /// are written again; the result is the same as `svg_parts`.
@@ -104,7 +152,7 @@ impl Layout<'_> {
         let s = self.scale;
         let one = |line: crate::layout::PlacedLine, initial| Layout {
             eng: self.eng,
-            lines: vec![line],
+            lines: crate::layout::Lines::Owned(vec![line]),
             initial,
             width: self.width,
             height: self.height,
@@ -186,6 +234,7 @@ impl SvgCache {
     /// For each line of the last [`Layout::svg_parts_cached`], the line of the call before
     /// it whose SVG it took, if it took one: a page that kept those lines' SVG need not read
     /// it again.
+    #[must_use]
     pub fn reused(&self) -> &[Option<usize>] {
         &self.reused
     }
@@ -242,6 +291,7 @@ fn hash_items(items: &[Item]) -> u64 {
 
 /// A layout's SVG in parts (see [`Layout::svg_parts`]).
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub struct SvgParts {
     pub width: f32,
     pub height: f32,
@@ -258,6 +308,7 @@ pub struct SvgParts {
 
 /// One line of a score's SVG.
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub struct SvgLine {
     /// Where the line's top falls on the page, in output units.
     pub top: f32,
@@ -268,6 +319,7 @@ pub struct SvgLine {
 
 impl SvgParts {
     /// The parts put together as one SVG document, each line in a translated `<g>`.
+    #[must_use]
     pub fn to_svg(&self) -> String {
         let mut out = String::with_capacity(self.head.len() + self.defs.len() + self.lines.iter().map(|l| l.svg.len() + 40).sum::<usize>());
         out.push_str(&self.head);
@@ -345,7 +397,15 @@ fn write_defs(out: &mut String, used: &BTreeSet<u16>, scale: f32, p: &str) {
 }
 
 impl DisplayList {
-    pub fn svg(&self, opts: &SvgOptions) -> String {
+    /// This display list as one SVG document, with the default [`SvgOptions`].
+    #[must_use]
+    pub fn svg(&self) -> String {
+        self.svg_with(&SvgOptions::default())
+    }
+
+    /// This display list as one SVG document.
+    #[must_use]
+    pub fn svg_with(&self, opts: &SvgOptions) -> String {
         let p = prefix(opts);
         let mut out = String::with_capacity(1024 + self.items.len() * 96);
         write_head(&mut out, self.width, self.height, &self.alt_text, &p, opts);

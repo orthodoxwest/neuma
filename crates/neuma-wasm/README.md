@@ -18,10 +18,10 @@ import { init, Chant } from "./neuma.mjs";
 
 await init();                      // once; everything after is synchronous
 const chant = new Chant(gabc, { initial: 1, annotation: true });
-chant.diagnostics;                 // [{ severity, start, end, from, to, code, message, fix }]
+chant.diagnostics;                 // [{ severity, start, end, utf16Start, utf16End, code, message, fix }]
 
 const page = chant.layout(host.clientWidth, {
-  scale: 6,                        // SVG units per staff space
+  scale: 6,                        // output units per staff space
   lastLine: "ragged",              // or "justified"
   maxLines: 0,                     // 1 for an incipit preview; 0 keeps every line
   weights: { mediant: 3, full: 2.5 },
@@ -35,14 +35,17 @@ page that serves the EB Garamond 12 files instead passes `{ font: "eb-garamond-1
 the SVG text's size, weight and letter-spacing alone: CSS that changes them changes the
 widths the layout planned for.
 
-`page` is `{ width, height, svg, timeline }`. All positions are in the SVG's user units.
+`page` is `{ width, height, svg, timeline }`. Every position is in output units (staff
+spaces times `scale`, the SVG's user units) from the layout's top left, with y down. A box
+is `x`, `y`, `w`, `h` from its top-left corner; a point that is a center is named `cx`, `cy`.
+Laying out again at the same width and options reuses the last layout.
 
 - **`timeline.notes`**: one entry per note, in singing order, with these fields:
   - `id`: stable across layouts of one `Chant`. Each SVG element lists the notes it draws
     in `data-note`, so select a note's ink with `[data-note~="<id>"]`: a porrectus swash
     draws two notes and reads `data-note="4 5"`.
-  - `x`, `y`, `w`, `h`: the notehead's center and size. For a porrectus, the swash's two
-    ends.
+  - `cx`, `cy`: the notehead's center. `w`, `h`: its size. For a porrectus, the swash's
+    two ends.
   - `line`, `syllable`, `word`.
   - `start`, `duration`: in weight units. Choose your own tempo.
   - `staffPosition`, `degree`, `semitones`: `semitones` counts from the clef's do, with
@@ -53,7 +56,8 @@ widths the layout planned for.
   - `recitation`: inferred from three or more single-note syllables on one pitch.
   - `verse`, `half`: `verse` advances after each full or double bar. `half` turns to 1 at
     the mediant `*`.
-  - `spanStart`, `spanEnd`: the note's bytes in the GABC source.
+  - `sourceStart`, `sourceEnd`: the note's bytes in the GABC source;
+    `sourceUtf16Start`, `sourceUtf16End`: the same in UTF-16 units.
 - **`timeline.pauses`**: `{ beforeNote, kind, weight, start }`. `kind` is one of
   `virgula`, `minimis`, `quarter`, `half`, `full`, `dotted-full`, `double`, `dominican`,
   `mediant` (`*`) or `flex` (`†`). A mediant or flex is the whole pause at its bar: the bar
@@ -62,21 +66,27 @@ widths the layout planned for.
   `baseline` (the lyrics).
 - **`timeline.duration`**: the total length.
 
-Offsets named `start` and `end` (and the timeline's `spanStart` and `spanEnd`) count UTF-8
-bytes of the source, as the engine does. Offsets named `from` and `to`, and the carets the
-editor calls take, count UTF-16 code units: JavaScript string indices, as `textarea` and
+`noteAtTime(timeline, t)` returns the note sounding at time `t`, or `null` during a pause,
+for a playhead that follows audio.
+
+Offsets named `start` and `end` (and the timeline's `sourceStart` and `sourceEnd`) count
+UTF-8 bytes of the source, as the engine does. Offsets named with `utf16` (`utf16Start`,
+`utf16End`, `sourceUtf16Start`, `sourceUtf16End`), and the carets the editor calls take,
+count UTF-16 code units: JavaScript string indices, as `textarea` and
 CodeMirror use. They differ once the source has a character outside ASCII (`é`, `℣`).
 
 Each diagnostic has a `code` that stays stable across versions (see
 [docs/diagnostics.md](../../docs/diagnostics.md) for the list), a `message` for people, and a
-`fix` that is `null` or the one edit that fixes it: `{ start, end, from, to, insert, title }`,
-replacing `from`..`to` with `insert`.
+`fix` that is `null` or the one edit that fixes it:
+`{ start, end, utf16Start, utf16End, replacement, title }`, replacing
+`utf16Start`..`utf16End` with `replacement`.
 
 `chant.noteAt(x, y)` returns the note under a point in the last layout, or the nearest note
 on that line, or `null`. `chant.free()` releases the score; using a freed `Chant` throws.
 
 Weights default to `DEFAULT_WEIGHTS`: one pulse per note, two for a dotted note, and pauses
-that grow with the bar. Any key you pass with a number overrides its default.
+that grow with the bar. Any key you pass with a number overrides its default, except a negative one; no weight
+goes above 1000.
 
 If the engine ever stops on an internal error (a WebAssembly trap, or a `RangeError` for a
 stack overflow), that call throws and so does every later one until you call `init()` again,
@@ -100,8 +110,8 @@ host.addEventListener("click", (e) => {
   const box = host.getBoundingClientRect();
   const x = e.clientX - box.left - host.clientLeft + host.scrollLeft;
   const y = e.clientY - box.top - host.clientTop + host.scrollTop;
-  const hit = chant.sourceAt(x, y); // { kind, index, from, to, x, y, w, h, … }
-  if (hit) textarea.setSelectionRange(hit.from, hit.to);
+  const hit = chant.sourceAt(x, y); // { kind, index, utf16Start, utf16End, x, y, w, h, … }
+  if (hit) textarea.setSelectionRange(hit.utf16Start, hit.utf16End);
 });
 const lit = chant.elementsAt(textarea.selectionStart); // what to highlight for the caret
 ```
@@ -122,13 +132,13 @@ const lit = chant.elementsAt(textarea.selectionStart); // what to highlight for 
 - **`chant.sourceAt(x, y)`** returns what is under a point of the last layout, most specific
   first: a notehead, a bar (within half a staff space), a syllable's box, or the nearest
   syllable on that line; `null` outside the lines. The result is
-  `{ kind: "note"|"bar"|"syllable", index, start, end, from, to, line, x, y, w, h }`:
-  `from`..`to` is the source to select, and `x`, `y`, `w`, `h` the box drawn (a syllable's
+  `{ kind: "note"|"bar"|"syllable", index, start, end, utf16Start, utf16End, line, x, y, w, h }`:
+  `utf16Start`..`utf16End` is the source to select, and `x`, `y`, `w`, `h` the box drawn (a syllable's
   box spans its line's height, across its notes and lyric). `index` is the note id, or the
   bar's or syllable's index in the score.
 - **`chant.elementsAt(caret)`** returns what to highlight for a caret: the notes and bar
   whose source holds it, then a box per line for its syllable. A caret just after a note,
-  as after typing it, counts as on it. Pass `{ units: "utf8" }` to give a byte offset.
+  as after typing it, counts as on it. Pass `{ unit: "utf8" }` to give a byte offset.
 
 [`examples/editor.html`](examples/editor.html) is a dependency-free editor built on these: a textarea, the score
 redrawn on each keystroke (coalesced to animation frames, patching only changed lines),
@@ -149,14 +159,14 @@ import { EditorView } from "@codemirror/view";
 const gabcLint = linter((view) => {
   chant.update(view.state.doc.toString());
   return chant.diagnostics.map((d) => ({
-    from: d.from,
-    to: d.to,
+    from: d.utf16Start,
+    to: d.utf16End,
     severity: d.severity,          // "error" | "warning" | "info"
     message: d.message,
     source: d.code,
     actions: d.fix ? [{
       name: d.fix.title,
-      apply: (v) => v.dispatch({ changes: { from: d.fix.from, to: d.fix.to, insert: d.fix.insert } }),
+      apply: (v) => v.dispatch({ changes: { from: d.fix.utf16Start, to: d.fix.utf16End, insert: d.fix.replacement } }),
     }] : [],
   }));
 }, { delay: 0 });
@@ -171,7 +181,7 @@ const follow = EditorView.updateListener.of((u) => {
 
 ## Library entries
 
-`summarize(gabc)` reads a score's catalogue entry without engraving it for display, which is
+`summarize(gabc)` reads a score's library entry without engraving it for display, which is
 cheap enough to index a whole library. `chant.summary` gives the same entry for a score you
 have already loaded. Header fields are `null` when the source leaves them out, and TeX
 markup is removed.
@@ -192,7 +202,8 @@ markup is removed.
   the second word, at most eight.
 - `text`: all the sung text, for search. Both skip psalm marks, and write an opening word
   in capitals (`PUER`) as `Puer`, an opening acronym included.
-- `range` (`[lowest, highest]`) and `finalPitch`: in semitones above the clef's do.
+- `lowest`, `highest` and `finalPitch`: in semitones above the clef's do (`null` with no
+  notes).
 - `notes`, `syllables`, `words`, and `duration` in pulses with the default weights.
 
 For a preview, lay the score out with `maxLines: 1`. The first line is broken as it would
@@ -201,17 +212,18 @@ height includes it. The timeline ends with the kept lines: their notes and the p
 on them.
 
 `neuma notes FILE` prints the same layout JSON from the command line, without the SVG.
-`neuma info FILE...` prints one catalogue entry per file, as a line of JSON with a `file`
+`neuma info FILE...` prints one library entry per file, as a line of JSON with a `file`
 field.
 
 ## Psalm tones
 
-`psalm(text, tone, { intone, pointing })` sets psalm text, a verse per line with the mediant
-marked `*`, to a tone: a built-in name from `tones()` such as `"8.G"`, or a tone block of your
+`psalm(text, tone, { intone, autoPoint })` sets psalm text, a verse per line with the mediant
+marked `*`, to a tone: a built-in name from `toneNames()` such as `"8.G"`, or a tone block of your
 own. It returns `{ gabc, notes, diagnostics }`: engrave `gabc` with `new Chant(gabc)`, and
 `notes[i]` gives note `i`'s verse, half and role in the tone (intonation, tenor, preparatory,
-accent, ending). Text can be hand-pointed (`·`, acutes, `†`, `–`); half-verses with no marks
-are pointed automatically unless `pointing: "manual"`, and a `point::unsure` diagnostic
+accent, ending), with the sung syllable's offsets in `text` (`start`, `end`, `utf16Start`,
+`utf16End`). Text can be hand-pointed (`·`, acutes, `†`, `–`); half-verses with no marks
+are pointed automatically unless `autoPoint: false`, and a `point::unsure` diagnostic
 flags each one worth checking.
 
 `point(text, tone)` returns the pointed text itself, `{ text, halves, diagnostics }`, with the

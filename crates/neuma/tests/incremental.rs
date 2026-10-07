@@ -5,9 +5,7 @@
 //! some rarer notation. `NEUMA_CORPUS=<dir>` runs every `.gabc` in a directory as well (the
 //! GregoBase corpus takes a few minutes in release); `NEUMA_EDITS=<n>` sets the edits per score.
 
-use neuma::{
-    ApproxMeasure, EngraveCache, Initial, LastLine, LayoutCache, LayoutOptions, StyleOptions, SvgCache, SvgOptions, Weights, parse,
-};
+use neuma::{ApproxMeasure, EngraveCache, Initial, LastLine, LayoutCache, LayoutOptions, StyleOptions, SvgCache, SvgOptions, parse};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -202,36 +200,32 @@ fn check(name: &str, src: &str, seed: u64, edits: usize) {
     let mut engraved = EngraveCache::default();
     let mut lines = SvgCache::default();
     let initial = [Initial::Lines(1), Initial::None, Initial::Lines(2)][rng.below(3)];
-    let style = StyleOptions {
-        initial,
-        ..StyleOptions::default()
-    };
+    let style = StyleOptions::default().with_initial(initial);
     let mut width = WIDTHS[rng.below(WIDTHS.len())];
     for step in 0..edits {
         // Now and then the column changes too, as when a window is resized.
         if rng.below(6) == 0 {
             width = WIDTHS[rng.below(WIDTHS.len())];
         }
-        let opts = LayoutOptions {
-            last_line: if rng.below(5) == 0 { LastLine::Justified } else { LastLine::Ragged },
-            ..LayoutOptions::default()
-        };
+        let opts = LayoutOptions::default().with_last_line(if rng.below(5) == 0 { LastLine::Justified } else { LastLine::Ragged });
         let what = || format!("{name}, seed {seed}, edit {step}, width {width}:\n{src}");
         let eng = parse(&src).score.engrave(&ApproxMeasure, &style);
         let again = engraved.engrave(parse(&src).score, &ApproxMeasure, &style);
         assert!(*again == eng, "{}", what());
         let cached = again.layout_cached(width, &opts, &mut cache);
-        let fresh = eng.layout(width, &opts);
+        let fresh = eng.layout_with(width, &opts);
         let svg = SvgOptions::default();
-        assert_eq!(cached.svg(&svg), fresh.svg(&svg), "{}", what());
-        assert_eq!(cached.svg_parts(&svg), fresh.svg_parts(&svg), "{}", what());
+        assert_eq!(cached.svg_with(&svg), fresh.svg_with(&svg), "{}", what());
+        assert_eq!(cached.svg_parts_with(&svg), fresh.svg_parts_with(&svg), "{}", what());
         // An editor's lines, mostly without ids; now and then with them.
-        let parts = SvgOptions {
-            ids: rng.below(8) == 0,
-            ..SvgOptions::default()
-        };
-        assert_eq!(cached.svg_parts_cached(&parts, &mut lines), fresh.svg_parts(&parts), "{}", what());
-        assert_eq!(cached.notes(&Weights::SOLESMES), fresh.notes(&Weights::SOLESMES), "{}", what());
+        let parts = SvgOptions::default().with_ids(rng.below(8) == 0);
+        assert_eq!(
+            cached.svg_parts_cached(&parts, &mut lines),
+            fresh.svg_parts_with(&parts),
+            "{}",
+            what()
+        );
+        assert_eq!(cached.timeline(), fresh.timeline(), "{}", what());
         assert_eq!(cached.source_map(), fresh.source_map(), "{}", what());
         src = edit(&src, &mut rng);
     }
@@ -292,10 +286,7 @@ fn edits_whose_effects_reach_past_them() {
     let styles = [Initial::Lines(1), Initial::None, Initial::Lines(2)];
     for (before, after) in cases {
         for initial in styles {
-            let style = StyleOptions {
-                initial,
-                ..StyleOptions::default()
-            };
+            let style = StyleOptions::default().with_initial(initial);
             let (before, after) = (format!("{before}{tail}"), format!("{after}{tail}"));
             let mut cache = EngraveCache::default();
             let mut layouts = LayoutCache::default();
@@ -308,10 +299,10 @@ fn edits_whose_effects_reach_past_them() {
                 let svg = SvgOptions::default();
                 for width in [900.0, 150.0] {
                     let cached = again.layout_cached(width, &opts, &mut layouts);
-                    let fresh = fresh.layout(width, &opts);
-                    assert_eq!(cached.svg(&svg), fresh.svg(&svg), "{initial:?}: {before:?} to {src:?}");
-                    let parts = SvgOptions { ids: false, ..svg.clone() };
-                    let (cached, fresh) = (cached.svg_parts_cached(&parts, &mut lines), fresh.svg_parts(&parts));
+                    let fresh = fresh.layout_with(width, &opts);
+                    assert_eq!(cached.svg_with(&svg), fresh.svg_with(&svg), "{initial:?}: {before:?} to {src:?}");
+                    let parts = svg.clone().with_ids(false);
+                    let (cached, fresh) = (cached.svg_parts_cached(&parts, &mut lines), fresh.svg_parts_with(&parts));
                     assert_eq!(cached, fresh, "{initial:?}: {before:?} to {src:?}");
                 }
             }

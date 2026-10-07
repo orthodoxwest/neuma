@@ -6,14 +6,22 @@ practice tools. Text can come hand-pointed, or plain: the pointer marks each hal
 accents and cadence for the tone, the way a hand-pointed psalter does, and says how sure it is.
 
 ```rust
-use neuma_tones::{Options, Tone, apply_text};
+use neuma_tones::{PsalmOptions, Tone, psalm};
 
 let tone = Tone::named("8.G").unwrap();
-let setting = apply_text(tone, "1 The Lord is King, and hath put on glorious ap·pá-rel; * \
-    the Lord hath put on his apparel, and gird·ed him-sélf with strength.", &Options::default());
+let text = "1 The Lord is King, and hath put on glorious ap·pá-rel; * \
+    the Lord hath put on his apparel, and gird·ed him-sélf with strength.";
+let setting = psalm(text, tone, &PsalmOptions::default());
 // setting.gabc:    "(c4) The(g) Lord(h) is(j) King,(j) … ap(j)pá(k)rel;(j) *(:) …"
-// setting.notes[i] describes note i of the engraved score.
+// setting.notes[i] describes note i of the engraved score, and its `source` is the sung
+// syllable's bytes in `text`. So are the spans of `setting.score`:
+let chant = neuma::Chant::from_score(setting.score, text, neuma::ChantOptions::default());
 ```
+
+`PsalmOptions::default().with_intone(Intone::EveryVerse)` sings the intonation on every
+verse, as in the Gospel canticles; `with_auto_point(false)` leaves unmarked halves unpointed.
+`Tone::named` returns a `ToneError` for a name that isn't built in, and `Tone::parse` one for
+a tone block it can't read.
 
 From the command line: `neuma psalm --tone 8.G psalm.txt | neuma render - > psalm.svg`, and
 `neuma point --tone 8.G psalm.txt` to see the pointing.
@@ -21,17 +29,17 @@ From the command line: `neuma psalm --tone 8.G psalm.txt | neuma render - > psal
 ## Pointing plain text
 
 ```rust
-use neuma_tones::{Tone, point_text};
+use neuma_tones::{Tone, point};
 
-let p = point_text(Tone::named("8.G").unwrap(), "O come, let us sing unto the Lord * \
-    let us heartily rejoice in the strength of our salvation.");
+let p = point("O come, let us sing unto the Lord * \
+    let us heartily rejoice in the strength of our salvation.", Tone::named("8.G").unwrap());
 assert_eq!(p.text(), "O come, let us sing unto the · Lórd * let us heartily rejoice in the \
     strength of · our salvátion.\n");
 // p.halves[i].confidence: how sure the pointer is of each half-verse, 0 to 1.
 ```
 
-`apply` points any half-verse that has no marks before setting it (unless
-`Options::no_auto_point`), and reports one it is less than 80% sure of as `point::unsure`. A
+`psalm` points any half-verse that has no marks before setting it (unless
+`PsalmOptions::auto_point` is off), and reports one it is less than 80% sure of as `point::unsure`. A
 half with marks is kept as written, so correcting one half and pointing again keeps the fix.
 
 The pointer chooses among the ways to place the cadence's accents on the last syllables with

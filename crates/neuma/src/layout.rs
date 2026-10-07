@@ -7,17 +7,26 @@
 use crate::engrave::{Break, CAP_HEIGHT, Engraving, Segment, clef_pieces, custos_piece};
 use crate::score::{Clef, CustosRule};
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+/// How the last line of a layout is set.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum LastLine {
+    /// At its natural width, as GregorioTeX sets it.
     #[default]
     Ragged,
+    /// Stretched to the full width, as the other lines are.
     Justified,
 }
 
+/// How to lay an engraving out at a width. Build it with the `with_*` setters:
+/// `LayoutOptions::default().with_scale(8.0).with_max_lines(1)`.
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[non_exhaustive]
 pub struct LayoutOptions {
-    /// Output units (px or pt) per staff space.
+    /// Output units (px or pt) per staff space; default 6. A value that isn't positive and
+    /// finite falls back to the default.
     pub scale: f32,
+    /// How the last line is set; default ragged.
     pub last_line: LastLine,
     /// Keep only the first this many lines, as broken for the whole score (for previews such
     /// as an incipit); 0 keeps them all. An initial spanning more lines keeps its full size,
@@ -34,6 +43,12 @@ impl Default for LayoutOptions {
         }
     }
 }
+
+crate::setters!(LayoutOptions {
+    scale: f32 => with_scale,
+    last_line: LastLine => with_last_line,
+    max_lines: usize => with_max_lines,
+});
 
 /// The least space between the notes of two syllables, and of two words: GregorioTeX's
 /// `intersyllablespacenotes` (0.24 cm) and `interwordspacenotes` (0.29 cm) on its default
@@ -137,11 +152,38 @@ pub(crate) struct PlacedInitial {
     pub annotation_baseline: f32,
 }
 
-/// A layout at one width.
+/// A layout's lines: its own, or a [`crate::Chant`]'s kept from its last layout.
+#[derive(Clone, Debug)]
+pub(crate) enum Lines<'e> {
+    Owned(Vec<PlacedLine>),
+    Borrowed(&'e [PlacedLine]),
+}
+
+impl std::ops::Deref for Lines<'_> {
+    type Target = [PlacedLine];
+    fn deref(&self) -> &[PlacedLine] {
+        match self {
+            Lines::Owned(v) => v,
+            Lines::Borrowed(s) => s,
+        }
+    }
+}
+
+impl<'a> IntoIterator for &'a Lines<'_> {
+    type Item = &'a PlacedLine;
+    type IntoIter = std::slice::Iter<'a, PlacedLine>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+/// A layout at one width: the input to every output (SVG, display list, timeline, source
+/// map). Coordinates in all of them have their origin at the layout's top left, with y
+/// growing downward, in output units: staff spaces times [`LayoutOptions::scale`].
 #[derive(Clone, Debug)]
 pub struct Layout<'e> {
     pub(crate) eng: &'e Engraving,
-    pub(crate) lines: Vec<PlacedLine>,
+    pub(crate) lines: Lines<'e>,
     pub(crate) initial: Option<PlacedInitial>,
     pub(crate) width: f32,
     pub(crate) height: f32,
@@ -150,10 +192,13 @@ pub struct Layout<'e> {
 
 impl Layout<'_> {
     /// Width and height in output units.
+    #[must_use]
     pub fn size(&self) -> (f32, f32) {
         (self.width * self.scale, self.height * self.scale)
     }
 
+    /// How many lines (staves) the layout has.
+    #[must_use]
     pub fn line_count(&self) -> usize {
         self.lines.len()
     }
@@ -804,24 +849,32 @@ impl Engraving {
         n - 1
     }
 
+    /// Lays the engraving out at `width` output units, with the default [`LayoutOptions`].
+    #[must_use]
+    pub fn layout(&self, width: f32) -> Layout<'_> {
+        self.layout_with(width, &LayoutOptions::default())
+    }
+
     /// Lays the engraving out at `width` output units.
-    pub fn layout(&self, width: f32, opts: &LayoutOptions) -> Layout<'_> {
+    #[must_use]
+    pub fn layout_with(&self, width: f32, opts: &LayoutOptions) -> Layout<'_> {
         self.layout_cached(width, opts, &mut LayoutCache::default())
     }
 
-    /// Lays the engraving out as [`layout`](Self::layout) does, reusing the line breaker's
+    /// Lays the engraving out as [`layout_with`](Self::layout_with) does, reusing the line breaker's
     /// work from the last layout made with `cache` wherever the engraving is unchanged. The
     /// layout is the same as without the cache; a small edit costs a few lines' breaking
     /// rather than the score's.
+    #[must_use]
     pub fn layout_cached(&self, width: f32, opts: &LayoutOptions, cache: &mut LayoutCache) -> Layout<'_> {
-        let mut layout = self.layout_with(width, opts, None, cache);
+        let mut layout = self.lay_out(width, opts, None, cache);
         // A capital spanning staves farther apart than the nominal pitch is wider than the
         // column the breaker left for it; break again with room for it. A new break can
         // change the span, so allow one more try before narrowing the capital to fit.
         for _ in 0..2 {
             match layout.initial {
                 Some(placed) if placed.natural_width > placed.column + 0.01 => {
-                    layout = self.layout_with(width, opts, Some(placed.natural_width), cache);
+                    layout = self.lay_out(width, opts, Some(placed.natural_width), cache);
                 }
                 _ => break,
             }
@@ -829,11 +882,11 @@ impl Engraving {
         layout
     }
 
-    fn layout_with(&self, width: f32, opts: &LayoutOptions, column: Option<f32>, cache: &mut LayoutCache) -> Layout<'_> {
+    fn lay_out(&self, width: f32, opts: &LayoutOptions, column: Option<f32>, cache: &mut LayoutCache) -> Layout<'_> {
         let scale = if opts.scale > 0.0 && opts.scale.is_finite() {
             opts.scale
         } else {
-            1.0
+            LayoutOptions::default().scale
         };
         // A non-finite or negative width can't be laid out; treat it as the narrowest or the
         // widest column so the output stays finite.
@@ -843,7 +896,7 @@ impl Engraving {
         if n == 0 {
             return Layout {
                 eng: self,
-                lines: Vec::new(),
+                lines: Lines::Owned(Vec::new()),
                 initial: None,
                 width: target,
                 height: 0.0,
@@ -1135,7 +1188,7 @@ impl Engraving {
         let max_width = rights.iter().fold(0.0f32, |a, &b| a.max(b));
         Layout {
             eng: self,
-            lines,
+            lines: Lines::Owned(lines),
             initial,
             width: target.max(max_width),
             height,
@@ -1162,10 +1215,7 @@ mod tests {
 
     #[test]
     fn the_first_note_keeps_gregorios_distance_from_the_clef() {
-        let style = StyleOptions {
-            initial: Initial::None,
-            ..StyleOptions::default()
-        };
+        let style = StyleOptions::default().with_initial(Initial::None);
         let eng = parse("(c4) a(g) b(h)").score.engrave(&ApproxMeasure, &style);
         let (clef, start) = eng.line_start(0);
         let (_, clef_right) = clef_pieces(&clef.unwrap(), 0.0);
@@ -1180,10 +1230,7 @@ mod tests {
     fn a_bar_with_text_is_spaced_as_a_bar() {
         // Gregorio sets a bar's syllable at the bar spacing whether or not it carries text,
         // and doesn't shrink around it.
-        let style = StyleOptions {
-            initial: Initial::None,
-            ..StyleOptions::default()
-        };
+        let style = StyleOptions::default().with_initial(Initial::None);
         for src in [
             "(c4) a(ghg) (;) b(ghg)",
             "(c4) a(ghg) *(;) b(ghg)",
@@ -1208,18 +1255,12 @@ mod tests {
         // Syllables whose texts are a hair apart, within HYPHEN_MIN_GAP, touch: placing them
         // leaves no room for a hyphen, and justifying them by sums that round differently
         // mustn't then draw one over the next text.
-        let style = StyleOptions {
-            initial: Initial::None,
-            ..StyleOptions::default()
-        };
+        let style = StyleOptions::default().with_initial(Initial::None);
         let src = format!("(c4) {} (::)", ["Mag(ghg)da(g) le(g)na(h)"; 8].join(" "));
         let base = parse(&src).score.engrave(&ApproxMeasure, &style);
         let n = base.segments.len();
         let natural = base.trial(0, n - 1, 0.0);
-        let opts = LayoutOptions {
-            last_line: LastLine::Justified,
-            ..LayoutOptions::default()
-        };
+        let opts = LayoutOptions::default().with_last_line(LastLine::Justified);
         let mut steps = 0;
         for k in 1..n {
             let Some(t) = base.segments[k].lyric.as_ref().filter(|t| t.runs[0].text == "da") else {
@@ -1237,7 +1278,7 @@ mod tests {
                 // A gap just under or at the threshold, in steps finer than f32's rounding.
                 eng.segments[k].lyric.as_mut().unwrap().left += HYPHEN_MIN_GAP * (1.0 - j as f32 * 1.0e-4) - gap;
                 for width in (60..400).step_by(5) {
-                    let layout = eng.layout(width as f32, &opts);
+                    let layout = eng.layout_with(width as f32, &opts);
                     for line in &layout.lines {
                         let lefts: Vec<f32> = (line.first..=line.last)
                             .filter_map(|i| eng.segments[i].lyric.as_ref().map(|t| line.xs[i - line.first] + t.left))
@@ -1263,10 +1304,7 @@ mod tests {
     fn a_stuck_line_takes_the_break_it_ends_at() {
         // A line stuck behind forbidden breaks ends before the segment that overflowed, so its
         // cost and raggedness are those of the segment it ends after, not the overflowing one.
-        let style = StyleOptions {
-            initial: Initial::None,
-            ..StyleOptions::default()
-        };
+        let style = StyleOptions::default().with_initial(Initial::None);
         let mut eng = parse("(c4) a(g) b(h) c(g)").score.engrave(&ApproxMeasure, &style);
         let opts = LayoutOptions::default();
         let n = eng.segments.len();
@@ -1277,7 +1315,7 @@ mod tests {
         assert_eq!(eng.line_end(n - 1, &opts), (true, 0.0));
         // Laid out narrower than the first two syllables, the line is stuck at `b` and ends
         // after `a`; the breaker still sets every syllable.
-        let layout = eng.layout(1.0, &opts);
+        let layout = eng.layout_with(1.0, &opts);
         assert_eq!(layout.lines.last().map(|l| l.last), Some(n - 1));
     }
 }

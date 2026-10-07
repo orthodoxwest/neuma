@@ -63,7 +63,7 @@ impl Cadence {
             // GABC note characters.
             let note_chars = |c: char| c.is_ascii_graphic() && !"()[]{};:".contains(c);
             if !w.starts_with(|c: char| matches!(c.to_ascii_lowercase(), 'a'..='m')) || !w.chars().all(note_chars) {
-                return Err(ToneError(format!("`{formula}`: `{w}` is not a neume")));
+                return Err(ToneError::invalid(format!("`{formula}`: `{w}` is not a neume")));
             }
             let open = w.len() >= 2 && w.ends_with('r') && !accent;
             let neume = if open { &w[..w.len() - 1] } else { w };
@@ -71,7 +71,7 @@ impl Cadence {
                 if open {
                     tenor = Some(neume.to_string());
                 } else if accent {
-                    return Err(ToneError(format!("`{formula}`: an accent before the reciting note")));
+                    return Err(ToneError::invalid(format!("`{formula}`: an accent before the reciting note")));
                 } else {
                     lead.push(neume.to_string());
                 }
@@ -85,7 +85,7 @@ impl Cadence {
                 Slot::Fixed(neume.to_string())
             });
         }
-        let tenor = tenor.ok_or_else(|| ToneError(format!("`{formula}`: no reciting note (a neume ending `r`)")))?;
+        let tenor = tenor.ok_or_else(|| ToneError::invalid(format!("`{formula}`: no reciting note (a neume ending `r`)")))?;
         Ok(Cadence { lead, tenor, slots })
     }
 }
@@ -121,12 +121,28 @@ pub struct Tone {
     pub flex: Cadence,
 }
 
+/// Why a tone can't be had.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ToneError(pub String);
+#[non_exhaustive]
+pub enum ToneError {
+    /// No built-in tone has this name ([`Tone::named`]).
+    Unknown { name: String },
+    /// A tone block can't be read ([`Tone::parse`]); `reason` says why.
+    Invalid { reason: String },
+}
+
+impl ToneError {
+    fn invalid(reason: String) -> ToneError {
+        ToneError::Invalid { reason }
+    }
+}
 
 impl fmt::Display for ToneError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
+        match self {
+            ToneError::Unknown { name } => write!(f, "no built-in tone {name}"),
+            ToneError::Invalid { reason } => f.write_str(reason),
+        }
     }
 }
 
@@ -148,12 +164,12 @@ impl Tone {
                 continue;
             }
             let Some((key, value)) = line.split_once(':') else {
-                return Err(ToneError(format!("`{line}`: expected `key: value`")));
+                return Err(ToneError::invalid(format!("`{line}`: expected `key: value`")));
             };
             let value = value.trim();
             let key = key.trim();
             if !seen.insert(key.to_string()) {
-                return Err(ToneError(format!("`{key}:` is given twice")));
+                return Err(ToneError::invalid(format!("`{key}:` is given twice")));
             }
             match key {
                 "name" => name = Some(value.to_string()),
@@ -161,20 +177,22 @@ impl Tone {
                 "mediant" => mediant = Some(Cadence::parse(value)?),
                 "termination" => termination = Some(Cadence::parse(value)?),
                 "flex" => flex = Some(Cadence::parse(value)?),
-                other => return Err(ToneError(format!("unknown key `{other}`"))),
+                other => return Err(ToneError::invalid(format!("unknown key `{other}`"))),
             }
         }
-        let name = name.ok_or_else(|| ToneError("a tone needs a `name:`".into()))?;
+        let name = name.ok_or_else(|| ToneError::invalid("a tone needs a `name:`".into()))?;
         let (kind, line) = clef.unwrap_or((ClefKind::Do, 4));
-        let mediant = mediant.ok_or_else(|| ToneError(format!("{name}: no `mediant:`")))?;
-        let termination = termination.ok_or_else(|| ToneError(format!("{name}: no `termination:`")))?;
+        let mediant = mediant.ok_or_else(|| ToneError::invalid(format!("{name}: no `mediant:`")))?;
+        let termination = termination.ok_or_else(|| ToneError::invalid(format!("{name}: no `termination:`")))?;
         let flex = match flex {
             Some(f) => f,
             None => default_flex(&mediant.tenor, kind, line)
-                .ok_or_else(|| ToneError(format!("{name}: the tenor is too low for the usual flex; give a `flex:`")))?,
+                .ok_or_else(|| ToneError::invalid(format!("{name}: the tenor is too low for the usual flex; give a `flex:`")))?,
         };
         if mediant.accents() == 0 || termination.accents() == 0 || flex.accents() == 0 {
-            return Err(ToneError(format!("{name}: each half and the flex need at least one accent `'`")));
+            return Err(ToneError::invalid(format!(
+                "{name}: each half and the flex need at least one accent `'`"
+            )));
         }
         Ok(Tone {
             name,
@@ -212,9 +230,12 @@ impl Tone {
 
     /// A built-in tone by name, ignoring case and a leading `T`/`tone`: `8.G`, `viii.G`
     /// (roman numerals work too) or `per`.
-    pub fn named(name: &str) -> Option<&'static Tone> {
-        let want = normalize(name);
-        Tone::builtin().iter().find(|t| normalize(&t.name) == want)
+    ///
+    /// # Errors
+    ///
+    /// [`ToneError::Unknown`] when no built-in tone has the name.
+    pub fn named(name: &str) -> Result<&'static Tone, ToneError> {
+        Tone::find(Tone::builtin(), name).ok_or_else(|| ToneError::Unknown { name: name.to_string() })
     }
 
     /// A tone from `tones` by name, matched as [`Tone::named`] matches.
@@ -238,11 +259,11 @@ fn parse_clef(s: &str) -> Result<(ClefKind, u8), ToneError> {
     let kind = match cs.next() {
         Some('c') => ClefKind::Do,
         Some('f') => ClefKind::Fa,
-        _ => return Err(ToneError(format!("`{s}` is not a clef"))),
+        _ => return Err(ToneError::invalid(format!("`{s}` is not a clef"))),
     };
     match cs.as_str().parse::<u8>() {
         Ok(n @ 1..=4) => Ok((kind, n)),
-        _ => Err(ToneError(format!("`{s}` is not a clef"))),
+        _ => Err(ToneError::invalid(format!("`{s}` is not a clef"))),
     }
 }
 
@@ -323,7 +344,8 @@ mod tests {
         assert_eq!(Tone::named("8g").unwrap().name, "8.G");
         assert_eq!(Tone::named("tone 4 E").unwrap().name, "4.E");
         assert_eq!(Tone::named("per").unwrap().termination.tenor, "g");
-        assert!(Tone::named("9.a").is_none());
+        assert_eq!(Tone::named("9.a"), Err(ToneError::Unknown { name: "9.a".into() }));
+        assert_eq!(Tone::named("9.a").unwrap_err().to_string(), "no built-in tone 9.a");
     }
 
     #[test]

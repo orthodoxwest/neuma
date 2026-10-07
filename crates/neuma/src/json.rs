@@ -1,12 +1,14 @@
-//! The JSON the browser package returns, written by hand so the module stays small. The CLI
-//! prints the same shapes (`neuma notes`), with the same note ids.
+//! JSON for the outputs, written by hand so it adds no dependency and little code to a wasm
+//! module: the shapes the browser package returns and the CLI prints (`neuma notes`, `neuma
+//! info`). Each writer appends to `out`. Field names are camelCase; offsets named `start`
+//! and `end` count UTF-8 bytes and those named `utf16Start` and `utf16End` UTF-16 units.
 
 use std::fmt::Write as _;
-
-use neuma::score::{BarKind, NoteShape};
 use std::ops::Range;
 
-use neuma::{Diagnostic, Element, ElementKind, LineBox, NoteMap, OfficePart, PauseKind, Severity, Summary, Utf16Index};
+use crate::{
+    BarKind, Diagnostic, Element, ElementKind, LineBox, NoteShape, OfficePart, PauseKind, Severity, Summary, Timeline, Utf16Index,
+};
 
 /// A JSON string literal for `s`.
 pub fn string(out: &mut String, s: &str) {
@@ -33,14 +35,15 @@ pub fn string(out: &mut String, s: &str) {
     out.push('"');
 }
 
-/// A finite number with at most three decimals; JSON has no infinities.
+/// A finite number with at most three decimals (0 for a non-finite one: JSON has no
+/// infinities).
 pub fn number(out: &mut String, v: f32) {
     if !v.is_finite() {
         out.push('0');
         return;
     }
     let start = out.len();
-    neuma::decimal::push_fixed(out, v, 3);
+    crate::decimal::push_fixed(out, v, 3);
     let trimmed = out[start..].trim_end_matches('0').trim_end_matches('.').len();
     out.truncate(start + trimmed);
     if &out[start..] == "-0" {
@@ -48,11 +51,11 @@ pub fn number(out: &mut String, v: f32) {
     }
 }
 
-pub fn integer(out: &mut String, v: i64) {
+fn integer(out: &mut String, v: i64) {
     if v < 0 {
         out.push('-');
     }
-    neuma::decimal::push_u64(out, v.unsigned_abs());
+    crate::decimal::push_u64(out, v.unsigned_abs());
 }
 
 fn field(out: &mut String, first: &mut bool, name: &str) {
@@ -64,81 +67,24 @@ fn field(out: &mut String, first: &mut bool, name: &str) {
     out.push(':');
 }
 
-/// A psalm setting: `{ gabc, notes: [{ verse, number, part, role, start, end }], diagnostics }`.
-/// `notes[i]` describes note `i` of the engraved score.
-pub fn setting(out: &mut String, s: &neuma_tones::Setting, text: Option<&Utf16Index>) {
-    out.push_str("{\"gabc\":");
-    string(out, &s.gabc);
-    out.push_str(",\"notes\":[");
-    for (i, n) in s.notes.iter().enumerate() {
-        if i > 0 {
-            out.push(',');
-        }
-        let part = part_name(n.part);
-        let role = match n.role {
-            neuma_tones::Role::Intonation => "intonation",
-            neuma_tones::Role::Tenor => "tenor",
-            neuma_tones::Role::Preparatory => "preparatory",
-            neuma_tones::Role::Accent => "accent",
-            neuma_tones::Role::Ending => "ending",
-        };
-        let _ = write!(out, r#"{{"verse":{},"number":"#, n.verse);
-        match n.number {
-            Some(v) => {
-                let _ = write!(out, "{v}");
-            }
-            None => out.push_str("null"),
-        }
-        let _ = write!(
-            out,
-            r#","part":"{part}","role":"{role}","start":{},"end":{}}}"#,
-            n.source.start, n.source.end
-        );
-    }
-    out.push_str("],\"diagnostics\":");
-    diagnostics(out, &s.diagnostics, text);
-    out.push('}');
+/// `"start":…,"end":…` in UTF-8 bytes, then `"utf16Start":…,"utf16End":…` in UTF-16 units
+/// when the source's index is at hand (fields to go inside an object).
+pub fn span(out: &mut String, span: &Range<usize>, utf16: Option<&Utf16Index>) {
+    named_span(out, ["start", "end", "utf16Start", "utf16End"], span, utf16);
 }
 
-fn part_name(k: neuma_tones::PartKind) -> &'static str {
-    match k {
-        neuma_tones::PartKind::Flex => "flex",
-        neuma_tones::PartKind::Mediant => "mediant",
-        neuma_tones::PartKind::Termination => "termination",
-    }
-}
-
-/// A pointing: `{ text, halves: [{ verse, part, confidence, kept }], diagnostics }`.
-pub fn pointing(out: &mut String, p: &neuma_tones::Pointing, text: Option<&Utf16Index>) {
-    out.push_str("{\"text\":");
-    string(out, &p.text());
-    out.push_str(",\"halves\":[");
-    for (i, h) in p.halves.iter().enumerate() {
-        if i > 0 {
-            out.push(',');
-        }
-        let _ = write!(out, r#"{{"verse":{},"part":"{}","confidence":"#, h.verse, part_name(h.part));
-        number(out, h.confidence);
-        let _ = write!(out, r#","kept":{}}}"#, h.kept);
-    }
-    out.push_str("],\"diagnostics\":");
-    diagnostics(out, &p.pointed.diagnostics, text);
-    out.push('}');
-}
-
-/// `"start":…,"end":…` in UTF-8 bytes, then `"from":…,"to":…` in UTF-16 units when the
-/// source's index is at hand.
-fn span(out: &mut String, span: &Range<usize>, utf16: Option<&Utf16Index>) {
-    let _ = write!(out, r#""start":{},"end":{}"#, span.start, span.end);
+/// [`span`] under other names (`sourceStart` and so on).
+fn named_span(out: &mut String, [start, end, start16, end16]: [&str; 4], span: &Range<usize>, utf16: Option<&Utf16Index>) {
+    let _ = write!(out, r#""{start}":{},"{end}":{}"#, span.start, span.end);
     if let Some(idx) = utf16 {
         let r = idx.range_to_utf16(span);
-        let _ = write!(out, r#","from":{},"to":{}"#, r.start, r.end);
+        let _ = write!(out, r#","{start16}":{},"{end16}":{}"#, r.start, r.end);
     }
 }
 
-/// Diagnostics: `[{ severity, start, end, from, to, code, message, fix }]`, where `fix` is
-/// `null` or `{ start, end, from, to, insert, title }`. `from` and `to` (UTF-16 units) are
-/// there only with `utf16`.
+/// Diagnostics: `[{ severity, start, end, utf16Start, utf16End, code, message, fix }]`, where
+/// `fix` is `null` or `{ start, end, utf16Start, utf16End, replacement, title }`.
+/// `utf16Start` and `utf16End` are there only with `utf16`, the source's index.
 pub fn diagnostics(out: &mut String, diags: &[Diagnostic], utf16: Option<&Utf16Index>) {
     out.push('[');
     for (i, d) in diags.iter().enumerate() {
@@ -161,7 +107,7 @@ pub fn diagnostics(out: &mut String, diags: &[Diagnostic], utf16: Option<&Utf16I
             Some(f) => {
                 out.push('{');
                 span(out, &f.span, utf16);
-                out.push_str(",\"insert\":");
+                out.push_str(",\"replacement\":");
                 string(out, &f.replacement);
                 out.push_str(",\"title\":");
                 string(out, &f.title);
@@ -174,7 +120,8 @@ pub fn diagnostics(out: &mut String, diags: &[Diagnostic], utf16: Option<&Utf16I
     out.push(']');
 }
 
-/// A source map element: `{ kind, index, start, end, from, to, line, x, y, w, h }`.
+/// A source map element: `{ kind, index, start, end, utf16Start, utf16End, line, x, y, w, h }`,
+/// its box from its top-left corner.
 pub fn element(out: &mut String, e: &Element, utf16: &Utf16Index) {
     let kind = match e.kind {
         ElementKind::Note => "note",
@@ -220,7 +167,7 @@ fn shape_name(s: NoteShape) -> &'static str {
     }
 }
 
-pub fn pause_name(k: PauseKind) -> &'static str {
+fn pause_name(k: PauseKind) -> &'static str {
     match k {
         PauseKind::Bar(b) => bar_name(b),
         PauseKind::Mediant => "mediant",
@@ -240,8 +187,10 @@ fn line(out: &mut String, l: &LineBox) {
     out.push('}');
 }
 
-/// `{ notes, pauses, lines, duration }`: the playback timeline.
-pub fn note_map(out: &mut String, map: &NoteMap) {
+/// `{ notes, pauses, lines, duration }`: the playback timeline. Each note gives its notehead's
+/// center as `cx` and `cy`, and its source as `sourceStart` and `sourceEnd` (and, with
+/// `utf16`, the source's index, `sourceUtf16Start` and `sourceUtf16End`).
+pub fn timeline(out: &mut String, map: &Timeline, utf16: Option<&Utf16Index>) {
     out.push_str("{\"notes\":[");
     for (i, n) in map.notes.iter().enumerate() {
         if i > 0 {
@@ -252,8 +201,8 @@ pub fn note_map(out: &mut String, map: &NoteMap) {
         field(out, &mut first, "id");
         integer(out, n.id as i64);
         for (name, v) in [
-            ("x", n.x),
-            ("y", n.y),
+            ("cx", n.cx),
+            ("cy", n.cy),
             ("w", n.w),
             ("h", n.h),
             ("start", n.start),
@@ -271,12 +220,17 @@ pub fn note_map(out: &mut String, map: &NoteMap) {
             ("staffPosition", n.staff_position as i64),
             ("degree", n.degree as i64),
             ("semitones", n.semitones as i64),
-            ("spanStart", n.span.start as i64),
-            ("spanEnd", n.span.end as i64),
         ] {
             field(out, &mut first, name);
             integer(out, v);
         }
+        out.push(',');
+        named_span(
+            out,
+            ["sourceStart", "sourceEnd", "sourceUtf16Start", "sourceUtf16End"],
+            &n.span,
+            utf16,
+        );
         field(out, &mut first, "syllableText");
         string(out, &n.syllable_text);
         field(out, &mut first, "vowel");
@@ -333,7 +287,7 @@ fn opt_string(out: &mut String, v: Option<&str>) {
     }
 }
 
-pub fn office_part_name(k: OfficePart) -> &'static str {
+fn office_part_name(k: OfficePart) -> &'static str {
     match k {
         OfficePart::Antiphon => "antiphon",
         OfficePart::Introit => "introit",
@@ -360,7 +314,7 @@ pub fn office_part_name(k: OfficePart) -> &'static str {
     }
 }
 
-/// A score's catalogue entry (`neuma::Summary`).
+/// A score's library entry ([`Summary`]).
 pub fn summary(out: &mut String, s: &Summary) {
     let mut first = true;
     out.push('{');
@@ -426,19 +380,12 @@ pub fn summary(out: &mut String, s: &Summary) {
     string(out, &s.incipit);
     field(out, &mut first, "text");
     string(out, &s.text);
-    field(out, &mut first, "range");
-    match s.range {
-        Some((lo, hi)) => {
-            let _ = write!(out, "[{lo},{hi}]");
+    for (name, v) in [("lowest", s.lowest), ("highest", s.highest), ("finalPitch", s.final_pitch)] {
+        field(out, &mut first, name);
+        match v {
+            Some(p) => integer(out, i64::from(p)),
+            None => out.push_str("null"),
         }
-        None => out.push_str("null"),
-    }
-    field(out, &mut first, "finalPitch");
-    match s.final_pitch {
-        Some(p) => {
-            let _ = write!(out, "{p}");
-        }
-        None => out.push_str("null"),
     }
     let _ = write!(
         out,
@@ -446,6 +393,20 @@ pub fn summary(out: &mut String, s: &Summary) {
         s.notes, s.syllables, s.words
     );
     number(out, s.duration);
+    out.push('}');
+}
+
+/// A layout: `{ width, height, timeline }`, the timeline only if given (see [`timeline`]).
+pub fn layout(out: &mut String, size: (f32, f32), timeline: Option<&Timeline>, utf16: Option<&Utf16Index>) {
+    out.push_str("{\"width\":");
+    number(out, size.0);
+    out.push_str(",\"height\":");
+    number(out, size.1);
+    if let Some(map) = timeline {
+        out.reserve(map.notes.len() * 460 + 1024);
+        out.push_str(",\"timeline\":");
+        self::timeline(out, map, utf16);
+    }
     out.push('}');
 }
 

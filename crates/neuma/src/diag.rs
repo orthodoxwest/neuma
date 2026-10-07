@@ -5,6 +5,7 @@
 use std::fmt;
 use std::ops::Range;
 
+/// How serious a [`Diagnostic`] is. This set is complete: it won't grow.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Severity {
     /// Something was accepted and ignored, or approximated, and the output may differ from
@@ -16,29 +17,58 @@ pub enum Severity {
     Error,
 }
 
+/// A problem found in the source, with where it is and, when there is one sensible edit, the
+/// edit that fixes it.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Diagnostic {
     pub severity: Severity,
     /// Byte range in the source.
     pub span: Range<usize>,
     /// A stable code such as `gabc::hyphen-in-syllable`.
     pub code: &'static str,
+    /// What is wrong, in a sentence for people.
     pub message: String,
     /// An edit that fixes the problem, where there is only one sensible edit.
     pub fix: Option<Fix>,
 }
 
+impl Diagnostic {
+    /// A diagnostic without a fix.
+    #[must_use]
+    pub fn new(severity: Severity, span: Range<usize>, code: &'static str, message: impl Into<String>) -> Diagnostic {
+        Diagnostic {
+            severity,
+            span,
+            code,
+            message: message.into(),
+            fix: None,
+        }
+    }
+
+    /// This diagnostic with `fix`.
+    #[must_use]
+    pub fn with_fix(mut self, fix: Fix) -> Diagnostic {
+        self.fix = Some(fix);
+        self
+    }
+}
+
 /// A source edit: replace the bytes in `span` (empty to insert) with `replacement`.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Fix {
     /// Byte range in the source.
     pub span: Range<usize>,
+    /// The text to put in its place.
     pub replacement: String,
     /// What the edit does, for a quick-fix menu: "Insert `)`".
     pub title: String,
 }
 
 impl Fix {
+    /// An edit replacing `span` with `replacement`, described by `title`.
+    #[must_use]
     pub fn new(span: Range<usize>, replacement: impl Into<String>, title: impl Into<String>) -> Fix {
         Fix {
             span,
@@ -48,6 +78,7 @@ impl Fix {
     }
 
     /// `src` with the fix applied. `None` if the span isn't on character boundaries in `src`.
+    #[must_use]
     pub fn apply(&self, src: &str) -> Option<String> {
         let before = src.get(..self.span.start)?;
         let after = src.get(self.span.end..)?;
@@ -78,13 +109,7 @@ pub(crate) struct Sink {
 
 impl Sink {
     pub fn push(&mut self, severity: Severity, span: Range<usize>, code: &'static str, message: impl Into<String>) {
-        self.items.push(Diagnostic {
-            severity,
-            span,
-            code,
-            message: message.into(),
-            fix: None,
-        });
+        self.items.push(Diagnostic::new(severity, span, code, message));
     }
     /// Attaches a fix to the diagnostic pushed last.
     pub fn fix(&mut self, fix: Fix) {
@@ -104,6 +129,7 @@ impl Sink {
 }
 
 /// Line and column (both 1-based, column in chars) of a byte offset, for printing.
+#[must_use]
 pub fn line_col(src: &str, offset: usize) -> (usize, usize) {
     let offset = offset.min(src.len());
     let before = &src[..src.floor_char_boundary(offset)];

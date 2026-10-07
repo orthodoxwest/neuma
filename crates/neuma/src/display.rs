@@ -8,7 +8,9 @@ use crate::score::{LyricRun, TextStyle};
 /// The note a piece of ink belongs to, by score-wide note index.
 pub type NoteRef = u32;
 
+/// What a run of text is, so themes can style lyrics, rubrics and the initial separately.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum TextRole {
     Lyric,
     Hyphen,
@@ -17,13 +19,17 @@ pub enum TextRole {
     Rubric,
 }
 
+/// Text in one style.
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub struct TextRun {
     pub text: String,
     pub style: TextStyle,
 }
 
+/// One thing to draw, in output units (origin top left, y down).
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub enum Item {
     /// A glyph outline (see [`crate::glyphs::glyph_outline`]) drawn with its anchor at (x, y),
     /// scaled by `scale` (output units per glyph unit).
@@ -60,8 +66,9 @@ pub enum Item {
     },
 }
 
-/// One staff line box, in output units.
+/// One staff line's box, in output units.
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[non_exhaustive]
 pub struct LineBox {
     pub top: f32,
     pub bottom: f32,
@@ -70,7 +77,9 @@ pub struct LineBox {
     pub baseline: f32,
 }
 
+/// A layout as items to draw, for native canvases. Build it with [`Layout::display`].
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub struct DisplayList {
     pub width: f32,
     pub height: f32,
@@ -78,6 +87,7 @@ pub struct DisplayList {
     pub staff_space: f32,
     pub lines: Vec<LineBox>,
     pub items: Vec<Item>,
+    /// The lyrics as plain text, for an accessibility label.
     pub alt_text: String,
 }
 
@@ -114,6 +124,8 @@ fn runs(r: &[LyricRun]) -> Vec<TextRun> {
 }
 
 impl Layout<'_> {
+    /// This layout as a display list.
+    #[must_use]
     pub fn display(&self) -> DisplayList {
         let s = self.scale;
         let eng = self.eng;

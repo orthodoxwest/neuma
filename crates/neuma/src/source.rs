@@ -11,6 +11,7 @@ use crate::layout::Layout;
 
 /// What kind of thing an [`Element`] is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
 pub enum ElementKind {
     Note,
     Bar,
@@ -19,6 +20,7 @@ pub enum ElementKind {
 
 /// A note, bar or syllable as drawn: its source span and its box on one line.
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub struct Element {
     pub kind: ElementKind,
     /// The note id ([`crate::NoteRef`]), or the bar's or syllable's index, counted from 0
@@ -30,13 +32,16 @@ pub struct Element {
     pub line: u32,
     /// The box's left, top, width and height, in output units. A note's is its notehead,
     /// less a porrectus end's overlap with its neighbours (the box
-    /// [`crate::NoteMap::note_at`] tests); a bar's its ink; and a syllable's runs from the
+    /// [`crate::Timeline::note_at`] tests); a bar's its ink; and a syllable's runs from the
     /// line's top to its bottom across the syllable's notation and lyric (or across the
     /// initial, for the syllable it starts).
     pub x: f32,
     pub y: f32,
     pub w: f32,
     pub h: f32,
+    /// For a note, the x of its notehead's center (the box can be trimmed off center); else
+    /// the box's center.
+    cx: f32,
 }
 
 impl Element {
@@ -51,8 +56,9 @@ impl Element {
 }
 
 /// Every note, bar and syllable of a layout with its source span. Build it with
-/// [`Layout::source_map`].
+/// [`Layout::source_map`], or let a [`crate::Chant`] keep one for its last layout.
 #[derive(Clone, Debug, Default, PartialEq)]
+#[non_exhaustive]
 pub struct SourceMap {
     /// By note id; notes on lines a `max_lines` layout leaves out are missing.
     pub notes: Vec<Element>,
@@ -67,11 +73,38 @@ pub struct SourceMap {
     pub staff_space: f32,
 }
 
+/// How an offset into the source counts.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum OffsetUnit {
+    /// UTF-8 bytes, as neuma's spans count.
+    Utf8,
+    /// UTF-16 code units: JavaScript, Java and Kotlin string indices, and `NSString` ranges.
+    #[default]
+    Utf16,
+}
+
 impl SourceMap {
+    /// The note under (`x`, `y`) in output units: one whose box holds the point, else the
+    /// nearest note on the line the point falls in. `None` outside every line. The same
+    /// note [`Timeline::note_at`](crate::Timeline::note_at) finds, without needing a timeline.
+    #[must_use]
+    pub fn note_at(&self, x: f32, y: f32) -> Option<crate::NoteRef> {
+        if let Some(n) = self.notes.iter().find(|n| n.contains(x, y, 0.0)) {
+            return Some(n.index);
+        }
+        let line = self.lines.iter().position(|&(top, bottom)| y >= top && y <= bottom)? as u32;
+        self.notes
+            .iter()
+            .filter(|n| n.line == line)
+            .min_by(|a, b| (a.cx - x).abs().total_cmp(&(b.cx - x).abs()))
+            .map(|n| n.index)
+    }
+
     /// The element under (`x`, `y`) in output units, most specific first: a notehead whose
     /// box holds the point, else a bar within half a staff space of it, else a syllable whose
     /// box holds it, else the nearest syllable on the line the point falls in. `None` outside
     /// every line.
+    #[must_use]
     pub fn source_at(&self, x: f32, y: f32) -> Option<&Element> {
         if let Some(n) = self.notes.iter().find(|n| n.contains(x, y, 0.0)) {
             return Some(n);
@@ -98,7 +131,8 @@ impl SourceMap {
     /// a note, bar or syllable, as after typing it, counts as in it when nothing of that
     /// kind holds the caret. Notes written together (`gvv` is three) share a span, and all
     /// of them are returned.
-    pub fn at(&self, offset: usize) -> Vec<&Element> {
+    #[must_use]
+    pub fn elements_at(&self, offset: usize) -> Vec<&Element> {
         let mut out = Vec::new();
         for list in [&self.notes, &self.bars] {
             let hit = list
@@ -125,6 +159,7 @@ impl SourceMap {
 
 impl Layout<'_> {
     /// Every note, bar and syllable on this layout's lines with its source span and box.
+    #[must_use]
     pub fn source_map(&self) -> SourceMap {
         let eng = self.eng;
         let s = self.scale;
@@ -150,6 +185,7 @@ impl Layout<'_> {
                         y: line.top * s,
                         w: (r - l) * s,
                         h: (line.bottom - line.top) * s,
+                        cx: (l + r) / 2.0 * s,
                     });
                 }
             };
@@ -162,11 +198,12 @@ impl Layout<'_> {
                         index: h.note,
                         span: info.span.clone(),
                         line: li,
-                        // The box `NoteMap::note_at` tests, so both find the same note.
+                        // The box `Timeline::note_at` tests, so both find the same note.
                         x: (x0 + h.hit[0]) * s,
                         y: (line.staff + h.hit[1]) * s,
                         w: (h.hit[2] - h.hit[0]) * s,
                         h: (h.hit[3] - h.hit[1]) * s,
+                        cx: (x0 + h.x) * s,
                     });
                 }
                 for b in &seg.bars {
@@ -180,6 +217,7 @@ impl Layout<'_> {
                         y: (line.staff + b.top) * s,
                         w: b.w * s,
                         h: (b.bottom - b.top) * s,
+                        cx: (x0 + b.x + b.w / 2.0) * s,
                     });
                 }
                 let mut extent: Option<(f32, f32)> = seg.ink;
@@ -216,6 +254,7 @@ impl Layout<'_> {
                 y: top * s,
                 w: init.advance_em * placed.size * s,
                 h: (placed.baseline - top) * s,
+                cx: (placed.x + init.advance_em * placed.size / 2.0) * s,
             });
         }
         map.notes.sort_by_key(|e| e.index);
@@ -237,6 +276,8 @@ pub struct Utf16Index {
 }
 
 impl Utf16Index {
+    /// The index of `src`.
+    #[must_use]
     pub fn new(src: &str) -> Utf16Index {
         let mut wide = Vec::new();
         let mut units = 0;
@@ -254,12 +295,14 @@ impl Utf16Index {
     }
 
     /// The source's length in UTF-16 units.
+    #[must_use]
     pub fn utf16_len(&self) -> usize {
         self.len16
     }
 
     /// The UTF-16 offset of byte `offset`. An offset inside a character maps to the
     /// character's start; one past the end, to the end.
+    #[must_use]
     pub fn to_utf16(&self, offset: usize) -> usize {
         let offset = offset.min(self.len);
         let k = self.wide.partition_point(|w| w.0 <= offset);
@@ -272,6 +315,7 @@ impl Utf16Index {
 
     /// The byte offset of UTF-16 offset `offset`. An offset between the two halves of a
     /// surrogate pair maps to the character's start; one past the end, to the end.
+    #[must_use]
     pub fn to_utf8(&self, offset: usize) -> usize {
         let offset = offset.min(self.len16);
         let k = self.wide.partition_point(|w| w.1 <= offset);
@@ -283,6 +327,7 @@ impl Utf16Index {
     }
 
     /// A byte range as a UTF-16 range.
+    #[must_use]
     pub fn range_to_utf16(&self, r: &Range<usize>) -> Range<usize> {
         self.to_utf16(r.start)..self.to_utf16(r.end)
     }
@@ -291,7 +336,7 @@ impl Utf16Index {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{ApproxMeasure, Initial, LayoutOptions, StyleOptions, parse};
+    use crate::{ApproxMeasure, Initial, StyleOptions, parse};
 
     #[test]
     fn utf16_round_trips() {
@@ -316,12 +361,9 @@ mod tests {
     }
 
     fn map(src: &str) -> SourceMap {
-        let style = StyleOptions {
-            initial: Initial::None,
-            ..StyleOptions::default()
-        };
+        let style = StyleOptions::default().with_initial(Initial::None);
         let eng = parse(src).score.engrave(&ApproxMeasure, &style);
-        eng.layout(600.0, &LayoutOptions::default()).source_map()
+        eng.layout(600.0).source_map()
     }
 
     #[test]
@@ -344,13 +386,10 @@ mod tests {
     fn notes_are_found_where_note_at_finds_them() {
         // Porrectus ends stacked on other notes, whose boxes are trimmed off them.
         let src = "(c4) a(hgh) b(ihi) c(jhj) d(gfgh) e(hghi) (::)";
-        let style = StyleOptions {
-            initial: crate::Initial::None,
-            ..StyleOptions::default()
-        };
+        let style = StyleOptions::default().with_initial(crate::Initial::None);
         let eng = parse(src).score.engrave(&ApproxMeasure, &style);
-        let layout = eng.layout(600.0, &LayoutOptions::default());
-        let (m, notes) = (layout.source_map(), layout.notes(&crate::Weights::SOLESMES));
+        let layout = eng.layout(600.0);
+        let (m, notes) = (layout.source_map(), layout.timeline());
         let (w, h) = layout.size();
         let mut checked = 0;
         for i in 0..400 {
@@ -393,7 +432,7 @@ mod tests {
         let src = "(c4) Ky(g)ri(hi) (,) e(h) (::)";
         let m = map(src);
         let at = |offset: usize| {
-            m.at(offset)
+            m.elements_at(offset)
                 .iter()
                 .map(|e| format!("{:?} {}", e.kind, &src[e.span.clone()]))
                 .collect::<Vec<_>>()
@@ -410,15 +449,12 @@ mod tests {
     #[test]
     fn a_split_syllable_has_a_box_per_line() {
         let melisma = format!("(c4) A({}) (::)", "g/h/".repeat(40));
-        let style = StyleOptions {
-            initial: Initial::None,
-            ..StyleOptions::default()
-        };
+        let style = StyleOptions::default().with_initial(Initial::None);
         let eng = parse(&melisma).score.engrave(&ApproxMeasure, &style);
-        let m = eng.layout(200.0, &LayoutOptions::default()).source_map();
+        let m = eng.layout(200.0).source_map();
         let a: Vec<_> = m.syllables.iter().filter(|s| s.index == 1).collect();
         assert!(a.len() > 1, "{a:?}");
         assert!(a.windows(2).all(|w| w[0].line < w[1].line));
-        assert_eq!(m.at(melisma.find('A').unwrap()).len(), a.len());
+        assert_eq!(m.elements_at(melisma.find('A').unwrap()).len(), a.len());
     }
 }

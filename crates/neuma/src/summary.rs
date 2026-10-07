@@ -10,6 +10,7 @@ use crate::text::ApproxMeasure;
 /// What a library shows and searches by. Header fields are as written, with TeX markup
 /// removed; a field the source leaves out or empty is `None`.
 #[derive(Clone, Debug, Default, PartialEq)]
+#[non_exhaustive]
 pub struct Summary {
     pub name: Option<String>,
     /// The `office-part` header as written, and what it names.
@@ -36,8 +37,10 @@ pub struct Summary {
     /// All the sung text, words separated by spaces, for full-text search. Psalm marks and
     /// other signs set as text are left out.
     pub text: String,
-    /// The lowest and highest notes, in semitones above the clef's do.
-    pub range: Option<(i16, i16)>,
+    /// The lowest note, in semitones above the clef's do.
+    pub lowest: Option<i16>,
+    /// The highest note, in semitones above the clef's do.
+    pub highest: Option<i16>,
     /// The last note, in semitones above the clef's do.
     pub final_pitch: Option<i16>,
     pub notes: u32,
@@ -51,6 +54,7 @@ pub struct Summary {
 /// The kind of chant an `office-part` header names, in Latin or English, spelled out or
 /// abbreviated (`Antiphona`, `Ant.`, `Introit`, `Resp. breve`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum OfficePart {
     Antiphon,
     Introit,
@@ -81,6 +85,8 @@ pub enum OfficePart {
 }
 
 impl OfficePart {
+    /// What an `office-part` header names; [`OfficePart::Other`] for anything else.
+    #[must_use]
     pub fn parse(value: &str) -> OfficePart {
         use OfficePart as P;
         // The response and versicle signs abbreviate the words they stand for.
@@ -136,6 +142,7 @@ impl OfficePart {
 
 /// The `mode`, `mode-modifier` and `mode-differentia` headers.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Mode {
     /// 1 to 8, when the header starts with an arabic or roman number (`8`, `VIII`, `1g`).
     pub number: Option<u8>,
@@ -223,7 +230,9 @@ const TYPED: [&str; 13] = [
 const INCIPIT_WORDS: usize = 8;
 
 impl Engraving {
-    /// The score's catalogue entry. `header` is the parsed score's header.
+    /// The score's catalogue entry. `header` is the parsed score's header ([`crate::Chant::summary`]
+    /// keeps it for you).
+    #[must_use]
     pub fn summary(&self, header: &Header) -> Summary {
         // Text, word by word. A syllable's text can hold spaces of its own (`℟ Ecce`).
         let mut word_texts: Vec<String> = Vec::new();
@@ -275,7 +284,7 @@ impl Engraving {
         let incipit = word_texts[..take].join(" ");
 
         let pitches: Vec<i16> = self.notes.iter().map(|n| pitch(n).1).collect();
-        let range = pitches.iter().min().zip(pitches.iter().max()).map(|(lo, hi)| (*lo, *hi));
+        let (lowest, highest) = (pitches.iter().min().copied(), pitches.iter().max().copied());
         let weights = Weights::default();
         let duration = self.notes.iter().map(|n| weights.of_note(n)).sum::<f32>()
             + timed_pauses(&self.pauses, &weights).iter().map(|p| p.weight).sum::<f32>();
@@ -307,7 +316,8 @@ impl Engraving {
                 .collect(),
             incipit,
             text,
-            range,
+            lowest,
+            highest,
             final_pitch: pitches.last().copied(),
             notes: self.notes.len() as u32,
             syllables,
@@ -318,13 +328,10 @@ impl Engraving {
 }
 
 /// Parses `gabc` and summarizes it, without measuring text or laying it out.
+#[must_use]
 pub fn summarize(gabc: &str) -> Summary {
     let parsed = crate::parse(gabc);
-    let style = StyleOptions {
-        initial: Initial::None,
-        annotation: false,
-        ..StyleOptions::default()
-    };
+    let style = StyleOptions::default().with_initial(Initial::None).with_annotation(false);
     parsed.score.engrave(&ApproxMeasure, &style).summary(&parsed.score.header)
 }
 
@@ -354,11 +361,11 @@ mod tests {
         assert_eq!(s.text, "Puer natus est nobis et fílius");
         assert_eq!(s.incipit, "Puer natus est");
         assert_eq!((s.words, s.syllables, s.notes), (6, 11, 14));
-        // Pitches, range and length agree with the note map.
+        // Pitches, range and length agree with the timeline.
         let eng = crate::parse(PUER).score.engrave(&ApproxMeasure, &StyleOptions::default());
-        let map = eng.layout(2000.0, &Default::default()).notes(&Weights::default());
+        let map = eng.layout(2000.0).timeline();
         let semis: Vec<i16> = map.notes.iter().map(|n| n.semitones).collect();
-        assert_eq!(s.range, Some((*semis.iter().min().unwrap(), *semis.iter().max().unwrap())));
+        assert_eq!((s.lowest, s.highest), (semis.iter().min().copied(), semis.iter().max().copied()));
         assert_eq!(s.final_pitch, semis.last().copied());
         assert_eq!(s.duration, map.duration);
     }
@@ -440,7 +447,7 @@ mod tests {
     #[test]
     fn empty_and_textless_scores() {
         let s = summarize("");
-        assert_eq!((s.notes, s.words, s.range, s.final_pitch), (0, 0, None, None));
+        assert_eq!((s.notes, s.words, s.lowest, s.highest, s.final_pitch), (0, 0, None, None, None));
         assert!(s.incipit.is_empty() && s.text.is_empty());
         let s = summarize("%%\n(c4) (g) (h) (::)");
         assert_eq!((s.notes, s.words), (2, 0));

@@ -12,7 +12,7 @@ publish = false
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-neuma = { path = "../neuma" }
+neuma = { path = "../neuma", features = ["json"] }
 neuma-tones = { path = "../neuma-tones" }
 
 # The exports need `#[unsafe(no_mangle)]`, so this crate can't inherit the workspace's

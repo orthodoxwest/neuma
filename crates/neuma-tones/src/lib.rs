@@ -1,21 +1,27 @@
 //! Psalm tones for neuma: pointed English psalm text plus a psalm tone, set as chant.
 //!
 //! ```
-//! use neuma_tones::{Options, Tone, apply_text};
+//! use neuma_tones::{PsalmOptions, Tone, psalm};
 //!
-//! let tone = Tone::named("8.G").unwrap();
-//! let setting = apply_text(tone, "The Lord is King, and hath put on glorious ap·pá-rel; * \
-//!     the Lord hath put on his apparel, and gird·ed him-sélf with strength.", &Options::default());
+//! let tone = Tone::named("8.G")?;
+//! let text = "The Lord is King, and hath put on glorious ap·pá-rel; * \
+//!     the Lord hath put on his apparel, and gird·ed him-sélf with strength.";
+//! let setting = psalm(text, tone, &PsalmOptions::default());
 //! assert!(setting.gabc.contains("pá(k)"));
+//! // Engraved with its spans in the text, so the timeline and hit tests answer there.
+//! let mut chant = neuma::Chant::from_score(setting.score, text, neuma::ChantOptions::default());
+//! let first = &chant.layout(600.0).timeline().notes[0];
+//! assert_eq!(&text[first.span.clone()], "The");
+//! # Ok::<(), neuma_tones::ToneError>(())
 //! ```
 
-pub mod apply;
-pub mod point;
-pub mod pointed;
-pub mod syllable;
-pub mod tone;
+mod apply;
+mod point;
+mod pointed;
+mod syllable;
+mod tone;
 
-pub use apply::{Intone, NoteRole, Options, Role, Setting, apply, apply_text};
-pub use point::{HalfPointing, Pointing, point, point_text};
-pub use pointed::{Joint, Part, PartKind, Pointed, Syllable, Verse};
+pub use apply::{Intone, PsalmNote, PsalmOptions, PsalmSetting, ToneRole, UNSURE, psalm, psalm_pointed};
+pub use point::{HalfPointing, Pointing, point, point_pointed};
+pub use pointed::{Joint, Part, Pointed, Syllable, Verse, VersePart};
 pub use tone::{Cadence, Slot, Tone, ToneError};

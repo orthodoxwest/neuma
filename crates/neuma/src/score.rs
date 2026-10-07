@@ -150,6 +150,7 @@ pub enum Face {
 
 /// One item of notation, in source order.
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub enum Figure {
     Clef(Clef),
     Note(Note),
@@ -220,7 +221,9 @@ impl Clef {
     }
 }
 
+/// A note's basic shape.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum NoteShape {
     Punctum,
     Inclinatum,
@@ -346,21 +349,24 @@ pub enum Space {
     Scaled(f32),
 }
 
+/// A bar (divisio), named as GABC and Gregorio name it. The timeline's weights, the JSON and
+/// the bindings use the English names given here.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum BarKind {
     /// `` ` ``
     Virgula,
     /// `^`
     Minimis,
-    /// `,`
+    /// `,`: the quarter bar.
     Minima,
-    /// `;`
+    /// `;`: the half bar.
     Minor,
-    /// `:`
+    /// `:`: the full bar.
     Maior,
-    /// `:?`
+    /// `:?`: the dotted full bar.
     DottedMaior,
-    /// `::`
+    /// `::`: the double bar.
     Finalis,
     /// `;1`–`;8`
     Dominican(u8),

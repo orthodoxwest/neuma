@@ -1,7 +1,7 @@
 // Smoke test for dist/neuma.mjs under Node: `node crates/neuma-wasm/test.mjs`.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { init, Chant, DEFAULT_WEIGHTS, point, psalm, summarize, tones } from "./dist/neuma.mjs";
+import { init, Chant, DEFAULT_WEIGHTS, noteAtTime, point, psalm, summarize, toneNames } from "./dist/neuma.mjs";
 
 await init();
 const gabc = readFileSync(new URL("../neuma/tests/corpus/psalm-134.gabc", import.meta.url), "utf8");
@@ -25,6 +25,13 @@ for (const p of wide.timeline.pauses) {
   if (p.kind === "full") assert.equal(p.weight, 2.5);
 }
 assert.ok(wide.timeline.pauses.some((p) => p.kind === "half"));
+// A playhead finds the note sounding at a time.
+assert.equal(noteAtTime(wide.timeline, -1), null);
+assert.equal(noteAtTime(wide.timeline, notes[3].start), notes[3]);
+assert.equal(noteAtTime(wide.timeline, notes[3].start + notes[3].duration / 2), notes[3]);
+assert.equal(noteAtTime(wide.timeline, 1e9), null);
+const rest = wide.timeline.pauses.find((p) => p.weight > 0);
+assert.equal(noteAtTime(wide.timeline, rest.start + rest.weight / 2), null, "silent in a pause");
 
 // Psalm marks pause by kind, and the half-verse counter turns at the mediant.
 const verse = new Chant("(c4) Di(h)xit(h) Dó(h)mi(h)nus(h) *(:) Dó(h)mi(g)no(h) me(h)o(g) †(,) se(g)de(h) (::)", { initial: 0 });
@@ -53,12 +60,12 @@ verse.free();
 
 // Hit testing finds the note whose box holds the point.
 const n = notes[5];
-assert.equal(chant.noteAt(n.x, n.y), n.id);
+assert.equal(chant.noteAt(n.cx, n.cy), n.id);
 assert.equal(chant.noteAt(-50, -50), null);
 
 chant.free();
 assert.throws(() => chant.layout(400));
-// Catalogue entries, from a Chant or straight from the source.
+// Library entries, from a Chant or straight from the source.
 const puer = "name: Puer natus est;\noffice-part: Introitus;\nmode: 7;\n%%\n(c3) Pu(g)er(gh) na(h)tus(hi) est(h.) (,) no(h)bis(g) (::)";
 const entry = summarize(puer);
 assert.equal(entry.kind, "introit");
@@ -87,7 +94,7 @@ const text = "1 The Lord is King, and hath put on glorious ap·pá-rel; * the Lo
   "2 He hath made the round world so · súre, * that it can·not be móv-ed.";
 const ps = psalm(text, "8.G");
 assert.deepEqual(ps.diagnostics, []);
-assert.ok(tones().includes("8.G"));
+assert.ok(toneNames().includes("8.G"));
 const psChant = new Chant(ps.gabc);
 const psNotes = psChant.layout(500).timeline.notes;
 assert.equal(psNotes.length, ps.notes.length);
@@ -95,6 +102,7 @@ assert.equal(ps.notes[0].role, "intonation");
 const accent = ps.notes.findIndex((n) => n.role === "accent");
 assert.equal(psNotes[accent].syllableText, "pá");
 assert.equal(new TextDecoder().decode(new TextEncoder().encode(text).slice(ps.notes[accent].start, ps.notes[accent].end)), "pá");
+assert.equal(text.slice(ps.notes[accent].utf16Start, ps.notes[accent].utf16End), "pá");
 assert.ok(ps.notes.some((n) => n.verse === 1 && n.number === 2 && n.part === "termination"));
 assert.throws(() => psalm(text, "9.z"), /no built-in tone/);
 const ownTone = psalm(text, "name: mine\nclef: c4\nmediant: f g hr 'g hr h\ntermination: hr g f 'g hr h");
@@ -108,47 +116,47 @@ assert.equal(pt.halves.length, 2);
 assert.ok(pt.halves.every((h) => !h.kept && h.confidence > 0 && h.confidence <= 1));
 assert.ok(pt.text.includes("·") && /[áéíóú]/.test(pt.text));
 assert.equal(psalm(plain, "8.G").gabc, psalm(pt.text, "8.G").gabc);
-assert.ok(psalm(plain, "8.G", { pointing: "manual" }).diagnostics.some((d) => d.code === "apply::no-accent"));
+assert.ok(psalm(plain, "8.G", { autoPoint: false }).diagnostics.some((d) => d.code === "apply::no-accent"));
 
 // Editors: offsets in UTF-16 alongside bytes, fixes, updates, and both ways between source
 // and score.
 const src = "(c4) Ký-(g)ri(hi) (,) é(h) (::)";
 const ed = new Chant(src, { initial: 0 });
 const hyphen = ed.diagnostics.find((d) => d.code === "gabc::hyphen-in-syllable");
-assert.equal(src.slice(hyphen.from, hyphen.to), "-");
-assert.ok(hyphen.end - hyphen.start === 1 && hyphen.start === hyphen.from + 1, "bytes count the é");
-assert.equal(hyphen.fix.insert, "");
-const fixed = src.slice(0, hyphen.fix.from) + hyphen.fix.insert + src.slice(hyphen.fix.to);
+assert.equal(src.slice(hyphen.utf16Start, hyphen.utf16End), "-");
+assert.ok(hyphen.end - hyphen.start === 1 && hyphen.start === hyphen.utf16Start + 1, "bytes count the é");
+assert.equal(hyphen.fix.replacement, "");
+const fixed = src.slice(0, hyphen.fix.utf16Start) + hyphen.fix.replacement + src.slice(hyphen.fix.utf16End);
 ed.update(fixed);
 assert.deepEqual(ed.diagnostics, []);
-assert.equal(new Chant("Ky(g)", { initial: 0 }).diagnostics[0].fix.insert, "(c4) ");
+assert.equal(new Chant("Ky(g)", { initial: 0 }).diagnostics[0].fix.replacement, "(c4) ");
 
 const quick = ed.layout(500, { timeline: false });
 assert.equal(quick.timeline, undefined);
 assert.ok(quick.svg.startsWith("<svg"));
 const page = ed.layout(500);
 for (const n of page.timeline.notes) {
-  const hit = ed.sourceAt(n.x, n.y);
+  const hit = ed.sourceAt(n.cx, n.cy);
   assert.equal(hit.kind, "note");
   assert.equal(hit.index, n.id);
 }
 const hi = fixed.indexOf("hi");
 const at = ed.elementsAt(hi + 1);
 assert.deepEqual(at.map((e) => e.kind), ["note", "syllable"]);
-assert.equal(fixed.slice(at[0].from, at[0].to), "i");
-assert.equal(fixed.slice(at[1].from, at[1].to), "ri(hi)");
+assert.equal(fixed.slice(at[0].utf16Start, at[0].utf16End), "i");
+assert.equal(fixed.slice(at[1].utf16Start, at[1].utf16End), "ri(hi)");
 const bar = ed.elementsAt(fixed.indexOf(","));
 assert.equal(bar[0].kind, "bar");
 assert.equal(ed.sourceAt(bar[0].x + bar[0].w / 2, bar[0].y + 1).kind, "bar");
 // The same caret as a byte offset.
 const bytes = new TextEncoder().encode(fixed.slice(0, hi + 1)).length;
-assert.deepEqual(ed.elementsAt(bytes, { units: "utf8" }), at);
+assert.deepEqual(ed.elementsAt(bytes, { unit: "utf8" }), at);
 assert.equal(ed.sourceAt(-100, -100), null);
 // Carets past either end are at it, however far: none wraps around to the start.
 const atEnd = ed.elementsAt(fixed.length);
 for (const far of [fixed.length + 1, 2 ** 32, 2 ** 32 + 5, 2 ** 53, Infinity]) {
   assert.deepEqual(ed.elementsAt(far), atEnd, String(far));
-  if (far > 2 ** 31) assert.deepEqual(ed.elementsAt(far, { units: "utf8" }), atEnd, String(far));
+  if (far > 2 ** 31) assert.deepEqual(ed.elementsAt(far, { unit: "utf8" }), atEnd, String(far));
 }
 for (const before of [-1, -(2 ** 32), -Infinity, NaN]) {
   assert.deepEqual(ed.elementsAt(before), ed.elementsAt(0), String(before));
@@ -165,7 +173,7 @@ assert.ok(!lineSvg.includes("data-note"));
 assert.ok(parts.lines.every((l, i) => i === 0 || l.top > parts.lines[i - 1].top));
 // Without the timeline, notes are still found under a point.
 const first = page.timeline.notes[0];
-assert.equal(ed.noteAt(first.x, first.y), first.id);
+assert.equal(ed.noteAt(first.cx, first.cy), first.id);
 // Edits one after another: the lines the engine kept, and those it made again, are what a
 // fresh Chant draws, with ids or without.
 let edited = fixed;
@@ -197,7 +205,7 @@ assert.throws(() => ed.sourceAt(0, 0), /freed/);
 
 // A trap or a stack overflow (a RangeError, not a trap) drops the engine until init() runs
 // again. A fresh copy of the glue runs a stand-in module whose `neuma_summarize` recurses
-// forever and whose `neuma_tones` traps.
+// forever and whose `neuma_tone_names` traps.
 {
   const glue = await import("./dist/neuma.mjs?crash");
   const section = (id, body) => [id, body.length, ...body];
@@ -205,7 +213,7 @@ assert.throws(() => ed.sourceAt(0, 0), /freed/);
   const exp = (name, kind, index) => [name.length, ...new TextEncoder().encode(name), kind, index];
   const exports = [
     exp("memory", 2, 0), exp("neuma_input", 0, 1), exp("neuma_output_ptr", 0, 2),
-    exp("neuma_output_len", 0, 2), exp("neuma_summarize", 0, 0), exp("neuma_tones", 0, 3),
+    exp("neuma_output_len", 0, 2), exp("neuma_summarize", 0, 0), exp("neuma_tone_names", 0, 3),
   ];
   const bytes = new Uint8Array([
     0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00,
@@ -220,8 +228,8 @@ assert.throws(() => ed.sourceAt(0, 0), /freed/);
   assert.throws(() => glue.summarize("x"), RangeError);
   assert.throws(() => glue.summarize("x"), /stopped on an internal error; call init\(\) again/);
   await glue.init();
-  assert.throws(() => glue.tones(), WebAssembly.RuntimeError);
-  assert.throws(() => glue.tones(), /call init\(\) again/);
+  assert.throws(() => glue.toneNames(), WebAssembly.RuntimeError);
+  assert.throws(() => glue.toneNames(), /call init\(\) again/);
   await glue.init();
   assert.throws(() => glue.summarize("x"), RangeError);
 }

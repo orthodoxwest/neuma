@@ -10,6 +10,8 @@ repository.workspace = true
 [features]
 default = ["svg", "fonts"]
 svg = []
+# `neuma::json`: the outputs as the JSON the browser package and the CLI give (no dependencies).
+json = []
 # The built-in EB Garamond metrics tables (about 100 KB).
 fonts = []
 

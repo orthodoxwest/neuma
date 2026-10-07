@@ -14,7 +14,9 @@
 // For an editor: `chant.update(gabc)` on each change, `layout(w, { timeline: false,
 // svg: "lines" })` to patch only the lines that changed, `sourceAt(x, y)` for a click and
 // `elementsAt(caret)` for the caret. Offsets named `start`/`end` count UTF-8 bytes; those
-// named `from`/`to`, and carets, count UTF-16 units (JavaScript string indices).
+// named `utf16Start`/`utf16End`, and carets, count UTF-16 units (JavaScript string indices).
+// Every position is in output units from the layout's top left, y down; a point that is a
+// center is named `cx`, `cy`.
 
 /*__NEUMA_WASM__*/
 const WASM_GZIP_BASE64 = "";
@@ -129,7 +131,7 @@ export const DEFAULT_WEIGHTS = Object.freeze({
 });
 
 /**
- * A score's catalogue entry, without engraving it for display: cheap enough to index a
+ * A score's library entry, without engraving it for display: cheap enough to index a
  * whole library. See the README for the fields.
  * @param {string} gabc
  */
@@ -145,21 +147,21 @@ export function summarize(gabc) {
  * Sets psalm text (a verse per line, the mediant marked `*`, optionally pointed with `†`, `·`,
  * acutes and `–`) to a psalm tone, and returns the score as GABC for `new Chant(gabc)`.
  * Half-verses with no pointing marks are pointed automatically (see `point`), unless
- * `pointing: "manual"`; diagnostics then include `point::unsure` for halves to check.
+ * `autoPoint: false`; diagnostics then include `point::unsure` for halves to check.
  * @param {string} text
- * @param {string} tone a built-in tone such as "8.G" (see `tones()`), or a whole tone block
- *   (`name:`, `clef:`, `mediant:`, `termination:` lines) for a tone of your own.
- * @param {{ intone?: "first"|"every"|"never", pointing?: "auto"|"manual" }} [options]
+ * @param {string} tone a built-in tone such as "8.G" (see `toneNames()`), or a whole tone
+ *   block (`name:`, `clef:`, `mediant:`, `termination:` lines) for a tone of your own.
+ * @param {{ intone?: "first"|"every"|"never", autoPoint?: boolean }} [options]
  * @returns {{ gabc: string, notes: Array<{ verse: number, number: number|null,
  *   part: "flex"|"mediant"|"termination", role: "intonation"|"tenor"|"preparatory"|"accent"|"ending",
- *   start: number, end: number }>, diagnostics: Array<object> }}
+ *   start: number, end: number, utf16Start: number, utf16End: number }>, diagnostics: Array<object> }}
  *   `notes[i]` describes note `i` of the engraved chant (`timeline.notes[i].id === i`);
- *   `start` and `end` are the sung syllable's UTF-8 bytes in `text`.
+ *   its offsets are the sung syllable's in `text`, as are the diagnostics'.
  */
-export function psalm(text, tone, { intone = "first", pointing = "auto" } = {}) {
+export function psalm(text, tone, { intone = "first", autoPoint = true } = {}) {
   return guarded((w) => {
     putInput(String(tone) + "\0" + String(text));
-    w.neuma_psalm(isBlock(tone), intone === "every" ? 1 : intone === "never" ? 2 : 0, pointing === "manual" ? 1 : 0);
+    w.neuma_psalm(isBlock(tone), intone === "every" ? 1 : intone === "never" ? 2 : 0, autoPoint ? 1 : 0);
     const out = JSON.parse(takeOutput());
     if (out.error) throw new Error(out.error);
     return out;
@@ -189,11 +191,30 @@ export function point(text, tone) {
 const isBlock = (tone) => (String(tone).includes(":") ? 1 : 0);
 
 /** The built-in psalm tones' names, such as "8.G". Call after `init()`. */
-export function tones() {
+export function toneNames() {
   return guarded((w) => {
-    w.neuma_tones();
+    w.neuma_tone_names();
     return takeOutput().split("\n");
   });
+}
+
+/**
+ * The note sounding at time `t` (in weight units) of a timeline: null during a pause, before
+ * the first note and after the last. For a playhead that follows audio; a binary search.
+ * @param {{ notes: Array<{ start: number, duration: number }> }} timeline
+ * @param {number} t
+ */
+export function noteAtTime(timeline, t) {
+  const notes = timeline.notes;
+  let lo = 0;
+  let hi = notes.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (notes[mid].start <= t) lo = mid + 1;
+    else hi = mid;
+  }
+  const note = lo === 0 ? null : notes[lo - 1];
+  return note && t < note.start + note.duration ? note : null;
 }
 
 export class Chant {
@@ -216,7 +237,7 @@ export class Chant {
   constructor(gabc, { initial = 1, annotation = true, lyricSize = 2.45, font = "google" } = {}) {
     this.#handle = guarded((w) => {
       putInput(String(gabc));
-      return w.chant_new(initial >>> 0, annotation ? 1 : 0, lyricSize, font === "eb-garamond-12" ? 1 : 0);
+      return w.chant_new(Math.min(Math.max(Math.trunc(Number(initial)) || 0, 0), 255), annotation ? 1 : 0, lyricSize, font === "eb-garamond-12" ? 1 : 0);
     });
     this.#generation = generation;
     this.#diagnostics = JSON.parse(takeOutput());
@@ -229,10 +250,11 @@ export class Chant {
   }
 
   /**
-   * Problems found while reading the score: `{ severity, start, end, from, to, code,
-   * message, fix }`. `start`/`end` count UTF-8 bytes of the source and `from`/`to` UTF-16
-   * units (string indices). `fix` is null, or an edit that fixes the problem:
-   * `{ start, end, from, to, insert, title }` (replace `from`..`to` with `insert`).
+   * Problems found while reading the score: `{ severity, start, end, utf16Start, utf16End,
+   * code, message, fix }`. `start`/`end` count UTF-8 bytes of the source and
+   * `utf16Start`/`utf16End` UTF-16 units (string indices). `fix` is null, or an edit that
+   * fixes the problem: `{ start, end, utf16Start, utf16End, replacement, title }` (replace
+   * `utf16Start`..`utf16End` with `replacement`).
    */
   get diagnostics() {
     return this.#diagnostics;
@@ -253,7 +275,7 @@ export class Chant {
     this.#summary = undefined;
   }
 
-  /** The score's catalogue entry, as `summarize` returns it. */
+  /** The score's library entry, as `summarize` returns it. */
   get summary() {
     if (this.#summary === undefined) {
       const handle = this.#live();
@@ -266,11 +288,13 @@ export class Chant {
   }
 
   /**
-   * Lays the score out at `width` SVG units.
+   * Lays the score out at `width` output units (staff spaces times `scale`). Laying out
+   * again at the same width and options reuses the last layout.
    * @param {number} width
    * @param {{ scale?: number, lastLine?: "ragged"|"justified", maxLines?: number, weights?: object, prefix?: string,
    *   timeline?: boolean, svg?: "whole"|"lines", ids?: boolean }} [options]
-   *   scale: units per staff space (default 6). maxLines: keep only the first lines, as
+   *   scale: output units per staff space (default 6; any other value that isn't a
+   *   positive number is 6 too). maxLines: keep only the first lines, as
    *   broken for the whole score, for a preview such as an incipit (default 0, all). weights: any of DEFAULT_WEIGHTS's keys; a
    *   missing, null or non-numeric value keeps the default.
    *   prefix: class and id prefix for the SVG (default "neuma").
@@ -279,11 +303,11 @@ export class Chant {
    *   line by line. ids: false leaves out `data-note` and `data-syllable`, so a line's SVG
    *   doesn't change when notes are added or removed above it.
    * @returns {{ width: number, height: number, svg?: string, svgParts?: object, timeline?: object }}
-   *   timeline: `{ notes, pauses, lines, duration }`, with times in weight units.
+   *   timeline: `{ notes, pauses, lines, duration }`, with times in weight units. Each note
+   *   is `{ id, cx, cy, w, h, start, duration, … }`, `cx`, `cy` its notehead's center.
    */
   layout(width, { scale = 6, lastLine = "ragged", maxLines = 0, weights = {}, prefix = "", timeline = true, svg = "whole", ids = true } = {}) {
     const handle = this.#live();
-    if (!(scale > 0 && Number.isFinite(scale))) scale = 6;
     const values = WEIGHTS.map((k) => {
       const v = weights[k];
       return typeof v === "number" ? v : NaN;
@@ -318,8 +342,10 @@ export class Chant {
    * The note, bar or syllable under (`x`, `y`) in the last layout: a notehead, else a bar,
    * else a syllable's box, else the nearest syllable on that line; null outside the lines.
    * @returns {{ kind: "note"|"bar"|"syllable", index: number, start: number, end: number,
-   *   from: number, to: number, line: number, x: number, y: number, w: number, h: number } | null}
-   *   `from`..`to` is the source to select (UTF-16 units); `x`, `y`, `w`, `h` the box drawn.
+   *   utf16Start: number, utf16End: number, line: number, x: number, y: number, w: number,
+   *   h: number } | null}
+   *   `utf16Start`..`utf16End` is the source to select (string indices); `x`, `y`, `w`, `h`
+   *   the box drawn, from its top left.
    */
   sourceAt(x, y) {
     const handle = this.#live();
@@ -334,16 +360,16 @@ export class Chant {
    * whose source holds it, then each box of its syllable (one per line it spans), most
    * specific first. A caret just after a note, as after typing it, counts as on it.
    * @param {number} caret a string index (UTF-16 units), such as `textarea.selectionStart`
-   * @param {{ units?: "utf16"|"utf8" }} [options] `units: "utf8"` takes a byte offset instead.
+   * @param {{ unit?: "utf16"|"utf8" }} [options] `unit: "utf8"` takes a byte offset instead.
    * @returns {Array<object>} elements as `sourceAt` returns them
    */
-  elementsAt(caret, { units = "utf16" } = {}) {
+  elementsAt(caret, { unit = "utf16" } = {}) {
     const handle = this.#live();
     return guarded((w) => {
       // Past either end means at it: saturate to a u32 (the engine clamps to the source's
       // length) rather than let `>>>` wrap, and read NaN as 0.
       const at = Math.min(Math.max(Math.trunc(Number(caret)) || 0, 0), 0xffffffff);
-      w.chant_elements_at(handle, at, units === "utf8" ? 0 : 1);
+      w.chant_elements_at(handle, at, unit === "utf8" ? 0 : 1);
       return JSON.parse(takeOutput());
     });
   }

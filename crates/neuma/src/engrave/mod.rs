@@ -22,6 +22,7 @@ use neume::{INTRA, STEM};
 
 /// What a piece of ink is, so themes can color staff, notes and rubrics separately.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum Ink {
     Staff,
     Ledger,
@@ -38,6 +39,7 @@ pub enum Ink {
 
 impl Ink {
     /// The CSS class the SVG writer uses for this role.
+    #[must_use]
     pub fn class(self) -> &'static str {
         match self {
             Ink::Staff => "staff",
@@ -103,6 +105,7 @@ impl Piece {
 
 /// How long an alteration lasts (DESIGN section 6.4).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum AlterationScope {
     /// Until the next clef or written line break. Engraving doesn't know where layout will
     /// break lines, so an alteration carries past a line break that layout chose.
@@ -114,14 +117,20 @@ pub enum AlterationScope {
     Note,
 }
 
+/// Whether lines end with a custos.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum CustosPolicy {
+    /// Where the score and GregorioTeX's defaults put one.
     #[default]
     Auto,
     Never,
 }
 
+/// How to engrave a score: everything that doesn't depend on the width. Build it with the
+/// `with_*` setters: `StyleOptions::default().with_initial(Initial::Lines(2))`.
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub struct StyleOptions {
     /// Lyric font size, in staff spaces. The default, 2.45, is GregorioTeX's: 10 pt lyrics on
     /// its default staff.
@@ -132,9 +141,20 @@ pub struct StyleOptions {
     pub annotation: bool,
     /// Overrides the rules the `language:` header picks.
     pub vowels: Option<VowelRules>,
+    /// How long a flat or natural lasts.
     pub alterations: AlterationScope,
+    /// Whether lines end with a custos.
     pub custos: CustosPolicy,
 }
+
+crate::setters!(StyleOptions {
+    lyric_size: f32 => with_lyric_size,
+    initial: Initial => with_initial,
+    annotation: bool => with_annotation,
+    vowels: Option<VowelRules> => with_vowels,
+    alterations: AlterationScope => with_alterations,
+    custos: CustosPolicy => with_custos,
+});
 
 impl Default for StyleOptions {
     fn default() -> StyleOptions {
@@ -657,6 +677,7 @@ impl Engraver<'_> {
 
 impl Score {
     /// Engraves the score: neumes, signs and lyric boxes, independent of width.
+    #[must_use]
     pub fn engrave(&self, measure: &dyn TextMeasure, style: &StyleOptions) -> Engraving {
         let mut pass = self.pass(measure, style, false);
         for (si, syl) in self.syllables.iter().enumerate() {

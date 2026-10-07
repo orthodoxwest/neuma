@@ -11,6 +11,8 @@
 use crate::score::TextStyle;
 use crate::text::TextMeasure;
 
+/// One face's metrics in a [`MetricsTable`]. Its constructor and setters are for the table
+/// builder (`neuma-metrics`); the stability contract is the `NMET` format version.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Face {
     pub italic: bool,
@@ -24,6 +26,7 @@ pub struct Face {
 }
 
 impl Face {
+    #[doc(hidden)]
     pub fn new(italic: bool, bold: bool, sha256: [u8; 32], ascent: f32, descent: f32) -> Face {
         Face {
             italic,
@@ -37,14 +40,17 @@ impl Face {
         }
     }
 
+    #[doc(hidden)]
     pub fn set_advance(&mut self, c: char, em: f32) {
         self.advances.push((c as u32, em));
     }
 
+    #[doc(hidden)]
     pub fn set_small_cap(&mut self, c: char, em: f32) {
         self.small_caps.push((c as u32, em));
     }
 
+    #[doc(hidden)]
     pub fn set_kern(&mut self, left: char, right: char, em: f32) {
         self.kerning.push((left as u32, right as u32, em));
     }
@@ -93,12 +99,17 @@ impl Face {
     }
 }
 
+/// Font metrics for measuring lyrics: a [`TextMeasure`] read from a table that
+/// `neuma-metrics` builds from font files. The built-in EB Garamond tables are
+/// [`LyricFont::metrics`](crate::LyricFont::metrics).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct MetricsTable {
     pub faces: Vec<Face>,
 }
 
+/// Why a metrics table can't be read.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum MetricsError {
     BadMagic,
     UnsupportedVersion(u16),
@@ -178,6 +189,7 @@ impl MetricsTable {
         Ok(MetricsTable { faces })
     }
 
+    #[doc(hidden)]
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut out = Vec::new();
         out.extend_from_slice(b"NMET");
