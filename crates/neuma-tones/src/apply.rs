@@ -22,6 +22,30 @@ pub enum Intone {
     Never,
 }
 
+/// Which acute accents the printed text keeps. They place the cadence's accents either way.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum Accents {
+    /// Every acute, as written or added by the pointing.
+    #[default]
+    All,
+    /// None: the text as it is spelled.
+    None,
+    /// None in a flex half-verse, which a pointed psalter shows by its italics alone; the
+    /// others keep theirs.
+    OutsideFlex,
+}
+
+impl Accents {
+    /// A syllable's text as printed in `part`.
+    pub(crate) fn shown(self, text: &str, part: VersePart) -> String {
+        match (self, part) {
+            (Accents::None, _) | (Accents::OutsideFlex, VersePart::Flex) => strip_acutes(text),
+            _ => text.to_string(),
+        }
+    }
+}
+
 /// How to set a psalm. Build it with the `with_*` setters:
 /// `PsalmOptions::default().with_intone(Intone::EveryVerse)`.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -29,8 +53,8 @@ pub enum Intone {
 pub struct PsalmOptions {
     /// When the intonation is sung; default on the first verse.
     pub intone: Intone,
-    /// Remove the acute accents from the printed text (they still place the accents).
-    pub strip_accents: bool,
+    /// Which acute accents the printed text keeps; default all.
+    pub accents: Accents,
     /// The score's `name:` header.
     pub name: Option<String>,
     /// Point half-verses that carry no marks with [`point`](crate::point()) first; default
@@ -42,7 +66,7 @@ impl Default for PsalmOptions {
     fn default() -> PsalmOptions {
         PsalmOptions {
             intone: Intone::default(),
-            strip_accents: false,
+            accents: Accents::All,
             name: None,
             auto_point: true,
         }
@@ -57,10 +81,10 @@ impl PsalmOptions {
         self
     }
 
-    /// Sets [`strip_accents`](Self::strip_accents).
+    /// Sets [`accents`](Self::accents).
     #[must_use]
-    pub fn with_strip_accents(mut self, strip_accents: bool) -> PsalmOptions {
-        self.strip_accents = strip_accents;
+    pub fn with_accents(mut self, accents: Accents) -> PsalmOptions {
+        self.accents = accents;
         self
     }
 
@@ -265,11 +289,7 @@ fn set_pointed(pointed: &Pointed, tone: &Tone, options: &PsalmOptions) -> PsalmS
                     }
                     fig.extend(f);
                 }
-                let shown = if options.strip_accents {
-                    strip_acutes(&s.text)
-                } else {
-                    s.text.clone()
-                };
+                let shown = options.accents.shown(&s.text, part.kind);
                 b = b.syllable(Lyric::from_plain(&shown), s.starts_word(), fig);
                 spans.push(s.span.clone());
             }

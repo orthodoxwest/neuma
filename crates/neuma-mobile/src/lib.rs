@@ -916,6 +916,18 @@ pub enum Intone {
     Never,
 }
 
+/// Which acute accents the printed text keeps. They place the cadence's accents either way.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, uniffi::Enum)]
+pub enum Accents {
+    /// Every acute, as written or added by the pointing.
+    #[default]
+    All,
+    /// None: the text as it is spelled.
+    None,
+    /// None in a flex half-verse, which a pointed psalter shows by its italics alone.
+    OutsideFlex,
+}
+
 /// How psalm text is set. Every field has a default, so `PsalmOptions()` is the usual one.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Record)]
 pub struct PsalmOptions {
@@ -927,6 +939,9 @@ pub struct PsalmOptions {
     /// unpointed.
     #[uniffi(default = true)]
     pub auto_point: bool,
+    /// Which acutes the printed text keeps. Null (the default) means all of them.
+    #[uniffi(default)]
+    pub accents: Option<Accents>,
 }
 
 impl Default for PsalmOptions {
@@ -934,6 +949,7 @@ impl Default for PsalmOptions {
         PsalmOptions {
             intone: None,
             auto_point: true,
+            accents: None,
         }
     }
 }
@@ -1124,6 +1140,9 @@ fn tone_from(tone: &str) -> Result<neuma_tones::Tone, ToneError> {
 /// tone ([`Chant::from_tone`]).
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]
 pub struct PsalmDisplay {
+    /// The tone's name as a psalter prints it beside the tone: "Tone 8 G", "Tonus
+    /// peregrinus".
+    pub tone_label: String,
     pub verses: Vec<PsalmVerse>,
     /// Problems in the text and its pointing, as `psalm()` gives them: `point::unsure` flags a
     /// half-verse pointed automatically that is worth checking.
@@ -1143,21 +1162,21 @@ pub struct PsalmVerse {
     pub runs: Vec<PsalmRun>,
 }
 
-/// A piece of a verse's line, of one kind. `syllable` is set for a sung syllable.
+/// A piece of a verse's line, of one kind. A space that must not break the line (between a
+/// mark and its syllable) is U+00A0.
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]
 pub struct PsalmRun {
     pub text: String,
     pub kind: PsalmRunKind,
-    pub syllable: Option<PsalmSyllable>,
 }
 
-/// What a run is, which says how to style it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+/// What a run is, which says how to style it: a sealed class in Kotlin, an enum in Swift.
+#[derive(Clone, Debug, PartialEq, uniffi::Enum)]
 pub enum PsalmRunKind {
-    /// Spaces, and the hyphen of a word the pointing split.
+    /// Spaces, and a word's hyphen.
     Text,
-    /// A sung syllable (see `syllable`): italic when `flexDrop`.
-    Syllable,
+    /// A sung syllable, with its place in the text and in the tone: italic when `flexDrop`.
+    Syllable { syllable: PsalmSyllable },
     /// `·`: the cadence starts at the next syllable. Bold red.
     Point,
     /// `–`: a held note (or one left out). Bold red.
@@ -1213,7 +1232,7 @@ pub fn psalm_display(text: String, tone: String, options: PsalmOptions) -> Resul
                     .iter()
                     .map(|run| {
                         #[allow(clippy::wildcard_enum_match_arm)] // a kind added later reads as text
-                        let (kind, syllable) = match &run.kind {
+                        let kind = match &run.kind {
                             K::Syllable(s) => {
                                 let r = utf16.range_to_utf16(&s.span);
                                 let syllable = PsalmSyllable {
@@ -1227,19 +1246,18 @@ pub fn psalm_display(text: String, tone: String, options: PsalmOptions) -> Resul
                                     source_utf16_start: int(r.start),
                                     source_utf16_end: int(r.end),
                                 };
-                                (PsalmRunKind::Syllable, Some(syllable))
+                                PsalmRunKind::Syllable { syllable }
                             }
-                            K::Point => (PsalmRunKind::Point, None),
-                            K::Held => (PsalmRunKind::Held, None),
-                            K::Mediant => (PsalmRunKind::Mediant, None),
-                            K::Flex => (PsalmRunKind::Flex, None),
-                            K::Rubric => (PsalmRunKind::Rubric, None),
-                            _ => (PsalmRunKind::Text, None),
+                            K::Point => PsalmRunKind::Point,
+                            K::Held => PsalmRunKind::Held,
+                            K::Mediant => PsalmRunKind::Mediant,
+                            K::Flex => PsalmRunKind::Flex,
+                            K::Rubric => PsalmRunKind::Rubric,
+                            _ => PsalmRunKind::Text,
                         };
                         PsalmRun {
                             text: run.text.clone(),
                             kind,
-                            syllable,
                         }
                     })
                     .collect(),
@@ -1247,6 +1265,7 @@ pub fn psalm_display(text: String, tone: String, options: PsalmOptions) -> Resul
         })
         .collect();
     Ok(PsalmDisplay {
+        tone_label: d.tone().label(),
         verses,
         diagnostics: d.diagnostics().iter().map(|x| diagnostic(x, &utf16)).collect(),
     })
@@ -1277,6 +1296,11 @@ fn psalm_options(options: PsalmOptions) -> neuma_tones::PsalmOptions {
             Intone::Never => neuma_tones::Intone::Never,
         })
         .with_auto_point(options.auto_point)
+        .with_accents(match options.accents.unwrap_or_default() {
+            Accents::All => neuma_tones::Accents::All,
+            Accents::None => neuma_tones::Accents::None,
+            Accents::OutsideFlex => neuma_tones::Accents::OutsideFlex,
+        })
 }
 
 fn psalm_notes(notes: &[neuma_tones::PsalmNote], utf16: &neuma::Utf16Index) -> Vec<PsalmNote> {

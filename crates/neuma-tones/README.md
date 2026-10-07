@@ -60,18 +60,22 @@ the time.
 ## A pointed psalter's display
 
 A pointed psalter prints the tone once, as a line of notes with no words, and the verses
-beneath as text with their pointing marks. `Tone::gabc` is that line, and `PsalmDisplay`
-the verses, as runs of text to style:
+beneath as text with their pointing marks. `Tone::gabc` is that line, `Tone::label` its name
+beside it ("Tone 8 G", "Tonus peregrinus"), and `PsalmDisplay` the verses, as runs of text
+to style:
 
 ```rust
-use neuma_tones::{PsalmDisplay, PsalmOptions, PsalmRunKind, Tone};
+use neuma_tones::{Accents, PsalmDisplay, PsalmOptions, PsalmRunKind, Tone};
 
 let tone = Tone::named("8.G").unwrap();
 let tone_line = neuma::Chant::new(&tone.gabc()); // lay it out above the verses
 let text = "1 Hear me when I call, O God of my righteousness * thou hast set me at liberty.\n\
             3 Know this also, that the Lord hath chosen to himself † the man that is godly * \
               [Sit.] when I call upon the Lord, he will hear me.";
-let display = PsalmDisplay::new(text, tone, &PsalmOptions::default());
+// A pointed psalter prints no acute in a flex: its italics show where the voice drops.
+let options = PsalmOptions::default().with_accents(Accents::OutsideFlex);
+let display = PsalmDisplay::new(text, tone, &options);
+assert_eq!(tone.label(), "Tone 8 G");
 let mut html = String::new();
 for verse in display.verses() {
     // verse.number goes in the margin; the runs, joined, are the line.
@@ -97,7 +101,9 @@ carries its place in the text (`span`) and in the tone (`part`, `role`, `accent`
 or a highlight that follows the singing; in a flex, `flex_drop` marks the syllables the voice
 drops on, which a psalter prints in italic. `update(text)` points new text for the same tone.
 The verse as printed is the pointed text as `point` writes it, without the verse number and
-the rubrics' brackets.
+the rubrics' brackets, and with a spelling hyphen as a hyphen. The space between a `·` and
+its syllable, and before a `*`, `†` or held `–`, is U+00A0, so a line never breaks between a
+mark and the syllable it belongs to.
 
 ## Pointed text
 

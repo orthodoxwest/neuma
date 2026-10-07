@@ -25,7 +25,7 @@ mod pointed;
 mod syllable;
 mod tone;
 
-pub use apply::{Intone, PsalmNote, PsalmOptions, PsalmSetting, ToneRole, UNSURE, psalm};
+pub use apply::{Accents, Intone, PsalmNote, PsalmOptions, PsalmSetting, ToneRole, UNSURE, psalm};
 pub use chant::{AnyChant, PsalmChant};
 pub use display::{PsalmDisplay, PsalmRun, PsalmRunKind, PsalmSyllable, PsalmVerse};
 pub use point::{HalfPointing, Pointing, point};

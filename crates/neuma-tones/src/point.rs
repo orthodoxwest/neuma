@@ -155,7 +155,8 @@ fn point_part(part: &mut Part, cadence: &Cadence, zero: bool) -> f32 {
     part.omitted = prep.saturating_sub(first);
     let s = &mut part.syllables[start];
     s.cadence = true;
-    if s.joint != Joint::Word {
+    // A split the cadence starts at is a `·`; a spelling hyphen stays, as `\-·`.
+    if !matches!(s.joint, Joint::Word | Joint::Spelling) {
         s.joint = Joint::Dot;
     }
     confidence

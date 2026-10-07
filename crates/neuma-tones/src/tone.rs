@@ -284,6 +284,33 @@ impl Tone {
         g.push_str("(::)");
         g
     }
+
+    /// The tone's name as a psalter prints it beside the tone: "Tone 8 G" for `8.G` (the
+    /// mode, then the ending, as an antiphon's "8 G" names it), "Tone 1 D2" for `1.D2`,
+    /// "Tonus peregrinus" for `per`. A name of another form is printed as it is.
+    ///
+    /// ```
+    /// use neuma_tones::Tone;
+    /// assert_eq!(Tone::named("8.G")?.label(), "Tone 8 G");
+    /// assert_eq!(Tone::named("per")?.label(), "Tonus peregrinus");
+    /// # Ok::<(), neuma_tones::ToneError>(())
+    /// ```
+    #[must_use]
+    pub fn label(&self) -> String {
+        let name = self.name.trim();
+        if name.eq_ignore_ascii_case("per") {
+            return "Tonus peregrinus".to_string();
+        }
+        let (mode, ending) = name.split_once('.').unwrap_or((name, ""));
+        if mode.is_empty() || !mode.bytes().all(|b| b.is_ascii_digit()) {
+            return name.to_string();
+        }
+        if ending.is_empty() {
+            format!("Tone {mode}")
+        } else {
+            format!("Tone {mode} {ending}")
+        }
+    }
 }
 
 fn parse_clef(s: &str) -> Result<(ClefKind, u8), ToneError> {
@@ -378,6 +405,20 @@ mod tests {
         assert_eq!(Tone::named("per").unwrap().termination.tenor, "g");
         assert_eq!(Tone::named("9.a"), Err(ToneError::Unknown { name: "9.a".into() }));
         assert_eq!(Tone::named("9.a").unwrap_err().to_string(), "no built-in tone 9.a");
+    }
+
+    #[test]
+    fn labels() {
+        let label = |n: &str| Tone::named(n).unwrap().label();
+        assert_eq!(
+            [label("1.D2"), label("8.G*"), label("4.A*")],
+            ["Tone 1 D2", "Tone 8 G*", "Tone 4 A*"]
+        );
+        let mut custom = Tone::named("8.G").unwrap().clone();
+        for (name, want) in [("2", "Tone 2"), ("Irish", "Irish"), ("2.", "Tone 2"), (".x", ".x")] {
+            custom.name = name.to_string();
+            assert_eq!(custom.label(), want);
+        }
     }
 
     #[test]

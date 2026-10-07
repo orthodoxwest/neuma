@@ -3,7 +3,7 @@
 
 use neuma::display::{DisplayList, Item, TextRole};
 use neuma::{Diagnostic, Initial, LastLine, LayoutOptions, Severity, StyleOptions};
-use neuma_tones::{Intone, PsalmOptions, Tone};
+use neuma_tones::{Accents, Intone, PsalmOptions, Tone};
 
 use crate::book::{Book, Piece, Psalm, PsalmSet, Settings, Source};
 use crate::font::Fonts;
@@ -520,7 +520,7 @@ fn psalm_blocks(ps: &Psalm, s: &Settings, fonts: &Fonts, m: &Metrics, diags: &mu
         // Verse numbers are for the pointed text; chant verses go without.
         let words = strip_number(verse);
         // The accents place the cadence; under notes they would only clutter.
-        let options = PsalmOptions::default().with_intone(intone).with_strip_accents(true);
+        let options = PsalmOptions::default().with_intone(intone).with_accents(Accents::None);
         let setting = neuma_tones::psalm(words, &tone, &options);
         let shift = offset_of(&text, words);
         diags.extend(setting.diagnostics.into_iter().map(|d| place(d, shift, &labels[vi], source_len)));

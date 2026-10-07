@@ -30,6 +30,17 @@ timelines, PDFs). Some behavior did change:
   none goes above 1000.
 - `neuma book` reports `point::unsure` at the half-verse's syllables rather than the whole
   verse.
+- Pointed text keeps a spelling hyphen (`\-`, "blood\-guiltiness"): `point` writes it back
+  (it wrote "bloodguiltiness"), and `neuma book` prints "blood-guiltiness" in a pointed
+  psalm's verses. A `·` the pointer puts right after one is written `\-·` ("pre\-·eminence";
+  it was "pre·eminence"). Each piece of such a word is a syllable with its own span, where
+  every piece had the whole word's. The sung setting (`psalm`'s GABC, a book's chant
+  verses) is unchanged.
+- A verse number after rubrics that open the line ("[Stand.] 5 For I …") is the verse
+  number; it was sung as a word. `point` writes it first ("5 [Stand.] For I …").
+- A `·` among a half-verse's leading dashes ("* – · – – práise") stays where it was written
+  in `point`'s text and a book's verses, which moved it to the end ("* – – – · práise"). How
+  the half is sung is unchanged.
 
 ### The 0.1 API (breaking)
 
@@ -119,7 +130,10 @@ timelines, PDFs). Some behavior did change:
   takes either: it derefs to `Chant`, and its `update` and `set_options` read the new source
   as the chant was made from. The browser and mobile bindings use it.
 - `Options` → **`PsalmOptions`** (setters `with_intone`, `with_auto_point`,
-  `with_strip_accents`, `with_name`); `no_auto_point` → **`auto_point`** (default `true`).
+  `with_accents`, `with_name`); `no_auto_point` → **`auto_point`** (default `true`);
+  `strip_accents` → **`accents`**: `Accents::All` (the default), `None`, or `OutsideFlex`
+  (none in a flex, as a pointed psalter prints it), also in the browser (`accents: "all" |
+  "none" | "outsideFlex"`) and on mobile.
 - `Setting` → **`PsalmSetting`**, `NoteRole` → **`PsalmNote`** (its `source` → **`span`**),
   `Role` → **`ToneRole`**, `PartKind` → **`VersePart`**, matching the mobile bindings.
 - `PsalmSetting.score`'s spans now count bytes of the psalm text (a note's is its sung
@@ -256,4 +270,8 @@ timelines, PDFs). Some behavior did change:
   pointing and `point::unsure` diagnostics as `psalm` gives them. In the browser,
   `psalmDisplay(text, tone, options)` and `Chant.fromTone(tone, options)`, with an example
   page, `crates/neuma-wasm/examples/psalm.html`; on mobile, `psalmDisplay(text, tone,
-  PsalmOptions)` returning records and `Chant.fromTone(tone, ChantOptions)`.
+  PsalmOptions)` returning records (a run's kind a sealed class in Kotlin and an enum with an
+  associated value in Swift) and `Chant.fromTone(tone, ChantOptions)`. A line's runs use
+  U+00A0 between a mark and its syllable, so it never breaks there. `Tone::label()` names a
+  tone as a psalter prints it ("Tone 8 G", "Tonus peregrinus"; `toneLabel` on the display in
+  the browser and on mobile).

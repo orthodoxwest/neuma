@@ -36,12 +36,14 @@
   #psalm { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 20px 24px; font: 17px/1.45 "EB Garamond", serif; }
   #psalm svg { display: block; color: var(--ink); }
   #psalm h2 { font: inherit; font-size: 19px; text-align: center; margin: 14px 0 6px; letter-spacing: 0.04em; }
-  .tone { display: flex; align-items: center; gap: 12px; margin: 4px 0 10px; }
-  .tone .label { color: var(--red); font-style: italic; white-space: nowrap; }
+  .tone-row { display: flex; align-items: center; gap: 12px; margin: 4px 0 10px; }
+  .tone-row .label { color: var(--red); font-style: italic; white-space: nowrap; }
+  /* The tone's one word, its mediant `*`, in red like the verses'. */
+  #psalm .tone-lyric { fill: var(--red); }
   .verse { margin: 0 0 4px; padding-left: 1.8em; text-indent: -1.8em; }
   .verse .number { display: inline-block; width: 1.8em; text-indent: 0; color: var(--red); }
-  .verse.first { padding-left: 0; text-indent: 0; }
-  .verse.first::first-letter { float: left; font-size: 3.1em; line-height: 0.82; padding: 0.06em 0.08em 0 0; color: var(--red); }
+  .verse.first, .verse.lead { padding-left: 0; text-indent: 0; }
+  .initial { float: left; font-size: 3.1em; line-height: 0.82; padding: 0.06em 0.08em 0 0; color: var(--red); font-style: normal; }
   .point, .held { color: var(--red); font-weight: 700; }
   .mediant, .flex { color: var(--red); }
   .rubric { color: var(--red); font-style: italic; }
@@ -75,7 +77,9 @@ text.value = `1 Hear me when I call, O God of my righteousness * thou hast set m
 2 O ye sons of men, how long will ye blas·phéme mine hónour * and have such pleasure in vanity, and seek · áfter léasing?
 3 Know this also, that the Lord hath chosen to himself † the man that is godly * when I call upon the Lord, he will hear me.
 4 Stand in awe, and sin not * [Sit.] commune with your own heart, and in your chamber, and be still.
-5 Offer the sacrifice of righteousness * and put your trust in the Lord.`;
+5 Offer the sacrifice of righteousness * and put your trust in the Lord.
+[Stand.] Glory be to the Father, and to the Son * and to the Holy Ghost;
+As it was in the beginning, is now, and ever shall be * world without end. Amen.`;
 const select = document.getElementById("tone");
 for (const name of toneNames()) select.add(new Option(name, name, name === "8.G", name === "8.G"));
 
@@ -95,19 +99,32 @@ const svg = (markup) => {
 const ant = new Chant(antiphon, { initial: 1 });
 let tone = null;
 
+// A run as a styled span.
+function span(r, doubtful) {
+  const s = el("span", r.kind, r.text);
+  if (r.kind === "syllable") {
+    s.title = `${r.part}, ${r.role}`;
+    if (r.flexDrop) s.classList.add("drop");
+    if (doubtful(r)) s.classList.add("unsure");
+  }
+  return s;
+}
+
 function draw() {
   const width = host.clientWidth - 48;
   const name = select.value;
   if (!tone || tone.name !== name) {
-    const chant = Chant.fromTone(name);
+    // The tone's only word is its `*`, a little larger than a lyric.
+    const chant = Chant.fromTone(name, { lyricSize: 3.4 });
     tone = { name, chant, notes: chant.layout(2000).timeline().notes.length };
   }
-  const shown = psalmDisplay(text.value, name);
+  // A pointed psalter prints no acute in a flex: the italics show where the voice drops.
+  const shown = psalmDisplay(text.value, name, { accents: "outsideFlex" });
   // Where the pointer is unsure, in the text's own units.
   const unsure = shown.diagnostics.filter((d) => d.code === "point::unsure");
   const doubtful = (r) => unsure.some((d) => r.sourceUtf16Start >= d.utf16Start && r.sourceUtf16End <= d.utf16End);
-  const label = el("span", "label", `Tone ${name}`);
-  const toneLine = el("div", "tone", [label]);
+  const label = el("span", "label", shown.toneLabel);
+  const toneLine = el("div", "tone-row", [label]);
   host.replaceChildren(
     svg(ant.layout(width, { scale: 5.5, prefix: "ant" }).svg),
     el("h2", null, "Psalm 4"),
@@ -117,16 +134,22 @@ function draw() {
   const toneWidth = Math.min(width - label.offsetWidth - 12, tone.notes * 24);
   toneLine.append(svg(tone.chant.layout(toneWidth, { scale: 4.5, prefix: "tone", lastLine: "justified" }).svg));
   shown.verses.forEach((v, i) => {
+    let runs = v.runs;
     const p = el("p", i === 0 ? "verse first" : "verse");
-    if (i > 0 && v.number !== null) p.append(el("span", "number", String(v.number)));
-    for (const r of v.runs) {
-      const s = el("span", r.kind, r.text);
-      if (r.kind === "syllable") {
-        s.title = `${r.part}, ${r.role}`;
-        if (r.flexDrop) s.classList.add("drop");
-        if (doubtful(r)) s.classList.add("unsure");
-      }
-      p.append(s);
+    if (i === 0) {
+      // Rubrics before the first word go on a line of their own, above the initial.
+      const lead = runs.findIndex((r) => r.kind === "syllable");
+      const rubrics = runs.slice(0, lead).filter((r) => r.kind === "rubric");
+      if (rubrics.length) host.append(el("p", "verse lead", rubrics.map((r) => span(r, doubtful))));
+      runs = runs.slice(lead);
+      // The first letter of the first word is the initial.
+      const [first, ...rest] = runs;
+      const s = span({ ...first, text: first.text.slice(1) }, doubtful);
+      s.prepend(el("span", "initial", first.text[0]));
+      p.append(s, ...rest.map((r) => span(r, doubtful)));
+    } else {
+      // A verse without a number (the Gloria) keeps the text's column.
+      p.append(el("span", "number", v.number === null ? "" : String(v.number)), ...runs.map((r) => span(r, doubtful)));
     }
     host.append(p);
   });

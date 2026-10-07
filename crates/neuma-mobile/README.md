@@ -194,24 +194,27 @@ Most often a psalm is shown as a pointed psalter prints it: the tone once, as a 
 with no words, and the verses beneath as text with their pointing marks.
 `Chant.fromTone(tone, ChantOptions())` is the tone's line (lay it out with
 `LayoutOptions(lastLine = LastLine.JUSTIFIED)` at about its natural width), and
-`psalmDisplay(text, tone, PsalmOptions())` the verses: each `PsalmVerse` has its `number` and
-its line as `runs`, each a `text` and a `kind` that says how to style it, which fits a styled
-`Text` directly. In Compose:
+`psalmDisplay(text, tone, PsalmOptions(accents = Accents.OUTSIDE_FLEX))` the verses (a
+pointed psalter prints no acute in a flex; `Accents.NONE` prints none at all). Its
+`toneLabel` names the tone as a psalter prints it beside the tone ("Tone 8 G", "Tonus
+peregrinus"). Each `PsalmVerse` has its `number` and its line as `runs`, each a `text` and a
+`kind` that says how to style it, which fits a styled `Text` directly. The space between a
+mark and its syllable is U+00A0, so a line never breaks there. In Compose:
 
 ```kotlin
 val red = Color(0xFFA3211C)
-val display = remember(text) { psalmDisplay(text, "8.G", PsalmOptions()) }
+val display = remember(text) { psalmDisplay(text, "8.G", PsalmOptions(accents = Accents.OUTSIDE_FLEX)) }
 for (verse in display.verses) {
     Text(buildAnnotatedString {
         verse.number?.let { withStyle(SpanStyle(color = red)) { append("$it ") } }
         for (run in verse.runs) {
-            val style = when (run.kind) {
-                PsalmRunKind.POINT, PsalmRunKind.HELD -> SpanStyle(color = red, fontWeight = FontWeight.Bold)
-                PsalmRunKind.MEDIANT, PsalmRunKind.FLEX -> SpanStyle(color = red)
-                PsalmRunKind.RUBRIC -> SpanStyle(color = red, fontStyle = FontStyle.Italic)
-                PsalmRunKind.SYLLABLE ->
-                    if (run.syllable!!.flexDrop) SpanStyle(fontStyle = FontStyle.Italic) else SpanStyle()
-                PsalmRunKind.TEXT -> SpanStyle()
+            val style = when (val kind = run.kind) {
+                PsalmRunKind.Point, PsalmRunKind.Held -> SpanStyle(color = red, fontWeight = FontWeight.Bold)
+                PsalmRunKind.Mediant, PsalmRunKind.Flex -> SpanStyle(color = red)
+                PsalmRunKind.Rubric -> SpanStyle(color = red, fontStyle = FontStyle.Italic)
+                is PsalmRunKind.Syllable ->
+                    if (kind.syllable.flexDrop) SpanStyle(fontStyle = FontStyle.Italic) else SpanStyle()
+                PsalmRunKind.Text -> SpanStyle()
             }
             withStyle(style) { append(run.text) }
         }
@@ -231,7 +234,7 @@ func line(_ verse: PsalmVerse) -> AttributedString {
         case .point, .held: piece.foregroundColor = .red; piece.inlinePresentationIntent = .stronglyEmphasized
         case .mediant, .flex: piece.foregroundColor = .red
         case .rubric: piece.foregroundColor = .red; piece.inlinePresentationIntent = .emphasized
-        case .syllable: if run.syllable?.flexDrop == true { piece.inlinePresentationIntent = .emphasized }
+        case .syllable(let syllable): if syllable.flexDrop { piece.inlinePresentationIntent = .emphasized }
         case .text: break
         }
         out += piece
@@ -242,8 +245,9 @@ func line(_ verse: PsalmVerse) -> AttributedString {
 ```
 
 `·` and `–` are bold red, `*` and `†` red, rubrics red italic, and in a flex the syllables the
-voice drops on (`syllable.flexDrop`) italic. A syllable run's `syllable` also gives its
-`part`, `role` in the tone, `accent`, `wordStart` and its range in the text in both units,
+voice drops on (`syllable.flexDrop`) italic. A syllable run's kind carries its `syllable`
+(a sealed class in Kotlin, an associated value in Swift), which also gives its `part`,
+`role` in the tone, `accent`, `wordStart` and its range in the text in both units,
 for a tap or a highlight that follows the singing. Unmarked half-verses are pointed for the
 tone, and the `diagnostics` are `psalm`'s, `point::unsure` among them. `tone` is a built-in
 name or a tone block.

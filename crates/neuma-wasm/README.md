@@ -395,20 +395,23 @@ pointer's confidence (0 to 1) for each half-verse it marked, and each half's sou
 ### A pointed psalter
 
 <p align="center">
-  <img src="../../docs/images/pointed-psalm.png" width="600" alt="An antiphon in chant, then Psalm 4 as a pointed psalter prints it: tone 8.G once as a line of notes, and the verses as text with a drop cap, red verse numbers, red pointing marks and an italic syllable before the flex">
+  <img src="../../docs/images/pointed-psalm.png" width="600" alt="An antiphon in chant, then Psalm 4 as a pointed psalter prints it: tone 8 G once as a line of notes, and the verses as text with a drop cap, red verse numbers, red pointing marks, an italic syllable before the flex, and the Gloria">
 </p>
 
 Most often a psalm is shown as a pointed psalter prints it: the tone once, as a line of
 notes with no words, and the verses beneath as text with their pointing marks.
 `Chant.fromTone(tone, options)` is the tone's line, and `psalmDisplay(text, tone, { intone,
-autoPoint })` the verses, as runs of text to style:
+autoPoint, accents })` the verses, as runs of text to style, with the tone's name as a
+psalter prints it beside the tone (`toneLabel`: "Tone 8 G", "Tonus peregrinus"):
 
 ```js
 const tone = Chant.fromTone("8.G");
-// Its own prefix: SVGs at different scales on one page need ids of their own.
+// Its own prefix: SVGs at different scales on one page need ids of their own. The line's
+// one word is its `*`, which `.tone-lyric { fill: … }` colors.
 toneHost.innerHTML = tone.layout(300, { scale: 4.5, lastLine: "justified", prefix: "tone" }).svg;
 
-const { verses, diagnostics } = psalmDisplay(text, "8.G");
+// A pointed psalter prints no acute in a flex; "none" prints none at all.
+const { toneLabel, verses, diagnostics } = psalmDisplay(text, "8.G", { accents: "outsideFlex" });
 const span = (cls, text) => Object.assign(document.createElement("span"), { className: cls, textContent: text });
 for (const v of verses) {
   const p = document.createElement("p");
@@ -424,7 +427,9 @@ for (const v of verses) {
 ```
 
 A verse's runs, their `text` joined, are its line after the number: the pointed text as
-`point` writes it, without the rubrics' brackets. A syllable's run also has `part`, `role`
+`point` writes it, without the rubrics' brackets and with a spelling hyphen as a hyphen. The
+space between a `·` and its syllable, and before a `*`, `†` or held `–`, is U+00A0, so a line
+never breaks between a mark and its syllable. A syllable's run also has `part`, `role`
 (its first note's place in the tone, as `psalm`'s notes name it), `accent`, `flexDrop`,
 `wordStart` and its source in `text` (`sourceStart` … `sourceUtf16End`), for a tap or a
 highlight that follows the singing. Unmarked half-verses are pointed for the tone, and the

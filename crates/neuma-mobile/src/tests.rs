@@ -300,37 +300,67 @@ fn displays_a_pointed_psalm() {
     let d = psalm_display(text.to_string(), "8.G".to_string(), PsalmOptions::default()).unwrap();
     let v = &d.verses[0];
     assert_eq!(v.number, Some(1));
+    assert_eq!(d.tone_label, "Tone 8 G");
     let line: String = v.runs.iter().map(|r| r.text.as_str()).collect();
+    // A line never breaks between a mark and its syllable: those spaces are U+00A0.
     assert_eq!(
         line,
-        "Wash me thoróughly · from my wíckedness, † and cleanse me from my sín. * Sit. For I ac·knowledge my fáults."
+        "Wash me thoróughly ·\u{a0}from my wíckedness,\u{a0}† and cleanse me from my sín.\u{a0}* Sit. For I ac·knowledge my fáults."
     );
-    let marks: Vec<PsalmRunKind> = v
+    let marks: Vec<&PsalmRunKind> = v
         .runs
         .iter()
-        .map(|r| r.kind)
-        .filter(|k| !matches!(k, PsalmRunKind::Text | PsalmRunKind::Syllable))
+        .map(|r| &r.kind)
+        .filter(|k| !matches!(k, PsalmRunKind::Text | PsalmRunKind::Syllable { .. }))
         .collect();
     use PsalmRunKind::*;
-    assert_eq!(marks, [Point, Flex, Mediant, Rubric, Point]);
-    // Syllables carry their place in the text, in both units, and in the tone.
-    let utf16: Vec<u16> = text.encode_utf16().collect();
-    for r in v.runs.iter().filter(|r| r.kind == Syllable) {
-        let s = r.syllable.as_ref().unwrap();
-        assert_eq!(&text[s.source_start as usize..s.source_end as usize], r.text);
-        assert_eq!(
-            String::from_utf16_lossy(&utf16[s.source_utf16_start as usize..s.source_utf16_end as usize]),
-            r.text
-        );
-    }
-    let drops: Vec<&str> = v
+    assert_eq!(marks, [&Point, &Flex, &Mediant, &Rubric, &Point]);
+    let syllables: Vec<(&str, &PsalmSyllable)> = v
         .runs
         .iter()
-        .filter(|r| r.syllable.as_ref().is_some_and(|s| s.flex_drop))
-        .map(|r| r.text.as_str())
+        .filter_map(|r| match &r.kind {
+            Syllable { syllable } => Some((r.text.as_str(), syllable)),
+            Text | Point | Held | Mediant | Flex | Rubric => None,
+        })
         .collect();
+    // Syllables carry their place in the text, in both units, and in the tone.
+    let utf16: Vec<u16> = text.encode_utf16().collect();
+    for (t, s) in &syllables {
+        assert_eq!(&text[s.source_start as usize..s.source_end as usize], *t);
+        assert_eq!(
+            String::from_utf16_lossy(&utf16[s.source_utf16_start as usize..s.source_utf16_end as usize]),
+            *t
+        );
+    }
+    let drops: Vec<&str> = syllables.iter().filter(|(_, s)| s.flex_drop).map(|(t, _)| *t).collect();
     assert_eq!(drops, ["ed", "ness,"]);
-    assert!(v.runs.iter().all(|r| (r.kind == Syllable) == r.syllable.is_some()));
+    // A pointed psalter prints no acute in a flex.
+    let outside = PsalmOptions {
+        accents: Some(Accents::OutsideFlex),
+        ..PsalmOptions::default()
+    };
+    let d2 = psalm_display(text.to_string(), "8.G".to_string(), outside).unwrap();
+    let line: String = d2.verses[0].runs.iter().map(|r| r.text.as_str()).collect();
+    assert!(
+        line.starts_with("Wash me thoroughly ·\u{a0}from my wickedness,\u{a0}† and cleanse me from my sín."),
+        "{line}"
+    );
+    let plain = psalm(
+        text.to_string(),
+        "8.G".to_string(),
+        PsalmOptions {
+            accents: Some(Accents::None),
+            ..PsalmOptions::default()
+        },
+    )
+    .unwrap();
+    assert!(!plain.gabc.contains(['á', 'é', 'í', 'ó', 'ú']));
+    assert_eq!(
+        psalm_display(text.to_string(), "per".to_string(), PsalmOptions::default())
+            .unwrap()
+            .tone_label,
+        "Tonus peregrinus"
+    );
     // The tone, drawn once above it, as a chant of its own.
     let tone = Chant::from_tone("8.G".to_string(), ChantOptions::default()).unwrap();
     assert_eq!(tone.layout(400.0, options()).timeline(Weights::default()).notes.len(), 12);

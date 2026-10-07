@@ -387,9 +387,10 @@ fn error(out: &mut String, e: &str) {
     out.push('}');
 }
 
-/// Sets psalm text to a tone (see [`tone_and_text`]); `intone` is 0 for the first verse, 1
-/// for every verse, 2 for none, and `auto_point` 0 leaves unpointed halves unpointed. Leaves
-/// the setting JSON, or `{"error": …}`, in the output buffer.
+/// Sets psalm text to a tone (see [`tone_and_text`]); `intone`'s low two bits are 0 for the
+/// first verse, 1 for every verse, 2 for none, and the next two the accents printed (0 all, 1
+/// none, 2 none in a flex); `auto_point` 0 leaves unpointed halves unpointed. Leaves the
+/// setting JSON, or `{"error": …}`, in the output buffer.
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
 pub extern "C" fn neuma_psalm(custom: u32, intone: u32, auto_point: u32) {
@@ -408,10 +409,15 @@ pub extern "C" fn neuma_psalm(custom: u32, intone: u32, auto_point: u32) {
 
 fn psalm_options(intone: u32, auto_point: u32) -> neuma_tones::PsalmOptions {
     neuma_tones::PsalmOptions::default()
-        .with_intone(match intone {
+        .with_intone(match intone & 3 {
             1 => neuma_tones::Intone::EveryVerse,
             2 => neuma_tones::Intone::Never,
             _ => neuma_tones::Intone::FirstVerse,
+        })
+        .with_accents(match (intone >> 2) & 3 {
+            1 => neuma_tones::Accents::None,
+            2 => neuma_tones::Accents::OutsideFlex,
+            _ => neuma_tones::Accents::All,
         })
         .with_auto_point(auto_point != 0)
 }

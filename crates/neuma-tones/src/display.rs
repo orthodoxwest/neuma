@@ -5,7 +5,7 @@ use std::ops::Range;
 
 use neuma::Diagnostic;
 
-use crate::apply::{SungPsalm, sing, strip_acutes};
+use crate::apply::{SungPsalm, sing};
 use crate::pointed::{Joint, Pointed, VersePart};
 use crate::{PsalmOptions, Tone, ToneRole};
 
@@ -17,8 +17,10 @@ use crate::{PsalmOptions, Tone, ToneRole};
 /// Each verse is a list of [`PsalmRun`]s. Their texts, joined, are the line to print (after
 /// the verse number); their kinds say how to style each: the marks in red (`·` and `–` in
 /// bold), rubrics in red italic, and in a flex the syllables where the voice drops
-/// ([`PsalmSyllable::flex_drop`]) in italic. A syllable run gives its place in the text and in
-/// the tone, for a tap or a highlight that follows the singing.
+/// ([`PsalmSyllable::flex_drop`]) in italic. A pointed psalter prints no acute in a flex,
+/// which [`Accents::OutsideFlex`](crate::Accents::OutsideFlex) gives. A syllable run gives its
+/// place in the text and in the tone, for a tap or a highlight that follows the singing.
+/// [`Tone::label`] names the tone above it.
 ///
 /// ```
 /// use neuma_tones::{PsalmDisplay, PsalmOptions, PsalmRunKind, Tone};
@@ -28,7 +30,8 @@ use crate::{PsalmOptions, Tone, ToneRole};
 /// let verse = &display.verses()[0];
 /// assert_eq!(verse.number, Some(1));
 /// let line: String = verse.runs.iter().map(|r| r.text.as_str()).collect();
-/// assert!(line.starts_with("Have mercy upon me, O God, after thy great · góodness; * Sit. according"));
+/// // A line never breaks between a mark and its syllable: those spaces are U+00A0.
+/// assert!(line.starts_with("Have mercy upon me, O God, after thy great ·\u{a0}góodness;\u{a0}* Sit. according"));
 /// let point = verse.runs.iter().position(|r| r.kind == PsalmRunKind::Point).unwrap();
 /// let PsalmRunKind::Syllable(after) = &verse.runs[point + 2].kind else { panic!() };
 /// assert!(after.accent && &text[after.span.clone()] == "góod");
@@ -67,7 +70,9 @@ pub struct PsalmRun {
 #[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
 pub enum PsalmRunKind {
-    /// Spaces, and the hyphen of a word the pointing split ("judg-ed").
+    /// Spaces, and the hyphen of a word the pointing split ("judg-ed") or that is spelled
+    /// with one ("blood-guiltiness"). A space that must not break a line, between a `·` and its
+    /// syllable or before a `*`, `†` or held `–`, is U+00A0.
     Text,
     /// A sung syllable, as printed: accents kept, punctuation attached.
     Syllable(PsalmSyllable),
@@ -94,8 +99,8 @@ pub struct PsalmSyllable {
     pub role: ToneRole,
     /// The syllable carries an acute: it takes an accent of the cadence.
     pub accent: bool,
-    /// In a flex, a syllable the voice drops on (after the flex's accent): a pointed psalter
-    /// prints it in italic.
+    /// In a flex, a syllable the voice drops on (after the flex's accent), even for one of
+    /// its notes: a pointed psalter prints it in italic.
     pub flex_drop: bool,
     /// The syllable starts a word.
     pub word_start: bool,
@@ -104,7 +109,7 @@ pub struct PsalmSyllable {
 }
 
 impl PsalmDisplay {
-    /// Points `text` for `tone` as `options` say (`intone`, `auto_point` and `strip_accents`
+    /// Points `text` for `tone` as `options` say (`intone`, `auto_point` and `accents`
     /// apply), verse by verse.
     #[must_use]
     pub fn new(text: &str, tone: &Tone, options: &PsalmOptions) -> PsalmDisplay {
@@ -160,65 +165,84 @@ impl PsalmDisplay {
     }
 }
 
-/// The verses' runs, written as [`Pointed::to_text`] writes the marks.
+/// The verses' runs, written as [`Pointed::to_text`] writes the marks. The space between a
+/// `·` and its syllable, and before a `*`, `†` or held `–`, is U+00A0, so a line never breaks
+/// between a mark and the syllable it belongs to.
 fn verses(sung: &SungPsalm, options: &PsalmOptions) -> Vec<PsalmVerse> {
     let mut out = Vec::with_capacity(sung.text.verses.len());
     for (verse, neumes) in sung.text.verses.iter().zip(&sung.neumes) {
         let mut runs = Runs::default();
         for (part, neumes) in verse.parts.iter().zip(neumes) {
-            for _ in 0..part.omitted {
-                runs.space();
+            // Dashes before the first syllable go with it, the `·` among them where written.
+            let after = part.omitted_after_point.min(part.omitted);
+            for k in 0..part.omitted {
+                if k == 0 {
+                    runs.space();
+                } else {
+                    runs.nbsp();
+                }
+                if after > 0 && k == part.omitted - after {
+                    runs.push("·", PsalmRunKind::Point);
+                    runs.nbsp();
+                }
                 runs.push("–", PsalmRunKind::Held);
             }
-            for (s, notes) in part.syllables.iter().zip(neumes) {
-                if s.joint == Joint::Word {
-                    runs.space();
-                    for r in &s.rubrics {
-                        runs.push(r, PsalmRunKind::Rubric);
-                        runs.space();
+            for (i, (s, notes)) in part.syllables.iter().zip(neumes).enumerate() {
+                match s.joint {
+                    Joint::Word => {
+                        if i == 0 && part.omitted > 0 {
+                            runs.nbsp();
+                        } else {
+                            runs.space();
+                        }
+                        for r in &s.rubrics {
+                            runs.push(r, PsalmRunKind::Rubric);
+                            runs.space();
+                        }
+                        if s.held {
+                            runs.nbsp();
+                            runs.push("–", PsalmRunKind::Held);
+                            runs.space();
+                        }
+                        if s.cadence && !(i == 0 && after > 0) {
+                            runs.push("·", PsalmRunKind::Point);
+                            runs.nbsp();
+                        }
                     }
-                    if s.held {
-                        runs.push("–", PsalmRunKind::Held);
-                        runs.space();
+                    Joint::Hyphen => runs.push("-", PsalmRunKind::Text),
+                    Joint::Spelling => {
+                        runs.push("-", PsalmRunKind::Text);
+                        if s.cadence {
+                            runs.push("·", PsalmRunKind::Point);
+                        }
                     }
-                    if s.cadence {
-                        runs.push("·", PsalmRunKind::Point);
-                        runs.space();
-                    }
-                } else if s.joint == Joint::Hyphen {
-                    runs.push("-", PsalmRunKind::Text);
-                } else if s.joint == Joint::Dot {
-                    runs.push("·", PsalmRunKind::Point);
+                    Joint::Dot => runs.push("·", PsalmRunKind::Point),
+                    Joint::Split => {}
                 }
                 let role = notes.first().map_or(ToneRole::Tenor, |n| n.1);
-                let text = if options.strip_accents {
-                    strip_acutes(&s.text)
-                } else {
-                    s.text.clone()
-                };
                 runs.push(
-                    &text,
+                    &options.accents.shown(&s.text, part.kind),
                     PsalmRunKind::Syllable(PsalmSyllable {
                         part: part.kind,
                         role,
                         accent: s.accent,
-                        flex_drop: part.kind == VersePart::Flex && role == ToneRole::Ending,
+                        flex_drop: part.kind == VersePart::Flex && notes.iter().any(|n| n.1 == ToneRole::Ending),
                         word_start: s.joint == Joint::Word,
                         span: s.span.clone(),
                     }),
                 );
             }
             for _ in 0..part.held_end {
-                runs.space();
+                runs.nbsp();
                 runs.push("–", PsalmRunKind::Held);
             }
             match part.kind {
                 VersePart::Flex => {
-                    runs.space();
+                    runs.nbsp();
                     runs.push("†", PsalmRunKind::Flex);
                 }
                 VersePart::Mediant => {
-                    runs.space();
+                    runs.nbsp();
                     runs.push("*", PsalmRunKind::Mediant);
                 }
                 VersePart::Termination => {}
@@ -237,9 +261,11 @@ fn verses(sung: &SungPsalm, options: &PsalmOptions) -> Vec<PsalmVerse> {
     out
 }
 
-/// A verse's runs as they are written, with spaces kept to one between pieces.
+/// A verse's runs as they are written, with one space between pieces.
 #[derive(Default)]
 struct Runs(Vec<PsalmRun>);
+
+const NBSP: char = '\u{a0}';
 
 impl Runs {
     fn push(&mut self, text: &str, kind: PsalmRunKind) {
@@ -257,9 +283,22 @@ impl Runs {
         if self
             .0
             .last()
-            .is_some_and(|r| !(r.kind == PsalmRunKind::Text && r.text.ends_with(' ')))
+            .is_some_and(|r| !(r.kind == PsalmRunKind::Text && r.text.ends_with([' ', NBSP])))
         {
             self.push(" ", PsalmRunKind::Text);
+        }
+    }
+
+    /// A space the line can't break at, unless the line is empty: it replaces a plain one.
+    fn nbsp(&mut self) {
+        match self.0.last_mut() {
+            None => {}
+            Some(r) if r.kind == PsalmRunKind::Text && r.text.ends_with(NBSP) => {}
+            Some(r) if r.kind == PsalmRunKind::Text && r.text.ends_with(' ') => {
+                r.text.pop();
+                r.text.push(NBSP);
+            }
+            Some(_) => self.push("\u{a0}", PsalmRunKind::Text),
         }
     }
 }
@@ -267,15 +306,16 @@ impl Runs {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::point;
+    use crate::{Accents, point};
 
     const PS: &str = "1 Have mercy upon me, O God, after thy great · góodness; * [Sit.] according to the multitude of thy mercies do away · mine offénces.\n\
         4 Against thee only have I sin-ned, † and done this evil in thy · síght; * that thou mightest be justified in thy saying, and clear when · thou art júdg-ed.\n\
         7 Thou · árt – mý God, * and I will · thánk thee. [Bow.]\n\
         8 Lord, remember · Dávid, – – * – – – · práise the Lord.\n";
 
+    /// The verse's line, with its non-breaking spaces as plain ones.
     fn line(v: &PsalmVerse) -> String {
-        v.runs.iter().map(|r| r.text.as_str()).collect()
+        v.runs.iter().map(|r| r.text.as_str()).collect::<String>().replace(NBSP, " ")
     }
 
     fn syllables(v: &PsalmVerse) -> Vec<&PsalmSyllable> {
@@ -366,8 +406,91 @@ mod tests {
         let stripped = PsalmDisplay::new(
             "Bléssed is he * that cómeth.",
             tone,
-            &PsalmOptions::default().with_strip_accents(true),
+            &PsalmOptions::default().with_accents(Accents::None),
         );
         assert_eq!(line(&stripped.verses()[0]), "Blessed is he * that cometh.");
+    }
+
+    #[test]
+    fn keeps_spelling_hyphens() {
+        let tone = Tone::named("8.G").unwrap();
+        let text = "Deliver me from blood\\-guiltiness, O God, thou that art the God of my · héalth; * and my tongue shall sing of thy · ríghteousness.\n\
+            For thou art my · hópe * thou hast the pre\\-·eminence.";
+        let d = PsalmDisplay::new(text, tone, &PsalmOptions::default());
+        assert!(line(&d.verses()[0]).starts_with("Deliver me from blood-guiltiness, O God"));
+        assert!(
+            line(&d.verses()[1]).ends_with("thou hast the pre-·eminence."),
+            "{}",
+            line(&d.verses()[1])
+        );
+        // Each piece is its own syllable, with its own span.
+        let pieces: Vec<&str> = syllables(&d.verses()[0])
+            .iter()
+            .map(|s| &text[s.span.clone()])
+            .skip(5)
+            .take(4)
+            .collect();
+        assert_eq!(pieces, ["blood", "guil", "ti", "ness,"]);
+        // `point` writes them back, and the cadence starts after the hyphen.
+        let pointed = point(text, tone).text;
+        assert!(
+            pointed.contains("blood\\-guiltiness") && pointed.contains("pre\\-·eminence"),
+            "{pointed}"
+        );
+        let pre = syllables(&d.verses()[1])
+            .into_iter()
+            .find(|s| &text[s.span.clone()] == "e")
+            .unwrap();
+        assert!(!pre.word_start && pre.role == ToneRole::Preparatory, "{pre:?}");
+    }
+
+    #[test]
+    fn binds_marks_to_their_syllables() {
+        let tone = Tone::named("8.G").unwrap();
+        let text = "My soul thirsteth for thée, † my flesh also longeth after · thée * in a barren and dry land · where no wáter is.\n\
+            Lord, remember · Dávid, – – * – · – – práise the Lord.";
+        let d = PsalmDisplay::new(text, tone, &PsalmOptions::default());
+        let raw: String = d.verses()[0].runs.iter().map(|r| r.text.as_str()).collect();
+        assert!(
+            raw.contains("thée,\u{a0}† my") && raw.contains("after ·\u{a0}thée\u{a0}* in"),
+            "{raw:?}"
+        );
+        assert!(raw.contains("land ·\u{a0}where"), "{raw:?}");
+        let raw: String = d.verses()[1].runs.iter().map(|r| r.text.as_str()).collect();
+        assert_eq!(
+            raw,
+            "Lord, remember ·\u{a0}Dávid,\u{a0}–\u{a0}–\u{a0}* –\u{a0}·\u{a0}–\u{a0}–\u{a0}práise the Lord."
+        );
+        // A held syllable in a flex drops on its second note.
+        let flex: Vec<_> = syllables(&d.verses()[0])
+            .into_iter()
+            .filter(|s| s.part == VersePart::Flex)
+            .collect();
+        let last = flex.last().unwrap();
+        assert!(last.flex_drop && last.role == ToneRole::Accent, "{last:?}");
+        assert_eq!(flex.iter().filter(|s| s.flex_drop).count(), 1);
+    }
+
+    #[test]
+    fn prints_accents_as_asked() {
+        let tone = Tone::named("8.G").unwrap();
+        let text = "Know this also, that the Lord hath chosen to · himsélf † the man that is · gódly * when I call upon the Lord, · hé will hear me.";
+        let shown = |accents| line(&PsalmDisplay::new(text, tone, &PsalmOptions::default().with_accents(accents)).verses()[0]);
+        assert_eq!(shown(Accents::All), text);
+        assert_eq!(
+            shown(Accents::OutsideFlex),
+            "Know this also, that the Lord hath chosen to · himself † the man that is · gódly * when I call upon the Lord, · hé will hear me."
+        );
+        assert_eq!(shown(Accents::None), text.replace(['é', 'ó'], "e").replace("gedly", "godly"));
+    }
+
+    #[test]
+    fn reads_the_number_after_an_opening_rubric() {
+        let tone = Tone::named("8.G").unwrap();
+        let text = "[Stand.] 5 For I acknowledge my · fáults * and my sin is ever · befóre me.";
+        let d = PsalmDisplay::new(text, tone, &PsalmOptions::default());
+        assert_eq!(d.verses()[0].number, Some(5));
+        assert!(line(&d.verses()[0]).starts_with("Stand. For I"));
+        assert_eq!(d.verses()[0].runs[0].kind, PsalmRunKind::Rubric);
     }
 }

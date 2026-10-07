@@ -315,7 +315,9 @@ pub fn pointing_json(out: &mut String, p: &neuma_tones::Pointing, text: &Utf16In
 /// `part`, `role`, `accent`, `flexDrop`, `wordStart` and its source in the text.
 pub fn display_json(out: &mut String, d: &neuma_tones::PsalmDisplay, text: &Utf16Index) {
     use neuma_tones::PsalmRunKind as K;
-    out.push_str("{\"verses\":[");
+    out.push_str("{\"toneLabel\":");
+    json::string(out, &d.tone().label());
+    out.push_str(",\"verses\":[");
     for (i, v) in d.verses().iter().enumerate() {
         if i > 0 {
             out.push(',');
@@ -475,8 +477,11 @@ mod tests {
         let d = neuma_tones::PsalmDisplay::new(text, tone, &neuma_tones::PsalmOptions::default());
         let mut out = String::new();
         display_json(&mut out, &d, &Utf16Index::new(text));
-        assert!(out.starts_with(r#"{"verses":[{"number":1,"sourceStart":0,"sourceEnd":44,"sourceUtf16Start":0,"sourceUtf16End":41,"runs":[{"text":"Bléssed","kind":"syllable","part":"mediant","role":"accent","accent":true,"flexDrop":false,"wordStart":true,"sourceStart":2,"sourceEnd":10,"sourceUtf16Start":2,"sourceUtf16End":9}"#), "{out}");
-        assert!(out.contains(r#"{"text":" ","kind":"text"},{"text":"*","kind":"mediant"}"#), "{out}");
+        assert!(out.starts_with(r#"{"toneLabel":"Tone 8 G","verses":[{"number":1,"sourceStart":0,"sourceEnd":44,"sourceUtf16Start":0,"sourceUtf16End":41,"runs":[{"text":"Bléssed","kind":"syllable","part":"mediant","role":"accent","accent":true,"flexDrop":false,"wordStart":true,"sourceStart":2,"sourceEnd":10,"sourceUtf16Start":2,"sourceUtf16End":9}"#), "{out}");
+        assert!(
+            out.contains("{\"text\":\"\u{a0}\",\"kind\":\"text\"},{\"text\":\"*\",\"kind\":\"mediant\"}"),
+            "{out}"
+        );
         assert!(
             out.contains(r#"{"text":"·","kind":"point"}"#) && out.contains(r#"{"text":"Stand.","kind":"rubric"}"#),
             "{out}"

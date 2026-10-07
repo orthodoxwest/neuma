@@ -158,7 +158,10 @@ export function summarize(gabc) {
  * @param {string} text
  * @param {string} tone a built-in tone such as "8.G" (see `toneNames()`), or a whole tone
  *   block (`name:`, `clef:`, `mediant:`, `termination:` lines) for a tone of your own.
- * @param {{ intone?: "first"|"every"|"never", autoPoint?: boolean }} [options]
+ * @param {{ intone?: "first"|"every"|"never", autoPoint?: boolean,
+ *   accents?: "all"|"none"|"outsideFlex" }} [options] `accents`: which acutes the printed
+ *   text keeps (they place the cadence's accents either way); "outsideFlex" prints none in a
+ *   flex half-verse, as a pointed psalter does.
  * @returns {{ gabc: string, notes: Array<PsalmNote>, diagnostics: Array<object> }}
  *   `notes[i]` describes note `i` of the engraved chant (`timeline.notes[i].id === i`):
  *   `{ verse, number, part: "flex"|"mediant"|"termination",
@@ -167,10 +170,10 @@ export function summarize(gabc) {
  *   the timeline names a note's. The diagnostics' offsets are in `text` too. To engrave the
  *   psalm with its spans in `text`, use `Chant.fromPsalm`.
  */
-export function psalm(text, tone, { intone = "first", autoPoint = true } = {}) {
+export function psalm(text, tone, { intone = "first", autoPoint = true, accents = "all" } = {}) {
   return guarded((w) => {
     putInput(String(tone) + "\0" + String(text));
-    w.neuma_psalm(isBlock(tone), intone === "every" ? 1 : intone === "never" ? 2 : 0, autoPoint ? 1 : 0);
+    w.neuma_psalm(isBlock(tone), psalmFlags(intone, accents), autoPoint ? 1 : 0);
     const out = JSON.parse(takeOutput());
     if (out.error) throw new Error(out.error);
     return out;
@@ -204,21 +207,24 @@ export function point(text, tone) {
  * automatically, unless `autoPoint: false`; diagnostics are those `psalm` gives.
  * @param {string} text a verse per line, the mediant marked `*`
  * @param {string} tone as for `psalm`
- * @param {{ intone?: "first"|"every"|"never", autoPoint?: boolean }} [options]
- * @returns {{ verses: Array<{ number: number|null, sourceStart: number, sourceEnd: number,
- *   sourceUtf16Start: number, sourceUtf16End: number, runs: Array<object> }>,
+ * @param {{ intone?: "first"|"every"|"never", autoPoint?: boolean,
+ *   accents?: "all"|"none"|"outsideFlex" }} [options] as for `psalm`
+ * @returns {{ toneLabel: string, verses: Array<{ number: number|null, sourceStart: number,
+ *   sourceEnd: number, sourceUtf16Start: number, sourceUtf16End: number, runs: Array<object> }>,
  *   diagnostics: Array<object> }}
- *   Each verse's `runs`, their `text` joined, is its line after the number. A run's `kind`
- *   says how to style it: "text" (spaces, a split word's hyphen), "syllable", "point" (`·`,
+ *   `toneLabel` names the tone as a psalter prints it ("Tone 8 G", "Tonus peregrinus").
+ *   Each verse's `runs`, their `text` joined, is its line after the number; the space between
+ *   a mark and its syllable is U+00A0, so a line never breaks there. A run's `kind` says how
+ *   to style it: "text" (spaces, a word's hyphen), "syllable", "point" (`·`,
  *   bold red), "held" (`–`, bold red), "mediant" (`*`, red), "flex" (`†`, red) or "rubric"
  *   (red italic). A syllable's run also has `part`, `role` (its place in the tone, as
  *   `psalm`'s notes name it), `accent`, `flexDrop` (in a flex, where the voice drops:
  *   italic), `wordStart`, and its source in `text`.
  */
-export function psalmDisplay(text, tone, { intone = "first", autoPoint = true } = {}) {
+export function psalmDisplay(text, tone, { intone = "first", autoPoint = true, accents = "all" } = {}) {
   return guarded((w) => {
     putInput(String(tone) + "\0" + String(text));
-    w.neuma_psalm_display(isBlock(tone), intone === "every" ? 1 : intone === "never" ? 2 : 0, autoPoint ? 1 : 0);
+    w.neuma_psalm_display(isBlock(tone), psalmFlags(intone, accents), autoPoint ? 1 : 0);
     const out = JSON.parse(takeOutput());
     if (out.error) throw new Error(out.error);
     return out;
@@ -227,6 +233,10 @@ export function psalmDisplay(text, tone, { intone = "first", autoPoint = true } 
 
 // A tone block always has `key: value` lines; a tone name never has a colon.
 const isBlock = (tone) => (String(tone).includes(":") ? 1 : 0);
+
+// `intone` and `accents` as the module takes them, in one number.
+const psalmFlags = (intone, accents) =>
+  (intone === "every" ? 1 : intone === "never" ? 2 : 0) | ((accents === "none" ? 1 : accents === "outsideFlex" ? 2 : 0) << 2);
 
 /** The built-in psalm tones' names, such as "8.G". Call after `init()`. */
 export function toneNames() {
@@ -332,16 +342,17 @@ export class Chant {
    * returns it.
    * @param {string} text
    * @param {string} tone as for `psalm`
-   * @param {{ intone?: "first"|"every"|"never", autoPoint?: boolean, initial?: number,
+   * @param {{ intone?: "first"|"every"|"never", autoPoint?: boolean,
+   *   accents?: "all"|"none"|"outsideFlex", initial?: number,
    *   annotation?: boolean, lyricSize?: number, font?: string }} [options] `psalm`'s options
    *   and the constructor's.
    */
-  static fromPsalm(text, tone, { intone = "first", autoPoint = true, ...options } = {}) {
+  static fromPsalm(text, tone, { intone = "first", autoPoint = true, accents = "all", ...options } = {}) {
     const chant = new Chant(PSALM);
     const psalm = {
       tone: String(tone),
       custom: isBlock(tone),
-      intone: intone === "every" ? 1 : intone === "never" ? 2 : 0,
+      intone: psalmFlags(intone, accents),
       autoPoint: autoPoint ? 1 : 0,
     };
     chant.#engrave({ source: String(text), args: chantArgs(options), psalm });
