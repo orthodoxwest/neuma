@@ -4,7 +4,9 @@
 //! and an optimal-fit breaker picks the breaks with the least total demerits. Arithmetic is
 //! limited to add, subtract, multiply, divide and comparison (DESIGN section 13).
 
-use crate::engrave::{Break, CAP_HEIGHT, Engraving, HYPHEN_TOP, Ink, LEDGER_GAP, Mark, Piece, STEM, Segment, clef_pieces, custos_piece};
+use crate::engrave::{
+    Break, CAP_HEIGHT, Engraving, HYPHEN_TOP, Ink, LEDGER_GAP, Mark, Piece, STEM, Segment, clef_pieces, clef_width, custos_piece,
+};
 use crate::score::{Clef, CustosRule};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -617,12 +619,28 @@ impl Engraving {
     }
 
     fn line_start(&self, first: usize) -> (Option<Clef>, f32) {
-        if self.segments[first].starts_with_clef || first >= self.inkless_from {
+        if !self.starts_with_clef(first) {
             return (None, 0.0);
         }
         let clef = self.clef_before(first);
-        let (_, right) = clef_pieces(&clef, 0.0);
-        (Some(clef), right + CLEF_GAP)
+        let start = clef_width(&clef) + CLEF_GAP;
+        debug_assert_eq!(start, clef_pieces(&clef, 0.0).1 + CLEF_GAP);
+        (Some(clef), start)
+    }
+
+    /// Whether a line starting at segment `first` opens with the clef in force.
+    fn starts_with_clef(&self, first: usize) -> bool {
+        !self.segments[first].starts_with_clef && first < self.inkless_from
+    }
+
+    /// Where the notes of a line starting at segment `first` may start: [`Self::line_start`]'s
+    /// x, without the clef.
+    fn start_x(&self, first: usize) -> f32 {
+        if !self.starts_with_clef(first) {
+            return 0.0;
+        }
+        let clef = if first == 0 { &self.clef } else { &self.segments[first - 1].clef };
+        clef_width(clef) + CLEF_GAP
     }
 
     fn custos_for(&self, last: usize) -> Option<i8> {
@@ -778,7 +796,7 @@ impl Engraving {
                 space: Space::of(seg),
                 end_of_score: k + 1 == n,
                 after: seg.after,
-                start: self.line_start(k).1,
+                start: self.start_x(k),
                 closing,
                 cost: self.break_cost(k),
                 initial: self.initial.as_ref().is_some_and(|i| i.syllable == seg.syllable && seg.first),
@@ -862,27 +880,30 @@ impl Engraving {
     fn ledger_bridges(&self, first: usize, last: usize, xs: &[f32]) -> Vec<(f32, f32, f32)> {
         // (y, left, right)
         let mut ledgers: Vec<(f32, f32, f32)> = Vec::new();
-        // (x, top, bottom): bars, clefs and custodes part ledger lines at any height, an
-        // accidental those it stands on.
-        let mut walls: Vec<(f32, f32, f32)> = Vec::new();
         for (seg, &x) in self.segments[first..=last].iter().zip(xs) {
-            for p in &seg.pieces {
-                match (p.role, p.mark) {
-                    (Ink::Ledger, Mark::Rect { x: l, y, w, .. }) => ledgers.push((y, x + l, x + l + w)),
-                    (Ink::Bar | Ink::Clef | Ink::Custos, _) => {
-                        let [l, _, r, _] = p.ink_box();
-                        walls.push((x + (l + r) / 2.0, f32::MIN, f32::MAX));
-                    }
-                    (Ink::Accidental, _) => {
-                        let [l, t, r, b] = p.ink_box();
-                        walls.push((x + (l + r) / 2.0, t, b));
-                    }
-                    _ => {}
+            for p in seg.pieces.iter().filter(|p| p.role == Ink::Ledger) {
+                if let Mark::Rect { x: l, y, w, .. } = p.mark {
+                    ledgers.push((y, x + l, x + l + w));
                 }
             }
         }
         if ledgers.len() < 2 {
             return Vec::new();
+        }
+        // (x, top, bottom): bars, clefs and custodes part ledger lines at any height, an
+        // accidental those it stands on.
+        let mut walls: Vec<(f32, f32, f32)> = Vec::new();
+        for (seg, &x) in self.segments[first..=last].iter().zip(xs) {
+            for p in &seg.pieces {
+                let every = match p.role {
+                    Ink::Bar | Ink::Clef | Ink::Custos => true,
+                    Ink::Accidental => false,
+                    _ => continue,
+                };
+                let [l, t, r, b] = p.ink_box();
+                let (t, b) = if every { (f32::MIN, f32::MAX) } else { (t, b) };
+                walls.push((x + (l + r) / 2.0, t, b));
+            }
         }
         ledgers.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.total_cmp(&b.1)));
         ledgers
@@ -1428,7 +1449,7 @@ impl Engraving {
         // A line too wide for the column widens the layout, and every staff with it. Lines left
         // out of a preview count too, so its staves are drawn as in the whole score.
         for &(first, last) in ranges.iter().skip(placed) {
-            let (_, start) = self.line_start(first);
+            let start = self.start_x(first);
             let trial = self.trial(first, last, start);
             let natural = if trial.natural > target {
                 target.max(trial.shrunk)

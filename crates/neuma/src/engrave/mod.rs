@@ -426,6 +426,28 @@ fn rect(x: f32, top: StaffPosition, bottom: StaffPosition, role: Ink) -> Piece {
     }
 }
 
+/// The width to add to run `r` measured with the regular face, where the measure has no face
+/// for its style; warns of it once.
+#[cold]
+fn synthetic_face(
+    measure: &dyn TextMeasure,
+    r: &LyricRun,
+    size: f32,
+    sink: &mut Sink,
+    warned: &mut bool,
+    syl: &crate::score::Syllable,
+) -> f32 {
+    if !*warned {
+        sink.info(
+            syl.span.clone(),
+            "text::synthetic-face",
+            "no face for this style; measured with the regular face widened 3%",
+        );
+        *warned = true;
+    }
+    measure.advance(&r.text, TextStyle::REGULAR) * size * 0.03
+}
+
 pub(crate) fn clef_pieces(clef: &Clef, left: f32) -> (Vec<Piece>, f32) {
     let glyph = if clef.kind == ClefKind::Do { G::DoClef } else { G::FaClef };
     let p = clef.position();
@@ -446,6 +468,17 @@ pub(crate) fn clef_pieces(clef: &Clef, left: f32) -> (Vec<Piece>, f32) {
         right += 0.2 + w;
     }
     (out, right)
+}
+
+/// How wide a clef is drawn, its key flat included: [`clef_pieces`]'s width, without the
+/// pieces.
+pub(crate) fn clef_width(clef: &Clef) -> f32 {
+    let ink = |g: G| {
+        let (a, _, c, _) = g.ink();
+        c - a
+    };
+    let w = ink(if clef.kind == ClefKind::Do { G::DoClef } else { G::FaClef });
+    if clef.flat { w + (0.2 + ink(G::Flat)) } else { w }
 }
 
 pub(crate) fn custos_piece(position: StaffPosition, left: f32) -> (Piece, f32) {
@@ -1172,26 +1205,25 @@ impl Pass<'_> {
         }
 
         // The lyric goes under the first segment, its vowel over the first note.
+        self.lyric(score, si, syl, seg_ids[0], notes_from);
+    }
+
+    /// Sets a syllable's lyric under segment `k`, its first, and gives its vowel to its notes
+    /// (`notes_from` on). Kept apart from [`Self::syllable`], as is what it calls, so that the
+    /// loop over the notation stays small.
+    #[inline(never)]
+    fn lyric(&mut self, score: &Score, si: u32, syl: &crate::score::Syllable, k: usize, notes_from: usize) {
         let text = match &self.first_lyric {
             Some((i, rest)) if *i == si as usize => rest,
             _ => &syl.text,
         };
         if !text.is_empty() {
-            let k = seg_ids[0];
             let runs = text.runs.clone();
             let mut width = 0.0;
             for r in &runs {
                 width += self.measure.advance(&r.text, r.style) * self.size;
                 if !self.measure.has_face(r.style) {
-                    width += self.measure.advance(&r.text, TextStyle::REGULAR) * self.size * 0.03;
-                    if !self.warned_face {
-                        self.e.sink.info(
-                            syl.span.clone(),
-                            "text::synthetic-face",
-                            "no face for this style; measured with the regular face widened 3%",
-                        );
-                        self.warned_face = true;
-                    }
+                    width += synthetic_face(self.measure, r, self.size, &mut self.e.sink, &mut self.warned_face, syl);
                 }
             }
             let chars: Vec<char> = text.plain().chars().collect();
@@ -1246,33 +1278,36 @@ impl Pass<'_> {
         } else if self.first_lyric.as_ref().is_some_and(|(i, _)| *i == si as usize)
             && score.syllables.get(si as usize + 1).is_some_and(|s| !s.word_start)
         {
-            // The initial took the whole first syllable of a longer word (`E(f)o(g)dem`):
-            // GregorioTeX sets a hyphen under its notes, so the line doesn't seem to start
-            // a new word.
-            let k = seg_ids[0];
-            let width = self.hyphen;
-            let seg = &self.e.segments[k];
-            let anchor = match seg.heads.first() {
-                Some(h) => h.x,
-                None => seg.ink.map_or(0.0, |(l, r)| (l + r) / 2.0),
-            };
-            self.e.segments[k].lyric = Some(LyricBox {
-                runs: vec![LyricRun {
-                    text: "-".into(),
-                    style: TextStyle::REGULAR,
-                    consonant: true,
-                }],
-                left: anchor - width / 2.0,
-                width,
-                word_end: false,
-                hyphenated: true,
-                lead_hyphen: true,
-                syllable: si,
-                lead: 0.0,
-                tail: 0.0,
-                tops: vec![(0.0, width, lyric_top::HYPHEN_TOP * self.size)],
-            });
+            self.initial_hyphen(si, k);
         }
+    }
+
+    /// The initial took the whole first syllable of a longer word (`E(f)o(g)dem`): GregorioTeX
+    /// sets a hyphen under its notes, so the line doesn't seem to start a new word.
+    #[cold]
+    fn initial_hyphen(&mut self, si: u32, k: usize) {
+        let width = self.hyphen;
+        let seg = &self.e.segments[k];
+        let anchor = match seg.heads.first() {
+            Some(h) => h.x,
+            None => seg.ink.map_or(0.0, |(l, r)| (l + r) / 2.0),
+        };
+        self.e.segments[k].lyric = Some(LyricBox {
+            runs: vec![LyricRun {
+                text: "-".into(),
+                style: TextStyle::REGULAR,
+                consonant: true,
+            }],
+            left: anchor - width / 2.0,
+            width,
+            word_end: false,
+            hyphenated: true,
+            lead_hyphen: true,
+            syllable: si,
+            lead: 0.0,
+            tail: 0.0,
+            tops: vec![(0.0, width, lyric_top::HYPHEN_TOP * self.size)],
+        });
     }
 
     /// Ends the score, and puts the engraving together.

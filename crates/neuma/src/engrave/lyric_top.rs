@@ -30,25 +30,45 @@ fn char_top(c: char, small_caps: bool) -> f32 {
         };
     }
     match c {
-        'a' | 'c' | 'e' | 'g' | 'm' | 'n' | 'o' | 'q' | 'r' | 's' | 'u' | 'v' | 'w' | 'x' | 'y' | 'z' | 'æ' | 'œ' | 'ç' | 'ø' => {
-            X_HEIGHT
-        }
+        'a' | 'c' | 'e' | 'g' | 'm' | 'n' | 'o' | 'q' | 'r' | 's' | 'u' | 'v' | 'w' | 'x' | 'y' | 'z' => X_HEIGHT,
         'p' | 't' => 0.52,
         'i' | 'j' => 0.63,
         '.' | ',' => 0.13,
         ';' | ':' => 0.39,
-        '-' | '\u{2010}' | '\u{2013}' | '\u{2014}' => HYPHEN_TOP,
-        '«' | '»' | '‹' | '›' | '+' | '=' => 0.42,
-        ' ' | '\u{a0}' | '\u{202f}' => 0.0,
-        '0'..='9' | '†' | '‡' | '!' | '?' | '*' | '℣' | '℟' | 'Æ' | 'Œ' | 'Ç' | 'Ø' => CAPITAL,
+        '-' => HYPHEN_TOP,
+        '+' | '=' => 0.42,
+        ' ' => 0.0,
+        '0'..='9' | '!' | '?' | '*' => CAPITAL,
         'A'..='Z' => CAPITAL,
         c if c.is_ascii() => ASCENDER,
-        // Latin letters with an accent: `á`, `ǽ`, `Ú`, and Vietnamese `ễ`, whose accents stack.
+        c => wide_char_top(c),
+    }
+}
+
+/// [`char_top`] past ASCII.
+#[inline(never)]
+fn wide_char_top(c: char) -> f32 {
+    match c {
+        'æ' | 'œ' | 'ç' | 'ø' => X_HEIGHT,
+        '\u{2010}' | '\u{2013}' | '\u{2014}' => HYPHEN_TOP,
+        '«' | '»' | '‹' | '›' => 0.42,
+        '\u{a0}' | '\u{202f}' => 0.0,
+        '†' | '‡' | '℣' | '℟' | 'Æ' | 'Œ' | 'Ç' | 'Ø' => CAPITAL,
+        // Latin letters with an accent: `á`, `ǽ`, `Ú`.
         c if c.is_lowercase() && ('\u{c0}'..='\u{24f}').contains(&c) => ACCENTED_LOWER,
         c if c.is_uppercase() && ('\u{c0}'..='\u{24f}').contains(&c) => ACCENTED_CAPITAL,
+        c => rare_char_top(c),
+    }
+}
+
+/// [`char_top`] past Latin-1 and Latin Extended: Vietnamese, whose accents stack, Greek and
+/// Cyrillic.
+#[cold]
+#[inline(never)]
+fn rare_char_top(c: char) -> f32 {
+    match c {
         c if c.is_lowercase() && ('\u{1e00}'..='\u{1eff}').contains(&c) => STACKED_LOWER,
         c if c.is_uppercase() && ('\u{1e00}'..='\u{1eff}').contains(&c) => ACCENTED_CAPITAL + 0.1,
-        // Greek and Cyrillic.
         'Α'..='Ω' | 'А'..='Я' => CAPITAL,
         'Ά'..='Ώ' | 'Ѐ'..='Џ' => ACCENTED_CAPITAL,
         'β' | 'δ' | 'ζ' | 'θ' | 'λ' | 'ξ' | 'φ' | 'ψ' | 'б' | 'ф' => ASCENDER,
@@ -130,6 +150,18 @@ pub(crate) fn overhang(runs: &[LyricRun], size: f32) -> (f32, f32) {
     (lead * size, tail * size)
 }
 
+/// A combining accent raises the letter before it.
+#[cold]
+fn raise(last: Option<&mut (f32, f32, f32)>, size: f32) {
+    if let Some(last) = last {
+        last.2 = if last.2 >= CAPITAL * size {
+            ACCENTED_CAPITAL * size
+        } else {
+            last.2.max(ACCENTED_LOWER * size)
+        };
+    }
+}
+
 /// The tops of a lyric's letters, as `(left, right, top)` in staff spaces: left and right from
 /// the text's start, the top above its baseline. Neighbouring letters of one height share an
 /// entry.
@@ -163,14 +195,7 @@ pub(crate) fn profile(runs: &[LyricRun], measure: &dyn TextMeasure, size: f32) -
         };
         for (k, c) in r.text.char_indices() {
             if ('\u{300}'..='\u{36f}').contains(&c) {
-                // A combining accent raises the letter before it.
-                if let Some(last) = out.last_mut() {
-                    last.2 = if last.2 >= CAPITAL * size {
-                        ACCENTED_CAPITAL * size
-                    } else {
-                        last.2.max(ACCENTED_LOWER * size)
-                    };
-                }
+                raise(out.last_mut(), size);
                 continue;
             }
             let top = char_top(c, r.style.small_caps) * size;
