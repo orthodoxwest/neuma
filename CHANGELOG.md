@@ -36,6 +36,8 @@ timelines, PDFs). Some behavior did change:
   it was "pre·eminence"). Each piece of such a word is a syllable with its own span, where
   every piece had the whole word's. The sung setting (`psalm`'s GABC, a book's chant
   verses) is unchanged.
+- `neuma book` labels a pointed psalm's tone with `Tone::label()`: "Tone 8 G" (it printed
+  "Tone 8.G") and "Tonus peregrinus" (it printed "Tone per").
 - A verse number after rubrics that open the line ("[Stand.] 5 For I …") is the verse
   number; it was sung as a word. `point` writes it first ("5 [Stand.] For I …").
 - A `·` among a half-verse's leading dashes ("* – · – – práise") stays where it was written

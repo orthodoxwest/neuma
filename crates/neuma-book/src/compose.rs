@@ -460,7 +460,7 @@ fn psalm_blocks(ps: &Psalm, s: &Settings, fonts: &Fonts, m: &Metrics, diags: &mu
     };
     // Pointed verses: the tone first, as a small score beside its name.
     if chant_verses == 0 && !verses.is_empty() {
-        let label = format!("Tone {}", tone.name);
+        let label = tone.label();
         let style = Style {
             italic: true,
             red: true,
