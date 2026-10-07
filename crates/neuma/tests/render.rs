@@ -1229,3 +1229,42 @@ fn the_a_sign_is_slashed_like_the_others() {
     assert!(svg.contains("A\u{338}") && !svg.contains('\u{336}'), "{svg}");
     assert!(svg.contains(r#"class="neuma-rubric neuma-sign">A"#), "{svg}");
 }
+
+#[test]
+fn ledger_lines_of_neighbouring_notes_join() {
+    // As GregorioTeX's do: one line under a run of low notes, not a dash under each. A bar
+    // between them, or a wide gap, keeps them apart.
+    let ledgers = |src: &str| -> Vec<(f32, f32)> {
+        let list = parse(src)
+            .score
+            .engrave(&ApproxMeasure, &NO_INITIAL)
+            .layout(600.0, &LayoutOptions::default())
+            .display();
+        let mut spans: Vec<(f32, f32)> = list
+            .items
+            .iter()
+            .filter_map(|i| match i {
+                Item::Rect {
+                    x,
+                    w,
+                    role: neuma::Ink::Ledger,
+                    ..
+                } => Some((*x, x + w)),
+                _ => None,
+            })
+            .collect();
+        spans.sort_by(|a, b| a.0.total_cmp(&b.0));
+        // Touching rectangles are one line.
+        let mut lines: Vec<(f32, f32)> = Vec::new();
+        for (l, r) in spans {
+            match lines.last_mut() {
+                Some(last) if l <= last.1 + 1e-3 => last.1 = last.1.max(r),
+                _ => lines.push((l, r)),
+            }
+        }
+        lines
+    };
+    assert_eq!(ledgers("(c4) a(b)b(b)c(a) (::)").len(), 1);
+    assert_eq!(ledgers("(c4) a(b) (,) b(b) (::)").len(), 2);
+    assert_eq!(ledgers("(c4) Ma(b) lon(h)gis(h)si(h)ma(b) (::)").len(), 2);
+}

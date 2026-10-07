@@ -194,10 +194,19 @@ impl Layout<'_> {
                 push(items, p, line.indent, staff, s);
             }
         }
+        // Ledger lines of neighbouring notes, as (y, left, right), and where bars and clefs
+        // stand between them.
+        let mut ledgers: Vec<(f32, f32, f32)> = Vec::new();
+        let mut walls: Vec<f32> = Vec::new();
         for (i, seg) in eng.segments[line.first..=line.last].iter().enumerate() {
             let x = line.xs[i];
             for p in &seg.pieces {
                 push(items, p, x, staff, s);
+                match (p.role, p.mark) {
+                    (Ink::Ledger, Mark::Rect { x: l, y, w, .. }) => ledgers.push((y, x + l, x + l + w)),
+                    (Ink::Bar | Ink::Clef | Ink::Custos, _) => walls.push(x + (p.ink_box()[0] + p.ink_box()[2]) / 2.0),
+                    _ => {}
+                }
             }
             if let Some(t) = &seg.lyric
                 && t.lead_hyphen
@@ -257,5 +266,28 @@ impl Layout<'_> {
             let (piece, _) = custos_piece(p, x);
             push(items, &piece, 0.0, staff, s);
         }
+        // GregorioTeX's ledger lines run about a staff space past their notes, so those of
+        // neighbouring notes meet in one line. These stay short alone, and join their
+        // neighbours' across a gap like a syllable's.
+        ledgers.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.total_cmp(&b.1)));
+        for pair in ledgers.windows(2) {
+            let ((y, _, r), (y2, l, _)) = (pair[0], pair[1]);
+            if y == y2 && l > r && l - r < LEDGER_JOIN && !walls.iter().any(|&w| w > r && w < l) {
+                items.push(Item::Rect {
+                    x: r * s,
+                    y: (y + staff) * s,
+                    w: (l - r) * s,
+                    h: staff_weight * s,
+                    role: Ink::Ledger,
+                    note: None,
+                    through: None,
+                });
+            }
+        }
     }
 }
+
+/// The widest gap between two notes' ledger lines that is drawn through, in staff spaces:
+/// about that between single notes of a word's syllables, where these lines overhang their
+/// notes by 0.25 (see `add_markings`) and GregorioTeX's by about 0.95.
+const LEDGER_JOIN: f32 = 2.0;
