@@ -64,6 +64,14 @@ except neuma.ToneError.Unknown as e:
     assert "no built-in tone 9.z" in str(e), str(e)
 pt = neuma.point("O come, let us sing unto the Lord * let us heartily rejoice in the strength of our salvation.", "8.G")
 assert len(pt.halves) == 2 and "·" in pt.text and pt.halves[0].part == neuma.VersePart.MEDIANT
+shown = neuma.psalm_display("1 Wash me thoróughly · from my wíckedness, † and cleanse me from my sín. * [Sit.] For I ac·knowledge my fáults.", "8.G", neuma.PsalmOptions())
+runs = shown.verses[0].runs
+assert "".join(r.text for r in runs).startswith("Wash me thoróughly ·\u00a0from")
+assert sum(1 for r in runs if r.kind.is_syllable() and r.kind.syllable.flex_drop) == 2 and any(r.kind.is_flex() for r in runs)
+assert shown.tone_label == "Tone 8 G" and neuma.tone_label("per") == "Tonus peregrinus"
+outside = neuma.psalm_display("Wash me thoróughly · from my wíckedness, † and cleanse me from my sín. * For I ac·knowledge my fáults.", "8.G", neuma.PsalmOptions(accents=neuma.Accents.OUTSIDE_FLEX))
+assert "".join(r.text for r in outside.verses[0].runs).startswith("Wash me thoroughly ·\u00a0from my wickedness,")
+assert len(neuma.Chant.from_tone("8.G", neuma.ChantOptions()).layout(400, neuma.LayoutOptions()).timeline(neuma.Weights()).notes) == 12
 
 # Editors: fixes, UTF-16 offsets, and links between the source and the score.
 src = "(c4) Kŷ-(g)ri(hi) (,) e(h) (::)"

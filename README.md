@@ -314,8 +314,18 @@ of them, and those agree about 92% of the time. The ones below 80% come back as 
 diagnostics to check. The Solesmes tones and their usual endings are built in, and a tone of
 your own is a few lines of text. See [crates/neuma-tones](crates/neuma-tones/README.md).
 
-In the browser it is `point(text, "8.G")`, `psalm(text, "8.G")` and
-`Chant.fromPsalm(text, "8.G")`; on the command line,
+More often a psalm is shown as a pointed psalter prints it, the tone once and the verses as
+text. `Tone::gabc()` is the tone as one line of notes, `Tone::label()` its name ("Tone 8 G"),
+and `PsalmDisplay` the verses pointed for it as runs of text to style, each syllable with its
+place in the text and the tone:
+
+<p align="center">
+  <img src="docs/images/pointed-psalm.png" width="600" alt="An antiphon in chant, then Psalm 4 as a pointed psalter prints it: tone 8 G once as a line of notes, and the verses as text with a drop cap, red verse numbers, red pointing marks, an italic syllable before the flex, and the Gloria">
+</p>
+
+In the browser it is `point(text, "8.G")`, `psalm(text, "8.G")`,
+`Chant.fromPsalm(text, "8.G")`, and `Chant.fromTone("8.G")` with `psalmDisplay(text, "8.G")`
+(as in [examples/psalm.html](crates/neuma-wasm/examples/psalm.html)); on the command line,
 `neuma point --tone 8.G psalm.txt` and `neuma psalm --tone 8.G psalm.txt | neuma render -`.
 
 ### Print booklets

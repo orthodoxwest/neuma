@@ -252,6 +252,65 @@ impl Tone {
         };
         format!("{k}{}", self.clef_line)
     }
+
+    /// The tone as one line of notes with no words, as a pointed psalter prints it above the
+    /// psalm: the intonation, the tenor and the mediant's cadence, a bar at the mediant `*`,
+    /// then the tenor and the termination's cadence. Each slot of a formula is one note (or
+    /// neume), an open slot sung once. `neuma::Chant::new(&tone.gabc())` engraves it.
+    ///
+    /// ```
+    /// let tone = neuma_tones::Tone::named("8.G")?;
+    /// assert_eq!(tone.gabc(), "(c4) (g) (h) (j) (k) (j) (j) *(:) (j) (i) (j) (h) (g) (g) (::)");
+    /// # Ok::<(), neuma_tones::ToneError>(())
+    /// ```
+    #[must_use]
+    pub fn gabc(&self) -> String {
+        let mut g = format!("({}) ", self.clef_gabc());
+        let half = |c: &Cadence, intone: bool, g: &mut String| {
+            if intone {
+                for n in &c.lead {
+                    g.push_str(&format!("({n}) "));
+                }
+            }
+            g.push_str(&format!("({}) ", c.tenor));
+            for s in &c.slots {
+                let (Slot::Fixed(n) | Slot::Open(n) | Slot::Accent(n)) = s;
+                g.push_str(&format!("({n}) "));
+            }
+        };
+        half(&self.mediant, true, &mut g);
+        g.push_str("*(:) ");
+        half(&self.termination, false, &mut g);
+        g.push_str("(::)");
+        g
+    }
+
+    /// The tone's name as a psalter prints it beside the tone: "Tone 8 G" for `8.G` (the
+    /// mode, then the ending, as an antiphon's "8 G" names it), "Tone 1 D2" for `1.D2`,
+    /// "Tonus peregrinus" for `per`. A name of another form is printed as it is.
+    ///
+    /// ```
+    /// use neuma_tones::Tone;
+    /// assert_eq!(Tone::named("8.G")?.label(), "Tone 8 G");
+    /// assert_eq!(Tone::named("per")?.label(), "Tonus peregrinus");
+    /// # Ok::<(), neuma_tones::ToneError>(())
+    /// ```
+    #[must_use]
+    pub fn label(&self) -> String {
+        let name = self.name.trim();
+        if name.eq_ignore_ascii_case("per") {
+            return "Tonus peregrinus".to_string();
+        }
+        let (mode, ending) = name.split_once('.').unwrap_or((name, ""));
+        if mode.is_empty() || !mode.bytes().all(|b| b.is_ascii_digit()) {
+            return name.to_string();
+        }
+        if ending.is_empty() {
+            format!("Tone {mode}")
+        } else {
+            format!("Tone {mode} {ending}")
+        }
+    }
 }
 
 fn parse_clef(s: &str) -> Result<(ClefKind, u8), ToneError> {
@@ -346,6 +405,40 @@ mod tests {
         assert_eq!(Tone::named("per").unwrap().termination.tenor, "g");
         assert_eq!(Tone::named("9.a"), Err(ToneError::Unknown { name: "9.a".into() }));
         assert_eq!(Tone::named("9.a").unwrap_err().to_string(), "no built-in tone 9.a");
+    }
+
+    #[test]
+    fn labels() {
+        let label = |n: &str| Tone::named(n).unwrap().label();
+        assert_eq!(
+            [label("1.D2"), label("8.G*"), label("4.A*")],
+            ["Tone 1 D2", "Tone 8 G*", "Tone 4 A*"]
+        );
+        let mut custom = Tone::named("8.G").unwrap().clone();
+        for (name, want) in [("2", "Tone 2"), ("Irish", "Irish"), ("2.", "Tone 2"), (".x", ".x")] {
+            custom.name = name.to_string();
+            assert_eq!(custom.label(), want);
+        }
+    }
+
+    #[test]
+    fn tone_as_a_line_of_notes() {
+        let parsed = neuma::parse(&Tone::named("8.G").unwrap().gabc());
+        assert!(parsed.diagnostics.iter().all(|d| d.severity != neuma::Severity::Error));
+        // Every built-in tone reads as GABC with no errors, and has no words.
+        for t in Tone::builtin() {
+            let parsed = neuma::parse(&t.gabc());
+            assert!(
+                parsed.diagnostics.iter().all(|d| d.severity != neuma::Severity::Error),
+                "{}",
+                t.name
+            );
+            assert!(
+                parsed.score.syllables.iter().all(|s| matches!(s.text.plain().trim(), "" | "*")),
+                "{}",
+                t.name
+            );
+        }
     }
 
     #[test]

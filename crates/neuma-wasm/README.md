@@ -391,3 +391,53 @@ instead, with sources in the GABC.
 `point(text, tone)` returns the pointed text itself, `{ text, halves, diagnostics }`, with the
 pointer's confidence (0 to 1) for each half-verse it marked, and each half's source in
 `text`, for an editor to show.
+
+### A pointed psalter
+
+<p align="center">
+  <img src="../../docs/images/pointed-psalm.png" width="600" alt="An antiphon in chant, then Psalm 4 as a pointed psalter prints it: tone 8 G once as a line of notes, and the verses as text with a drop cap, red verse numbers, red pointing marks, an italic syllable before the flex, and the Gloria">
+</p>
+
+Most often a psalm is shown as a pointed psalter prints it: the tone once, as a line of
+notes with no words, and the verses beneath as text with their pointing marks.
+`Chant.fromTone(tone, options)` is the tone's line, and `psalmDisplay(text, tone, { intone,
+autoPoint, accents })` the verses, as runs of text to style, with the tone's name as a
+psalter prints it beside the tone (`toneLabel`: "Tone 8 G", "Tonus peregrinus"):
+
+```js
+const tone = Chant.fromTone("8.G");
+// Its own prefix: SVGs at different scales on one page need ids of their own. The line's
+// one word is its `*`, which `.tone-lyric { fill: … }` colors.
+toneHost.innerHTML = tone.layout(300, { scale: 4.5, lastLine: "justified", prefix: "tone" }).svg;
+
+// A pointed psalter prints no acute in a flex; "none" prints none at all.
+const { toneLabel, verses, diagnostics } = psalmDisplay(text, "8.G", { accents: "outsideFlex" });
+const span = (cls, text) => Object.assign(document.createElement("span"), { className: cls, textContent: text });
+for (const v of verses) {
+  const p = document.createElement("p");
+  if (v.number !== null) p.append(span("number", String(v.number)));
+  for (const r of v.runs) {
+    // "point" (·) and "held" (–) bold red, "mediant" (*) and "flex" (†) red, "rubric" red
+    // italic, and in a flex the syllables the voice drops on italic.
+    const s = p.appendChild(span(r.kind, r.text));
+    if (r.flexDrop) s.classList.add("drop");
+  }
+  host.append(p);
+}
+```
+
+A verse's runs, their `text` joined, are its line after the number: the pointed text as
+`point` writes it, without the rubrics' brackets. The space between a `·` and its syllable,
+and before a `*`, `†` or held `–`, is U+00A0, so a line never breaks between a mark and its
+syllable. Run text holds U+00A0 (no-break space) and U+2060 (word joiner, after each `–` and
+spelling hyphen, since a line may break after an en dash even before U+00A0): to search it,
+read U+00A0 as a space and drop U+2060 (`text.replace(/⁠/g, "").replace(/ /g, " ")`).
+`psalm` and `point` read both back. To sing the text again, keep `point`'s text rather than a copy of the display: the display leaves out the verse numbers and rubric brackets, and with `OutsideFlex` the acutes of a flex. `toneLabel(tone)` names a tone without
+any text. Unknown option values (`accents: "outside-flex"`) throw. A syllable's run also has `part`, `role`
+(its first note's place in the tone, as `psalm`'s notes name it), `accent`, `flexDrop`,
+`wordStart` and its source in `text` (`sourceStart` … `sourceUtf16End`), for a tap or a
+highlight that follows the singing. Unmarked half-verses are pointed for the tone, and the
+`diagnostics` are `psalm`'s, `point::unsure` among them.
+[`examples/psalm.html`](examples/psalm.html) draws an antiphon, a psalm's tone and its
+verses this way as you edit the text, and underlines the half-verses the pointer is unsure
+of.

@@ -30,6 +30,32 @@ timelines, PDFs). Some behavior did change:
   none goes above 1000.
 - `neuma book` reports `point::unsure` at the half-verse's syllables rather than the whole
   verse.
+- Pointed text keeps a spelling hyphen (`\-`, "blood\-guiltiness"): `point` writes it back
+  (it wrote "bloodguiltiness"), and `neuma book` prints "blood-guiltiness" in a pointed
+  psalm's verses. A `·` the pointer puts right after one is written `\-·` ("pre\-·eminence";
+  it was "pre·eminence"). Each piece of such a word is a syllable with its own span, where
+  every piece had the whole word's. The sung setting (`psalm`'s GABC, a book's chant
+  verses) is unchanged.
+- `neuma book` labels a pointed psalm's tone with `Tone::label()`: "Tone 8 G" (it printed
+  "Tone 8.G") and "Tonus peregrinus" (it printed "Tone per").
+- A verse number after rubrics that open the line ("[Stand.] 5 For I …") is the verse
+  number; it was sung as a word. `point` writes it first ("5 [Stand.] For I …").
+- A `·` among a half-verse's leading dashes ("* – · – – práise") stays where it was written
+  in `point`'s text and a book's verses, which moved it to the end ("* – – – · práise"). How
+  the half is sung is unchanged.
+- A hyphen with the `·` after it ("pre-·eminence") is a spelling hyphen where the cadence
+  starts, as in printed psalters, and is printed; it was a dotted split that dropped the
+  hyphen. `·-` ("hon·-our") is still a dotted split. The sung setting is unchanged.
+- A hyphen at either end of a word, or a second one in a row (`\-dashes\-`, `c\-\-d`), is
+  kept as text in `point`'s text and a book's verses (it was dropped), and a `-` without a
+  letter on both sides is text rather than a sung split (`x-,` sang `,` as a syllable of its
+  own).
+- Rubrics written before a half-verse's leading dashes ("* [Sit.] – · – and") stay before
+  them in `point`'s text and a book's verses; they moved after them.
+- Pointed text reads any Unicode space between words, U+00A0 among them, drops U+2060
+  (word joiner), and reads `-` and U+2060, or U+2011, as a spelling hyphen: a line copied from
+  a psalm display reads as the text it came from. A no-break space used to be read as part of
+  a word, so held dashes were sung as words.
 
 ### The 0.1 API (breaking)
 
@@ -119,7 +145,10 @@ timelines, PDFs). Some behavior did change:
   takes either: it derefs to `Chant`, and its `update` and `set_options` read the new source
   as the chant was made from. The browser and mobile bindings use it.
 - `Options` → **`PsalmOptions`** (setters `with_intone`, `with_auto_point`,
-  `with_strip_accents`, `with_name`); `no_auto_point` → **`auto_point`** (default `true`).
+  `with_accents`, `with_name`); `no_auto_point` → **`auto_point`** (default `true`);
+  `strip_accents` → **`accents`**: `Accents::All` (the default), `None`, or `OutsideFlex`
+  (none in a flex, as a pointed psalter prints it), also in the browser (`accents: "all" |
+  "none" | "outsideFlex"`) and on mobile.
 - `Setting` → **`PsalmSetting`**, `NoteRole` → **`PsalmNote`** (its `source` → **`span`**),
   `Role` → **`ToneRole`**, `PartKind` → **`VersePart`**, matching the mobile bindings.
 - `PsalmSetting.score`'s spans now count bytes of the psalm text (a note's is its sung
@@ -275,3 +304,18 @@ timelines, PDFs). Some behavior did change:
   UTF-16 offsets and fixes on diagnostics; an example editor in
   `crates/neuma-wasm/examples/editor.html`.
 - Mobile bindings: hit tests for editors, UTF-16 offsets and fixes.
+- A pointed psalter's display, for apps that show a psalm as text under its tone rather
+  than in chant over every verse: `Tone::gabc()` (the tone as one line of notes with no
+  words, moved from `neuma-book`, whose output is unchanged), and `PsalmDisplay` in
+  `neuma-tones`, the text pointed verse by verse as styled runs (syllables with their place
+  in the text and the tone, the `·`, `–`, `*` and `†` marks, rubrics), with automatic
+  pointing and `point::unsure` diagnostics as `psalm` gives them. In the browser,
+  `psalmDisplay(text, tone, options)` and `Chant.fromTone(tone, options)`, with an example
+  page, `crates/neuma-wasm/examples/psalm.html`; on mobile, `psalmDisplay(text, tone,
+  PsalmOptions)` returning records (a run's kind a sealed class in Kotlin and an enum with an
+  associated value in Swift) and `Chant.fromTone(tone, ChantOptions)`. A line's runs use
+  U+00A0 between a mark and its syllable, and U+2060 after each `–` and spelling hyphen, so
+  it never breaks there; pointed text reads both back, so a line copied from the display sets
+  as its source. The browser's psalm options throw on an unknown value.
+  `Tone::label()` names a tone as a psalter prints it ("Tone 8 G", "Tonus peregrinus";
+  `toneLabel(tone)` and `toneLabel` on the display in the browser and on mobile).

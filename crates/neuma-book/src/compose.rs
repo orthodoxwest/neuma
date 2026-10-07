@@ -3,7 +3,7 @@
 
 use neuma::display::{DisplayList, Item, TextRole};
 use neuma::{Diagnostic, Initial, LastLine, LayoutOptions, Severity, StyleOptions};
-use neuma_tones::{Intone, PsalmOptions, Tone};
+use neuma_tones::{Accents, Intone, PsalmOptions, Tone};
 
 use crate::book::{Book, Piece, Psalm, PsalmSet, Settings, Source};
 use crate::font::Fonts;
@@ -426,31 +426,6 @@ fn find_tone(ps: &Psalm, diags: &mut Vec<Diagnostic>) -> Option<Tone> {
     t
 }
 
-/// The tone's intonation, mediant and ending as a small score with no words, the way a
-/// pointed psalter prints the tone above the psalm.
-pub fn tone_gabc(tone: &Tone) -> String {
-    let mut g = format!("({}) ", tone.clef_gabc());
-    let half = |c: &neuma_tones::Cadence, intone: bool, g: &mut String| {
-        if intone {
-            for n in &c.lead {
-                g.push_str(&format!("({n}) "));
-            }
-        }
-        g.push_str(&format!("({}) ", c.tenor));
-        for s in &c.slots {
-            let n = match s {
-                neuma_tones::Slot::Fixed(n) | neuma_tones::Slot::Open(n) | neuma_tones::Slot::Accent(n) => n,
-            };
-            g.push_str(&format!("({n}) "));
-        }
-    };
-    half(&tone.mediant, true, &mut g);
-    g.push_str("*(:) ");
-    half(&tone.termination, false, &mut g);
-    g.push_str("(::)");
-    g
-}
-
 fn psalm_blocks(ps: &Psalm, s: &Settings, fonts: &Fonts, m: &Metrics, diags: &mut Vec<Diagnostic>) -> Vec<Block> {
     let mut out = Vec::new();
     let Some(tone) = find_tone(ps, diags) else { return out };
@@ -485,7 +460,7 @@ fn psalm_blocks(ps: &Psalm, s: &Settings, fonts: &Fonts, m: &Metrics, diags: &mu
     };
     // Pointed verses: the tone first, as a small score beside its name.
     if chant_verses == 0 && !verses.is_empty() {
-        let label = format!("Tone {}", tone.name);
+        let label = tone.label();
         let style = Style {
             italic: true,
             red: true,
@@ -499,7 +474,7 @@ fn psalm_blocks(ps: &Psalm, s: &Settings, fonts: &Fonts, m: &Metrics, diags: &mu
             width: m.width,
             justify_last: true,
         };
-        let parsed = neuma::parse(&tone_gabc(&tone));
+        let parsed = neuma::parse(&tone.gabc());
         let notes = parsed.score.syllables.len() as f32;
         let tone_width = (notes * 3.2 * small.scale).min(m.width - lw);
         let mut tb = score_blocks(&parsed.score, fonts, &small, 0, tone_width, lw, size * 0.5, diags);
@@ -545,7 +520,7 @@ fn psalm_blocks(ps: &Psalm, s: &Settings, fonts: &Fonts, m: &Metrics, diags: &mu
         // Verse numbers are for the pointed text; chant verses go without.
         let words = strip_number(verse);
         // The accents place the cadence; under notes they would only clutter.
-        let options = PsalmOptions::default().with_intone(intone).with_strip_accents(true);
+        let options = PsalmOptions::default().with_intone(intone).with_accents(Accents::None);
         let setting = neuma_tones::psalm(words, &tone, &options);
         let shift = offset_of(&text, words);
         diags.extend(setting.diagnostics.into_iter().map(|d| place(d, shift, &labels[vi], source_len)));
@@ -739,14 +714,6 @@ fn pointed_spans(body: &str, fonts: &Fonts) -> Vec<Span> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn tone_as_a_score() {
-        let g = tone_gabc(Tone::named("8.G").unwrap());
-        assert_eq!(g, "(c4) (g) (h) (j) (k) (j) (j) *(:) (j) (i) (j) (h) (g) (g) (::)");
-        let parsed = neuma::parse(&g);
-        assert!(parsed.diagnostics.iter().all(|d| d.severity != Severity::Error));
-    }
 
     #[test]
     fn no_staff_is_left_alone() {

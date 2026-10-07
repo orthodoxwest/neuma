@@ -57,6 +57,55 @@ half-verses, where the same hand agrees with itself across settings of a psalm a
 the time. It is 80% sure or more of about 70% of half-verses, and those agree about 92% of
 the time.
 
+## A pointed psalter's display
+
+A pointed psalter prints the tone once, as a line of notes with no words, and the verses
+beneath as text with their pointing marks. `Tone::gabc` is that line, `Tone::label` its name
+beside it ("Tone 8 G", "Tonus peregrinus"), and `PsalmDisplay` the verses, as runs of text
+to style:
+
+```rust
+use neuma_tones::{Accents, PsalmDisplay, PsalmOptions, PsalmRunKind, Tone};
+
+let tone = Tone::named("8.G").unwrap();
+let tone_line = neuma::Chant::new(&tone.gabc()); // lay it out above the verses
+let text = "1 Hear me when I call, O God of my righteousness * thou hast set me at liberty.\n\
+            3 Know this also, that the Lord hath chosen to himself † the man that is godly * \
+              [Sit.] when I call upon the Lord, he will hear me.";
+// A pointed psalter prints no acute in a flex: its italics show where the voice drops.
+let options = PsalmOptions::default().with_accents(Accents::OutsideFlex);
+let display = PsalmDisplay::new(text, tone, &options);
+assert_eq!(tone.label(), "Tone 8 G");
+let mut html = String::new();
+for verse in display.verses() {
+    // verse.number goes in the margin; the runs, joined, are the line.
+    for run in &verse.runs {
+        let class = match &run.kind {
+            PsalmRunKind::Point | PsalmRunKind::Held => "mark bold", // `·` and `–`, bold red
+            PsalmRunKind::Mediant | PsalmRunKind::Flex => "mark",    // `*` and `†`, red
+            PsalmRunKind::Rubric => "rubric",                        // red italic
+            PsalmRunKind::Syllable(s) if s.flex_drop => "drop",      // italic
+            _ => "",
+        };
+        html.push_str(&format!("<span class=\"{class}\">{}</span>", run.text));
+    }
+    html.push('\n');
+}
+assert!(html.contains(r#"<span class="mark bold">·</span>"#));
+assert!(html.contains(r#"<span class="mark">†</span>"#) && html.contains(r#"<span class="rubric">Sit.</span>"#));
+```
+
+Unmarked half-verses are pointed for the tone, as `psalm` points them, and
+`display.diagnostics()` are `psalm`'s (`point::unsure` among them). Each syllable's run
+carries its place in the text (`span`) and in the tone (`part`, `role`, `accent`), for a tap
+or a highlight that follows the singing; in a flex, `flex_drop` marks the syllables the voice
+drops on, which a psalter prints in italic. `update(text)` points new text for the same tone.
+The verse as printed is the pointed text as `point` writes it, without the verse number and
+the rubrics' brackets. The space between a `·` and its syllable, and before a `*`, `†` or
+held `–`, is U+00A0, and U+2060 (word joiner) follows each `–` and spelling hyphen, so a line
+never breaks between a mark and the syllable it belongs to, nor after "pre-". To search the
+text, read U+00A0 as a space and drop U+2060; pointed text reads both back. To sing the text again, keep `point`'s text rather than a copy of the display: the display leaves out the verse numbers and rubric brackets, and with `OutsideFlex` the acutes of a flex.
+
 ## Pointed text
 
 One verse per line, in the marks a hand-pointed psalter prints:

@@ -1,7 +1,7 @@
 // Smoke test for dist/neuma.mjs under Node: `node crates/neuma-wasm/test.mjs`.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { init, Chant, DEFAULT_WEIGHTS, Page, engineStats, noteAtTime, point, psalm, setLayoutBudget, summarize, toneNames } from "./dist/neuma.mjs";
+import { init, Chant, DEFAULT_WEIGHTS, Page, engineStats, noteAtTime, point, psalm, psalmDisplay, setLayoutBudget, summarize, toneLabel, toneNames } from "./dist/neuma.mjs";
 
 await init();
 const gabc = readFileSync(new URL("../neuma/tests/corpus/psalm-134.gabc", import.meta.url), "utf8");
@@ -170,6 +170,55 @@ assert.ok(pt.halves.every((h) => !h.kept && h.confidence > 0 && h.confidence <= 
 assert.ok(pt.text.includes("·") && /[áéíóú]/.test(pt.text));
 assert.equal(psalm(plain, "8.G").gabc, psalm(pt.text, "8.G").gabc);
 assert.ok(psalm(plain, "8.G", { autoPoint: false }).diagnostics.some((d) => d.code === "apply::no-accent"));
+
+// A pointed psalter's display: the tone once, as a line of notes, and the verses as styled
+// runs of text, with each syllable's place in the text (both units) and in the tone.
+const tone = Chant.fromTone("8.G");
+assert.equal(tone.source, "(c4) (g) (h) (j) (k) (j) (j) *(:) (j) (i) (j) (h) (g) (g) (::)");
+assert.equal(tone.layout(400).timeline().notes.length, 12);
+assert.throws(() => Chant.fromTone("9.z"), /no built-in tone/);
+assert.ok(Chant.fromTone("name: mine\nclef: c4\nmediant: f g hr 'g hr h\ntermination: hr g f 'g hr h").source.startsWith("(c4) (f) (g) (h)"));
+const verses = "1 Wash me thoróughly · from my wíckedness, † and cleanse me from my sín. * [Sit.] For I ac·knowledge my fáults.\n2 " + plain;
+const shown = psalmDisplay(verses, "8.G");
+assert.deepEqual(shown.verses.map((v) => v.number), [1, 2]);
+assert.equal(shown.toneLabel, "Tone 8 G");
+assert.equal(psalmDisplay(plain, "per").toneLabel, "Tonus peregrinus");
+assert.equal(toneLabel("1.D2"), "Tone 1 D2");
+assert.equal(toneLabel("name: mine\nclef: c4\nmediant: f g hr 'g hr h\ntermination: hr g f 'g hr h"), "mine");
+assert.throws(() => toneLabel("9.z"), /no built-in tone/);
+// A line never breaks between a mark and its syllable: those spaces are U+00A0.
+assert.equal(shown.verses[0].runs.map((r) => r.text).join(""), "Wash me thoróughly ·\u00a0from my wíckedness,\u00a0† and cleanse me from my sín.\u00a0* Sit. For I ac·knowledge my fáults.");
+assert.deepEqual(shown.verses[0].runs.filter((r) => r.kind !== "text" && r.kind !== "syllable").map((r) => r.kind), ["point", "flex", "mediant", "rubric", "point"]);
+const syls = shown.verses[0].runs.filter((r) => r.kind === "syllable");
+for (const r of syls) assert.equal(verses.slice(r.sourceUtf16Start, r.sourceUtf16End), r.text);
+assert.deepEqual(syls.filter((r) => r.flexDrop).map((r) => r.text), ["ed", "ness,"]);
+assert.ok(syls.find((r) => r.text === "fáults.").accent);
+assert.equal(syls[0].role, "intonation");
+assert.deepEqual(psalmDisplay(plain, "8.G").diagnostics, psalm(plain, "8.G").diagnostics);
+assert.ok(psalmDisplay(plain, "8.G").verses[0].runs.some((r) => r.kind === "point"));
+assert.ok(!psalmDisplay(plain, "8.G", { autoPoint: false }).verses[0].runs.some((r) => r.kind === "point"));
+assert.throws(() => psalmDisplay(plain, "9.z"), /no built-in tone/);
+// Acutes printed: a pointed psalter prints none in a flex.
+const outside = psalmDisplay(verses, "8.G", { accents: "outsideFlex" }).verses[0].runs.map((r) => r.text).join("");
+assert.ok(outside.startsWith("Wash me thoroughly ·\u00a0from my wickedness,\u00a0† and cleanse me from my sín."), outside);
+assert.ok(!/[áéíóú]/.test(psalmDisplay(verses, "8.G", { accents: "none", intone: "every" }).verses[0].runs.map((r) => r.text).join("")));
+assert.ok(!/[áéíóú]/.test(psalm(verses, "8.G", { accents: "none" }).gabc));
+assert.ok(!/[áéíóú]/.test(Chant.fromPsalm(verses, "8.G", { accents: "none" }).psalm.gabc));
+assert.equal(psalm(verses, "8.G", { accents: "none" }).notes.length, psalm(verses, "8.G").notes.length);
+// A spelling hyphen is printed, and each piece has its own source.
+const spelled = psalmDisplay("Deliver me from blood\\-guiltiness, O God * thou that art the God of my health.", "8.G");
+// A spelling hyphen is "-" and a word joiner, so a line never breaks at it, as is each held "–".
+assert.ok(spelled.verses[0].runs.map((r) => r.text).join("").startsWith("Deliver me from blood-\u2060guiltiness,"));
+assert.ok(psalmDisplay("Lord, remember · Dávid, – – * and all his trouble.", "8.G").verses[0].runs.some((r) => r.kind === "held" && r.text === "–\u2060"));
+// Misspelled options throw rather than fall back.
+assert.throws(() => psalmDisplay(plain, "8.G", { accents: "outside-flex" }), /accents must be/);
+assert.throws(() => psalm(plain, "8.G", { intone: "always" }), /intone must be/);
+assert.throws(() => Chant.fromPsalm(plain, "8.G", { accents: "None" }), /accents must be/);
+// A line copied from the display sets as the text it came from.
+const copied = shown.verses.map((v) => `${v.number} ` + v.runs.map((r) => r.text).join("").replace("Sit.", "[Sit.]")).join("\n");
+assert.equal(psalm(copied, "8.G").gabc, psalm(verses, "8.G").gabc);
+assert.equal(point(copied, "8.G").text, point(verses, "8.G").text);
+assert.deepEqual(spelled.verses[0].runs.filter((r) => r.kind === "syllable").slice(5, 9).map((r) => r.sourceEnd - r.sourceStart), [5, 4, 2, 5]);
 
 // Editors: offsets in UTF-16 alongside bytes, fixes, updates, and both ways between source
 // and score.

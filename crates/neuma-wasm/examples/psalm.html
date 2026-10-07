@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pointed Psalm</title>
+<!--
+  A psalm as a pointed psalter prints it, on neuma, without dependencies: the antiphon in
+  chant, the tone once as a line of notes (Chant.fromTone), and the verses as text with
+  their pointing (psalmDisplay), marks in red. Edit the text or change the tone, and the
+  page follows; unmarked half-verses are pointed automatically, and those the pointer is
+  unsure of are underlined. Build the package and serve the repository root over HTTP, then
+  open crates/neuma-wasm/examples/psalm.html:
+
+    cargo build -p neuma-wasm --target wasm32-unknown-unknown --profile wasm
+    node crates/neuma-wasm/build.mjs
+    npx http-server .        # or any static server
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital@0;1&display=swap">
+<style>
+  :root { --bg: #fbfaf7; --panel: #ffffff; --ink: #1d1b18; --muted: #6b665e; --line: #e2ded6; --red: #a3211c; --unsure: #2f6db3; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --bg: #171614; --panel: #1f1e1b; --ink: #ebe7df; --muted: #a29c91; --line: #34312c; --red: #e0675f; --unsure: #79a8e0; }
+  }
+  :root[data-theme="dark"] { --bg: #171614; --panel: #1f1e1b; --ink: #ebe7df; --muted: #a29c91; --line: #34312c; --red: #e0675f; --unsure: #79a8e0; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { display: grid; grid-template-columns: minmax(260px, 1fr) minmax(320px, 600px); gap: 24px; padding: 16px; max-width: 1200px; }
+  @media (max-width: 760px) { main { grid-template-columns: 1fr; } }
+  textarea { width: 100%; height: 360px; font: 13px/1.5 ui-monospace, Menlo, monospace; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 8px; }
+  label { display: block; margin: 8px 0; color: var(--muted); }
+  #notes { color: var(--muted); font-size: 12px; }
+
+  /* The psalm, in the style of a pointed psalter. */
+  #psalm { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 20px 24px; font: 17px/1.45 "EB Garamond", serif; }
+  #psalm svg { display: block; color: var(--ink); }
+  #psalm h2 { font: inherit; font-size: 19px; text-align: center; margin: 14px 0 6px; letter-spacing: 0.04em; }
+  .tone-row { display: flex; align-items: center; gap: 12px; margin: 4px 0 10px; }
+  .tone-row .label { color: var(--red); font-style: italic; white-space: nowrap; }
+  .tone-row.stacked { flex-direction: column; align-items: flex-start; gap: 2px; }
+  /* The tone's one word, its mediant `*`, in red like the verses'. */
+  #psalm .tone-lyric { fill: var(--red); }
+  .verse { margin: 0 0 4px; padding-left: 1.8em; text-indent: -1.8em; }
+  /* The number keeps its trailing space, so a copied verse reads "2 O ye …". */
+  .verse .number { display: inline-block; width: 1.8em; text-indent: 0; color: var(--red); white-space: pre; }
+  .verse.first, .verse.lead { padding-left: 0; text-indent: 0; }
+  /* The first verse holds its initial, however short it is. */
+  .verse.first { display: flow-root; }
+  .initial { float: left; font-size: 3.1em; line-height: 0.82; padding: 0.06em 0.08em 0 0; color: var(--red); font-style: normal; }
+  .point, .held { color: var(--red); font-weight: 700; }
+  .mediant, .flex { color: var(--red); }
+  .rubric { color: var(--red); font-style: italic; }
+  .drop { font-style: italic; }
+  .unsure { text-decoration: underline dotted var(--unsure); text-underline-offset: 3px; }
+</style>
+</head>
+<body>
+<main>
+  <div>
+    <label>Tone <select id="tone"></select></label>
+    <textarea id="text" spellcheck="false"></textarea>
+    <p id="notes"></p>
+  </div>
+  <div id="psalm"></div>
+</main>
+<script type="module">
+import { init, Chant, psalmDisplay, toneNames } from "../dist/neuma.mjs";
+
+await init();
+const antiphon = `name: Have mercy upon me;
+mode: 8;
+annotation: Ant.;
+annotation: 8 G;
+%%
+(c4) HAVE(g) mer(g)cy(h) up(g)on(f) me,(g) O(h) Lord,(j) *(;) and(j) heark(h)en(j) un(jk)to(j) my(h) pray(gh)er.(g) (::)`;
+// Psalm 4 in the Coverdale psalter, hand-pointed in part: unmarked halves are pointed for
+// the tone as the page draws them.
+const text = document.getElementById("text");
+text.value = `1 Hear me when I call, O God of my righteousness * thou hast set me at liberty when I was in trouble; have mercy upon me, and hearken unto my prayer.
+2 O ye sons of men, how long will ye blas·phéme mine hónour * and have such pleasure in vanity, and seek · áfter léasing?
+3 Know this also, that the Lord hath chosen to himself † the man that is godly * when I call upon the Lord, he will hear me.
+4 Stand in awe, and sin not * [Sit.] commune with your own heart, and in your chamber, and be still.
+5 Offer the sacrifice of righteousness * and put your trust in the Lord.
+[Stand.] Glory be to the Father, and to the Son * and to the Holy Ghost;
+As it was in the beginning, is now, and ever shall be * world without end. Amen.`;
+const select = document.getElementById("tone");
+for (const name of toneNames()) select.add(new Option(name, name, name === "8.G", name === "8.G"));
+
+const host = document.getElementById("psalm");
+const el = (tag, cls, content) => {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (typeof content === "string") e.textContent = content;
+  else if (content) e.append(...content);
+  return e;
+};
+const svg = (markup) => {
+  const div = el("div");
+  div.innerHTML = markup;
+  return div.firstChild;
+};
+const ant = new Chant(antiphon, { initial: 1 });
+let tone = null;
+
+const firstGrapheme = (text) =>
+  typeof Intl.Segmenter === "function" ? [...new Intl.Segmenter().segment(text)][0]?.segment ?? "" : [...text][0] ?? "";
+
+// A run as a styled span.
+function span(r, doubtful) {
+  const s = el("span", r.kind, r.text);
+  if (r.kind === "syllable") {
+    s.title = `${r.part}, ${r.role}`;
+    if (r.flexDrop) s.classList.add("drop");
+    if (doubtful(r)) s.classList.add("unsure");
+  }
+  return s;
+}
+
+function draw() {
+  const width = host.clientWidth - 48;
+  const name = select.value;
+  if (!tone || tone.name !== name) {
+    // The tone's only word is its `*`, a little larger than a lyric.
+    const chant = Chant.fromTone(name, { lyricSize: 3.4 });
+    tone = { name, chant, notes: chant.layout(2000).timeline().notes.length };
+  }
+  // A pointed psalter prints no acute in a flex: the italics show where the voice drops.
+  const shown = psalmDisplay(text.value, name, { accents: "outsideFlex" });
+  // Where the pointer is unsure, in the text's own units.
+  const unsure = shown.diagnostics.filter((d) => d.code === "point::unsure");
+  const doubtful = (r) => unsure.some((d) => r.sourceUtf16Start >= d.utf16Start && r.sourceUtf16End <= d.utf16End);
+  const label = el("span", "label", shown.toneLabel);
+  const toneLine = el("div", "tone-row", [label]);
+  host.replaceChildren(
+    svg(ant.layout(width, { scale: 5.5, prefix: "ant" }).svg),
+    el("h2", null, "Psalm 4"),
+    toneLine,
+  );
+  // The tone at about its natural width, spaced to its final bar. On a narrow screen the
+  // label goes above it, and the line is drawn a little smaller to stay one line.
+  const natural = tone.notes * 24;
+  let room = width - label.offsetWidth - 12;
+  if (room < natural) {
+    toneLine.classList.add("stacked");
+    room = width;
+  }
+  const toneWidth = Math.min(room, natural);
+  const scale = 4.5 * Math.max(0.75, Math.min(1, room / natural));
+  toneLine.append(svg(tone.chant.layout(toneWidth, { scale, prefix: "tone", lastLine: "justified" }).svg));
+  shown.verses.forEach((v, i) => {
+    let runs = v.runs;
+    if (i === 0) {
+      // Rubrics before the first word go on a line of their own, above the initial.
+      const lead = runs.findIndex((r) => r.kind === "syllable");
+      const rubrics = runs.slice(0, lead).filter((r) => r.kind === "rubric");
+      if (rubrics.length) host.append(el("p", "verse lead", rubrics.map((r) => span(r, doubtful))));
+      runs = runs.filter((r, j) => j >= lead || r.kind !== "rubric");
+      while (runs[0]?.kind === "text" && !runs[0].text.trim()) runs = runs.slice(1);
+    }
+    // The first verse opens with an initial: the first letter (grapheme, accents and all) of
+    // its first word. A verse that opens with a mark (a `·` or `–`) is printed as the others.
+    if (i === 0 && runs[0]?.kind === "syllable") {
+      const [first, ...rest] = runs;
+      const letter = firstGrapheme(first.text);
+      const s = span({ ...first, text: first.text.slice(letter.length) }, doubtful);
+      s.prepend(el("span", "initial", letter));
+      host.append(el("p", "verse first", [s, ...rest.map((r) => span(r, doubtful))]));
+    } else {
+      // A verse without a number (the Gloria) keeps the text's column.
+      const number = el("span", "number", v.number === null ? "" : `${v.number} `);
+      host.append(el("p", "verse", [number, ...runs.map((r) => span(r, doubtful))]));
+    }
+  });
+  document.getElementById("notes").textContent = unsure.length
+    ? `${unsure.length} half-verse(s) pointed with less certainty, underlined: check where the accents fall.`
+    : "";
+}
+text.addEventListener("input", draw);
+select.addEventListener("change", draw);
+addEventListener("resize", draw);
+await document.fonts.ready;
+draw();
+window.neumaPsalm = { draw };
+</script>
+</body>
+</html>
