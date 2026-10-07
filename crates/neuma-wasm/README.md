@@ -427,9 +427,11 @@ for (const v of verses) {
 ```
 
 A verse's runs, their `text` joined, are its line after the number: the pointed text as
-`point` writes it, without the rubrics' brackets and with a spelling hyphen as a hyphen. The
-space between a `·` and its syllable, and before a `*`, `†` or held `–`, is U+00A0, so a line
-never breaks between a mark and its syllable. A syllable's run also has `part`, `role`
+`point` writes it, without the rubrics' brackets. The space between a `·` and its syllable,
+and before a `*`, `†` or held `–`, is U+00A0, so a line never breaks between a mark and its
+syllable. Run text holds U+00A0 (no-break space) and U+2011 (no-break hyphen at a spelling hyphen): to
+search it, read them as a space and a hyphen. `psalm` and `point` read them back, so a line
+copied from the display sets as the text it came from. `toneLabel(tone)` names a tone without any text. A syllable's run also has `part`, `role`
 (its first note's place in the tone, as `psalm`'s notes name it), `accent`, `flexDrop`,
 `wordStart` and its source in `text` (`sourceStart` … `sourceUtf16End`), for a tap or a
 highlight that follows the singing. Unmarked half-verses are pointed for the tone, and the

@@ -289,7 +289,9 @@ fn set_pointed(pointed: &Pointed, tone: &Tone, options: &PsalmOptions) -> PsalmS
                     }
                     fig.extend(f);
                 }
-                let shown = options.accents.shown(&s.text, part.kind);
+                // A hyphen left in the text is printed in the pointed text but not sung: the
+                // engraver draws the hyphens between syllables itself.
+                let shown = options.accents.shown(&s.text, part.kind).replace('-', "");
                 b = b.syllable(Lyric::from_plain(&shown), s.starts_word(), fig);
                 spans.push(s.span.clone());
             }

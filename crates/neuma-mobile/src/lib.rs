@@ -1271,6 +1271,13 @@ pub fn psalm_display(text: String, tone: String, options: PsalmOptions) -> Resul
     })
 }
 
+/// A tone (a built-in name such as `8.G`, or a tone block) named as a psalter prints it
+/// beside the tone: "Tone 8 G", "Tonus peregrinus".
+#[uniffi::export]
+pub fn tone_label(tone: String) -> Result<String, ToneError> {
+    Ok(tone_from(&tone)?.label())
+}
+
 /// The built-in tones' names.
 #[uniffi::export]
 pub fn tone_names() -> Vec<String> {

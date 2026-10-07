@@ -38,11 +38,15 @@
   #psalm h2 { font: inherit; font-size: 19px; text-align: center; margin: 14px 0 6px; letter-spacing: 0.04em; }
   .tone-row { display: flex; align-items: center; gap: 12px; margin: 4px 0 10px; }
   .tone-row .label { color: var(--red); font-style: italic; white-space: nowrap; }
+  .tone-row.stacked { flex-direction: column; align-items: flex-start; gap: 2px; }
   /* The tone's one word, its mediant `*`, in red like the verses'. */
   #psalm .tone-lyric { fill: var(--red); }
   .verse { margin: 0 0 4px; padding-left: 1.8em; text-indent: -1.8em; }
-  .verse .number { display: inline-block; width: 1.8em; text-indent: 0; color: var(--red); }
+  /* The number keeps its trailing space, so a copied verse reads "2 O ye …". */
+  .verse .number { display: inline-block; width: 1.8em; text-indent: 0; color: var(--red); white-space: pre; }
   .verse.first, .verse.lead { padding-left: 0; text-indent: 0; }
+  /* The first verse holds its initial, however short it is. */
+  .verse.first { display: flow-root; }
   .initial { float: left; font-size: 3.1em; line-height: 0.82; padding: 0.06em 0.08em 0 0; color: var(--red); font-style: normal; }
   .point, .held { color: var(--red); font-weight: 700; }
   .mediant, .flex { color: var(--red); }
@@ -99,6 +103,9 @@ const svg = (markup) => {
 const ant = new Chant(antiphon, { initial: 1 });
 let tone = null;
 
+const firstGrapheme = (text) =>
+  typeof Intl.Segmenter === "function" ? [...new Intl.Segmenter().segment(text)][0]?.segment ?? "" : [...text][0] ?? "";
+
 // A run as a styled span.
 function span(r, doubtful) {
   const s = el("span", r.kind, r.text);
@@ -130,28 +137,40 @@ function draw() {
     el("h2", null, "Psalm 4"),
     toneLine,
   );
-  // The tone at about its natural width, spaced to its final bar.
-  const toneWidth = Math.min(width - label.offsetWidth - 12, tone.notes * 24);
-  toneLine.append(svg(tone.chant.layout(toneWidth, { scale: 4.5, prefix: "tone", lastLine: "justified" }).svg));
+  // The tone at about its natural width, spaced to its final bar. On a narrow screen the
+  // label goes above it, and the line is drawn a little smaller to stay one line.
+  const natural = tone.notes * 24;
+  let room = width - label.offsetWidth - 12;
+  if (room < natural) {
+    toneLine.classList.add("stacked");
+    room = width;
+  }
+  const toneWidth = Math.min(room, natural);
+  const scale = 4.5 * Math.max(0.75, Math.min(1, room / natural));
+  toneLine.append(svg(tone.chant.layout(toneWidth, { scale, prefix: "tone", lastLine: "justified" }).svg));
   shown.verses.forEach((v, i) => {
     let runs = v.runs;
-    const p = el("p", i === 0 ? "verse first" : "verse");
     if (i === 0) {
       // Rubrics before the first word go on a line of their own, above the initial.
       const lead = runs.findIndex((r) => r.kind === "syllable");
       const rubrics = runs.slice(0, lead).filter((r) => r.kind === "rubric");
       if (rubrics.length) host.append(el("p", "verse lead", rubrics.map((r) => span(r, doubtful))));
-      runs = runs.slice(lead);
-      // The first letter of the first word is the initial.
+      runs = runs.filter((r, j) => j >= lead || r.kind !== "rubric");
+      while (runs[0]?.kind === "text" && !runs[0].text.trim()) runs = runs.slice(1);
+    }
+    // The first verse opens with an initial: the first letter (grapheme, accents and all) of
+    // its first word. A verse that opens with a mark (a `·` or `–`) is printed as the others.
+    if (i === 0 && runs[0]?.kind === "syllable") {
       const [first, ...rest] = runs;
-      const s = span({ ...first, text: first.text.slice(1) }, doubtful);
-      s.prepend(el("span", "initial", first.text[0]));
-      p.append(s, ...rest.map((r) => span(r, doubtful)));
+      const letter = firstGrapheme(first.text);
+      const s = span({ ...first, text: first.text.slice(letter.length) }, doubtful);
+      s.prepend(el("span", "initial", letter));
+      host.append(el("p", "verse first", [s, ...rest.map((r) => span(r, doubtful))]));
     } else {
       // A verse without a number (the Gloria) keeps the text's column.
-      p.append(el("span", "number", v.number === null ? "" : String(v.number)), ...runs.map((r) => span(r, doubtful)));
+      const number = el("span", "number", v.number === null ? "" : `${v.number} `);
+      host.append(el("p", "verse", [number, ...runs.map((r) => span(r, doubtful))]));
     }
-    host.append(p);
   });
   document.getElementById("notes").textContent = unsure.length
     ? `${unsure.length} half-verse(s) pointed with less certainty, underlined: check where the accents fall.`

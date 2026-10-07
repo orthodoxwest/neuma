@@ -41,6 +41,18 @@ timelines, PDFs). Some behavior did change:
 - A `·` among a half-verse's leading dashes ("* – · – – práise") stays where it was written
   in `point`'s text and a book's verses, which moved it to the end ("* – – – · práise"). How
   the half is sung is unchanged.
+- A hyphen with the `·` after it ("pre-·eminence") is a spelling hyphen where the cadence
+  starts, as in printed psalters, and is printed; it was a dotted split that dropped the
+  hyphen. `·-` ("hon·-our") is still a dotted split. The sung setting is unchanged.
+- A hyphen at either end of a word, or a second one in a row (`\-dashes\-`, `c\-\-d`), is
+  kept as text in `point`'s text and a book's verses (it was dropped), and a `-` without a
+  letter on both sides is text rather than a sung split (`x-,` sang `,` as a syllable of its
+  own).
+- Rubrics written before a half-verse's leading dashes ("* [Sit.] – · – and") stay before
+  them in `point`'s text and a book's verses; they moved after them.
+- Pointed text reads any Unicode space between words, U+00A0 among them, and U+2011 as a
+  spelling hyphen: a line copied from a psalm display reads as the text it came from. A
+  no-break space used to be read as part of a word, so held dashes were sung as words.
 
 ### The 0.1 API (breaking)
 
@@ -272,6 +284,7 @@ timelines, PDFs). Some behavior did change:
   page, `crates/neuma-wasm/examples/psalm.html`; on mobile, `psalmDisplay(text, tone,
   PsalmOptions)` returning records (a run's kind a sealed class in Kotlin and an enum with an
   associated value in Swift) and `Chant.fromTone(tone, ChantOptions)`. A line's runs use
-  U+00A0 between a mark and its syllable, so it never breaks there. `Tone::label()` names a
-  tone as a psalter prints it ("Tone 8 G", "Tonus peregrinus"; `toneLabel` on the display in
-  the browser and on mobile).
+  U+00A0 between a mark and its syllable and U+2011 at a spelling hyphen, so it never breaks
+  there; pointed text reads both back, so a line copied from the display sets as its source.
+  `Tone::label()` names a tone as a psalter prints it ("Tone 8 G", "Tonus peregrinus";
+  `toneLabel(tone)` and `toneLabel` on the display in the browser and on mobile).

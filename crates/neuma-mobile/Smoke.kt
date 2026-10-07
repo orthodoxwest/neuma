@@ -52,7 +52,7 @@ fun main() {
     // A pointed psalter's display: the tone once, and verses as styled runs.
     val shown = psalmDisplay("1 Wash me thoróughly · from my wíckedness, † and cleanse me from my sín. * [Sit.] For I ac·knowledge my fáults.", "8.G", PsalmOptions())
     val runs = shown.verses[0].runs
-    check(runs.joinToString("") { it.text }.startsWith("Wash me thoróughly ·\u00a0from") && shown.toneLabel == "Tone 8 G", "psalm display")
+    check(runs.joinToString("") { it.text }.startsWith("Wash me thoróughly ·\u00a0from") && shown.toneLabel == "Tone 8 G" && toneLabel("per") == "Tonus peregrinus", "psalm display")
     check(runs.count { (it.kind as? PsalmRunKind.Syllable)?.syllable?.flexDrop == true } == 2 && runs.any { it.kind is PsalmRunKind.Flex }, "flex")
     val outside = psalmDisplay("Wash me thoróughly · from my wíckedness, † and cleanse me from my sín. * For I ac·knowledge my fáults.", "8.G", PsalmOptions(accents = Accents.OUTSIDE_FLEX))
     check(outside.verses[0].runs.joinToString("") { it.text }.startsWith("Wash me thoroughly ·\u00a0from my wickedness,"), "accents")

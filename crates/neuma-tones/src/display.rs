@@ -71,8 +71,10 @@ pub struct PsalmRun {
 #[non_exhaustive]
 pub enum PsalmRunKind {
     /// Spaces, and the hyphen of a word the pointing split ("judg-ed") or that is spelled
-    /// with one ("blood-guiltiness"). A space that must not break a line, between a `·` and its
-    /// syllable or before a `*`, `†` or held `–`, is U+00A0.
+    /// with one ("blood‑guiltiness"). A spelling hyphen is U+2011, so a line never breaks at
+    /// it and [`psalm`](crate::psalm()) reads it back as spelling. A space that must not break
+    /// a line, between a `·` and its syllable or before a `*`, `†` or held `–`, is U+00A0: to
+    /// search the text, read those as a space and a hyphen.
     Text,
     /// A sung syllable, as printed: accents kept, punctuation attached.
     Syllable(PsalmSyllable),
@@ -167,7 +169,8 @@ impl PsalmDisplay {
 
 /// The verses' runs, written as [`Pointed::to_text`] writes the marks. The space between a
 /// `·` and its syllable, and before a `*`, `†` or held `–`, is U+00A0, so a line never breaks
-/// between a mark and the syllable it belongs to.
+/// between a mark and the syllable it belongs to, and a spelling hyphen is U+2011. Pointed
+/// text reads both, so a line copied from the display sets as its source does.
 fn verses(sung: &SungPsalm, options: &PsalmOptions) -> Vec<PsalmVerse> {
     let mut out = Vec::with_capacity(sung.text.verses.len());
     for (verse, neumes) in sung.text.verses.iter().zip(&sung.neumes) {
@@ -175,6 +178,10 @@ fn verses(sung: &SungPsalm, options: &PsalmOptions) -> Vec<PsalmVerse> {
         for (part, neumes) in verse.parts.iter().zip(neumes) {
             // Dashes before the first syllable go with it, the `·` among them where written.
             let after = part.omitted_after_point.min(part.omitted);
+            for r in &part.lead_rubrics {
+                runs.space();
+                runs.push(r, PsalmRunKind::Rubric);
+            }
             for k in 0..part.omitted {
                 if k == 0 {
                     runs.space();
@@ -211,7 +218,7 @@ fn verses(sung: &SungPsalm, options: &PsalmOptions) -> Vec<PsalmVerse> {
                     }
                     Joint::Hyphen => runs.push("-", PsalmRunKind::Text),
                     Joint::Spelling => {
-                        runs.push("-", PsalmRunKind::Text);
+                        runs.push("\u{2011}", PsalmRunKind::Text);
                         if s.cadence {
                             runs.push("·", PsalmRunKind::Point);
                         }
@@ -412,14 +419,47 @@ mod tests {
     }
 
     #[test]
+    fn reads_its_own_lines_back() {
+        // A line copied from the display, U+00A0 and U+2011 and all, sets and points as the
+        // text it came from.
+        let text = "1 Deliver me from blood\\-guiltiness, O God, thou that art the God of my · héalth; * and my tongue shall sing of thy · ríghteousness.\n\
+            2 For thou desirest no sacrifice, † else would I give it thee * but thou delightest not in burnt-offerings.\n\
+            3 My soul thirsteth for thée, † my flesh also longeth after · thée * in a barren and dry land · where no wáter is.\n\
+            4 Lord, remember · Dávid, – – * – · – – práise the Lord.\n\
+            5 Thou hast the pre-·eminence, and c\\-\\-d \\-dashes\\-, * and hon·-our and well\\-·plé-a-sing.\n";
+        // With every acute printed: one taken out of a flex can't be read back.
+        let options = PsalmOptions::default();
+        for name in ["8.G", "1.D", "per"] {
+            let tone = Tone::named(name).unwrap();
+            let d = PsalmDisplay::new(text, tone, &options);
+            let copied: String = d
+                .verses()
+                .iter()
+                .map(|v| {
+                    let line: String = v.runs.iter().map(|r| r.text.as_str()).collect();
+                    format!("{} {line}\n", v.number.unwrap())
+                })
+                .collect();
+            assert!(copied.contains('\u{a0}') && copied.contains('\u{2011}'));
+            assert_eq!(
+                crate::psalm(&copied, tone, &options).gabc,
+                crate::psalm(text, tone, &options).gabc,
+                "{name}"
+            );
+            assert_eq!(point(&copied, tone).text, point(text, tone).text, "{name}");
+        }
+    }
+
+    #[test]
     fn keeps_spelling_hyphens() {
         let tone = Tone::named("8.G").unwrap();
         let text = "Deliver me from blood\\-guiltiness, O God, thou that art the God of my · héalth; * and my tongue shall sing of thy · ríghteousness.\n\
             For thou art my · hópe * thou hast the pre\\-·eminence.";
         let d = PsalmDisplay::new(text, tone, &PsalmOptions::default());
-        assert!(line(&d.verses()[0]).starts_with("Deliver me from blood-guiltiness, O God"));
+        // A spelling hyphen is U+2011: the line never breaks after "pre-".
+        assert!(line(&d.verses()[0]).starts_with("Deliver me from blood\u{2011}guiltiness, O God"));
         assert!(
-            line(&d.verses()[1]).ends_with("thou hast the pre-·eminence."),
+            line(&d.verses()[1]).ends_with("thou hast the pre\u{2011}·eminence."),
             "{}",
             line(&d.verses()[1])
         );

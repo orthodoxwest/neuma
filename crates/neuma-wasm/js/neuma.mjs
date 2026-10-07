@@ -234,9 +234,25 @@ export function psalmDisplay(text, tone, { intone = "first", autoPoint = true, a
 // A tone block always has `key: value` lines; a tone name never has a colon.
 const isBlock = (tone) => (String(tone).includes(":") ? 1 : 0);
 
-// `intone` and `accents` as the module takes them, in one number.
+// `intone` and `accents` as the module takes them, in one number: bits 0–1 and 2–3.
 const psalmFlags = (intone, accents) =>
   (intone === "every" ? 1 : intone === "never" ? 2 : 0) | ((accents === "none" ? 1 : accents === "outsideFlex" ? 2 : 0) << 2);
+
+/**
+ * A tone's name as a psalter prints it beside the tone: "Tone 8 G" for "8.G", "Tonus
+ * peregrinus" for "per"; a custom tone's other names as written.
+ * @param {string} tone as for `psalm`
+ * @returns {string}
+ */
+export function toneLabel(tone) {
+  return guarded((w) => {
+    putInput(String(tone));
+    w.neuma_tone_label(isBlock(tone));
+    const out = JSON.parse(takeOutput());
+    if (out.error) throw new Error(out.error);
+    return out.label;
+  });
+}
 
 /** The built-in psalm tones' names, such as "8.G". Call after `init()`. */
 export function toneNames() {
@@ -352,7 +368,7 @@ export class Chant {
     const psalm = {
       tone: String(tone),
       custom: isBlock(tone),
-      intone: psalmFlags(intone, accents),
+      psalmFlags: psalmFlags(intone, accents),
       autoPoint: autoPoint ? 1 : 0,
     };
     chant.#engrave({ source: String(text), args: chantArgs(options), psalm });
@@ -384,7 +400,7 @@ export class Chant {
     const { source, args, psalm } = recipe;
     const handle = guarded((w) => {
       putInput(psalm ? psalm.tone + "\0" + source : source);
-      return psalm ? w.chant_from_psalm(psalm.custom, psalm.intone, psalm.autoPoint, ...args) : w.chant_new(...args);
+      return psalm ? w.chant_from_psalm(psalm.custom, psalm.psalmFlags, psalm.autoPoint, ...args) : w.chant_new(...args);
     });
     const out = takeOutput();
     if (handle < 0) throw new Error(JSON.parse(out).error);
@@ -571,7 +587,7 @@ export class Chant {
     const { source, args, psalm } = state.recipe;
     return guarded((w) => {
       putInput(psalm ? psalm.tone + "\0" + source : source);
-      const made = w.page_rebuild(psalm ? 1 : 0, psalm?.custom ?? 0, psalm?.intone ?? 0, psalm?.autoPoint ?? 0, ...args, ...at);
+      const made = w.page_rebuild(psalm ? 1 : 0, psalm?.custom ?? 0, psalm?.psalmFlags ?? 0, psalm?.autoPoint ?? 0, ...args, ...at);
       if (made < 0) throw new Error("neuma: a psalm page's tone could not be read again");
       return made;
     });

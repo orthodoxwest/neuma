@@ -301,6 +301,8 @@ fn displays_a_pointed_psalm() {
     let v = &d.verses[0];
     assert_eq!(v.number, Some(1));
     assert_eq!(d.tone_label, "Tone 8 G");
+    assert_eq!(tone_label("1.D2".to_string()).unwrap(), "Tone 1 D2");
+    assert!(tone_label("9.z".to_string()).is_err());
     let line: String = v.runs.iter().map(|r| r.text.as_str()).collect();
     // A line never breaks between a mark and its syllable: those spaces are U+00A0.
     assert_eq!(

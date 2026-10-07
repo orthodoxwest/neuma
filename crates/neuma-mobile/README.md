@@ -199,7 +199,9 @@ pointed psalter prints no acute in a flex; `Accents.NONE` prints none at all). I
 `toneLabel` names the tone as a psalter prints it beside the tone ("Tone 8 G", "Tonus
 peregrinus"). Each `PsalmVerse` has its `number` and its line as `runs`, each a `text` and a
 `kind` that says how to style it, which fits a styled `Text` directly. The space between a
-mark and its syllable is U+00A0, so a line never breaks there. In Compose:
+mark and its syllable is U+00A0, and a spelling hyphen U+2011, so a line never breaks there;
+to search the text, read them as a space and a hyphen (`psalm` and `point` read them back as
+written). `toneLabel(tone)` names a tone without any text. In Compose:
 
 ```kotlin
 val red = Color(0xFFA3211C)

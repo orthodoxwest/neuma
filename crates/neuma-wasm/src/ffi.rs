@@ -123,17 +123,17 @@ pub extern "C" fn chant_new(initial: i32, annotation: u32, lyric_size: f32, font
 #[allow(clippy::too_many_arguments)]
 pub extern "C" fn chant_from_psalm(
     custom: u32,
-    intone: u32,
+    psalm_flags: u32,
     auto_point: u32,
     initial: i32,
     annotation: u32,
     lyric_size: f32,
     font: u32,
 ) -> f64 {
-    match tone_and_text(custom) {
-        Ok((tone, text)) => {
+    match psalm_input(custom, psalm_flags, auto_point) {
+        Ok((tone, text, psalm)) => {
             let opts = chant_options(initial, annotation, lyric_size, font);
-            let chant = Chant::from_psalm(&text, &tone, &psalm_options(intone, auto_point), opts);
+            let chant = Chant::from_psalm(&text, &tone, &psalm, opts);
             diagnostics_and_psalm(&chant);
             keep(chant)
         }
@@ -232,7 +232,7 @@ pub extern "C" fn chant_layout(handle: f64, width: f32, scale: f32, last: u32, m
 pub extern "C" fn page_rebuild(
     psalm: u32,
     custom: u32,
-    intone: u32,
+    psalm_flags: u32,
     auto_point: u32,
     initial: i32,
     annotation: u32,
@@ -245,8 +245,8 @@ pub extern "C" fn page_rebuild(
 ) -> f64 {
     let options = chant_options(initial, annotation, lyric_size, font);
     let chant = if psalm == 1 {
-        match tone_and_text(custom) {
-            Ok((tone, text)) => Chant::from_psalm(&text, &tone, &psalm_options(intone, auto_point), options),
+        match psalm_input(custom, psalm_flags, auto_point) {
+            Ok((tone, text, psalm)) => Chant::from_psalm(&text, &tone, &psalm, options),
             Err(_) => return NONE,
         }
     } else {
@@ -387,17 +387,14 @@ fn error(out: &mut String, e: &str) {
     out.push('}');
 }
 
-/// Sets psalm text to a tone (see [`tone_and_text`]); `intone`'s low two bits are 0 for the
-/// first verse, 1 for every verse, 2 for none, and the next two the accents printed (0 all, 1
-/// none, 2 none in a flex); `auto_point` 0 leaves unpointed halves unpointed. Leaves the
-/// setting JSON, or `{"error": …}`, in the output buffer.
+/// Sets psalm text to a tone (see [`psalm_input`] for the arguments). Leaves the setting
+/// JSON, or `{"error": …}`, in the output buffer.
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
-pub extern "C" fn neuma_psalm(custom: u32, intone: u32, auto_point: u32) {
+pub extern "C" fn neuma_psalm(custom: u32, psalm_flags: u32, auto_point: u32) {
     let mut out = String::new();
-    match tone_and_text(custom) {
-        Ok((tone, text)) => {
-            let options = psalm_options(intone, auto_point);
+    match psalm_input(custom, psalm_flags, auto_point) {
+        Ok((tone, text, options)) => {
             let index = neuma::Utf16Index::new(&text);
             let s = neuma_tones::psalm(&text, &tone, &options);
             crate::setting_json(&mut out, &s.gabc, &s.notes, &s.diagnostics, &index);
@@ -407,19 +404,29 @@ pub extern "C" fn neuma_psalm(custom: u32, intone: u32, auto_point: u32) {
     output(&out);
 }
 
-fn psalm_options(intone: u32, auto_point: u32) -> neuma_tones::PsalmOptions {
-    neuma_tones::PsalmOptions::default()
-        .with_intone(match intone & 3 {
-            1 => neuma_tones::Intone::EveryVerse,
-            2 => neuma_tones::Intone::Never,
-            _ => neuma_tones::Intone::FirstVerse,
-        })
-        .with_accents(match (intone >> 2) & 3 {
-            1 => neuma_tones::Accents::None,
-            2 => neuma_tones::Accents::OutsideFlex,
-            _ => neuma_tones::Accents::All,
-        })
-        .with_auto_point(auto_point != 0)
+/// The tone and text in the input buffer (see [`tone_and_text`]) and the psalm options:
+/// `psalm_flags` holds when the intonation is sung in bits 0–1 (0 the first verse, 1 every
+/// verse, 2 never) and the accents printed in bits 2–3 (0 all, 1 none, 2 none in a flex);
+/// any other value is an error. `auto_point` 0 leaves unpointed halves unpointed.
+fn psalm_input(custom: u32, psalm_flags: u32, auto_point: u32) -> Result<(neuma_tones::Tone, String, neuma_tones::PsalmOptions), String> {
+    let intone = match psalm_flags & 3 {
+        0 => neuma_tones::Intone::FirstVerse,
+        1 => neuma_tones::Intone::EveryVerse,
+        2 => neuma_tones::Intone::Never,
+        _ => return Err(format!("psalm flags {psalm_flags:#x}: no such intonation")),
+    };
+    let accents = match psalm_flags >> 2 {
+        0 => neuma_tones::Accents::All,
+        1 => neuma_tones::Accents::None,
+        2 => neuma_tones::Accents::OutsideFlex,
+        _ => return Err(format!("psalm flags {psalm_flags:#x}: no such accents")),
+    };
+    let (tone, text) = tone_and_text(custom)?;
+    let options = neuma_tones::PsalmOptions::default()
+        .with_intone(intone)
+        .with_accents(accents)
+        .with_auto_point(auto_point != 0);
+    Ok((tone, text, options))
 }
 
 /// Points psalm text for a tone (see [`tone_and_text`]), leaving the pointing JSON, or
@@ -438,17 +445,16 @@ pub extern "C" fn neuma_point(custom: u32) {
     output(&out);
 }
 
-/// Points psalm text for a tone, verse by verse, for display (see [`tone_and_text`] and
-/// [`neuma_psalm`] for the arguments), leaving the display JSON, or `{"error": …}`, in the
-/// output buffer.
+/// Points psalm text for a tone, verse by verse, for display (see [`psalm_input`] for the
+/// arguments), leaving the display JSON, or `{"error": …}`, in the output buffer.
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
-pub extern "C" fn neuma_psalm_display(custom: u32, intone: u32, auto_point: u32) {
+pub extern "C" fn neuma_psalm_display(custom: u32, psalm_flags: u32, auto_point: u32) {
     let mut out = String::new();
-    match tone_and_text(custom) {
-        Ok((tone, text)) => {
+    match psalm_input(custom, psalm_flags, auto_point) {
+        Ok((tone, text, options)) => {
             let index = neuma::Utf16Index::new(&text);
-            let d = neuma_tones::PsalmDisplay::new(&text, &tone, &psalm_options(intone, auto_point));
+            let d = neuma_tones::PsalmDisplay::new(&text, &tone, &options);
             crate::display_json(&mut out, &d, &index);
         }
         Err(e) => error(&mut out, &e),
@@ -469,6 +475,23 @@ pub extern "C" fn neuma_tone_gabc(custom: u32) {
             output(&out);
         }
     }
+}
+
+/// The tone in the input buffer (as [`neuma_tone_gabc`] reads it) named as a psalter prints
+/// it beside the tone (`Tone::label`), or `{"error": …}`.
+#[allow(unsafe_code)]
+#[unsafe(no_mangle)]
+pub extern "C" fn neuma_tone_label(custom: u32) {
+    let mut out = String::new();
+    match tone_and_text(custom) {
+        Ok((tone, _)) => {
+            out.push_str("{\"label\":");
+            neuma::json::string(&mut out, &tone.label());
+            out.push('}');
+        }
+        Err(e) => error(&mut out, &e),
+    }
+    output(&out);
 }
 
 /// Leaves the built-in tone names, one per line, in the output buffer.

@@ -70,7 +70,7 @@ let pt = try! point(text: "O come, let us sing unto the Lord * let us heartily r
 check(pt.halves.count == 2 && pt.text.contains("·"), "point")
 let shown = try! psalmDisplay(text: "1 Wash me thoróughly · from my wíckedness, † and cleanse me from my sín. * [Sit.] For I ac·knowledge my fáults.", tone: "8.G", options: PsalmOptions())
 let runs = shown.verses[0].runs
-check(runs.map(\.text).joined().hasPrefix("Wash me thoróughly ·\u{a0}from") && shown.toneLabel == "Tone 8 G", "psalm display")
+check(runs.map(\.text).joined().hasPrefix("Wash me thoróughly ·\u{a0}from") && shown.toneLabel == "Tone 8 G" && (try! toneLabel(tone: "per")) == "Tonus peregrinus", "psalm display")
 let drops = runs.filter { if case .syllable(let s) = $0.kind { return s.flexDrop } else { return false } }
 check(drops.count == 2 && runs.contains { if case .flex = $0.kind { return true } else { return false } }, "flex")
 let outside = try! psalmDisplay(text: "Wash me thoróughly · from my wíckedness, † and cleanse me from my sín. * For I ac·knowledge my fáults.", tone: "8.G", options: PsalmOptions(accents: .outsideFlex))
