@@ -111,6 +111,19 @@ assert.equal(psalm(plain, "8.G").gabc, psalm(pt.text, "8.G").gabc);
 assert.ok(psalm(plain, "8.G", { pointing: "manual" }).diagnostics.some((d) => d.code === "apply::no-accent"));
 
 
+// A RangeError from the caller's own arguments, before the engine runs, is rethrown and
+// leaves the engine and its Chants alive.
+{
+  const live = new Chant("(c4) a(g)", { initial: 0 });
+  const bad = { toString: () => (1).toFixed(500) };
+  assert.throws(() => summarize(bad), RangeError);
+  assert.throws(() => psalm("a * b", bad), RangeError);
+  assert.throws(() => live.layout(400, { prefix: bad }), RangeError);
+  assert.equal(summarize("(c4) a(g)").notes, 1);
+  assert.ok(live.layout(400).svg.startsWith("<svg"));
+  live.free();
+}
+
 // A trap or a stack overflow (a RangeError, not a trap) drops the engine until init() runs
 // again. A fresh copy of the glue runs a stand-in module whose `neuma_summarize` recurses
 // forever and whose `neuma_tones` traps.
