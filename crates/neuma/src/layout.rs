@@ -344,6 +344,8 @@ struct BreakKey {
 /// A break a line may take (see `Engraving::line_candidates`).
 #[derive(Clone, Copy, Debug)]
 struct Candidate {
+    /// The segment the line ends after, counted from the line's first, so a line moved by
+    /// an edit before it keeps its candidates as they are.
     end: u32,
     demerits: f64,
     break_cost: f64,
@@ -434,11 +436,7 @@ impl BreakTable {
                     .map(|sp| (sp, n as isize - m as isize))
             };
             if let Some((sp, shift)) = head.or_else(tail) {
-                for k in sp.from..sp.to {
-                    let mut cand = old.cands[k as usize];
-                    cand.end = (cand.end as isize + shift) as u32;
-                    self.cands.push(cand);
-                }
+                self.cands.extend_from_slice(&old.cands[sp.from as usize..sp.to as usize]);
                 reach = Some((sp.reach as isize + shift) as usize);
             }
         }
@@ -792,7 +790,7 @@ impl Engraving {
                     let d = (10.0 + b) * (10.0 + b) + LINE_PENALTY + TOO_LOOSE * (b - f64::from(TOLERANCE)).max(0.0);
                     // A syllable's end is a better break than a cut inside its melisma.
                     out.push(Candidate {
-                        end: end as u32,
+                        end: (end - first) as u32,
                         demerits: d,
                         break_cost,
                     });
@@ -881,7 +879,7 @@ impl Engraving {
                 let (from, to) = table.candidates(self, first, indented_line, line_target, opts);
                 for c in &table.cands[from..to] {
                     let total = base + c.demerits + c.break_cost;
-                    let end = c.end as usize;
+                    let end = first + c.end as usize;
                     let better = best[end + 1][next].is_none_or(|(b, _, _)| total < b);
                     if better {
                         best[end + 1][next] = Some((total, first, j));
