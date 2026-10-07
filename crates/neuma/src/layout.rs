@@ -68,6 +68,9 @@ const STRETCH_IN_SYLLABLE: f32 = 0.25;
 /// How far the space between two words may shrink to fit a line: GregorioTeX's
 /// interwordspacetext and interwordspacenotes give 0.05 cm.
 const SHRINK: f32 = 0.35;
+/// The most of the space between two words' texts that shrinking may take, so that small
+/// lyrics, whose word space is narrower than [`SHRINK`] allows for, never meet.
+const SHRINK_OF_WORD_SPACE: f32 = 0.3;
 /// How far each gap may stretch before a line counts as loose, in staff spaces.
 const STRETCH: f32 = 1.5;
 /// The widest column laid out, in output units and in staff spaces; wider requests are
@@ -233,7 +236,7 @@ fn place(cur: &Cursor, seg: &Segment, hyphen: f32, word_space: f32, line_start: 
         1.0
     };
     let shrink = if seg.first && seg.word_start && !seg.is_bar() && !cur.after_bar {
-        SHRINK
+        SHRINK.min(word_space * SHRINK_OF_WORD_SPACE)
     } else {
         0.0
     };

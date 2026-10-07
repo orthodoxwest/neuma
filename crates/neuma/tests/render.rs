@@ -642,6 +642,44 @@ fn a_hyphen_ends_a_line_inside_a_word() {
 }
 
 #[test]
+fn squeezed_small_lyrics_never_meet() {
+    use neuma::TextMeasure;
+    // Words whose texts are wider than their notes are set a word space apart; squeezing a
+    // line takes at most part of that space, however small the lyrics.
+    let style = StyleOptions {
+        lyric_size: 0.5,
+        ..NO_INITIAL.clone()
+    };
+    let src = format!("(c4) {} (::)", ["Mmmmmmmmmmmmmmmm(g)"; 24].join(" "));
+    let eng = parse(&src).score.engrave(&ApproxMeasure, &style);
+    for width in (100..600).step_by(7) {
+        let list = eng.layout(width as f32, &LayoutOptions::default()).display();
+        let lyrics: Vec<(f32, f32)> = list
+            .items
+            .iter()
+            .filter_map(|i| match i {
+                Item::Text {
+                    runs,
+                    x,
+                    size,
+                    role: TextRole::Lyric,
+                    ..
+                } => {
+                    let text: String = runs.iter().map(|r| r.text.as_str()).collect();
+                    Some((*x, *x + ApproxMeasure.advance(&text, Default::default()) * size))
+                }
+                _ => None,
+            })
+            .collect();
+        for pair in lyrics.windows(2) {
+            if pair[1].0 > pair[0].0 {
+                assert!(pair[1].0 >= pair[0].1 + 0.01, "{width}: {pair:?}");
+            }
+        }
+    }
+}
+
+#[test]
 fn a_preview_draws_its_staves_as_wide_as_the_whole_score() {
     // The second line holds a word too wide for the column, which widens the layout; the
     // one-line preview's staff is as wide as in the whole score.
