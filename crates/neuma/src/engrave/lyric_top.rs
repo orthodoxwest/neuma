@@ -5,7 +5,6 @@
 //! highest of its regular and italic glyphs), and serve other book faces near enough.
 
 use crate::score::LyricRun;
-use crate::text::TextMeasure;
 
 /// An accent over a lowercase letter, or a dot over `i` and `j`, in ems above the baseline.
 const ACCENTED_LOWER: f32 = 0.67;
@@ -165,62 +164,55 @@ fn raise(last: Option<&mut (f32, f32, f32)>, size: f32) {
 /// The tops of a lyric's letters, as `(left, right, top)` in staff spaces: left and right from
 /// the text's start, the top above its baseline. Neighbouring letters of one height share an
 /// entry.
-pub(crate) fn profile(runs: &[LyricRun], measure: &dyn TextMeasure, size: f32) -> Vec<(f32, f32, f32)> {
+/// `advances` holds, for each run in turn, the advance of its text up to the end of each of
+/// its characters ([`TextMeasure::prefix_advances`]), and `starts` where each run's begin
+/// in it, and where the last one's end.
+pub(crate) fn profile(runs: &[LyricRun], advances: &[f32], starts: &[usize], size: f32) -> Vec<(f32, f32, f32)> {
     let mut out: Vec<(f32, f32, f32)> = Vec::new();
     let mut x = 0.0;
-    for r in runs {
+    for (i, r) in runs.iter().enumerate() {
         if r.text.is_empty() {
             continue;
         }
-        // Where the text up to byte `k` ends. Measured only where an entry starts or ends:
-        // letters of one height in a row make one entry, with nothing to measure between them.
-        // The last one measured is kept, as an entry's end is often the next one's start.
-        let last_at = std::cell::Cell::new((0, x));
-        let at = |k: usize| {
-            let (j, v) = last_at.get();
-            if j == k {
-                return v;
-            }
-            let v = x + measure.advance(&r.text[..k], r.style) * size;
-            last_at.set((k, v));
-            v
-        };
-        // The last entry's last letter, while that entry is open in this run: the byte it ends
-        // at, and how far its ink runs past it. Its right edge is measured once it closes.
+        let ends = &advances[starts[i]..starts[i + 1]];
+        // Where the text up to its `n`th character ends.
+        let at = |n: usize| if n == 0 { x } else { x + ends[n - 1] * size };
+        // The last entry's last letter, while that entry is open in this run: the count of
+        // characters up to its end, and how far its ink runs past it. Its right edge is set
+        // once it closes.
         let mut open: Option<(usize, f32)> = None;
         let close = |out: &mut Vec<(f32, f32, f32)>, open: &mut Option<(usize, f32)>| {
             if let (Some((end, tail)), Some(last)) = (open.take(), out.last_mut()) {
                 last.1 = at(end) + tail * size;
             }
         };
-        for (k, c) in r.text.char_indices() {
+        for (n, c) in r.text.chars().enumerate() {
             if ('\u{300}'..='\u{36f}').contains(&c) {
                 raise(out.last_mut(), size);
                 continue;
             }
             let top = char_top(c, r.style.small_caps) * size;
             let (lead, tail) = side_overhang(c, r.style.italic);
-            let end = k + c.len_utf8();
             let joins = match (out.last(), open) {
                 // Right after the entry's last letter, of its height, neither overhanging the
                 // other: both edges are where the text up to here ends.
-                (Some(last), Some((e, t))) if last.2 == top && e == k && t == 0.0 && lead == 0.0 => true,
+                (Some(last), Some((e, t))) if last.2 == top && e == n && t == 0.0 && lead == 0.0 => true,
                 (Some(last), _) if last.2 == top => {
                     close(&mut out, &mut open);
-                    let left = at(k) - lead * size;
+                    let left = at(n) - lead * size;
                     out.last().is_some_and(|last| (last.1 - left).abs() < 1e-4)
                 }
                 _ => false,
             };
             if !joins {
                 close(&mut out, &mut open);
-                let left = at(k) - lead * size;
+                let left = at(n) - lead * size;
                 out.push((left, left, top));
             }
-            open = Some((end, tail));
+            open = Some((n + 1, tail));
         }
         close(&mut out, &mut open);
-        x = at(r.text.len());
+        x = at(ends.len());
     }
     out.retain(|e| e.2 > 0.0);
     out
@@ -230,6 +222,18 @@ pub(crate) fn profile(runs: &[LyricRun], measure: &dyn TextMeasure, size: f32) -
 mod tests {
     use super::*;
     use crate::score::TextStyle;
+    use crate::text::TextMeasure;
+
+    fn profile(runs: &[LyricRun], measure: &dyn TextMeasure, size: f32) -> Vec<(f32, f32, f32)> {
+        let mut advances = Vec::new();
+        let mut starts = Vec::new();
+        for r in runs {
+            starts.push(advances.len());
+            measure.prefix_advances(&r.text, r.style, &mut advances);
+        }
+        starts.push(advances.len());
+        super::profile(runs, &advances, &starts, size)
+    }
 
     #[test]
     fn letters_reach_their_heights() {

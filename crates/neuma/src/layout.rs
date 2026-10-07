@@ -881,6 +881,8 @@ pub(crate) struct LayoutCache {
     tables: Vec<BreakTable>,
     /// How the last layout's lines were set across.
     shapes: Shapes,
+    /// For one layout only, with nothing to keep for the next.
+    once: bool,
 }
 
 impl LayoutCache {
@@ -1566,7 +1568,11 @@ impl Engraving {
     /// tell.
     #[must_use]
     pub fn layout_with(self: &Arc<Self>, width: f32, opts: &LayoutOptions) -> Layout {
-        self.layout_cached(width, opts, &mut LayoutCache::default())
+        let mut once = LayoutCache {
+            once: true,
+            ..LayoutCache::default()
+        };
+        self.layout_cached(width, opts, &mut once)
     }
 
     /// Lays the engraving out as [`layout_with`](Self::layout_with) does, reusing the line breaker's
@@ -1699,12 +1705,17 @@ impl Engraving {
                 start,
                 custos,
             };
-            let key = self.shape_key(&set);
-            let shape = match old_shapes.get(&key) {
-                Some(shape) => Arc::clone(shape),
-                None => Arc::new(self.shape(&table.fits, &set)),
+            let shape = if cache.once {
+                Arc::new(self.shape(&table.fits, &set))
+            } else {
+                let key = self.shape_key(&set);
+                let shape = match old_shapes.get(&key) {
+                    Some(shape) => Arc::clone(shape),
+                    None => Arc::new(self.shape(&table.fits, &set)),
+                };
+                shapes.insert(key, Arc::clone(&shape));
+                shape
             };
-            shapes.insert(key, Arc::clone(&shape));
             let has_lyrics = shape.has_lyrics;
             let staffless = shape.staffless;
             let ink_bottom = shape.ink_bottom;

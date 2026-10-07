@@ -146,6 +146,21 @@ impl FaceMetrics {
         }
         w
     }
+
+    /// [`advance`](Self::advance) of each prefix of `text` that ends a character: its
+    /// running sum, pushed onto `out`.
+    fn prefix_advances(&self, text: &str, small_caps: bool, out: &mut Vec<f32>) {
+        let mut w = 0.0;
+        let mut prev: Option<char> = None;
+        for c in text.chars() {
+            w += self.advance_of(c, small_caps);
+            if !small_caps && let Some(p) = prev {
+                w += self.kern(p, c);
+            }
+            prev = Some(c);
+            out.push(w);
+        }
+    }
 }
 
 /// Font metrics for measuring lyrics: a [`TextMeasure`] read from a table that
@@ -293,6 +308,13 @@ impl TextMeasure for MetricsTable {
         }
     }
 
+    fn prefix_advances(&self, text: &str, style: TextStyle, out: &mut Vec<f32>) {
+        match self.fallback(style) {
+            Some(f) => f.prefix_advances(text, style.small_caps, out),
+            None => out.extend((1..=text.chars().count()).map(|n| n as f32 * 0.5)),
+        }
+    }
+
     fn vertical(&self, style: TextStyle) -> (f32, f32) {
         self.fallback(style).map_or((0.8, 0.25), |f| (f.ascent, f.descent))
     }
@@ -305,6 +327,33 @@ impl TextMeasure for MetricsTable {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn prefix_advances_are_the_prefixes_advances() {
+        let texts = ["", "AVa", "Dóminus", "fflux, Tè\u{301}", "\u{1d11e}ǽ ΚύριΕ"];
+        let measures: [&dyn TextMeasure; 3] = [crate::LyricFont::Google.metrics(), &MetricsTable::default(), &crate::ApproxMeasure];
+        for m in measures {
+            for t in texts {
+                let r = TextStyle::REGULAR;
+                let styles = [
+                    r,
+                    TextStyle { italic: true, ..r },
+                    TextStyle { small_caps: true, ..r },
+                    TextStyle { bold: true, ..r },
+                ];
+                for style in styles {
+                    let mut out = Vec::new();
+                    m.prefix_advances(t, style, &mut out);
+                    let each: Vec<f32> = t.char_indices().map(|(k, c)| m.advance(&t[..k + c.len_utf8()], style)).collect();
+                    assert_eq!(
+                        out.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+                        each.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+                        "{t:?}"
+                    );
+                }
+            }
+        }
+    }
 
     #[test]
     fn round_trip_and_measure() {

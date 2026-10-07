@@ -1313,23 +1313,51 @@ impl Pass<'_> {
         };
         if !text.is_empty() {
             let runs = text.runs.clone();
-            let mut width = 0.0;
+            // Each run's advance up to the end of each of its characters, measured once for
+            // the width, the vowel's place and the letters' tops.
+            let mut advances = Vec::with_capacity(runs.iter().map(|r| r.text.len()).sum());
+            let mut starts = Vec::with_capacity(runs.len() + 1);
             for r in &runs {
-                width += self.measure.advance(&r.text, r.style) * self.size;
+                starts.push(advances.len());
+                self.measure.prefix_advances(&r.text, r.style, &mut advances);
+            }
+            starts.push(advances.len());
+            // A run's advance: the last of its prefixes'.
+            let full = |i: usize| match advances[starts[i]..starts[i + 1]].last() {
+                Some(&a) => a,
+                None => self.measure.advance(&runs[i].text, runs[i].style),
+            };
+            // The advance of the first `chars` characters of the runs, in ems.
+            let prefix = |chars: usize| {
+                let mut left = chars;
+                let mut w = 0.0;
+                for (i, r) in runs.iter().enumerate() {
+                    let n = starts[i + 1] - starts[i];
+                    if left >= n {
+                        w += full(i);
+                        left -= n;
+                    } else {
+                        w += match left {
+                            0 => self.measure.advance("", r.style),
+                            _ => advances[starts[i] + left - 1],
+                        };
+                        break;
+                    }
+                }
+                w
+            };
+            let mut width = 0.0;
+            for (i, r) in runs.iter().enumerate() {
+                width += full(i) * self.size;
                 if !self.measure.has_face(r.style) {
                     width += synthetic_face(self.measure, r, self.size, &mut self.e.sink, &mut self.warned_face, syl);
                 }
             }
-            let chars: Vec<char> = text.plain().chars().collect();
-            let mut masked = chars.clone();
-            let mut ci = 0;
+            // The text's characters, those of runs marked consonantal masked out for the
+            // vowel's search.
+            let mut masked: Vec<char> = Vec::with_capacity(advances.len());
             for r in &runs {
-                for _ in r.text.chars() {
-                    if r.consonant {
-                        masked[ci] = '\u{0}';
-                    }
-                    ci += 1;
-                }
+                masked.extend(r.text.chars().map(|c| if r.consonant { '\u{0}' } else { c }));
             }
             let nucleus = text.center.clone().or_else(|| self.e.rules.nucleus(&masked));
             let seg = &self.e.segments[k];
@@ -1339,21 +1367,21 @@ impl Pass<'_> {
             };
             let center = match &nucleus {
                 Some(r) => {
-                    let before = prefix_advance(&runs, r.start, self.measure) * self.size;
-                    let upto = prefix_advance(&runs, r.end, self.measure) * self.size;
+                    let before = prefix(r.start) * self.size;
+                    let upto = prefix(r.end) * self.size;
                     (before + upto) / 2.0
                 }
                 None => width / 2.0,
             };
             if let Some(r) = &nucleus
-                && let Some(c) = chars.get(r.start)
+                && let Some(c) = runs.iter().flat_map(|r| r.text.chars()).nth(r.start)
             {
                 for n in &mut self.e.notes[notes_from..] {
-                    n.vowel = Some(*c);
+                    n.vowel = Some(c);
                 }
             }
             let next_word = score.syllables.get(si as usize + 1).is_none_or(|s| s.word_start);
-            let tops = lyric_top::profile(&runs, self.measure, self.size);
+            let tops = lyric_top::profile(&runs, &advances, &starts, self.size);
             // The box holds the text's ink, which a letter at either end (the hook of an `f`)
             // can carry past its advance.
             let (lead, tail) = lyric_top::overhang(&runs, self.size);
@@ -1365,7 +1393,12 @@ impl Pass<'_> {
                 left: anchor - center,
                 width,
                 word_end: next_word,
-                hyphenated: text.plain().ends_with(['-', '\u{2010}']),
+                hyphenated: text
+                    .runs
+                    .iter()
+                    .rev()
+                    .find_map(|r| r.text.chars().next_back())
+                    .is_some_and(|c| matches!(c, '-' | '\u{2010}')),
                 lead_hyphen: false,
             });
         } else if self.first_lyric.as_ref().is_some_and(|(i, _)| *i == si as usize)
@@ -1463,24 +1496,6 @@ impl Pass<'_> {
         };
         (engraving, self.marks)
     }
-}
-
-/// Advance of the first `chars` characters of the runs, in ems.
-fn prefix_advance(runs: &[LyricRun], chars: usize, measure: &dyn TextMeasure) -> f32 {
-    let mut left = chars;
-    let mut w = 0.0;
-    for r in runs {
-        let n = r.text.chars().count();
-        if left >= n {
-            w += measure.advance(&r.text, r.style);
-            left -= n;
-        } else {
-            let part: String = r.text.chars().take(left).collect();
-            w += measure.advance(&part, r.style);
-            break;
-        }
-    }
-    w
 }
 
 #[cfg(test)]

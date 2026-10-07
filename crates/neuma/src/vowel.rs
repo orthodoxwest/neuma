@@ -12,6 +12,9 @@ pub struct VowelRules {
     prefixes: Vec<Vec<char>>,
     suffixes: Vec<Vec<char>>,
     secondary: Vec<Vec<char>>,
+    /// The vowels again, for looking up: the ASCII ones as bits, the others sorted.
+    ascii: u128,
+    wide: Vec<char>,
 }
 
 const LATIN: &str = include_str!("../data/vowels-la.txt");
@@ -21,11 +24,28 @@ impl VowelRules {
     /// The shipped rules for `language` (a code or alias, as in the `language:` header), or
     /// `None` if neuma has none. Callers fall back to Latin, as Gregorio does.
     pub fn builtin(language: &str) -> Option<VowelRules> {
-        [LATIN, ENGLISH].iter().find_map(|f| VowelRules::parse(f, language))
+        // Read once per language: every score without its own rules engraves with these.
+        static READ: std::sync::Mutex<Vec<(String, Option<VowelRules>)>> = std::sync::Mutex::new(Vec::new());
+        let mut read = READ.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some((_, rules)) = read.iter().find(|(l, _)| l == language) {
+            return rules.clone();
+        }
+        let rules = [LATIN, ENGLISH].iter().find_map(|f| VowelRules::parse(f, language));
+        if read.len() < 16 {
+            read.push((language.to_string(), rules.clone()));
+        }
+        rules
     }
 
     pub fn latin() -> VowelRules {
-        VowelRules::parse(LATIN, "la").unwrap_or_default()
+        VowelRules::builtin("la").unwrap_or_default()
+    }
+
+    fn is_vowel(&self, c: char) -> bool {
+        match u32::from(c) {
+            k @ 0..128 => self.ascii >> k & 1 == 1,
+            _ => self.wide.binary_search(&c).is_ok(),
+        }
     }
 
     /// Reads the rules for `language` from a vowel file, following aliases within the file.
@@ -42,7 +62,7 @@ impl VowelRules {
     /// The characters of `chars` that form the syllable's nucleus: the first run of vowels
     /// (after a prefix, plus a suffix), else the first secondary sequence, else `None`.
     pub fn nucleus(&self, chars: &[char]) -> Option<Range<usize>> {
-        let is_vowel = |c: char| self.vowels.contains(&c);
+        let is_vowel = |c: char| self.is_vowel(c);
         let matches = |at: usize, pat: &[char]| chars.len() >= at + pat.len() && chars[at..at + pat.len()] == *pat;
         let mut i = 0;
         while i < chars.len() {
@@ -70,7 +90,7 @@ impl VowelRules {
 
     fn extend(&self, chars: &[char], start: usize) -> Range<usize> {
         let mut end = start;
-        while end < chars.len() && (self.vowels.contains(&chars[end]) || is_mark(chars[end])) {
+        while end < chars.len() && (self.is_vowel(chars[end]) || is_mark(chars[end])) {
             end += 1;
         }
         if let Some(s) = self
@@ -146,7 +166,17 @@ fn parse_statements(statements: &[String], language: &str) -> Option<VowelRules>
             _ => {}
         }
     }
-    rules
+    rules.map(|mut r| {
+        for &c in &r.vowels {
+            match u32::from(c) {
+                k @ 0..128 => r.ascii |= 1 << k,
+                _ => r.wide.push(c),
+            }
+        }
+        r.wide.sort_unstable();
+        r.wide.dedup();
+        r
+    })
 }
 
 #[cfg(test)]
