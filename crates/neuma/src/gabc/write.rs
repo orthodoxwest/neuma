@@ -113,7 +113,7 @@ fn red_specials(text: &str) -> (bool, bool) {
     let (mut some, mut all) = (false, !text.is_empty());
     let mut chars = text.chars().peekable();
     while let Some(c) = chars.next() {
-        let red = matches!(c, '℣' | '℟' | '*' | '†') || (c == 'A' && chars.next_if_eq(&'\u{0336}').is_some());
+        let red = matches!(c, '℣' | '℟' | '*' | '†') || (c == 'A' && chars.next_if_eq(&'\u{0338}').is_some());
         some |= red;
         all &= red;
     }
@@ -121,12 +121,12 @@ fn red_specials(text: &str) -> (bool, bool) {
 }
 
 /// Whether `text` is made only of characters that `<sp>` produces: a bare `A` counts only
-/// as part of `A\u{0336}`, and an acute only after `œ`.
+/// as part of `A\u{0338}`, and an acute only after `œ`.
 fn all_special(text: &str) -> bool {
     let mut chars = text.chars().peekable();
     while let Some(c) = chars.next() {
         let ok = match c {
-            'A' => chars.next_if_eq(&'\u{0336}').is_some(),
+            'A' => chars.next_if_eq(&'\u{0338}').is_some(),
             'œ' => chars.next_if_eq(&'\u{0301}').is_some() || special_source(c).is_some(),
             '*' => true,
             _ => special_source(c).is_some(),
@@ -165,7 +165,7 @@ fn write_lyric(out: &mut String, lyric: &Lyric, style: &mut TextStyle) {
             if is_special {
                 // Two characters from one `<sp>`: a centering brace closes after both.
                 let pair = match (c, chars.peek()) {
-                    ('A', Some('\u{0336}')) => Some("<sp>A/</sp>"),
+                    ('A', Some('\u{0338}')) => Some("<sp>A/</sp>"),
                     ('œ', Some('\u{0301}')) => Some("<sp>'oe</sp>"),
                     _ => None,
                 };

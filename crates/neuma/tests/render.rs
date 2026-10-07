@@ -1216,3 +1216,16 @@ fn glyph_ids_differ_by_scale() {
     assert!(!small.is_empty() && small.is_disjoint(&large), "{small:?} {large:?}");
     assert_eq!(ids(4.0), small);
 }
+
+#[test]
+fn the_a_sign_is_slashed_like_the_others() {
+    // GregorioTeX's `<sp>A/</sp>` is an A with a slash through it, drawn heavy and red like
+    // ℣ and ℟; a horizontal strike would read as struck-out text.
+    let svg = parse("(c4) <sp>A/</sp>. Al(g)le(h)lú(g)ia.(f) (::)")
+        .score
+        .engrave(&ApproxMeasure, &NO_INITIAL)
+        .layout(400.0, &LayoutOptions::default())
+        .svg(&SvgOptions::default());
+    assert!(svg.contains("A\u{338}") && !svg.contains('\u{336}'), "{svg}");
+    assert!(svg.contains(r#"class="neuma-rubric neuma-sign">A"#), "{svg}");
+}

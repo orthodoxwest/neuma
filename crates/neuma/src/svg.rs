@@ -468,9 +468,9 @@ fn write_items(out: &mut String, items: &[Item], p: &str, ids: bool) {
                     if st.underline {
                         attrs.push_str(r#" text-decoration="underline""#);
                     }
-                    // ℣ and ℟ are thin in text faces; GregorioTeX's are heavier, so the style
-                    // block strokes them.
-                    let sign = r.text.contains(['℣', '℟']);
+                    // ℣, ℟ and the slashed A are thin in text faces; GregorioTeX's are
+                    // heavier, so the style block strokes them.
+                    let sign = r.text.contains(['℣', '℟', '\u{338}']);
                     match (st.rubric && *role != TextRole::Rubric, sign) {
                         (true, true) => {
                             let _ = write!(attrs, r#" class="{p}-rubric {p}-sign""#);

@@ -327,7 +327,7 @@ fn special(inner: &str) -> Option<&'static str> {
     Some(match inner {
         "V/" => "℣",
         "R/" => "℟",
-        "A/" => "A\u{0336}",
+        "A/" => "A\u{0338}",
         "*" => "*",
         "+" => "†",
         "-" => "-",
