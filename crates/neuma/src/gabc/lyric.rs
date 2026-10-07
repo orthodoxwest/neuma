@@ -79,16 +79,22 @@ pub(super) fn parse(text: &str, map: &TextMap, state: &mut LyricState, sink: &mu
                         format!("`<{t}>` has no `</{t}>` in its syllable, so it runs to the syllable's end"),
                     );
                     let end = map.end(text.len());
-                    // A closer left without its `>` (`<sp>ae</sp`) is completed; another would
-                    // only be taken into the text.
-                    if text.ends_with(&format!("</{t}")) {
-                        sink.fix(Fix::new(end..end, ">", format!("Complete `</{t}>`")));
-                    } else {
-                        sink.fix(Fix::new(
-                            end..end,
-                            format!("</{t}>"),
-                            format!("Close `<{t}>` at the end of its syllable"),
-                        ));
+                    let half = format!("</{t}");
+                    if !state.verbatim_unclosed.contains(&t) {
+                        state.verbatim_unclosed.push(t);
+                        // A closer left without its `>` (`<sp>ae</sp`) is completed; another
+                        // would only be taken into the text.
+                        match text[after..].find(&half) {
+                            Some(k) => {
+                                let at = after + k + half.len();
+                                sink.fix(Fix::new(map.span(at, at), ">", format!("Complete `</{t}>`")));
+                            }
+                            None => sink.fix(Fix::new(
+                                end..end,
+                                format!("</{t}>"),
+                                format!("Close `<{t}>` at the end of its syllable"),
+                            )),
+                        }
                     }
                     swallow.get_or_insert(i);
                 }
@@ -132,7 +138,7 @@ pub(super) fn parse(text: &str, map: &TextMap, state: &mut LyricState, sink: &mu
                         // Without its closer, as `<sp>ae</sp`, the text runs to the syllable's
                         // end; a closer missing only its `>` isn't part of the name.
                         let inner = &text[after..end];
-                        let inner = inner.strip_suffix("</sp").unwrap_or(inner);
+                        let inner = inner.find("</sp").map_or(inner, |k| &inner[..k]);
                         match special(inner) {
                             Some(s) => {
                                 let mut st = style(state);

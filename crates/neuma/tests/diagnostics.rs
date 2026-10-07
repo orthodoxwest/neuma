@@ -4,6 +4,7 @@
 use std::fs;
 use std::path::Path;
 
+use neuma::score::Figure;
 use neuma::{ApproxMeasure, Diagnostic, StyleOptions, parse};
 
 fn diagnostics(src: &str) -> Vec<Diagnostic> {
@@ -160,6 +161,13 @@ fn fixes_never_loop() {
             "(c4) <i>a<b(g)",
             "(c4) <i>a<v>x(g)",
             "(c4) <i>a<sp>x(g)",
+            // Several openers of a verbatim tag left open: a closer for a later one would
+            // close the first, taking the notes between into its text.
+            "(c4) <sp>V/ a(g) b(h) <sp>R/ c(g)",
+            "(c4) a<v>(g) b(h) c<v>(g) d(h)",
+            "(c4) <alt>x a(g) b(h) <alt>y c(g)",
+            "(c4) <sp>V/ a(g) b(h) <sp>R/</sp c(g)",
+            "(c4) <sp>R/</sp d(g)",
             // A closer left without its `>`.
             "(c4) <i>a</i(g)",
             "(c4) <sp>a</sp(g)",
@@ -206,6 +214,30 @@ fn fixes_never_loop() {
     for src in &sources {
         fix_until_done(src, false);
         fix_until_done(src, true);
+        no_fix_loses_notes(src);
+    }
+}
+
+fn note_count(src: &str) -> usize {
+    let score = parse(src).score;
+    score
+        .syllables
+        .iter()
+        .flat_map(|s| &s.notation)
+        .filter(|f| matches!(f, Figure::Note(_)))
+        .count()
+}
+
+/// Each fix offered for `src`, applied alone, keeps every note: none turns notes into text.
+/// (Except the header separator's, which takes header lines that read as notes out of them.)
+fn no_fix_loses_notes(src: &str) {
+    let notes = note_count(src);
+    for d in diagnostics(src) {
+        let Some(fix) = d.fix.as_ref().filter(|_| d.code != "gabc::no-separator") else {
+            continue;
+        };
+        let fixed = fix.apply(src).unwrap();
+        assert!(note_count(&fixed) >= notes, "{d}: fix {fix:?} loses notes: {src:?} to {fixed:?}");
     }
 }
 
@@ -260,4 +292,30 @@ fn the_separator_goes_where_it_surely_belongs() {
         fixed("name: a (b);\nmode: 8;\n(c4) a(g)"),
         [Some("name: a (b);\nmode: 8;\n%%\n(c4) a(g)".into())]
     );
+}
+
+#[test]
+fn only_the_first_unclosed_verbatim_tag_is_fixed() {
+    let fixes = |src: &str| {
+        diagnostics(src)
+            .into_iter()
+            .filter(|d| d.code == "gabc::unclosed-tag")
+            .map(|d| d.fix.and_then(|f| f.apply(src)))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        fixes("(c4) <sp>V/ a(g) b(h) <sp>R/ c(g)"),
+        [Some("(c4) <sp>V/ a</sp>(g) b(h) <sp>R/ c(g)".into()), None]
+    );
+    assert_eq!(
+        fixes("(c4) a<v>(g) b(h) c<v>(g) d(h)"),
+        [Some("(c4) a<v></v>(g) b(h) c<v>(g) d(h)".into()), None]
+    );
+    // A closer missing its `>` is completed where it stands, and isn't part of the name.
+    assert_eq!(fixes("(c4) <sp>R/</sp d(g)"), [Some("(c4) <sp>R/</sp> d(g)".into())]);
+    let unknown = diagnostics("(c4) <sp>Q/</sp d(g)")
+        .into_iter()
+        .find(|d| d.code == "gabc::unknown-special")
+        .unwrap();
+    assert!(unknown.message.contains("`<sp>Q/</sp>`"), "{}", unknown.message);
 }
