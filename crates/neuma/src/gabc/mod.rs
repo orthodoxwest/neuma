@@ -22,9 +22,10 @@ pub struct Parsed {
 /// Parses GABC source. Never fails.
 pub fn parse(src: &str) -> Parsed {
     let mut parsed = parse_unchecked(src);
-    // A closer put in for one tag can be taken by another, Gregorio's way, and make text of
-    // notes. Each unclosed-tag fix is tried, and kept only if it clears its diagnostic and
-    // keeps every note.
+    // A closer put in for a verbatim tag can be taken by another opener, Gregorio's way, and
+    // make text of notes. Each such fix (at most one per tag, as only the first unclosed
+    // opener of each gets one) is tried, and kept only if it clears its diagnostic and keeps
+    // every note. A style tag's closer can't make text of notes, so those aren't tried.
     let notes = |score: &Score| {
         score
             .syllables
@@ -35,9 +36,12 @@ pub fn parse(src: &str) -> Parsed {
     };
     let before = notes(&parsed.score);
     for d in &mut parsed.diagnostics {
-        if d.code != "gabc::unclosed-tag" {
+        let verbatim = VERBATIM.iter().any(|t| src.get(d.span.clone()) == Some(&format!("<{t}>")[..]));
+        if d.code != "gabc::unclosed-tag" || d.fix.is_none() || !verbatim {
             continue;
         }
+        #[cfg(test)]
+        tests::RECHECKS.with(|n| n.set(n.get() + 1));
         let Some(fixed) = d.fix.as_ref().and_then(|f| f.apply(src)) else {
             d.fix = None;
             continue;
