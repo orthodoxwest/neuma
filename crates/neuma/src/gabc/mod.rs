@@ -28,7 +28,9 @@ pub fn parse(src: &str) -> Parsed {
         body_start += '\u{feff}'.len_utf8();
     }
     let syllables = parse_body(src, body_start, &mut sink);
-    lint_clef(&syllables, &mut sink);
+    // Without a `%%`, header lines read as text; a clef put before them wouldn't help.
+    let headers_unseparated = body_start == 0 && header_lines(src).is_some();
+    lint_clef(&syllables, !headers_unseparated, &mut sink);
     // An NABC score has NABC in nearly every syllable, and a score that uses zero-width notes
     // often uses them in many places; one diagnostic says each, with how often it applies.
     for (code, all) in [
@@ -76,25 +78,18 @@ fn strip_comment(line: &str) -> &str {
 
 fn parse_header(src: &str, sink: &mut Sink) -> (Header, usize) {
     let Some((sep, body_start)) = find_separator(src) else {
-        // No header: Gregorio requires one, but a bare body is common in snippets.
-        if !src.trim().is_empty() && !src.trim_start().starts_with('(') && looks_like_header(src) {
-            // The header is the run of `name: value;` lines at the top; the separator goes
-            // after it.
-            let mut end = 0;
-            for line in src.split_inclusive('\n') {
-                let l = line.trim();
-                if !(l.is_empty() || l.contains(':') && l.ends_with(';') && !l.contains('(')) {
-                    break;
-                }
-                end += line.len();
-            }
-            let insert = if end > 0 && !src[..end].ends_with('\n') { "\n%%\n" } else { "%%\n" };
+        // No header: Gregorio requires one, but a bare body is common in snippets. Lines at
+        // the top that read as headers want a `%%` after them.
+        if let Some((end, sure)) = header_lines(src) {
             sink.warn(
                 0..src[..end].trim_end().len(),
                 "gabc::no-separator",
                 "no `%%` line separates the header from the notes",
             );
-            sink.fix(Fix::new(end..end, insert, "Insert the `%%` line after the header"));
+            if sure {
+                let insert = if src[..end].ends_with('\n') { "%%\n" } else { "\n%%\n" };
+                sink.fix(Fix::new(end..end, insert, "Insert the `%%` line after the header"));
+            }
         }
         return (Header::default(), 0);
     };
@@ -218,11 +213,36 @@ fn is_header_line(line: &str) -> bool {
     })
 }
 
-fn looks_like_header(src: &str) -> bool {
-    src.lines().next().is_some_and(|l| {
-        let l = l.trim();
-        l.contains(':') && l.ends_with(';') && !l.contains('(')
-    })
+/// A line that reads as a whole header field: `name:` and a value that ends with `;`, or
+/// holds no `(`, which would start notes (`dixit:(g)`). Comments don't count.
+fn whole_header_line(line: &str) -> bool {
+    let l = strip_comment(line).trim();
+    is_header_line(l) && (l.ends_with(';') || !l.contains('('))
+}
+
+/// For a source with no `%%`: if its first line reads as a header field, where the run of
+/// such lines at its top ends, and whether a `%%` there surely separates them from the notes
+/// (the next line isn't a header field run together with notes, as `mode: 8; (c4) a(g)`).
+fn header_lines(src: &str) -> Option<(usize, bool)> {
+    let first = src.lines().find(|l| !l.trim().is_empty())?;
+    if !whole_header_line(first) {
+        return None;
+    }
+    let mut end = 0;
+    let mut last_field = 0;
+    for line in src.split_inclusive('\n') {
+        if line.trim().is_empty() {
+            end += line.len();
+            continue;
+        }
+        if !whole_header_line(line) {
+            let sure = !is_header_line(strip_comment(line).trim());
+            return Some((last_field, sure));
+        }
+        end += line.len();
+        last_field = end;
+    }
+    Some((last_field, true))
 }
 
 /// Lyric styling that stays open across syllables until its closing tag.
@@ -237,7 +257,7 @@ pub(crate) struct LyricState {
     pub nlba: bool,
     pub euouae: bool,
     /// Style tags not yet closed: the tag, its span, and where its syllable's text ends.
-    pub open: Vec<(&'static str, Range<usize>, usize)>,
+    pub open: Vec<lyric::OpenTag>,
 }
 
 fn parse_body(src: &str, start: usize, sink: &mut Sink) -> Vec<Syllable> {
@@ -331,17 +351,15 @@ fn parse_body(src: &str, start: usize, sink: &mut Sink) -> Vec<Syllable> {
             }
         }
     }
-    for (tag, span, end) in std::mem::take(&mut state.open) {
+    for tag in std::mem::take(&mut state.open) {
         sink.warn(
-            span,
+            tag.span,
             "gabc::unclosed-tag",
-            format!("`<{tag}>` is never closed, so it styles the rest of the score"),
+            format!("`<{}>` is never closed, so it styles the rest of the score", tag.name),
         );
-        sink.fix(Fix::new(
-            end..end,
-            format!("</{tag}>"),
-            format!("Close `<{tag}>` at the end of its syllable"),
-        ));
+        if let Some(fix) = tag.fix {
+            sink.fix(fix);
+        }
     }
     if !text.trim().is_empty() {
         sink.warn(
@@ -375,8 +393,9 @@ fn find_close(body: &str, from: usize) -> usize {
     body[from..].find(')').map_or(body.len(), |n| from + n)
 }
 
-/// Notes before any clef are read in `c4`, as a missing clef is usually forgotten.
-fn lint_clef(syllables: &[Syllable], sink: &mut Sink) {
+/// Notes before any clef are read in `c4`, as a missing clef is usually forgotten. `fix`
+/// offers to insert one.
+fn lint_clef(syllables: &[Syllable], fix: bool, sink: &mut Sink) {
     for f in syllables.iter().flat_map(|s| &s.notation) {
         match f {
             Figure::Clef(_) => return,
@@ -386,8 +405,10 @@ fn lint_clef(syllables: &[Syllable], sink: &mut Sink) {
                     "gabc::no-clef",
                     "no clef before the first note; the notes are read in a do clef on the fourth line (`c4`)",
                 );
-                let at = syllables[0].span.start;
-                sink.fix(Fix::new(at..at, "(c4) ", "Insert a `c4` clef"));
+                if fix {
+                    let at = syllables[0].span.start;
+                    sink.fix(Fix::new(at..at, "(c4) ", "Insert a `c4` clef"));
+                }
                 return;
             }
             _ => {}

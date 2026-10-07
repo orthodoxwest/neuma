@@ -73,6 +73,10 @@ const FIXABLE: &[(&str, &str)] = &[
     ("gabc::unclosed-tag", "(c4) <i>Ky(g)ri(h)e(g) (::)"),
     ("gabc::unclosed-tag", "(c4) Ky(g) <sp>ae(h) (::)"),
     ("gabc::unclosed-tag", "(c4) Ky(g) <v>\\emph{x}(h) (::)"),
+    ("gabc::unclosed-tag", "(c4) <i>Ky[Lord(g) ri(h)"),
+    ("gabc::unclosed-tag", "(c4) <i>Ky</i(g) ri(h)"),
+    ("gabc::unclosed-tag", "(c4) <i>Ky<b(g) ri(h)"),
+    ("gabc::unclosed-tag", "(c4) <sp>ae</sp(g) ri(h)"),
 ];
 
 #[test]
@@ -118,5 +122,74 @@ fn spans_land_in_the_source() {
                 assert!(f.apply(src).is_some(), "{d}: fix {f:?}");
             }
         }
+    }
+}
+
+/// Applies fixes, the first or the last offered each time, until none is left; panics if that
+/// comes back to a source seen before, or takes more than a few steps beyond one per fix
+/// offered at the start.
+fn fix_until_done(src: &str, last: bool) {
+    let mut seen = std::collections::HashSet::new();
+    let mut s = src.to_string();
+    let offered = diagnostics(src).iter().filter(|d| d.fix.is_some()).count();
+    for _ in 0..2 * offered + 8 {
+        let ds = diagnostics(&s);
+        let mut fixes = ds.iter().filter_map(|d| d.fix.as_ref().map(|f| (d, f)));
+        let next = if last { fixes.next_back() } else { fixes.next() };
+        let Some((d, fix)) = next else { return };
+        assert!(seen.insert(s.clone()), "fixing {src:?} came back to {s:?}");
+        s = fix.apply(&s).unwrap_or_else(|| panic!("{d}: fix {fix:?} doesn't apply to {s:?}"));
+    }
+    panic!("fixing {src:?} didn't end: got to {s:?}");
+}
+
+#[test]
+fn fixes_never_loop() {
+    let mut sources: Vec<String> = FIXABLE.iter().map(|(_, s)| s.to_string()).collect();
+    sources.extend(
+        [
+            // A closer at the syllable's end would be taken into a translation, a `<` or a
+            // verbatim tag that runs on to it.
+            "(c4) <i>a[b(g)",
+            "(c4) a(g) <c>[</c>Pax(h) vo(g)bis(h) (::)",
+            "(c4) <b><i>a[x(g) b(h)",
+            "(c4) <i>[x(g) b(h)",
+            "(c4) <i>a<b(g)",
+            "(c4) <i>a<v>x(g)",
+            "(c4) <i>a<sp>x(g)",
+            // A closer left without its `>`.
+            "(c4) <i>a</i(g)",
+            "(c4) <sp>a</sp(g)",
+            "(c4) <v>\\x</v(g)",
+            "(c4) <i>a</b(g)",
+            // Headers and their separator.
+            "name: x;\nmode: 8\n(c4) a(g)",
+            "name: a (b);\nmode: 8;\n(c4) a(g)",
+            "name: x; % a note\nmode: 8;\n(c4) a(g)",
+            "name: x;\nmode: 8; (c4) a(g)",
+            "name: x\n(c4) a(g)",
+            "a(g) b(h)",
+            "name: x;\nmode: 8;\n",
+        ]
+        .map(String::from),
+    );
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/corpus");
+    for e in fs::read_dir(dir).unwrap() {
+        let p = e.unwrap().path();
+        if p.extension().is_some_and(|x| x == "gabc") {
+            sources.push(fs::read_to_string(p).unwrap());
+        }
+    }
+    // `NEUMA_CORPUS=<dir>` checks every `.gabc` in a directory as well.
+    if let Ok(dir) = std::env::var("NEUMA_CORPUS") {
+        for e in fs::read_dir(dir).unwrap().flatten() {
+            if e.path().extension().is_some_and(|x| x == "gabc") {
+                sources.push(fs::read_to_string(e.path()).unwrap_or_default());
+            }
+        }
+    }
+    for src in &sources {
+        fix_until_done(src, false);
+        fix_until_done(src, true);
     }
 }
