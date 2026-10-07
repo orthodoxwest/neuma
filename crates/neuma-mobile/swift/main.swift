@@ -68,6 +68,14 @@ do {
 }
 let pt = try! point(text: "O come, let us sing unto the Lord * let us heartily rejoice in the strength of our salvation.", tone: "8.G")
 check(pt.halves.count == 2 && pt.text.contains("·"), "point")
+let shown = try! psalmDisplay(text: "1 Wash me thoróughly · from my wíckedness, † and cleanse me from my sín. * [Sit.] For I ac·knowledge my fáults.", tone: "8.G", options: PsalmOptions())
+let runs = shown.verses[0].runs
+check(runs.map(\.text).joined().hasPrefix("Wash me thoróughly ·\u{a0}from") && shown.toneLabel == "Tone 8 G" && (try! toneLabel(tone: "per")) == "Tonus peregrinus", "psalm display")
+let drops = runs.filter { if case .syllable(let s) = $0.kind { return s.flexDrop } else { return false } }
+check(drops.count == 2 && runs.contains { if case .flex = $0.kind { return true } else { return false } }, "flex")
+let outside = try! psalmDisplay(text: "Wash me thoróughly · from my wíckedness, † and cleanse me from my sín. * For I ac·knowledge my fáults.", tone: "8.G", options: PsalmOptions(accents: .outsideFlex))
+check(outside.verses[0].runs.map(\.text).joined().hasPrefix("Wash me thoroughly ·\u{a0}from my wickedness,"), "accents")
+check(try! Chant.fromTone(tone: "8.G", options: ChantOptions()).layout(width: 400, options: LayoutOptions()).timeline(weights: Weights()).notes.count == 12, "tone")
 let src = "(c4) Kŷ-(g)ri(hi) (,) e(h) (::)"
 let ed = Chant(gabc: src, options: ChantOptions(font: .garamond12))
 let hyphen = ed.diagnostics().first { $0.code == "gabc::hyphen-in-syllable" }!

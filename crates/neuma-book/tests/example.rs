@@ -50,7 +50,7 @@ fn check(doc: &Document, book: &Book) {
     }
     // The antiphon, the tone and the psalm's first verse share a page.
     let antiphon = page_with(doc, "AVE");
-    assert_eq!(page_with(doc, "Tone 8.G"), antiphon);
+    assert_eq!(page_with(doc, "Tone 8 G"), antiphon);
     assert_eq!(page_with(doc, "Hear"), antiphon);
     // The title page has no running header; later pages do.
     assert_eq!(texts(&doc.pages[0]).iter().filter(|t| *t == "Compline").count(), 1);

@@ -17,7 +17,7 @@ use std::sync::Arc;
 
 use neuma::{DisplayList, Engraving, Initial, Item, LayoutOptions, LyricFont, StyleOptions, TextRole};
 use neuma_book::font::{FontFiles, Fonts, ITALIC, REGULAR, Seg};
-use neuma_tones::{PsalmOptions, Tone, ToneRole, point};
+use neuma_tones::{Accents, PsalmOptions, Tone, ToneRole, point};
 
 const INK: &str = "#1d1b18";
 const RED: &str = "#a3211c";
@@ -278,7 +278,7 @@ fn psalm(fonts: &Fonts) -> String {
     let tone = Tone::named("8.G").expect("built-in tone");
     let text = read("tools/readme/scores/psalm-117.txt").expect("psalm text");
     let pointed = point(&text, tone).text;
-    let options = PsalmOptions::default().with_strip_accents(true);
+    let options = PsalmOptions::default().with_accents(Accents::None);
     let setting = neuma_tones::psalm(&text, tone, &options);
     for d in &setting.diagnostics {
         eprintln!("psalm: {d}");

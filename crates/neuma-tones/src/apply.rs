@@ -22,6 +22,30 @@ pub enum Intone {
     Never,
 }
 
+/// Which acute accents the printed text keeps. They place the cadence's accents either way.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum Accents {
+    /// Every acute, as written or added by the pointing.
+    #[default]
+    All,
+    /// None: the text as it is spelled.
+    None,
+    /// None in a flex half-verse, which a pointed psalter shows by its italics alone; the
+    /// others keep theirs.
+    OutsideFlex,
+}
+
+impl Accents {
+    /// A syllable's text as printed in `part`.
+    pub(crate) fn shown(self, text: &str, part: VersePart) -> String {
+        match (self, part) {
+            (Accents::None, _) | (Accents::OutsideFlex, VersePart::Flex) => strip_acutes(text),
+            _ => text.to_string(),
+        }
+    }
+}
+
 /// How to set a psalm. Build it with the `with_*` setters:
 /// `PsalmOptions::default().with_intone(Intone::EveryVerse)`.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -29,8 +53,8 @@ pub enum Intone {
 pub struct PsalmOptions {
     /// When the intonation is sung; default on the first verse.
     pub intone: Intone,
-    /// Remove the acute accents from the printed text (they still place the accents).
-    pub strip_accents: bool,
+    /// Which acute accents the printed text keeps; default all.
+    pub accents: Accents,
     /// The score's `name:` header.
     pub name: Option<String>,
     /// Point half-verses that carry no marks with [`point`](crate::point()) first; default
@@ -42,7 +66,7 @@ impl Default for PsalmOptions {
     fn default() -> PsalmOptions {
         PsalmOptions {
             intone: Intone::default(),
-            strip_accents: false,
+            accents: Accents::All,
             name: None,
             auto_point: true,
         }
@@ -57,10 +81,10 @@ impl PsalmOptions {
         self
     }
 
-    /// Sets [`strip_accents`](Self::strip_accents).
+    /// Sets [`accents`](Self::accents).
     #[must_use]
-    pub fn with_strip_accents(mut self, strip_accents: bool) -> PsalmOptions {
-        self.strip_accents = strip_accents;
+    pub fn with_accents(mut self, accents: Accents) -> PsalmOptions {
+        self.accents = accents;
         self
     }
 
@@ -152,8 +176,18 @@ pub fn psalm(text: &str, tone: &Tone, options: &PsalmOptions) -> PsalmSetting {
     setting
 }
 
-/// [`psalm`] for text already parsed, with only the setting's own diagnostics.
-fn set_pointed(pointed: &Pointed, tone: &Tone, options: &PsalmOptions) -> PsalmSetting {
+/// What each syllable of a psalm sings: the text as set (pointed, if `auto_point`, and split
+/// into sung syllables), each syllable's neumes and their roles, verse by verse and part by
+/// part, and the setting's own diagnostics.
+pub(crate) struct SungPsalm {
+    pub text: Pointed,
+    pub neumes: Vec<Vec<Sung>>,
+    pub diagnostics: Vec<Diagnostic>,
+}
+
+/// Sets each syllable of `pointed` to `tone`'s notes, as [`psalm`] and
+/// [`PsalmDisplay`](crate::PsalmDisplay) both need.
+pub(crate) fn sing(pointed: &Pointed, tone: &Tone, options: &PsalmOptions) -> SungPsalm {
     let mut unsure = Vec::new();
     let text = if !options.auto_point {
         pointed.syllabified()
@@ -164,12 +198,6 @@ fn set_pointed(pointed: &Pointed, tone: &Tone, options: &PsalmOptions) -> PsalmS
         }
         text
     };
-    let mut b = ScoreBuilder::new();
-    if let Some(name) = &options.name {
-        b = b.header("name", name);
-    }
-    b = b.clef(tone.clef, tone.clef_line);
-    let mut notes = Vec::new();
     let mut diags = Vec::new();
     if text.verses.is_empty() {
         warn(&mut diags, Severity::Warning, 0..0, "apply::empty", "there is no verse to sing");
@@ -186,11 +214,9 @@ fn set_pointed(pointed: &Pointed, tone: &Tone, options: &PsalmOptions) -> PsalmS
             ),
         );
     }
-    let mut figures = Figures::default();
-    // Each syllable's span in the text, after the clef's.
-    let mut spans = Vec::new();
-    let last_verse = text.verses.len().saturating_sub(1);
+    let mut neumes = Vec::with_capacity(text.verses.len());
     for (vi, verse) in text.verses.iter().enumerate() {
+        let mut parts = Vec::with_capacity(verse.parts.len());
         for (pi, part) in verse.parts.iter().enumerate() {
             let cadence = match part.kind {
                 VersePart::Flex => &tone.flex,
@@ -211,10 +237,39 @@ fn set_pointed(pointed: &Pointed, tone: &Tone, options: &PsalmOptions) -> PsalmS
             } else {
                 &[]
             };
-            let sung = set_part(part, cadence, lead, &mut diags);
+            parts.push(set_part(part, cadence, lead, &mut diags));
+        }
+        neumes.push(parts);
+    }
+    SungPsalm {
+        text,
+        neumes,
+        diagnostics: diags,
+    }
+}
+
+/// [`psalm`] for text already parsed, with only the setting's own diagnostics.
+fn set_pointed(pointed: &Pointed, tone: &Tone, options: &PsalmOptions) -> PsalmSetting {
+    let SungPsalm {
+        text,
+        neumes: sung_psalm,
+        diagnostics: diags,
+    } = sing(pointed, tone, options);
+    let mut b = ScoreBuilder::new();
+    if let Some(name) = &options.name {
+        b = b.header("name", name);
+    }
+    b = b.clef(tone.clef, tone.clef_line);
+    let mut notes = Vec::new();
+    let mut figures = Figures::default();
+    // Each syllable's span in the text, after the clef's.
+    let mut spans = Vec::new();
+    let last_verse = text.verses.len().saturating_sub(1);
+    for ((vi, verse), sung_verse) in text.verses.iter().enumerate().zip(&sung_psalm) {
+        for (part, sung) in verse.parts.iter().zip(sung_verse) {
             for (s, neumes) in part.syllables.iter().zip(sung) {
                 let mut fig = Vec::new();
-                for (neume, role) in &neumes {
+                for (neume, role) in neumes {
                     let mut f = figures.get(neume);
                     for figure in &mut f {
                         match figure {
@@ -234,11 +289,9 @@ fn set_pointed(pointed: &Pointed, tone: &Tone, options: &PsalmOptions) -> PsalmS
                     }
                     fig.extend(f);
                 }
-                let shown = if options.strip_accents {
-                    strip_acutes(&s.text)
-                } else {
-                    s.text.clone()
-                };
+                // A hyphen left in the text is printed in the pointed text but not sung: the
+                // engraver draws the hyphens between syllables itself.
+                let shown = options.accents.shown(&s.text, part.kind).replace('-', "");
                 b = b.syllable(Lyric::from_plain(&shown), s.starts_word(), fig);
                 spans.push(s.span.clone());
             }
@@ -289,7 +342,7 @@ impl Figures {
     }
 }
 
-fn strip_acutes(text: &str) -> String {
+pub(crate) fn strip_acutes(text: &str) -> String {
     text.chars()
         .filter(|&c| c != '\u{301}')
         .map(|c| {

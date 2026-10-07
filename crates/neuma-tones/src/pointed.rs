@@ -7,11 +7,11 @@
 //! | `·` | The cadence starts at the next syllable. Inside a word it also splits it ("e·ver"). |
 //! | acute (`á`) | An accented syllable, which takes an accent of the tone's cadence. |
 //! | `–` (en dash) | A note of the cadence with no syllable of its own: the syllable before it is held ("thou · árt – mý God", "Dávid, – – *"). Before a half's first syllable it leaves a note out instead ("* – · – – práise the Lord"). |
-//! | `-` inside a word | A sung syllable split ("judg-ed"). Write `\-` for a hyphen that is only spelling ("blood\-guiltiness"). |
+//! | `-` inside a word | A sung syllable split ("judg-ed"). Write `\-` (or `-` and U+2060, or U+2011) for a hyphen that is only spelling ("blood\-guiltiness"). A hyphen with the `·` after it is spelling too ("pre-·eminence"), the `·` before it a dotted split ("hon·-our"). |
 //! | `[…]` | A rubric, such as a posture cue: kept, never sung. |
-//! | `12` at the start of a line | The verse number. |
+//! | `12` at the start of a line | The verse number, after any rubrics that open the line ("[Stand.] 5 For I …"). |
 //!
-//! A line starting with `#` is a comment. [`Pointed::to_text`] writes the canonical form back,
+//! Any Unicode space separates words, U+00A0 among them, and U+2060 (word joiner) is dropped. A line starting with `#` is a comment. [`Pointed::to_text`] writes the canonical form back,
 //! and parsing that form and writing it again gives the same text.
 
 use std::fmt::Write as _;
@@ -56,6 +56,13 @@ pub struct Part {
     /// Dashes before the first syllable: notes of the tone the pointing leaves out, such as
     /// the preparatory notes of a half-verse too short for them ("– · – – práise the Lord").
     pub omitted: usize,
+    /// How many of the `omitted` dashes come after a `·` written among them: 2 in
+    /// "– · – – práise", 0 when the `·` is right before the syllable or there is none. It
+    /// changes only where the `·` is printed: the cadence still starts at the first syllable.
+    pub omitted_after_point: usize,
+    /// Rubrics written before the leading dashes ("* [Sit.] – · – and"); those after them go
+    /// with the first syllable.
+    pub lead_rubrics: Vec<String>,
     /// Dashes after the last syllable, which hold it for the notes left ("Dá-vid, – – *").
     pub held_end: usize,
 }
@@ -68,6 +75,10 @@ pub enum Joint {
     Word,
     /// The word was split with `-`.
     Hyphen,
+    /// The word is spelled with a hyphen (`\-` in the markup, "blood-guiltiness"), which is
+    /// printed. It is sung as a split, and the syllable starts the cadence if it has
+    /// [`Syllable::cadence`] (`\-·`).
+    Spelling,
     /// The word was split with `·`, which also starts the cadence here.
     Dot,
     /// The syllabifier split the word ([`Pointed::syllabified`]).
@@ -128,46 +139,61 @@ pub(crate) fn parse(src: &str) -> Pointed {
     out
 }
 
-/// Byte ranges of whitespace-separated tokens, with `[…]` rubrics kept whole.
+/// U+2060 WORD JOINER, which a [`PsalmDisplay`](crate::PsalmDisplay) writes after a `–` and a
+/// spelling hyphen so a line never breaks there. It is not text: pointed text drops it.
+pub(crate) const WJ: char = '\u{2060}';
+
+/// Byte ranges of whitespace-separated tokens, with `[…]` rubrics kept whole. Any Unicode
+/// space separates them, U+00A0 among them, and word joiners at a token's ends are left out,
+/// so a line copied from a [`PsalmDisplay`](crate::PsalmDisplay) reads as it was written.
 fn tokens(line: &str) -> Vec<Range<usize>> {
-    let b = line.as_bytes();
     let mut out = Vec::new();
-    let mut i = 0;
-    while i < b.len() {
-        if b[i].is_ascii_whitespace() {
-            i += 1;
+    let mut chars = line.char_indices().peekable();
+    while let Some(&(s, c)) = chars.peek() {
+        if c.is_whitespace() {
+            chars.next();
             continue;
         }
-        let s = i;
-        if b[i] == b'[' {
-            while i < b.len() && b[i] != b']' {
-                i += 1;
-            }
-            i = (i + 1).min(b.len());
-        } else {
-            while i < b.len() && !b[i].is_ascii_whitespace() {
-                i += 1;
-            }
-            // `*` and `†` are marks of their own even when typed against a word ("Lord,*").
-            let mut from = s;
-            for (k, c) in line[s..i].char_indices() {
-                if c == '*' || c == '†' {
-                    let at = s + k;
-                    if from < at {
-                        out.push(from..at);
-                    }
-                    out.push(at..at + c.len_utf8());
-                    from = at + c.len_utf8();
+        if c == '[' {
+            let mut end = line.len();
+            for (i, c) in chars.by_ref() {
+                if c == ']' {
+                    end = i + 1;
+                    break;
                 }
             }
-            if from < i {
-                out.push(from..i);
-            }
+            out.push(s..end);
             continue;
         }
-        out.push(s..i);
+        // `*` and `†` are marks of their own even when typed against a word ("Lord,*").
+        let mut from = s;
+        let mut end = line.len();
+        while let Some(&(i, c)) = chars.peek() {
+            if c.is_whitespace() {
+                end = i;
+                break;
+            }
+            chars.next();
+            if c == '*' || c == '†' {
+                if from < i {
+                    out.push(from..i);
+                }
+                out.push(i..i + c.len_utf8());
+                from = i + c.len_utf8();
+            }
+        }
+        if from < end {
+            out.push(from..end);
+        }
     }
-    out
+    out.into_iter()
+        .filter_map(|r| {
+            let t = &line[r.clone()];
+            let start = r.start + (t.len() - t.trim_start_matches(WJ).len());
+            let end = r.end - (t.len() - t.trim_end_matches(WJ).len());
+            (start < end).then_some(start..end)
+        })
+        .collect()
 }
 
 fn diag(diags: &mut Vec<Diagnostic>, severity: Severity, span: Range<usize>, code: &'static str, message: &str) {
@@ -180,18 +206,21 @@ fn parse_verse(line: &str, base: usize, diags: &mut Vec<Diagnostic>) -> Option<V
         ..Verse::default()
     };
     let mut toks = tokens(line);
-    // A leading number is the verse number.
-    if let Some(first) = toks.first() {
+    // A leading number is the verse number, after any rubrics that open the line.
+    let lead = toks.iter().take_while(|r| line[(*r).clone()].starts_with('[')).count();
+    if let Some(first) = toks.get(lead) {
         let t = line[first.clone()].trim_end_matches('.');
         if !t.is_empty() && t.bytes().all(|c| c.is_ascii_digit()) {
             verse.number = t.parse().ok();
-            toks.remove(0);
+            toks.remove(lead);
         }
     }
     let mut part = Part {
         kind: VersePart::Mediant,
         syllables: Vec::new(),
         omitted: 0,
+        omitted_after_point: 0,
+        lead_rubrics: Vec::new(),
         held_end: 0,
     };
     let mut seen_mediant = false;
@@ -217,6 +246,8 @@ fn parse_verse(line: &str, base: usize, diags: &mut Vec<Diagnostic>) -> Option<V
                 kind: next,
                 syllables: Vec::new(),
                 omitted: 0,
+                omitted_after_point: 0,
+                lead_rubrics: Vec::new(),
                 held_end: 0,
             },
         );
@@ -266,7 +297,13 @@ fn parse_verse(line: &str, base: usize, diags: &mut Vec<Diagnostic>) -> Option<V
             }
             "·" => cadence = true,
             // Before the first syllable a dash leaves a note out; after one it holds it.
-            "–" if part.syllables.is_empty() => part.omitted += 1,
+            "–" if part.syllables.is_empty() => {
+                if part.omitted == 0 {
+                    part.lead_rubrics = std::mem::take(&mut rubrics);
+                }
+                part.omitted += 1;
+                part.omitted_after_point += usize::from(cadence);
+            }
             "–" => {
                 held = true;
                 part.held_end += 1;
@@ -281,7 +318,9 @@ fn parse_verse(line: &str, base: usize, diags: &mut Vec<Diagnostic>) -> Option<V
                         "a rubric `[` needs its `]`",
                     );
                 }
-                rubrics.push(tok.trim_start_matches('[').trim_end_matches(']').to_string());
+                let text = tok.trim_start_matches('[').trim_end_matches(']');
+                let text = text.replace(WJ, "");
+                rubrics.push(text.split(char::is_whitespace).collect::<Vec<_>>().join(" "));
             }
             _ => {
                 part.held_end = 0;
@@ -402,15 +441,45 @@ fn word(
     };
     while i < body.len() {
         let rest = &body[i..];
-        if rest.starts_with("\\-") {
-            text.push('-');
-            i += 2;
+        // A word joiner is not text.
+        if rest.starts_with(WJ) {
+            i += WJ.len_utf8();
             continue;
         }
-        // A hyphen and a dot together ("well-·tuned", "hon·-our") are one dotted split.
-        let split = if (rest.starts_with("-·") || rest.starts_with("·-")) && !text.is_empty() {
+        // A spelling hyphen inside the word joins two pieces: `\-`, a `-` and a word joiner
+        // (as a [`PsalmDisplay`](crate::PsalmDisplay) prints one), U+2011, or a plain `-` with
+        // the cadence mark after it ("pre-·eminence"). At either end of a word it is only text.
+        let hyphen = if rest.starts_with("\\-") {
+            Some(2)
+        } else if rest.starts_with("-\u{2060}") {
+            Some(1 + WJ.len_utf8())
+        } else if rest.starts_with('\u{2011}') || (rest.starts_with("-·") && !text.is_empty()) {
+            Some(rest.chars().next().map_or(1, char::len_utf8))
+        } else {
+            None
+        };
+        if let Some(h) = hyphen {
+            let dot = rest[h..].starts_with('·');
+            let len = if dot { h + '·'.len_utf8() } else { h };
+            if !text.chars().any(char::is_alphanumeric) || !rest[len..].chars().any(char::is_alphanumeric) {
+                text.push('-');
+                i += h;
+                continue;
+            }
+            let end = at + tok_start + i;
+            push(&mut text, joint, text_start, end, part, cadence, held, rubrics);
+            joint = Joint::Spelling;
+            *cadence |= dot;
+            i += len;
+            text_start = at + tok_start + i;
+            continue;
+        }
+        // A dot and a hyphen together ("hon·-our") are one dotted split. A sung split `-`
+        // has letters on both sides; otherwise the hyphen is only text.
+        let alnum = |t: &str| t.chars().any(char::is_alphanumeric);
+        let split = if rest.starts_with("·-") && !text.is_empty() {
             Some((Joint::Dot, 1 + '·'.len_utf8()))
-        } else if rest.starts_with('-') && !text.is_empty() && i + 1 < body.len() {
+        } else if rest.starts_with('-') && alnum(&text) && alnum(&rest[1..]) {
             Some((Joint::Hyphen, 1))
         } else if rest.starts_with('·') && !text.is_empty() {
             Some((Joint::Dot, '·'.len_utf8()))
@@ -465,14 +534,25 @@ impl Pointed {
                 first = false;
             }
             for p in &v.parts {
+                let point_at = p.omitted - p.omitted_after_point.min(p.omitted);
+                for r in &p.lead_rubrics {
+                    if !first {
+                        out.push(' ');
+                    }
+                    let _ = write!(out, "[{r}]");
+                    first = false;
+                }
                 for k in 0..p.omitted {
                     if !first || k > 0 {
                         out.push(' ');
                     }
+                    if k == point_at && p.omitted_after_point > 0 {
+                        out.push_str("· ");
+                    }
                     out.push('–');
                 }
                 first &= p.omitted == 0;
-                for s in &p.syllables {
+                for (i, s) in p.syllables.iter().enumerate() {
                     if s.joint == Joint::Word {
                         if !first {
                             out.push(' ');
@@ -483,7 +563,8 @@ impl Pointed {
                         if s.held {
                             out.push_str("– ");
                         }
-                        if s.cadence {
+                        // A `·` among the leading dashes was written there.
+                        if s.cadence && !(i == 0 && p.omitted_after_point > 0) {
                             out.push_str("· ");
                         }
                     } else {
@@ -491,6 +572,7 @@ impl Pointed {
                         match s.joint {
                             Joint::Hyphen => out.push('-'),
                             Joint::Dot => out.push('·'),
+                            Joint::Spelling => out.push_str(if s.cadence { "\\-·" } else { "\\-" }),
                             Joint::Split | Joint::Word => {}
                         }
                     }
@@ -515,8 +597,8 @@ impl Pointed {
     }
 
     /// The same text with every word split into its sung syllables. Splits the markup made
-    /// are kept; the syllabifier's are [`Joint::Split`]. A spelling hyphen
-    /// ("blood-guiltiness") becomes a split, since the engraver draws hyphens itself.
+    /// are kept, spelling hyphens among them ([`Joint::Spelling`]); the syllabifier's are
+    /// [`Joint::Split`].
     pub fn syllabified(&self) -> Pointed {
         let mut out = self.clone();
         for v in &mut out.verses {
@@ -532,22 +614,17 @@ impl Pointed {
     }
 }
 
-/// Splits one marked syllable further, at spelling hyphens and then by the syllabifier.
+/// Splits one marked syllable further by the syllabifier. A hyphen left in its text is
+/// only text ("\-dashes\-"), kept as it is.
 fn split_syllable(s: Syllable, out: &mut Vec<Syllable>) {
     // Pieces as (text, byte offset of the text within s.text).
     let mut pieces: Vec<(String, usize)> = Vec::new();
-    let mut at = 0;
-    for chunk in s.text.split('-') {
-        if !chunk.is_empty() {
-            let mut prev = 0;
-            for p in split_points(chunk) {
-                pieces.push((chunk[prev..p].to_string(), at + prev));
-                prev = p;
-            }
-            pieces.push((chunk[prev..].to_string(), at + prev));
-        }
-        at += chunk.len() + 1;
+    let mut prev = 0;
+    for p in split_points(&s.text) {
+        pieces.push((s.text[prev..p].to_string(), prev));
+        prev = p;
     }
+    pieces.push((s.text[prev..].to_string(), prev));
     // Punctuation-only pieces join their neighbours.
     let mut merged: Vec<(String, usize)> = Vec::new();
     for (t, o) in pieces {
@@ -567,10 +644,7 @@ fn split_syllable(s: Syllable, out: &mut Vec<Syllable>) {
         merged.push((t, o));
     }
     if merged.len() <= 1 {
-        out.push(Syllable {
-            text: s.text.replace('-', ""),
-            ..s
-        });
+        out.push(s);
         return;
     }
     // The span maps text bytes to source bytes when the text was copied verbatim.
@@ -584,7 +658,7 @@ fn split_syllable(s: Syllable, out: &mut Vec<Syllable>) {
         };
         out.push(Syllable {
             accent: has_acute(t),
-            text: t.trim_end_matches('-').to_string(),
+            text: t.clone(),
             span,
             joint: if k == 0 { s.joint } else { Joint::Split },
             cadence: k == 0 && s.cadence,
@@ -661,7 +735,32 @@ mod tests {
         assert_eq!((p.verses[0].parts[0].held_end, p.verses[0].parts[1].omitted), (2, 3));
         assert!(!p.verses[0].parts[1].syllables[0].held);
         assert_eq!(p.to_text(), dashes);
-        // A hyphen and a dot together are one dotted split.
+        // A `·` among the leading dashes stays where it was written.
+        let among = "Lord, remember · Dávid, – – * [Sit.] – · – – [Bow.] práise the Lord.\n";
+        let p = parse(among);
+        assert_eq!((p.verses[0].parts[1].omitted, p.verses[0].parts[1].omitted_after_point), (3, 2));
+        assert!(p.verses[0].parts[1].syllables[0].cadence);
+        assert_eq!(p.verses[0].parts[1].lead_rubrics, ["Sit."]);
+        assert_eq!(p.verses[0].parts[1].syllables[0].rubrics, ["Bow."]);
+        assert_eq!(p.to_text(), among);
+        // Spelling hyphens, one the cadence starts after, and hyphens that are only text.
+        let spelled = "Thou hast the pre\\-·eminence * of blood\\-guiltiness and \\-dashes\\-.\n";
+        let p = parse(spelled);
+        assert!(p.diagnostics.is_empty(), "{:?}", p.diagnostics);
+        let t: Vec<(&str, Joint, bool)> = p.verses[0].parts[0].syllables[3..]
+            .iter()
+            .map(|s| (s.text.as_str(), s.joint, s.cadence))
+            .collect();
+        assert_eq!(t, [("pre", Joint::Word, false), ("eminence", Joint::Spelling, true)]);
+        assert_eq!(p.verses[0].parts[1].syllables[4].text, "-dashes-.");
+        assert_eq!(p.to_text(), spelled);
+        assert_eq!(parse(&p.to_text()), p);
+        // Rubrics before the verse number.
+        let stand = parse("[Stand.] 5 For I · fáults * and · mé.");
+        assert_eq!(stand.verses[0].number, Some(5));
+        assert_eq!(stand.verses[0].parts[0].syllables[0].rubrics, ["Stand."]);
+        assert_eq!(stand.to_text(), "5 [Stand.] For I · fáults * and · mé.\n");
+        // A hyphen with the dot after it is spelling; the dot before it, a dotted split.
         let both = parse("Praise him upon the well-·tún-ed cýmbals: * such hon·-our.");
         assert!(both.diagnostics.is_empty(), "{:?}", both.diagnostics);
         let t: Vec<(&str, Joint)> = both.verses[0].parts[0]
@@ -671,7 +770,11 @@ mod tests {
             .skip(4)
             .take(3)
             .collect();
-        assert_eq!(t, [("well", Joint::Word), ("tún", Joint::Dot), ("ed", Joint::Hyphen)]);
+        assert_eq!(t, [("well", Joint::Word), ("tún", Joint::Spelling), ("ed", Joint::Hyphen)]);
+        assert!(both.verses[0].parts[0].syllables[5].cadence);
+        let hon = &both.verses[0].parts[1].syllables[2];
+        assert_eq!((hon.text.as_str(), hon.joint), ("our.", Joint::Dot));
+        assert!(both.to_text().contains("well\\-·tún-ed") && both.to_text().contains("hon·our."));
         // Marks typed against a word.
         let tight = parse("It is better to trust · ín the Lord,* than to put any · confidénce in man.");
         assert!(tight.diagnostics.is_empty(), "{:?}", tight.diagnostics);
@@ -710,7 +813,11 @@ mod tests {
             ["and", "my", "blood", "guil", "ti", "ness", "is", "e", "ver", "be", "fóre", "me."]
         );
         let t = &p.verses[0].parts[1].syllables;
-        assert_eq!(t[3].joint, Joint::Split);
+        // The spelling hyphen stays, and each piece has its own span.
+        let joints: Vec<Joint> = t[2..6].iter().map(|s| s.joint).collect();
+        assert_eq!(joints, [Joint::Word, Joint::Spelling, Joint::Split, Joint::Split]);
+        assert!(t.iter().all(|s| s.span.len() == s.text.len()), "{t:?}");
         assert!(t[10].accent && !t[9].accent);
+        assert!(p.to_text().contains("blood\\-guiltiness"));
     }
 }
