@@ -476,6 +476,8 @@ fn writer_is_stable_on_fuzz_finds() {
         // A multi-line header value whose first line has a `;` is written on one line.
         ":\n;\0\n\u{7f}\n%%",
         "name: a\nb;\nc;;\n%%\n(c4) a(g)",
+        // One whose first line ends in a space, which reading trims.
+        ":\n! \n!\n%%",
     ];
     for src in cases {
         let once = parse(src).score.to_gabc();

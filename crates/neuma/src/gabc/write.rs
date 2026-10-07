@@ -196,8 +196,10 @@ fn header_field(name: &str, value: &str) -> String {
     if reads_back(&text) {
         return text;
     }
+    // As the value reads back, so that writing it again gives the same text.
     let flat = value.replace(['\r', '\n'], " ");
-    format!("{name}: {flat};;\n")
+    let end = if flat.contains(';') { ";;" } else { ";" };
+    format!("{name}: {flat}{end}\n")
 }
 
 fn placement_digit(p: Placement) -> &'static str {
