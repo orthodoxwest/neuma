@@ -179,6 +179,21 @@ fn line_texts(src: &str, width: f32) -> Vec<Vec<String>> {
 }
 
 #[test]
+fn a_long_score_breaks_its_end_as_a_short_one_does() {
+    // After a written break the rest of a score breaks as it would alone, however many lines
+    // come before: their demerits mustn't swamp the small differences that choose its breaks.
+    let tail = "Ad(f) te(g) le(h)vá(g)vi(f) á(gh)ni(g)mam(f) me(e)am(f) De(g)us(h) me(g)us(f) \
+                in(g) te(h) con(g)fí(f)do(g) non(h) e(g)ru(f)bé(g)scam(h) ne(g)que(f) ir(g)rí(h)de(g)ant(f) \
+                me(g) in(h)i(g)mí(f)ci(g) me(h)i(g) (::)";
+    let head = "a(g) (z) ".repeat(3000);
+    for width in (150..400).step_by(25) {
+        let alone = line_texts(&format!("(c4) {tail}"), width as f32);
+        let long = line_texts(&format!("(c4) {head}{tail}"), width as f32);
+        assert_eq!(long[long.len() - alone.len()..], alone[..], "{width}");
+    }
+}
+
+#[test]
 fn unclosed_nlba_still_fills_lines() {
     // From GregoBase: a `<nlba>` never closed forbids every later break. The lines still fill
     // the width instead of taking one syllable each.

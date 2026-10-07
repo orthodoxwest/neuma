@@ -91,16 +91,16 @@ pub(crate) const BASELINE_PITCH: f32 = 13.43;
 const LINE_GAP: f32 = 1.0;
 /// Demerits for each line, which outweigh any line's own within the tolerance, so a score
 /// takes as few lines as it can, as GregorioTeX's `\looseness=-1` asks.
-const LINE_PENALTY: f32 = 1.0e6;
+const LINE_PENALTY: f64 = 1.0e6;
 /// The loosest line taken to save a line: GregorioTeX's tolerance of 9000 lets its word
 /// gaps stretch about 4.5 times their 0.05 cm glue, 1.6 staff spaces, which is badness 115
 /// here.
 const TOLERANCE: f32 = 115.0;
 /// Demerits for each point of badness past the tolerance: a line that loose is taken only
 /// to avoid one looser still, so lines before a written break share the slack.
-const TOO_LOOSE: f32 = 1.0e4;
+const TOO_LOOSE: f64 = 1.0e4;
 /// Extra demerits for a break inside a melisma: about a moderately loose line's worth.
-const MELISMA_DEMERITS: f32 = 2500.0;
+const MELISMA_DEMERITS: f64 = 2500.0;
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct PlacedLine {
@@ -377,7 +377,7 @@ impl Engraving {
 
     /// How a line ending after segment `end` closes: whether it is set ragged, and the extra
     /// demerits for the break it takes.
-    fn line_end(&self, end: usize, opts: &LayoutOptions) -> (bool, f32) {
+    fn line_end(&self, end: usize, opts: &LayoutOptions) -> (bool, f64) {
         let after = self.segments[end].after;
         let ragged =
             end + 1 == self.segments.len() && opts.last_line == LastLine::Ragged || matches!(after, Break::Forced { justify: false, .. });
@@ -431,7 +431,7 @@ impl Engraving {
         let indent = if indented > 0 { INITIAL_BEFORE + column + INITIAL_GAP } else { 0.0 };
         // best[k][j]: least demerits for lines ending just before segment k, with j lines so
         // far (capped at `indented`), and where the last line started and its own j.
-        let mut best: Vec<Vec<Option<(f32, usize, usize)>>> = vec![vec![None; indented + 1]; n + 1];
+        let mut best: Vec<Vec<Option<(f64, usize, usize)>>> = vec![vec![None; indented + 1]; n + 1];
         best[0][0] = Some((0.0, 0, 0));
         for first in 0..n {
             for j in 0..=indented {
@@ -510,7 +510,7 @@ impl Engraving {
                             // into one-segment lines never looks cheaper.
                             if target - natural > 0.5 { 10000.0 } else { 0.0 }
                         } else {
-                            // A line of one word whose syllables touch can only stretch evenly.
+                            // A line of one word whose syllables touch can only stretch evenly, if at all.
                             let capacity = if stretch_weight > 0.0 { stretch_weight } else { gaps };
                             let r = (target - natural) / (capacity * STRETCH);
                             (100.0 * r * r * r).min(10000.0)
@@ -518,7 +518,9 @@ impl Engraving {
                         if badness.is_finite() {
                             // As GregorioTeX (looseness -1, tolerance 9000): as few lines as can be
                             // set no looser than it allows, the best of those by demerits.
-                            let d = (10.0 + badness) * (10.0 + badness) + LINE_PENALTY + TOO_LOOSE * (badness - TOLERANCE).max(0.0);
+                            // In f64: a long score's sum of line penalties would swamp f32.
+                            let b = f64::from(badness);
+                            let d = (10.0 + b) * (10.0 + b) + LINE_PENALTY + TOO_LOOSE * (b - f64::from(TOLERANCE)).max(0.0);
                             // A syllable's end is a better break than a cut inside its melisma.
                             let total = base + d + break_cost;
                             let better = best[end + 1][next].is_none_or(|(b, _, _)| total < b);
