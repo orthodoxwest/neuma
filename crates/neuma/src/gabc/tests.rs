@@ -462,3 +462,64 @@ fn zero_width_notes_are_reported_once() {
     assert_eq!(zw.len(), 1, "{:?}", p.diagnostics);
     assert_eq!(zw[0].message, "notes in `{…}` are drawn with their own width");
 }
+
+/// Inputs the `round_trip` fuzz target and the corpus run found: writing the parsed score and
+/// parsing it again reaches a fixed point after one round.
+#[test]
+fn writer_is_stable_on_fuzz_finds() {
+    let cases = [
+        // An escaped line break or tab in a lyric is a space.
+        "$\ns(",
+        "us$\n- `psalm-13i) *() na(m) *(,",
+        "a$\tb(g)",
+        "a$\rb(g) c$\n(h)",
+        // A multi-line header value whose first line has a `;` is written on one line.
+        ":\n;\0\n\u{7f}\n%%",
+        "name: a\nb;\nc;;\n%%\n(c4) a(g)",
+        // One whose first line ends in a space, which reading trims.
+        ":\n! \n!\n%%",
+        // Found in GregoBase by the corpus run: a word space before `</nlba>`, and a centered
+        // special character.
+        "(c4) <nlba>* Dul(h)ce(hji) </nlba>li(g)gnum,(ge) (:) vé(f)<nlba>ni(fgf)ent,(f) </nlba>(:)",
+        "(c4) f{<sp>'oe</sp>}(h')de(g)ra(fe..) <sp>A/</sp>{<sp>A/</sp>}(g)",
+        // An inclinatum's lean on a note another sign made an oriscus.
+        "(G1o",
+        "(c4) a(G1oh G2s G0v)",
+        // A byte-order mark that isn't at the start of the file.
+        "\n\u{feff}(",
+        "(c4) a\u{feff}b(g) \u{feff}(h)",
+        // A line break inside an unknown tag, which is set as text.
+        "<$\n>(",
+        // Elided text that spells red specials without being red.
+        "<e>**(",
+        "(c4) <e>*<sp>ae</sp></e>(g) <c><sp>*</sp><sp>*</sp></c>(h) <sp>V/</sp><sp>R/</sp>(g)",
+    ];
+    for src in cases {
+        let once = parse(src).score.to_gabc();
+        assert_eq!(parse(&once).score.to_gabc(), once, "{src:?}");
+    }
+    let p = parse("a$\tb(g)");
+    assert_eq!(p.score.syllables[0].text.runs[0].text, "a b");
+    // The word after `</nlba>` still starts a word, and the centering survives.
+    let once = parse(&parse("(c4) <nlba>a(h)b(g) </nlba>c(g) f{<sp>'oe</sp>}(h)").score.to_gabc()).score;
+    assert!(once.syllables[3].word_start);
+    assert_eq!(once.syllables[4].text.center, Some(1..3));
+    // A multi-line value that reads back keeps its lines.
+    let p = parse("commentary: one\ntwo;;\n%%\n(c4) a(g)");
+    assert_eq!(p.score.header.get("commentary"), Some("one\ntwo"));
+    assert!(p.score.to_gabc().starts_with("commentary: one\ntwo;;\n"));
+}
+
+/// A second clef cut off at the end of the notes (`(c5@c`) used to give a diagnostic past the
+/// end of the source. Found by the parse fuzz target.
+#[test]
+fn unfinished_double_clef() {
+    for src in ["(c5@c", "(c4@cb", "(c4@f", "(c4@c3)", "(c4@cb3 g)"] {
+        let p = parse(src);
+        for d in &p.diagnostics {
+            assert!(d.span.end <= src.len(), "{src:?}: {d}");
+        }
+    }
+    let p = parse("(c4@c3)");
+    assert!(p.diagnostics.iter().any(|d| d.code == "gabc::double-clef"));
+}

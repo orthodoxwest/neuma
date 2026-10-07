@@ -1,0 +1,112 @@
+
+# width 360
+size 360.00 x 159.01, staff space 6.00
+line top 0.00 bottom 78.43 staff 36.25 baseline 74.05
+line top 86.00 bottom 159.01 staff 116.83 baseline 154.63
+staff rect 61.97 17.87 298.03 0.77
+staff rect 61.97 29.87 298.03 0.77
+staff rect 61.97 41.87 298.03 0.77
+staff rect 61.97 53.87 298.03 0.77
+clef DoClef 61.97 18.25
+note PunctumQuadratum 79.97 36.25 n0
+Lyric 74.88 74.05 14.70 s1 "AVE"
+note PunctumQuadratum 123.06 36.25 n1
+Lyric 108.76 74.05 14.70 s2 "mer"
+note PunctumQuadratum 139.89 30.25 n2
+Lyric 130.84 74.05 14.70 s3 "cy"
+note PunctumQuadratum 158.43 36.25 n3
+Lyric 154.55 74.05 14.70 s4 "up"
+note PunctumQuadratum 178.13 42.25 n4
+Lyric 174.49 74.05 14.70 s5 "on"
+note PunctumQuadratum 211.43 36.25 n5
+Lyric 197.12 74.05 14.70 s6 "me,"
+note PunctumQuadratum 230.87 30.25 n6
+Lyric 225.27 74.05 14.70 s7 "O"
+note PunctumQuadratum 256.30 18.25 n7
+Lyric 244.07 74.05 14.70 s8 "Lord,"
+bar rect 285.37 24.25 0.77 24.00
+Lyric 283.26 74.05 14.70 s9 "*"
+note PunctumQuadratum 299.28 18.25 n8
+Lyric 296.34 74.05 14.70 s10 "and"
+note PunctumQuadratum 338.37 30.25 n9
+Lyric 325.00 74.05 14.70 s11 "heark"
+Hyphen 169.93 74.05 14.70 "-"
+Hyphen 355.97 74.05 14.70 "-"
+custos CustosDescLong 350.97 18.25
+staff rect 0.00 98.45 360.00 0.77
+staff rect 0.00 110.45 360.00 0.77
+staff rect 0.00 122.45 360.00 0.77
+staff rect 0.00 134.45 360.00 0.77
+clef DoClef 0.00 98.83
+note PunctumQuadratum 18.00 98.83 n10
+Lyric 15.13 154.63 14.70 s12 "en"
+note PodatusLowerShort 39.56 98.83 n11
+note PodatusUpperShort 42.56 92.83 n12
+Lyric 35.68 154.63 14.70 s13 "un"
+note PunctumQuadratum 59.45 98.83 n13
+Lyric 51.19 154.63 14.70 s14 "to"
+note PunctumQuadratum 84.50 110.83 n14
+Lyric 70.14 154.63 14.70 s15 "my"
+note PodatusLowerShort 113.10 116.83 n15
+note PodatusUpperShort 116.10 110.83 n16
+Lyric 94.48 154.63 14.70 s16 "pray"
+note PunctumQuadratum 129.12 116.83 n17
+Lyric 126.26 154.63 14.70 s17 "er."
+bar rect 141.72 98.83 0.77 36.00
+bar rect 147.05 98.83 0.77 36.00
+Hyphen 119.18 154.63 14.70 "-"
+Initial 8.34 74.05 58.80 s1 "H"
+Annotation 22.43 14.10 11.03 "Ant."
+Annotation 24.39 26.23 11.03 "8 G"
+
+# width 720
+size 720.00 x 91.57, staff space 6.00
+line top 0.00 bottom 78.43 staff 36.25 baseline 74.05
+staff rect 61.97 17.87 658.03 0.77
+staff rect 61.97 29.87 658.03 0.77
+staff rect 61.97 41.87 658.03 0.77
+staff rect 61.97 53.87 658.03 0.77
+clef DoClef 61.97 18.25
+note PunctumQuadratum 79.97 36.25 n0
+Lyric 74.88 74.05 14.70 s1 "AVE"
+note PunctumQuadratum 122.52 36.25 n1
+Lyric 108.22 74.05 14.70 s2 "mer"
+note PunctumQuadratum 139.36 30.25 n2
+Lyric 130.30 74.05 14.70 s3 "cy"
+note PunctumQuadratum 157.36 36.25 n3
+Lyric 153.48 74.05 14.70 s4 "up"
+note PunctumQuadratum 176.52 42.25 n4
+Lyric 172.89 74.05 14.70 s5 "on"
+note PunctumQuadratum 209.28 36.25 n5
+Lyric 194.98 74.05 14.70 s6 "me,"
+note PunctumQuadratum 228.20 30.25 n6
+Lyric 222.59 74.05 14.70 s7 "O"
+note PunctumQuadratum 253.08 18.25 n7
+Lyric 240.86 74.05 14.70 s8 "Lord,"
+bar rect 281.62 24.25 0.77 24.00
+Lyric 279.51 74.05 14.70 s9 "*"
+note PunctumQuadratum 294.99 18.25 n8
+Lyric 292.06 74.05 14.70 s10 "and"
+note PunctumQuadratum 333.55 30.25 n9
+Lyric 320.18 74.05 14.70 s11 "heark"
+note PunctumQuadratum 354.02 18.25 n10
+Lyric 351.15 74.05 14.70 s12 "en"
+note PodatusLowerShort 375.57 18.25 n11
+note PodatusUpperShort 378.57 12.25 n12
+Lyric 371.70 74.05 14.70 s13 "un"
+note PunctumQuadratum 395.46 18.25 n13
+Lyric 387.21 74.05 14.70 s14 "to"
+note PunctumQuadratum 420.52 30.25 n14
+Lyric 406.16 74.05 14.70 s15 "my"
+note PodatusLowerShort 449.12 36.25 n15
+note PodatusUpperShort 452.12 30.25 n16
+Lyric 430.50 74.05 14.70 s16 "pray"
+note PunctumQuadratum 465.14 36.25 n17
+Lyric 462.27 74.05 14.70 s17 "er."
+bar rect 477.74 18.25 0.77 36.00
+bar rect 483.07 18.25 0.77 36.00
+Hyphen 168.86 74.05 14.70 "-"
+Hyphen 455.20 74.05 14.70 "-"
+Initial 8.34 74.05 58.80 s1 "H"
+Annotation 22.43 14.10 11.03 "Ant."
+Annotation 24.39 26.23 11.03 "8 G"
