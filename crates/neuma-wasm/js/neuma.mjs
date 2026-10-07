@@ -22,8 +22,28 @@ let crashed = null;
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
+// Errors thrown from inside an engine export, as opposed to by the glue or the caller's own
+// arguments (a `toString` that throws, a string too long to build) before the engine ran.
+const engineErrors = new WeakSet();
+
+/** The instance's exports, each function wrapped to note the errors it throws. */
+function exportsOf(instance) {
+  const out = {};
+  for (const [name, value] of Object.entries(instance.exports)) {
+    out[name] = typeof value !== "function" ? value : (...args) => {
+      try {
+        return value(...args);
+      } catch (e) {
+        if (e !== null && typeof e === "object") engineErrors.add(e);
+        throw e;
+      }
+    };
+  }
+  return out;
+}
+
 function instantiate() {
-  wasm = new WebAssembly.Instance(module, {}).exports;
+  wasm = exportsOf(new WebAssembly.Instance(module, {}));
   generation += 1;
   crashed = null;
 }
@@ -55,13 +75,25 @@ function ready() {
   return wasm;
 }
 
-/** Runs `f` against the engine. A trap leaves the instance unusable, so it is dropped. */
+/**
+ * Whether `e` may have stopped the engine partway through: a trap (`unreachable`,
+ * out-of-bounds memory), or a stack overflow inside an engine call, which engines report as
+ * a `RangeError` ("Maximum call stack size exceeded") rather than a trap. A `RangeError` from
+ * the caller's arguments, before the engine ran, leaves it as it was.
+ */
+const isCrash = (e) =>
+  e instanceof WebAssembly.RuntimeError || (e instanceof RangeError && engineErrors.has(e));
+
+/**
+ * Runs `f` against the engine. A trap or stack overflow can leave the instance's memory
+ * half-updated, so the instance is dropped and `init()` must start a fresh one.
+ */
 function guarded(f) {
   const w = ready();
   try {
     return f(w);
   } catch (e) {
-    if (e instanceof WebAssembly.RuntimeError) {
+    if (isCrash(e)) {
       wasm = null;
       crashed = e;
     }

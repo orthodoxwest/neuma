@@ -110,5 +110,50 @@ assert.ok(pt.text.includes("·") && /[áéíóú]/.test(pt.text));
 assert.equal(psalm(plain, "8.G").gabc, psalm(pt.text, "8.G").gabc);
 assert.ok(psalm(plain, "8.G", { pointing: "manual" }).diagnostics.some((d) => d.code === "apply::no-accent"));
 
+
+// A RangeError from the caller's own arguments, before the engine runs, is rethrown and
+// leaves the engine and its Chants alive.
+{
+  const live = new Chant("(c4) a(g)", { initial: 0 });
+  const bad = { toString: () => (1).toFixed(500) };
+  assert.throws(() => summarize(bad), RangeError);
+  assert.throws(() => psalm("a * b", bad), RangeError);
+  assert.throws(() => live.layout(400, { prefix: bad }), RangeError);
+  assert.equal(summarize("(c4) a(g)").notes, 1);
+  assert.ok(live.layout(400).svg.startsWith("<svg"));
+  live.free();
+}
+
+// A trap or a stack overflow (a RangeError, not a trap) drops the engine until init() runs
+// again. A fresh copy of the glue runs a stand-in module whose `neuma_summarize` recurses
+// forever and whose `neuma_tones` traps.
+{
+  const glue = await import("./dist/neuma.mjs?crash");
+  const section = (id, body) => [id, body.length, ...body];
+  const fn = (code) => [code.length + 2, 0, ...code, 0x0b]; // size, no locals, code, end
+  const exp = (name, kind, index) => [name.length, ...new TextEncoder().encode(name), kind, index];
+  const exports = [
+    exp("memory", 2, 0), exp("neuma_input", 0, 1), exp("neuma_output_ptr", 0, 2),
+    exp("neuma_output_len", 0, 2), exp("neuma_summarize", 0, 0), exp("neuma_tones", 0, 3),
+  ];
+  const bytes = new Uint8Array([
+    0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00,
+    // Types: () -> (), (i32) -> i32, () -> i32.
+    ...section(1, [3, 0x60, 0, 0, 0x60, 1, 0x7f, 1, 0x7f, 0x60, 0, 1, 0x7f]),
+    ...section(3, [4, 0, 1, 2, 0]),
+    ...section(5, [1, 0, 1]),
+    ...section(7, [exports.length, ...exports.flat()]),
+    ...section(10, [4, ...fn([0x10, 0]), ...fn([0x41, 0]), ...fn([0x41, 0]), ...fn([0x00])]),
+  ]);
+  glue.initSync(bytes);
+  assert.throws(() => glue.summarize("x"), RangeError);
+  assert.throws(() => glue.summarize("x"), /stopped on an internal error; call init\(\) again/);
+  await glue.init();
+  assert.throws(() => glue.tones(), WebAssembly.RuntimeError);
+  assert.throws(() => glue.tones(), /call init\(\) again/);
+  await glue.init();
+  assert.throws(() => glue.summarize("x"), RangeError);
+}
+
 assert.equal(DEFAULT_WEIGHTS.note, 1);
 console.log(`ok: ${notes.length} notes, ${wide.timeline.lines.length} lines at 900, ${narrow.timeline.lines.length} at 360`);

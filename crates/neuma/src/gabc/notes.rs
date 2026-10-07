@@ -340,7 +340,13 @@ impl Parser<'_, '_> {
             flat,
             span: self.span(start),
         };
-        if self.peek() == Some(b'@') && matches!(self.peek_at(1), Some(b'c' | b'f')) {
+        // `@c3`, `@cb3`: a second clef, read only when it is whole, so its line never runs
+        // past the end of the notes.
+        let second_line = match self.peek_at(2) {
+            Some(b'b') => self.peek_at(3),
+            d => d,
+        };
+        if self.peek() == Some(b'@') && matches!(self.peek_at(1), Some(b'c' | b'f')) && second_line.is_some_and(|d| d.is_ascii_digit()) {
             let second = self.i;
             self.i += 2;
             self.take(b'b');
@@ -602,6 +608,10 @@ impl Parser<'_, '_> {
         let span = self.span(start);
         for mut n in done.into_iter().chain(std::iter::once(note)) {
             n.span = span.clone();
+            // A lean only means something on an inclinatum: `G1o` is an oriscus.
+            if n.shape != NoteShape::Inclinatum {
+                n.lean = None;
+            }
             self.out.push(Figure::Note(n));
         }
     }
