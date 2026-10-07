@@ -2,21 +2,20 @@
 
 use std::fmt::Write as _;
 
+use crate::diag::Sink;
+
 use crate::score::{
     AlterationKind, BarKind, ClefKind, CustosRule, Figure, Liquescent, Lyric, NoteShape, Placement, Score, Space, TextStyle,
     position_letter,
 };
 
 /// GABC for `score`. Parsing the result gives back an equal score, apart from source spans.
-/// GABC can't express a `%` in a header value (it starts a comment), so one is lost.
+/// GABC can't express a `%` in a header value (it starts a comment), so one is lost, nor a
+/// value whose lines would end it early, which is written on one line.
 pub fn to_gabc(score: &Score) -> String {
     let mut out = String::new();
     for (name, value) in &score.header.fields {
-        if value.contains('\n') || value.contains(';') {
-            let _ = writeln!(out, "{name}: {value};;");
-        } else {
-            let _ = writeln!(out, "{name}: {value};");
-        }
+        out.push_str(&header_field(name, value));
     }
     out.push_str("%%\n");
     let mut style = TextStyle::REGULAR;
@@ -180,6 +179,25 @@ fn write_lyric(out: &mut String, lyric: &Lyric, style: &mut TextStyle) {
             out.push_str("</e>");
         }
     }
+}
+
+/// One header field as GABC. A value with a `;` or a line break ends with `;;`; when its lines
+/// would read back differently (a line that ends in `;` or looks like the next field), its
+/// line breaks become spaces.
+fn header_field(name: &str, value: &str) -> String {
+    let reads_back = |text: &str| {
+        let (header, _) = super::parse_header(&format!("{text}%%\n"), &mut Sink::default());
+        header.fields.len() == 1 && header.fields[0].0 == name && header.fields[0].1 == value
+    };
+    if !value.contains(['\n', ';']) {
+        return format!("{name}: {value};\n");
+    }
+    let text = format!("{name}: {value};;\n");
+    if reads_back(&text) {
+        return text;
+    }
+    let flat = value.replace(['\r', '\n'], " ");
+    format!("{name}: {flat};;\n")
 }
 
 fn placement_digit(p: Placement) -> &'static str {

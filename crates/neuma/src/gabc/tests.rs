@@ -473,6 +473,9 @@ fn writer_is_stable_on_fuzz_finds() {
         "us$\n- `psalm-13i) *() na(m) *(,",
         "a$\tb(g)",
         "a$\rb(g) c$\n(h)",
+        // A multi-line header value whose first line has a `;` is written on one line.
+        ":\n;\0\n\u{7f}\n%%",
+        "name: a\nb;\nc;;\n%%\n(c4) a(g)",
     ];
     for src in cases {
         let once = parse(src).score.to_gabc();
@@ -480,4 +483,8 @@ fn writer_is_stable_on_fuzz_finds() {
     }
     let p = parse("a$\tb(g)");
     assert_eq!(p.score.syllables[0].text.runs[0].text, "a b");
+    // A multi-line value that reads back keeps its lines.
+    let p = parse("commentary: one\ntwo;;\n%%\n(c4) a(g)");
+    assert_eq!(p.score.header.get("commentary"), Some("one\ntwo"));
+    assert!(p.score.to_gabc().starts_with("commentary: one\ntwo;;\n"));
 }
