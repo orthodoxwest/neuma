@@ -12,10 +12,13 @@ use sha2::{Digest, Sha256};
 
 /// Characters to record advances for, when the font has them.
 fn coverage() -> impl Iterator<Item = char> {
-    let ranges: [(u32, u32); 6] = [
+    let ranges: [(u32, u32); 8] = [
         (0x20, 0x7E),
         (0xA0, 0x24F),
         (0x300, 0x36F),
+        // Greek, with its accented letters, and Cyrillic, which some chant texts use.
+        (0x370, 0x45F),
+        (0x1F00, 0x1FFF),
         (0x1E00, 0x1EFF),
         (0x2010, 0x205E),
         (0x2100, 0x2135),
@@ -34,6 +37,9 @@ fn kerning_set(face: &rustybuzz::Face) -> Vec<char> {
     out.push(' ');
     out
 }
+
+/// The size of the capital a browser draws for a small capital the font lacks.
+const SYNTHETIC_SMALL_CAP: f32 = 0.7;
 
 fn features(small_caps: bool) -> Vec<Feature> {
     let mut f: Vec<Feature> = ["liga", "clig", "dlig", "hlig", "calt"]
@@ -64,6 +70,12 @@ fn build_face(path: &str, italic: bool, bold: bool) -> Result<FaceMetrics, Strin
     let mut out = FaceMetrics::new(italic, bold, hash, ascent, descent);
     let plain = features(false);
     let smcp = features(true);
+    // Without small capitals of its own, a browser draws a capital at this size instead
+    // (Chromium's and WebKit's synthesis).
+    let has_smcp = face
+        .tables()
+        .gsub
+        .is_some_and(|g| g.features.find(Tag::from_bytes(b"smcp")).is_some());
     for c in coverage() {
         if face.glyph_index(c).is_none() {
             continue;
@@ -71,7 +83,12 @@ fn build_face(path: &str, italic: bool, bold: bool) -> Result<FaceMetrics, Strin
         let s = c.to_string();
         out.set_advance(c, shape(&face, &s, &plain) as f32 / upem);
         if c.is_lowercase() {
-            out.set_small_cap(c, shape(&face, &s, &smcp) as f32 / upem);
+            let em = if has_smcp {
+                shape(&face, &s, &smcp) as f32 / upem
+            } else {
+                SYNTHETIC_SMALL_CAP * shape(&face, &c.to_uppercase().to_string(), &plain) as f32 / upem
+            };
+            out.set_small_cap(c, em);
         }
     }
     let set = kerning_set(&face);

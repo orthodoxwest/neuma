@@ -14,3 +14,7 @@ sha2 = "0.10"
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+# The collisions example lays scores out with the built-in tables.
+neuma = { path = "../neuma" }

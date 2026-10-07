@@ -13,7 +13,7 @@ use crate::text::TextMeasure;
 
 /// One face's metrics in a [`MetricsTable`]. Its constructor and setters are for the table
 /// builder (`neuma-metrics`); the stability contract is the `NMET` format version.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct FaceMetrics {
     pub italic: bool,
     pub bold: bool,
@@ -23,6 +23,33 @@ pub struct FaceMetrics {
     advances: Vec<(u32, f32)>,
     small_caps: Vec<(u32, f32)>,
     kerning: Vec<(u32, u32, f32)>,
+    direct: Direct,
+}
+
+impl PartialEq for FaceMetrics {
+    fn eq(&self, o: &FaceMetrics) -> bool {
+        self.italic == o.italic
+            && self.bold == o.bold
+            && self.sha256 == o.sha256
+            && self.ascent == o.ascent
+            && self.descent == o.descent
+            && self.advances == o.advances
+            && self.small_caps == o.small_caps
+            && self.kerning == o.kerning
+    }
+}
+
+/// Code points below this are looked up directly rather than searched for: all of Latin.
+const DIRECT: usize = 0x250;
+
+/// The sorted arrays' entries for the first [`DIRECT`] code points, at hand by index, as
+/// measuring lyrics looks them up over and over. Empty until the arrays are sorted.
+#[derive(Clone, Debug, Default)]
+struct Direct {
+    /// Each code point's advance, as [`FaceMetrics::advance_of`] finds it.
+    advances: Vec<f32>,
+    /// Where the kerning pairs with each code point on the left are: `kern[c]..kern[c + 1]`.
+    kern: Vec<u32>,
 }
 
 impl FaceMetrics {
@@ -37,12 +64,14 @@ impl FaceMetrics {
             advances: Vec::new(),
             small_caps: Vec::new(),
             kerning: Vec::new(),
+            direct: Direct::default(),
         }
     }
 
     #[doc(hidden)]
     pub fn set_advance(&mut self, c: char, em: f32) {
         self.advances.push((c as u32, em));
+        self.direct = Direct::default();
     }
 
     #[doc(hidden)]
@@ -53,6 +82,7 @@ impl FaceMetrics {
     #[doc(hidden)]
     pub fn set_kern(&mut self, left: char, right: char, em: f32) {
         self.kerning.push((left as u32, right as u32, em));
+        self.direct = Direct::default();
     }
 
     fn sort(&mut self) {
@@ -62,12 +92,23 @@ impl FaceMetrics {
         self.small_caps.dedup_by_key(|e| e.0);
         self.kerning.sort_by_key(|e| (e.0, e.1));
         self.kerning.dedup_by_key(|e| (e.0, e.1));
+        self.direct = Direct::default();
+        let advances = (0..DIRECT as u32)
+            .map(|c| char::from_u32(c).map_or(0.5, |ch| self.advance_of(ch, false)))
+            .collect();
+        let kern = (0..=DIRECT as u32)
+            .map(|c| self.kerning.partition_point(|e| e.0 < c) as u32)
+            .collect();
+        self.direct = Direct { advances, kern };
     }
 
     fn advance_of(&self, c: char, small_caps: bool) -> f32 {
         let key = c as u32;
         if small_caps && let Ok(i) = self.small_caps.binary_search_by_key(&key, |e| e.0) {
             return self.small_caps[i].1;
+        }
+        if let Some(&a) = self.direct.advances.get(key as usize) {
+            return a;
         }
         match self.advances.binary_search_by_key(&key, |e| e.0) {
             Ok(i) => self.advances[i].1,
@@ -78,6 +119,14 @@ impl FaceMetrics {
     }
 
     fn kern(&self, a: char, b: char) -> f32 {
+        let i = a as usize;
+        if let (Some(&from), Some(&to)) = (self.direct.kern.get(i), self.direct.kern.get(i + 1)) {
+            let pairs = &self.kerning[from as usize..to as usize];
+            return match pairs.binary_search_by_key(&(b as u32), |e| e.1) {
+                Ok(i) => pairs[i].2,
+                Err(_) => 0.0,
+            };
+        }
         let key = (a as u32, b as u32);
         match self.kerning.binary_search_by_key(&key, |e| (e.0, e.1)) {
             Ok(i) => self.kerning[i].2,
