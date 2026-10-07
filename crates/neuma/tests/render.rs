@@ -1267,4 +1267,51 @@ fn ledger_lines_of_neighbouring_notes_join() {
     assert_eq!(ledgers("(c4) a(b)b(b)c(a) (::)").len(), 1);
     assert_eq!(ledgers("(c4) a(b) (,) b(b) (::)").len(), 2);
     assert_eq!(ledgers("(c4) Ma(b) lon(h)gis(h)si(h)ma(b) (::)").len(), 2);
+    // Whether they join is seen as the line is set: justifying a line parts them.
+    assert_eq!(ledgers("(c4) a(b) b(b) c(b) (::)").len(), 1);
+    assert_eq!(ledgers("(c4) a(b) b(b) c(b) (z) d(g) (::)").len(), 3);
+    // One reaches about a staff space past its note each way, as GregorioTeX's does.
+    let one = ledgers("(c4) a(b) (::)");
+    let w = one[0].1 - one[0].0;
+    let sp = LayoutOptions::default().scale;
+    assert!(w > 2.5 * sp && w < 3.5 * sp, "{w}");
+}
+
+#[test]
+fn ledger_lines_stop_short_of_an_accidental() {
+    let list = parse("(c4) a(bxb) (::)")
+        .score
+        .engrave(&ApproxMeasure, &NO_INITIAL)
+        .layout(600.0, &LayoutOptions::default())
+        .display();
+    let accidental = list
+        .items
+        .iter()
+        .find_map(|i| match i {
+            Item::Glyph {
+                glyph,
+                x,
+                scale,
+                role: neuma::Ink::Accidental,
+                ..
+            } => {
+                let (_, _, r, _) = neuma::glyphs::GlyphId::from_id(*glyph).unwrap().ink();
+                Some(x + r * scale * neuma::glyphs::UNITS_PER_SPACE)
+            }
+            _ => None,
+        })
+        .unwrap();
+    let ledger = list
+        .items
+        .iter()
+        .find_map(|i| match i {
+            Item::Rect {
+                x,
+                role: neuma::Ink::Ledger,
+                ..
+            } => Some(*x),
+            _ => None,
+        })
+        .unwrap();
+    assert!(ledger > accidental, "{ledger} {accidental}");
 }

@@ -4,7 +4,7 @@
 //! and an optimal-fit breaker picks the breaks with the least total demerits. Arithmetic is
 //! limited to add, subtract, multiply, divide and comparison (DESIGN section 13).
 
-use crate::engrave::{Break, CAP_HEIGHT, Engraving, HYPHEN_TOP, Ink, Mark, Piece, Segment, clef_pieces, custos_piece};
+use crate::engrave::{Break, CAP_HEIGHT, Engraving, HYPHEN_TOP, Ink, LEDGER_GAP, Mark, Piece, STEM, Segment, clef_pieces, custos_piece};
 use crate::score::{Clef, CustosRule};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -75,12 +75,11 @@ const SHRINK: f32 = 0.35;
 const SHRINK_OF_WORD_SPACE: f32 = 0.3;
 /// How far each gap may stretch before a line counts as loose, in staff spaces.
 const STRETCH: f32 = 1.5;
-/// The widest gap between two notes' ledger lines that is drawn through, in staff spaces, as
-/// the notes are spaced before a line is justified. GregorioTeX's ledger lines overhang their
-/// notes by about 0.95 staff spaces, so those of notes 1.9 apart meet, and those of
-/// neighbouring words' notes ([`NOTES_WORD_GAP`]) all but meet; a wider gap, as where the
-/// text holds the notes apart, parts them. These overhang by 0.25 (see `add_markings`).
-const LEDGER_JOIN: f32 = NOTES_WORD_GAP + 0.1 - 2.0 * 0.25;
+/// How far past its notes a ledger line counts when a bar, a clef or a custos is spaced from
+/// them: GregorioTeX spaces these from the notes alone, and its gaps beside them are wider
+/// than its ledger lines' overhang, so a ledger line may reach nearer it than the gap, though
+/// never to it.
+const LEDGER_NEAR: f32 = 0.25;
 /// The widest column laid out, in output units and in staff spaces; wider requests are
 /// clamped to it.
 const MAX_WIDTH: f32 = 1.0e6;
@@ -117,16 +116,17 @@ const TOO_LOOSE: f64 = 1.0e4;
 /// Extra demerits for a break inside a melisma: about a moderately loose line's worth.
 const MELISMA_DEMERITS: f64 = 2500.0;
 /// Demerits for a break at a word's end and after a bar, against one between syllables of a
-/// word: GregorioTeX's break penalties (`endofwordpenalty` -100, `endafterbarpenalty` -200,
-/// `endofsyllablepenalty` -50), each counted as TeX counts a negative penalty, minus its
-/// square, and scaled by [`BREAK_SCALE`].
-const WORD_END_DEMERITS: f64 = BREAK_SCALE * (50.0 * 50.0 - 100.0 * 100.0);
-const AFTER_BAR_DEMERITS: f64 = BREAK_SCALE * (50.0 * 50.0 - 200.0 * 200.0);
+/// word: GregorioTeX's break penalties (`endofwordpenalty` -100, `endafterbarpenalty` -200),
+/// at [`BREAK_WEIGHT`] a point.
+const WORD_END_DEMERITS: f64 = -BREAK_WEIGHT * 100.0;
+const AFTER_BAR_DEMERITS: f64 = -BREAK_WEIGHT * 200.0;
 /// TeX weighs those penalties against badness in the thousands; badness here is about a
-/// 79th of TeX's for the same line (see [`TOLERANCE`]), and the penalties weigh as much
-/// against it at about a 300th. Across GregoBase this matches GregorioTeX's breaks best:
-/// more often a word's end than a cut inside one, but never at the price of a loose line.
-const BREAK_SCALE: f64 = 0.003;
+/// 79th of TeX's for the same line (see [`TOLERANCE`]). Against GregorioTeX 6.0's own breaks
+/// on 240 GregoBase scores at two widths, half a demerit a point matches best: more often a
+/// word's end than a cut inside one, but never at the price of a loose line. TeX squares a
+/// negative penalty; squared, a bar outweighed a word's end five to one, and lines ended at a
+/// bar by splitting a two-syllable word ("pa- / cem") where GregorioTeX keeps it whole.
+const BREAK_WEIGHT: f64 = 0.5;
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct PlacedLine {
@@ -229,10 +229,14 @@ fn place(cur: &Cursor, seg: &Space, hyphen: f32, word_space: f32, line_start: f3
     match (cur.ink_right, seg.ink) {
         (Some(r), Some((l, _))) => {
             // Notes are spaced by their heads, their ledger lines left to reach toward each
-            // other; a bar or a clef keeps clear of those too.
+            // other. A bar, a clef or a custos is spaced from the notes beside it as from
+            // ledger lines that reach [`LEDGER_NEAR`] past them, so a longer one may come nearer
+            // it than the gap, but stay clear of it.
             let (r, l) = match (cur.spacing_right, seg.spacing) {
                 (Some(r), Some((l, _))) => (r, l),
-                _ => (r, l),
+                (Some(sr), None) => (r.min(sr + LEDGER_NEAR), l),
+                (None, Some((sl, _))) => (r, l.max(sl - LEDGER_NEAR)),
+                (None, None) => (r, l),
             };
             let gap = if seg.first {
                 if seg.is_bar || cur.after_bar {
@@ -247,7 +251,15 @@ fn place(cur: &Cursor, seg: &Space, hyphen: f32, word_space: f32, line_start: f3
             };
             x = x.max(r + gap - l);
         }
-        (None, Some((l, _))) => x = x.max(line_start - l),
+        // The notes that start a line after a clef keep the same distance from it, whether
+        // they have ledger lines or not; with no clef, their ledger lines start the line.
+        (None, Some((l, _))) => {
+            let l = match seg.spacing {
+                Some((sl, _)) if line_start > 0.0 => l.max(sl - LEDGER_NEAR),
+                _ => l,
+            };
+            x = x.max(line_start - l);
+        }
         _ => {}
     }
     let mut touching = false;
@@ -371,6 +383,13 @@ impl Text {
 }
 
 impl Space {
+    /// Where a custos after it is spaced from: the right end of its ink, its ledger lines
+    /// counted only [`LEDGER_NEAR`] past its notes.
+    fn wall_right(&self) -> Option<f32> {
+        let (_, r) = self.ink?;
+        Some(self.spacing.map_or(r, |(_, s)| r.min(s + LEDGER_NEAR)))
+    }
+
     fn of(seg: &Segment) -> Space {
         Space {
             first: seg.first,
@@ -666,7 +685,7 @@ impl Engraving {
             cur_shrunk = advance(&cur_shrunk, seg, x - gone);
             right = right.max(x + seg.right);
             right_shrunk = right_shrunk.max(x - gone + seg.right);
-            if let Some((_, r)) = seg.ink {
+            if let Some(r) = seg.wall_right() {
                 ink_end = ink_end.max(x + r);
                 ink_end_shrunk = ink_end_shrunk.max(x - gone + r);
             }
@@ -699,7 +718,7 @@ impl Engraving {
             let seg = &Space::of(seg);
             cur = advance(&cur, seg, x);
             right = right.max(x + seg.right);
-            if let Some((_, r)) = seg.ink {
+            if let Some(r) = seg.wall_right() {
                 ink_end = ink_end.max(x + r);
             }
         }
@@ -837,22 +856,26 @@ impl Engraving {
     }
 
     /// The ledger lines that join those of neighbouring notes on the line `first..=last`, set
-    /// at `xs`: where the notes, as spaced at `natural` before the line was justified, lie
-    /// close enough for GregorioTeX's to meet, with no bar or clef between them. So
-    /// the same notes join alike on every line, however loose.
-    fn ledger_bridges(&self, first: usize, last: usize, natural: &[f32], xs: &[f32]) -> Vec<(f32, f32, f32)> {
-        // (y, left and right as spaced, left and right as set)
-        let mut ledgers: Vec<(f32, f32, f32, f32, f32)> = Vec::new();
-        let mut walls: Vec<f32> = Vec::new();
-        for (i, seg) in self.segments[first..=last].iter().enumerate() {
+    /// at `xs`: where, as the line is set, they would all but meet ([`LEDGER_GAP`]) with no
+    /// bar, clef or custos between them. GregorioTeX's meet at its word space between notes
+    /// and part as justifying opens the gap, so these do too.
+    fn ledger_bridges(&self, first: usize, last: usize, xs: &[f32]) -> Vec<(f32, f32, f32)> {
+        // (y, left, right)
+        let mut ledgers: Vec<(f32, f32, f32)> = Vec::new();
+        // (x, top, bottom): bars, clefs and custodes part ledger lines at any height, an
+        // accidental those it stands on.
+        let mut walls: Vec<(f32, f32, f32)> = Vec::new();
+        for (seg, &x) in self.segments[first..=last].iter().zip(xs) {
             for p in &seg.pieces {
                 match (p.role, p.mark) {
-                    (Ink::Ledger, Mark::Rect { x: l, y, w, .. }) => {
-                        ledgers.push((y, natural[i] + l, natural[i] + l + w, xs[i] + l, xs[i] + l + w));
-                    }
+                    (Ink::Ledger, Mark::Rect { x: l, y, w, .. }) => ledgers.push((y, x + l, x + l + w)),
                     (Ink::Bar | Ink::Clef | Ink::Custos, _) => {
                         let [l, _, r, _] = p.ink_box();
-                        walls.push(natural[i] + (l + r) / 2.0);
+                        walls.push((x + (l + r) / 2.0, f32::MIN, f32::MAX));
+                    }
+                    (Ink::Accidental, _) => {
+                        let [l, t, r, b] = p.ink_box();
+                        walls.push((x + (l + r) / 2.0, t, b));
                     }
                     _ => {}
                 }
@@ -865,10 +888,10 @@ impl Engraving {
         ledgers
             .windows(2)
             .filter(|w| {
-                let ((y, _, r, _, _), (y2, l, _, _, _)) = (w[0], w[1]);
-                y == y2 && l > r && l - r < LEDGER_JOIN && !walls.iter().any(|&x| x > r && x < l)
+                let ((y, _, r), (y2, l, _)) = (w[0], w[1]);
+                y == y2 && l > r && l - r < LEDGER_GAP && !walls.iter().any(|&(x, t, b)| x > r && x < l && t < y + STEM && b > y)
             })
-            .map(|w| (w[0].0, w[0].4, w[1].3))
+            .map(|w| (w[0].0, w[0].2, w[1].1))
             .collect()
     }
 
@@ -966,7 +989,7 @@ impl Engraving {
             cur_shrunk = advance(&cur_shrunk, seg, x - gone);
             right = right.max(x + seg.right);
             right_shrunk = right_shrunk.max(x - gone + seg.right);
-            if let Some((_, r)) = seg.ink {
+            if let Some(r) = seg.wall_right() {
                 ink_end = ink_end.max(x + r);
                 ink_end_shrunk = ink_end_shrunk.max(x - gone + r);
             }
@@ -1221,7 +1244,7 @@ impl Engraving {
             }
             let hyphen = hyphen.map(|h| h + line_indent);
             let custos = custos.map(|(p, x)| (p, x + line_indent));
-            let bridges = self.ledger_bridges(first, last, &trial.xs, &xs);
+            let bridges = self.ledger_bridges(first, last, &xs);
             // Vertical extent.
             let custos_ink = custos.map(|(p, x)| custos_piece(p, x).0);
             let mut ink_top = -3.0f32;
@@ -1568,7 +1591,7 @@ mod tests {
     }
 
     /// How often lines break inside a word, and how far justified lines stretch, over the
-    /// reference scores at two widths: (mid-word breaks, breaks, mean stretch of a word gap,
+    /// reference scores at five widths: (mid-word breaks, breaks, mean stretch of a word gap,
     /// lines stretched more than a staff space a gap), counting the breaks the breaker chose.
     #[cfg(feature = "fonts")]
     fn break_stats() -> (usize, usize, f32, usize) {
@@ -1584,7 +1607,7 @@ mod tests {
         for p in paths {
             let src = std::fs::read_to_string(&p).expect("score");
             let eng = parse(&src).score.engrave(crate::Font::Google.table(), &StyleOptions::default());
-            for width in [500.0, 800.0] {
+            for width in [360.0, 500.0, 640.0, 800.0, 1000.0] {
                 let layout = eng.layout(width, &LayoutOptions::default());
                 let (_, justified) = layout.lines.split_last().expect("a line");
                 // A line before a break the score asks for was not the breaker's choice.
@@ -1605,15 +1628,19 @@ mod tests {
     #[test]
     #[cfg(feature = "fonts")]
     fn lines_break_between_words_where_that_costs_little() {
-        // GregorioTeX breaks about a quarter of its lines inside a word across GregoBase. A
-        // breaker blind to words breaks some 40% of these inside one, and one that holds out
-        // for words and bars at any cost hardly ever does, and leaves loose lines.
+        // GregorioTeX breaks about a quarter of its lines inside a word across GregoBase. Over
+        // the reference scores at five widths (136 breaks), this breaker cuts 24% of them
+        // inside a word, its word gaps stretch 0.25 staff spaces on average, and 2% stretch
+        // more than a staff space. One blind to words cuts 43% inside one; one that holds out
+        // for words and bars at any cost (TeX's weights) cuts 8%, stretches 0.52 and leaves 15%
+        // of its lines loose.
         let (mid, breaks, stretch, loose) = break_stats();
+        assert!(breaks > 100, "{breaks} breaks");
         let mid = mid as f32 / breaks as f32;
         let loose = loose as f32 / breaks as f32;
-        assert!((0.15..0.35).contains(&mid), "{mid} of breaks inside a word");
-        assert!(stretch < 0.45, "word gaps stretch {stretch} on average");
-        assert!(loose < 0.1, "{loose} of lines stretch more than a staff space a gap");
+        assert!((0.15..0.32).contains(&mid), "{mid} of breaks inside a word");
+        assert!(stretch < 0.35, "word gaps stretch {stretch} on average");
+        assert!(loose <= 0.05, "{loose} of lines stretch more than a staff space a gap");
     }
 
     #[test]

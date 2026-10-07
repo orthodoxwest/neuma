@@ -16,6 +16,16 @@ pub(crate) const STEM: f32 = 0.128;
 pub(crate) const EPISEMA: f32 = STEM * 1.25;
 /// exsurge's `intraNeumeSpacing`: half a staff space.
 pub(crate) const INTRA: f32 = 0.5;
+/// How far a ledger line reaches past the notes it serves, each way: GregorioTeX's
+/// `additionallineswidth`, 0.14584 cm at a 0.288 cm staff space, less the punctum's side
+/// bearings, as its ledger lines measure on the page.
+pub(crate) const LEDGER_OVERHANG: f32 = 0.95;
+/// The narrowest gap left between two ledger lines at one height; any narrower and the two are
+/// drawn as one. GregorioTeX's meet exactly at its word space between notes, and a sliver
+/// between them would look like a slip.
+pub(crate) const LEDGER_GAP: f32 = 0.5;
+/// The gap a ledger line leaves before an accidental or an ictus it would otherwise run into.
+const LEDGER_CLEAR: f32 = 0.25;
 /// Height of the punctum glyph's bounds, for hanging lines.
 const PUNCTUM_HEIGHT: f32 = 1.036;
 
@@ -1366,7 +1376,11 @@ pub(crate) fn add_markings(built: &mut Built, kind: Kind, notes: &[Note], note_b
         };
         let (l, r) = if h.glyph.is_none() { (h.x - 1.0, h.x) } else { (h.x, h.right()) };
         for lp in lines {
-            if let Some(e) = ledgers.iter_mut().find(|e| e.0 == lp && e.2 >= l - 0.3) {
+            // Lines that would meet, or all but meet, are drawn as one.
+            if let Some(e) = ledgers
+                .iter_mut()
+                .find(|e| e.0 == lp && e.2 + 2.0 * LEDGER_OVERHANG + LEDGER_GAP >= l)
+            {
                 e.2 = e.2.max(r);
             } else {
                 ledgers.push((lp, l, r, note_base + h.index as u32));
@@ -1376,15 +1390,45 @@ pub(crate) fn add_markings(built: &mut Built, kind: Kind, notes: &[Note], note_b
     for (lp, l, r, id) in ledgers {
         built.pieces.push(Piece {
             mark: Mark::Rect {
-                x: l - 0.25,
+                x: l - LEDGER_OVERHANG,
                 y: -(lp as f32) - STEM / 2.0,
-                w: r - l + 0.5,
+                w: r - l + 2.0 * LEDGER_OVERHANG,
                 h: STEM,
             },
             role: Ink::Ledger,
             note: Some(id),
             through: None,
         });
+    }
+}
+
+/// Shortens the ledger lines among `pieces` that would run into an accidental or an ictus
+/// beside their notes, to stop [`LEDGER_CLEAR`] short of it, though never closer to the notes
+/// than the overhang a ledger line needs to read as one.
+pub(crate) fn clear_ledgers(pieces: &mut [Piece]) {
+    const MIN_OVERHANG: f32 = 0.25;
+    if !pieces.iter().any(|p| p.role == Ink::Ledger) {
+        return;
+    }
+    let others: Vec<[f32; 4]> = pieces
+        .iter()
+        .filter(|p| matches!(p.role, Ink::Accidental | Ink::Ictus))
+        .map(Piece::ink_box)
+        .collect();
+    for p in pieces.iter_mut().filter(|p| p.role == Ink::Ledger) {
+        let Mark::Rect { x, y, w, h } = &mut p.mark else { continue };
+        let (notes_l, notes_r) = (*x + LEDGER_OVERHANG, *x + *w - LEDGER_OVERHANG);
+        let (mut l, mut r) = (*x, *x + *w);
+        for o in others.iter().filter(|o| o[1] < *y + *h && o[3] > *y) {
+            if o[2] <= notes_l && o[2] + LEDGER_CLEAR > l {
+                l = (o[2] + LEDGER_CLEAR).min(notes_l - MIN_OVERHANG);
+            }
+            if o[0] >= notes_r && o[0] - LEDGER_CLEAR < r {
+                r = (o[0] - LEDGER_CLEAR).max(notes_r + MIN_OVERHANG);
+            }
+        }
+        *x = l;
+        *w = r - l;
     }
 }
 

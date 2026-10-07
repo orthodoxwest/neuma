@@ -20,7 +20,8 @@ use crate::score::{
 };
 use crate::text::TextMeasure;
 use crate::vowel::VowelRules;
-use neume::{INTRA, STEM};
+use neume::INTRA;
+pub(crate) use neume::{LEDGER_GAP, STEM};
 
 /// What a piece of ink is, so themes can color staff, notes and rubrics separately.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -646,6 +647,8 @@ impl Engraver<'_> {
         if open.pieces.is_empty() && !first {
             return None;
         }
+        let mut open = open;
+        neume::clear_ledgers(&mut open.pieces);
         let ink = neume::extent(&open.pieces);
         let walled = open.pieces.iter().any(|p| matches!(p.role, Ink::Bar | Ink::Clef | Ink::Custos));
         let spacing = if walled {
