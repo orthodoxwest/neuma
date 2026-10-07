@@ -10,51 +10,50 @@ staff rect 61.97 53.87 298.03 0.77
 clef DoClef 61.97 18.25
 note PunctumQuadratum 79.97 36.25 n0
 Lyric 74.88 74.05 14.70 s1 "AVE"
-note PunctumQuadratum 123.06 36.25 n1
-Lyric 108.76 74.05 14.70 s2 "mer"
-note PunctumQuadratum 139.89 30.25 n2
-Lyric 130.84 74.05 14.70 s3 "cy"
-note PunctumQuadratum 158.43 36.25 n3
-Lyric 154.55 74.05 14.70 s4 "up"
-note PunctumQuadratum 178.13 42.25 n4
-Lyric 174.49 74.05 14.70 s5 "on"
-note PunctumQuadratum 211.43 36.25 n5
-Lyric 197.12 74.05 14.70 s6 "me,"
-note PunctumQuadratum 230.87 30.25 n6
-Lyric 225.27 74.05 14.70 s7 "O"
-note PunctumQuadratum 256.30 18.25 n7
-Lyric 244.07 74.05 14.70 s8 "Lord,"
-bar rect 285.37 24.25 0.77 24.00
-Lyric 283.26 74.05 14.70 s9 "*"
-note PunctumQuadratum 299.28 18.25 n8
-Lyric 296.34 74.05 14.70 s10 "and"
-note PunctumQuadratum 338.37 30.25 n9
-Lyric 325.00 74.05 14.70 s11 "heark"
-Hyphen 169.93 74.05 14.70 "-"
-Hyphen 355.97 74.05 14.70 "-"
-custos CustosDescLong 350.97 18.25
+note PunctumQuadratum 131.84 36.25 n1
+Lyric 117.54 74.05 14.70 s2 "mer"
+note PunctumQuadratum 148.67 30.25 n2
+Lyric 139.62 74.05 14.70 s3 "cy"
+note PunctumQuadratum 175.99 36.25 n3
+Lyric 172.12 74.05 14.70 s4 "up"
+note PunctumQuadratum 204.48 42.25 n4
+Lyric 200.84 74.05 14.70 s5 "on"
+note PunctumQuadratum 246.56 36.25 n5
+Lyric 232.26 74.05 14.70 s6 "me,"
+note PunctumQuadratum 274.79 30.25 n6
+Lyric 269.18 74.05 14.70 s7 "O"
+note PunctumQuadratum 308.99 18.25 n7
+Lyric 296.77 74.05 14.70 s8 "Lord,"
+bar rect 346.85 24.25 0.77 24.00
+Lyric 344.74 74.05 14.70 s9 "*"
+Hyphen 187.50 74.05 14.70 "-"
+custos CustosDescLong 357.22 18.25
 staff rect 0.00 98.45 360.00 0.77
 staff rect 0.00 110.45 360.00 0.77
 staff rect 0.00 122.45 360.00 0.77
 staff rect 0.00 134.45 360.00 0.77
 clef DoClef 0.00 98.83
-note PunctumQuadratum 18.00 98.83 n10
-Lyric 15.13 154.63 14.70 s12 "en"
-note PodatusLowerShort 39.56 98.83 n11
-note PodatusUpperShort 42.56 92.83 n12
-Lyric 35.68 154.63 14.70 s13 "un"
-note PunctumQuadratum 59.45 98.83 n13
-Lyric 51.19 154.63 14.70 s14 "to"
-note PunctumQuadratum 84.50 110.83 n14
-Lyric 70.14 154.63 14.70 s15 "my"
-note PodatusLowerShort 113.10 116.83 n15
-note PodatusUpperShort 116.10 110.83 n16
-Lyric 94.48 154.63 14.70 s16 "pray"
-note PunctumQuadratum 129.12 116.83 n17
-Lyric 126.26 154.63 14.70 s17 "er."
-bar rect 141.72 98.83 0.77 36.00
-bar rect 147.05 98.83 0.77 36.00
-Hyphen 119.18 154.63 14.70 "-"
+note PunctumQuadratum 18.00 98.83 n8
+Lyric 15.07 154.63 14.70 s10 "and"
+note PunctumQuadratum 56.56 110.83 n9
+Lyric 43.19 154.63 14.70 s11 "heark"
+note PunctumQuadratum 77.03 98.83 n10
+Lyric 74.16 154.63 14.70 s12 "en"
+note PodatusLowerShort 98.59 98.83 n11
+note PodatusUpperShort 101.59 92.83 n12
+Lyric 94.71 154.63 14.70 s13 "un"
+note PunctumQuadratum 118.47 98.83 n13
+Lyric 110.22 154.63 14.70 s14 "to"
+note PunctumQuadratum 143.53 110.83 n14
+Lyric 129.17 154.63 14.70 s15 "my"
+note PodatusLowerShort 172.13 116.83 n15
+note PodatusUpperShort 175.13 110.83 n16
+Lyric 153.51 154.63 14.70 s16 "pray"
+note PunctumQuadratum 188.15 116.83 n17
+Lyric 185.28 154.63 14.70 s17 "er."
+bar rect 200.75 98.83 0.77 36.00
+bar rect 206.08 98.83 0.77 36.00
+Hyphen 178.21 154.63 14.70 "-"
 Initial 8.34 74.05 58.80 s1 "H"
 Annotation 22.43 14.10 11.03 "Ant."
 Annotation 24.39 26.23 11.03 "8 G"

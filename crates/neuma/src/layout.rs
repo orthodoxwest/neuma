@@ -110,6 +110,11 @@ const TOLERANCE: f32 = 115.0;
 const TOO_LOOSE: f64 = 1.0e4;
 /// Extra demerits for a break inside a melisma: about a moderately loose line's worth.
 const MELISMA_DEMERITS: f64 = 2500.0;
+/// Demerits for a break at a word's end and after a bar, against one between syllables of a
+/// word: GregorioTeX's break penalties (`endofwordpenalty` -100, `endafterbarpenalty` -200,
+/// `endofsyllablepenalty` -50), each counted as TeX counts a negative penalty, minus its square.
+const WORD_END_DEMERITS: f64 = -(100.0 * 100.0) + 50.0 * 50.0;
+const AFTER_BAR_DEMERITS: f64 = -(200.0 * 200.0) + 50.0 * 50.0;
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct PlacedLine {
@@ -745,8 +750,14 @@ impl Engraving {
         let after = self.segments[end].after;
         let ragged =
             end + 1 == self.segments.len() && opts.last_line == LastLine::Ragged || matches!(after, Break::Forced { justify: false, .. });
-        // A syllable's end is a better break than a cut inside its melisma.
-        let cost = if after == Break::InMelisma { MELISMA_DEMERITS } else { 0.0 };
+        // A syllable's end is a better break than a cut inside its melisma, a word's end
+        // better still, and a bar best.
+        let cost = match after {
+            Break::InMelisma => MELISMA_DEMERITS,
+            Break::Allowed if self.segments[end].is_bar() => AFTER_BAR_DEMERITS,
+            Break::Allowed if self.segments.get(end + 1).is_none_or(|s| s.word_start) => WORD_END_DEMERITS,
+            _ => 0.0,
+        };
         (ragged, cost)
     }
 
@@ -1390,7 +1401,7 @@ mod tests {
         eng.segments[n - 2].after = Break::InMelisma;
         assert_eq!(eng.line_end(n - 3, &opts), (false, 0.0));
         assert_eq!(eng.line_end(n - 2, &opts), (false, MELISMA_DEMERITS));
-        assert_eq!(eng.line_end(n - 1, &opts), (true, 0.0));
+        assert_eq!(eng.line_end(n - 1, &opts), (true, WORD_END_DEMERITS));
         // Laid out narrower than the first two syllables, the line is stuck at `b` and ends
         // after `a`; the breaker still sets every syllable.
         let layout = eng.layout(1.0, &opts);
