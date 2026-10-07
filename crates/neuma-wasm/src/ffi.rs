@@ -2,11 +2,11 @@
 //! glue asks for an input buffer of a given size, writes into it, then calls a function that
 //! reads it; results are left in the output buffer for the glue to copy out.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 
 use neuma::{LastLine, LayoutOptions, SvgOptions, Weights};
 
-use crate::slab::Slab;
+use crate::slab::{NONE, Slab};
 use crate::{Chant, ChantOptions, Initial, LyricFont, Page, SvgOutput};
 
 thread_local! {
@@ -14,7 +14,12 @@ thread_local! {
     static OUTPUT: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
     static CHANTS: RefCell<Slab<Chant>> = const { RefCell::new(Slab::new()) };
     static PAGES: RefCell<Slab<Page>> = const { RefCell::new(Slab::new()) };
+    /// How many pages' layouts the engine keeps; see [`neuma_set_layout_budget`].
+    static BUDGET: Cell<usize> = const { Cell::new(DEFAULT_BUDGET) };
 }
+
+/// Layouts kept by default: an editor's page and thumbnail, each with the one before.
+const DEFAULT_BUDGET: usize = 4;
 
 fn input() -> String {
     INPUT.with(|b| String::from_utf8_lossy(&b.borrow()).into_owned())
@@ -28,7 +33,7 @@ fn output(s: &str) {
     });
 }
 
-fn with_chant<R>(handle: u32, f: impl FnOnce(&mut Chant) -> R) -> Option<R> {
+fn with_chant<R>(handle: f64, f: impl FnOnce(&mut Chant) -> R) -> Option<R> {
     CHANTS.with(|c| c.borrow_mut().get_mut(handle).map(f))
 }
 
@@ -49,12 +54,23 @@ fn layout_options(scale: f32, last: u32, max_lines: u32) -> LayoutOptions {
         .with_max_lines(max_lines as usize)
 }
 
-fn keep(chant: Chant) -> u32 {
+fn keep(chant: Chant) -> f64 {
     CHANTS.with(|c| c.borrow_mut().put(chant))
 }
 
-fn with_page<R>(handle: u32, f: impl FnOnce(&Page) -> R) -> Option<R> {
-    PAGES.with(|p| p.borrow().get(handle).map(f))
+fn with_page<R>(handle: f64, f: impl FnOnce(&Page) -> R) -> Option<R> {
+    PAGES.with(|p| p.borrow_mut().get_mut(handle).map(|page| f(page)))
+}
+
+/// Keeps `page`, evicting the least recently used layouts beyond the budget, and returns its
+/// handle.
+fn keep_page(page: Page) -> f64 {
+    PAGES.with(|p| {
+        let mut pages = p.borrow_mut();
+        let handle = pages.put(page);
+        pages.evict_to(BUDGET.with(Cell::get));
+        handle
+    })
 }
 
 /// The diagnostics JSON, then for a chant set from a psalm a NUL and its `{ gabc, notes }`.
@@ -93,7 +109,7 @@ pub extern "C" fn neuma_output_len() -> u32 {
 /// in the output buffer.
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
-pub extern "C" fn chant_new(initial: i32, annotation: u32, lyric_size: f32, font: u32) -> u32 {
+pub extern "C" fn chant_new(initial: i32, annotation: u32, lyric_size: f32, font: u32) -> f64 {
     let chant = Chant::new(&input(), chant_options(initial, annotation, lyric_size, font));
     output(chant.diagnostics_json());
     keep(chant)
@@ -101,7 +117,7 @@ pub extern "C" fn chant_new(initial: i32, annotation: u32, lyric_size: f32, font
 
 /// Sets psalm text to a tone (see [`tone_and_text`] and [`neuma_psalm`]) and engraves it.
 /// Returns a handle and leaves the diagnostics JSON, a NUL and the setting's `{ gabc, notes }`
-/// in the output buffer; or returns `u32::MAX` and leaves `{"error": …}` there.
+/// in the output buffer; or returns -1 and leaves `{"error": …}` there.
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
 #[allow(clippy::too_many_arguments)]
@@ -113,7 +129,7 @@ pub extern "C" fn chant_from_psalm(
     annotation: u32,
     lyric_size: f32,
     font: u32,
-) -> u32 {
+) -> f64 {
     match tone_and_text(custom) {
         Ok((tone, text)) => {
             let opts = chant_options(initial, annotation, lyric_size, font);
@@ -125,7 +141,7 @@ pub extern "C" fn chant_from_psalm(
             let mut out = String::new();
             error(&mut out, &e);
             output(&out);
-            u32::MAX
+            NONE
         }
     }
 }
@@ -133,7 +149,7 @@ pub extern "C" fn chant_from_psalm(
 /// What [`chant_update`] and [`chant_set_options`] return: 0 for an unknown handle, 1 when
 /// nothing changed, 2 when the chant changed and its diagnostics (and psalm) are in the
 /// output buffer.
-fn changed(handle: u32, f: impl FnOnce(&mut Chant) -> bool) -> u32 {
+fn changed(handle: f64, f: impl FnOnce(&mut Chant) -> bool) -> u32 {
     with_chant(handle, |c| {
         if f(c) {
             diagnostics_and_psalm(c);
@@ -148,13 +164,13 @@ fn changed(handle: u32, f: impl FnOnce(&mut Chant) -> bool) -> u32 {
 /// Engraves the chant again with new options; returns as [`changed`] says.
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
-pub extern "C" fn chant_set_options(handle: u32, initial: i32, annotation: u32, lyric_size: f32, font: u32) -> u32 {
+pub extern "C" fn chant_set_options(handle: f64, initial: i32, annotation: u32, lyric_size: f32, font: u32) -> u32 {
     changed(handle, |c| c.set_options(chant_options(initial, annotation, lyric_size, font)))
 }
 
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
-pub extern "C" fn chant_free(handle: u32) {
+pub extern "C" fn chant_free(handle: f64) {
     CHANTS.with(|c| c.borrow_mut().free(handle));
 }
 
@@ -162,50 +178,106 @@ pub extern "C" fn chant_free(handle: u32) {
 /// an unknown handle.
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
-pub extern "C" fn chant_version(handle: u32) -> f64 {
+pub extern "C" fn chant_version(handle: f64) -> f64 {
     with_chant(handle, |c| c.version() as f64).unwrap_or(-1.0)
 }
 
 /// Lays out at `width` with the SVG class prefix in the input buffer. `flags`: 2 makes the
 /// SVG in parts (see `SvgOutput`), 4 leaves out `data-note` and `data-syllable`, 8 (with 2)
-/// gives a line that `previous` (a page, or `u32::MAX` for none) also had by its index there
-/// (`SvgOutput::ChangedLines`). Leaves `{ width, height }`, a NUL and the SVG in the output
-/// buffer, and returns the new page's handle, or `u32::MAX` for an unknown chant.
+/// gives a line that `previous` (a page, or -1 for none) also had by its index there
+/// (`SvgOutput::ChangedLines`), 16 makes no SVG at all (`SvgOutput::None`, to lay a page out
+/// again for its hit tests). Leaves `{ width, height }`, a NUL and the SVG in the output
+/// buffer, and returns the new page's handle, or -1 for an unknown chant.
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
 #[allow(clippy::too_many_arguments)]
-pub extern "C" fn chant_layout(handle: u32, width: f32, scale: f32, last: u32, max_lines: u32, flags: u32, previous: u32) -> u32 {
+pub extern "C" fn chant_layout(handle: f64, width: f32, scale: f32, last: u32, max_lines: u32, flags: u32, previous: f64) -> f64 {
     let prefix = input();
     let opts = layout_options(scale, last, max_lines);
     let mut svg = SvgOptions::default().with_ids(flags & 4 == 0);
     if !prefix.is_empty() {
         svg = svg.with_prefix(prefix);
     }
-    let mode = match flags & 10 {
+    let mode = match flags & 26 {
+        16.. => SvgOutput::None,
         10 => SvgOutput::ChangedLines,
         2 => SvgOutput::Lines,
         _ => SvgOutput::Whole,
     };
     let made = with_chant(handle, |c| {
         PAGES.with(|p| {
-            let pages = p.borrow();
-            let previous = pages.get(previous);
+            let mut pages = p.borrow_mut();
+            let previous = pages.get_mut(previous).map(|page| &*page);
             c.layout(width, &opts, &svg, mode, previous)
         })
     });
     match made {
         Some((page, out)) => {
             output(&out);
-            PAGES.with(|p| p.borrow_mut().put(page))
+            keep_page(page)
         }
-        None => u32::MAX,
+        None => NONE,
     }
+}
+
+/// Lays a page out again from what it was made from, after its layout was evicted or freed
+/// and its chant has changed or gone: the source in the input buffer (GABC, or for `psalm` 1
+/// the tone, a NUL and the text, as [`tone_and_text`] reads them), the chant's options and
+/// the layout's, as [`chant_new`], [`chant_from_psalm`] and [`chant_layout`] take them. What
+/// it lays out is the same as the first time, as a fresh chant's layout always is. Returns
+/// the page's handle, or -1 for a tone that can't be read.
+#[allow(unsafe_code)]
+#[unsafe(no_mangle)]
+#[allow(clippy::too_many_arguments)]
+pub extern "C" fn page_rebuild(
+    psalm: u32,
+    custom: u32,
+    intone: u32,
+    auto_point: u32,
+    initial: i32,
+    annotation: u32,
+    lyric_size: f32,
+    font: u32,
+    width: f32,
+    scale: f32,
+    last: u32,
+    max_lines: u32,
+) -> f64 {
+    let options = chant_options(initial, annotation, lyric_size, font);
+    let chant = if psalm == 1 {
+        match tone_and_text(custom) {
+            Ok((tone, text)) => Chant::from_psalm(&text, &tone, &psalm_options(intone, auto_point), options),
+            Err(_) => return NONE,
+        }
+    } else {
+        Chant::new(&input(), options)
+    };
+    let opts = layout_options(scale, last, max_lines);
+    let (page, _) = chant.layout(width, &opts, &SvgOptions::default(), SvgOutput::None, None);
+    keep_page(page)
+}
+
+/// Sets how many pages' layouts the engine keeps (at least 1). Past it, the least recently
+/// used is dropped; its page lays itself out again when next asked.
+#[allow(unsafe_code)]
+#[unsafe(no_mangle)]
+pub extern "C" fn neuma_set_layout_budget(budget: u32) {
+    let budget = (budget as usize).max(1);
+    BUDGET.with(|b| b.set(budget));
+    PAGES.with(|p| p.borrow_mut().evict_to(budget));
+}
+
+/// How many pages' layouts the engine holds.
+#[allow(unsafe_code)]
+#[unsafe(no_mangle)]
+pub extern "C" fn neuma_layouts() -> u32 {
+    PAGES.with(|p| p.borrow().live() as u32)
 }
 
 /// Frees a page.
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
-pub extern "C" fn page_free(handle: u32) {
+pub extern "C" fn page_free(handle: f64) {
     PAGES.with(|p| p.borrow_mut().free(handle));
 }
 
@@ -215,7 +287,7 @@ pub extern "C" fn page_free(handle: u32) {
 #[unsafe(no_mangle)]
 #[allow(clippy::too_many_arguments)]
 pub extern "C" fn page_timeline(
-    handle: u32,
+    handle: f64,
     note: f32,
     mora: f32,
     episema: f32,
@@ -245,7 +317,7 @@ pub extern "C" fn page_timeline(
 /// Leaves the score's library entry JSON in the output buffer.
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
-pub extern "C" fn chant_summary(handle: u32) -> u32 {
+pub extern "C" fn chant_summary(handle: f64) -> u32 {
     with_chant(handle, |c| output(c.summary_json())).map_or(0, |_| 1)
 }
 
@@ -254,7 +326,7 @@ pub extern "C" fn chant_summary(handle: u32) -> u32 {
 /// then holding the diagnostics JSON (and for a psalm a NUL and its setting).
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
-pub extern "C" fn chant_update(handle: u32) -> u32 {
+pub extern "C" fn chant_update(handle: f64) -> u32 {
     let src = input();
     changed(handle, |c| c.update(&src))
 }
@@ -262,7 +334,7 @@ pub extern "C" fn chant_update(handle: u32) -> u32 {
 /// The note at (`x`, `y`) of a page, -1 for none, or -2 for an unknown page.
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
-pub extern "C" fn page_note_at(handle: u32, x: f32, y: f32) -> i32 {
+pub extern "C" fn page_note_at(handle: f64, x: f32, y: f32) -> i32 {
     with_page(handle, |p| p.layout().note_at(x, y).map_or(-1, |n| n as i32)).unwrap_or(-2)
 }
 
@@ -270,7 +342,7 @@ pub extern "C" fn page_note_at(handle: u32, x: f32, y: f32) -> i32 {
 /// returns 0 for an unknown page.
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
-pub extern "C" fn page_source_at(handle: u32, x: f32, y: f32) -> u32 {
+pub extern "C" fn page_source_at(handle: f64, x: f32, y: f32) -> u32 {
     with_page(handle, |p| output(&crate::source_at_json(p.layout(), x, y))).map_or(0, |_| 1)
 }
 
@@ -278,7 +350,7 @@ pub extern "C" fn page_source_at(handle: u32, x: f32, y: f32) -> u32 {
 /// bytes) of a page as a JSON array in the output buffer; returns 0 for an unknown page.
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
-pub extern "C" fn page_elements_at(handle: u32, offset: u32, utf16: u32) -> u32 {
+pub extern "C" fn page_elements_at(handle: f64, offset: u32, utf16: u32) -> u32 {
     with_page(handle, |p| {
         output(&crate::elements_at_json(p.layout(), offset as usize, utf16 == 1))
     })

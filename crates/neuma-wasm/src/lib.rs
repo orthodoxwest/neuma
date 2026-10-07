@@ -23,6 +23,8 @@ pub enum SvgOutput {
     /// As `Lines`, but a line whose SVG is the same as a line's of the previous page given
     /// is given as `\u{1}` and that line's index, for a page that kept them.
     ChangedLines,
+    /// No SVG: only the layout, for its hit tests and timeline.
+    None,
 }
 
 /// One score, with its answers kept as the JSON the glue reads.
@@ -70,7 +72,7 @@ impl Chant {
         &self.source
     }
 
-    /// Counts the chant's changes, as [`neuma::Chant::version`].
+    /// Names the chant's current state, as [`neuma::Chant::version`].
     pub fn version(&self) -> u64 {
         self.source.version()
     }
@@ -139,6 +141,7 @@ impl Chant {
         json::number(&mut out, h);
         out.push_str("}\0");
         let parts = match mode {
+            SvgOutput::None => None,
             SvgOutput::Whole => {
                 out.push_str(&layout.svg_with(svg));
                 None

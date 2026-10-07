@@ -11,17 +11,18 @@
 // Every note's SVG ink carries its id in `data-note`; select it with `[data-note~="<id>"]`,
 // since a porrectus swash lists both notes it draws. Positions are in SVG user units.
 //
-// Each page answers for the score it shows for as long as it lives: its `timeline()` (made
+// Each page answers for the score it shows for as long as it is held: its `timeline()` (made
 // on the first call) and its hit tests, `noteAt`, `sourceAt` and `elementsAt`, whatever the
-// chant has laid out or become since; `page.stale` says the chant has changed. A place that
-// shows the score and lays it out again on each change (an editor's preview) does it
-// through a view: `const view = chant.view({ svg: "lines", ids: false })`, then
-// `view.layout(width)` on each change. The view keeps its last two pages and frees older
-// ones, and patches only the lines that changed. Then `page.sourceAt(x, y)` for a click and
-// `page.elementsAt(caret)` for the caret. Offsets named `start`/`end` count UTF-8 bytes;
-// those named `utf16Start`/`utf16End`, and carets, count UTF-16 units (JavaScript string
-// indices). Every position is in output units from the layout's top left, y down; a point
-// that is a center is named `cx`, `cy`.
+// chant has laid out or become since; `page.stale` says the chant has changed. The engine
+// keeps only the most recently used layouts (`setLayoutBudget`); a page whose layout was
+// dropped lays itself out again when asked, to the same answers, so no page ever throws for
+// its age. A place that shows the score and lays it out again on each change (an editor's
+// preview) does it through a view: `const view = chant.view({ svg: "lines", ids: false })`,
+// then `view.layout(width)` on each change, which patches only the lines that changed. Then
+// `page.sourceAt(x, y)` for a click and `page.elementsAt(caret)` for the caret. Offsets
+// named `start`/`end` count UTF-8 bytes; those named `utf16Start`/`utf16End`, and carets,
+// count UTF-16 units (JavaScript string indices). Every position is in output units from
+// the layout's top left, y down; a point that is a center is named `cx`, `cy`.
 
 /*__NEUMA_WASM__*/
 const WASM_GZIP_BASE64 = "";
@@ -58,12 +59,13 @@ function instantiate() {
   wasm = exportsOf(new WebAssembly.Instance(module, {}));
   generation += 1;
   crashed = null;
+  if (layoutBudget !== DEFAULT_LAYOUT_BUDGET) wasm.neuma_set_layout_budget(layoutBudget);
 }
 
 /**
  * Initializes synchronously from the raw (uncompressed) `.wasm` bytes. After the engine
- * stops on an internal error, calling it (or `init`) again starts a fresh engine; Chants
- * made before that must be made again.
+ * stops on an internal error, calling it (or `init`) again starts a fresh engine; Chants,
+ * views and pages made before carry on in it, engraved again when next used.
  */
 export function initSync(bytes) {
   if (wasm) return;
@@ -239,6 +241,10 @@ function diagnosticsAndPsalm(out) {
 
 /** `Chant`'s layout, for `View`. */
 let layOut;
+/** Lays a page out again for its hit tests, through its chant or from its recipe. */
+let relayOut;
+/** A chant's current version. */
+let versionOf;
 
 /** The engine's layout arguments for a view's options. */
 function viewArgs({ scale = 6, lastLine = "ragged", maxLines = 0, prefix = "", svg = "whole", ids = true } = {}) {
@@ -258,14 +264,25 @@ const weightArgs = (weights) => WEIGHTS.map((k) => {
   return typeof v === "number" ? v : NaN;
 });
 
+/** Frees the engine's half of a chant or page JavaScript no longer holds. */
+const unheld = typeof FinalizationRegistry === "function"
+  ? new FinalizationRegistry(({ handle, gen, free }) => {
+    if (gen === generation && wasm) wasm[free](handle);
+  })
+  : null;
+
 export class Chant {
   #handle;
   #generation;
   #diagnostics;
   #summary;
   #psalm;
-  /** The chant's version, shared with its pages for `stale`. */
-  #changes = { version: 0 };
+  /**
+   * The chant's state: its version, and what makes it (the source, the options, and a
+   * psalm's tone), from which a page of this state can be laid out again. A new object on
+   * each change, shared by the pages laid out in that state.
+   */
+  #state;
 
   /**
    * Engraves `gabc` once.
@@ -278,13 +295,7 @@ export class Chant {
    */
   constructor(gabc, options = {}) {
     if (gabc === PSALM) return;
-    const args = chantArgs(options);
-    this.#handle = guarded((w) => {
-      putInput(String(gabc));
-      return w.chant_new(...args);
-    });
-    this.#generation = generation;
-    this.#diagnostics = JSON.parse(takeOutput());
+    this.#engrave({ source: String(gabc), args: chantArgs(options), psalm: null });
   }
 
   /**
@@ -300,22 +311,40 @@ export class Chant {
    */
   static fromPsalm(text, tone, { intone = "first", autoPoint = true, ...options } = {}) {
     const chant = new Chant(PSALM);
-    const args = chantArgs(options);
-    const handle = guarded((w) => {
-      putInput(String(tone) + "\0" + String(text));
-      return w.chant_from_psalm(isBlock(tone), intone === "every" ? 1 : intone === "never" ? 2 : 0, autoPoint ? 1 : 0, ...args);
-    });
-    const out = takeOutput();
-    if (handle >>> 0 === 0xffffffff) throw new Error(JSON.parse(out).error);
-    chant.#handle = handle;
-    chant.#generation = generation;
-    [chant.#diagnostics, chant.#psalm] = diagnosticsAndPsalm(out);
+    const psalm = {
+      tone: String(tone),
+      custom: isBlock(tone),
+      intone: intone === "every" ? 1 : intone === "never" ? 2 : 0,
+      autoPoint: autoPoint ? 1 : 0,
+    };
+    chant.#engrave({ source: String(text), args: chantArgs(options), psalm });
     return chant;
   }
 
+  /**
+   * Engraves `recipe` in the engine, as this chant's state: when made, and again when the
+   * chant is used after `free()` or after the engine restarted (keeping its state, so its
+   * pages stay current).
+   */
+  #engrave(recipe) {
+    const { source, args, psalm } = recipe;
+    const handle = guarded((w) => {
+      putInput(psalm ? psalm.tone + "\0" + source : source);
+      return psalm ? w.chant_from_psalm(psalm.custom, psalm.intone, psalm.autoPoint, ...args) : w.chant_new(...args);
+    });
+    const out = takeOutput();
+    if (handle < 0) throw new Error(JSON.parse(out).error);
+    this.#handle = handle;
+    this.#generation = generation;
+    unheld?.register(this, { handle, gen: generation, free: "chant_free" }, this);
+    if (this.#state) return;
+    [this.#diagnostics, this.#psalm] = diagnosticsAndPsalm(out);
+    this.#state = { version: guarded((w) => w.chant_version(handle)), recipe };
+  }
+
+  /** The engine's handle for this chant, engraving it again if the engine no longer has it. */
   #live() {
-    if (this.#handle === undefined) throw new Error("neuma: this Chant was freed");
-    if (this.#generation !== generation) throw new Error("neuma: this Chant belongs to an engine that stopped");
+    if (this.#handle === undefined || this.#generation !== generation) this.#engrave(this.#state.recipe);
     return this.#handle;
   }
 
@@ -339,21 +368,25 @@ export class Chant {
   }
 
   /**
-   * Counts the chant's changes: 0 when made, one more for each `update` or `setOptions` that
-   * changed anything, as in Rust and on mobile. A page laid out at an older version is
-   * `stale`; key a memo or a framework's render on it.
+   * Names the chant's current state, as in Rust and on mobile: a number no other state of
+   * any chant has had, which grows with each `update` or `setOptions` that changed anything.
+   * A page laid out at another version is `stale`; key a memo or a framework's render on it.
    */
   get version() {
-    return this.#changes.version;
+    return this.#state.version;
+  }
+
+  /** The source the chant was made or last updated from. */
+  get source() {
+    return this.#state.recipe.source;
   }
 
   /** Takes in a change the engine reported (2), or none (1); returns whether it changed. */
-  #changed(status) {
-    if (status === 0) throw new Error("neuma: this Chant was freed");
+  #changed(status, recipe) {
     if (status !== 2) return false;
     [this.#diagnostics, this.#psalm] = diagnosticsAndPsalm(takeOutput());
     this.#summary = undefined;
-    this.#changes.version = guarded((w) => w.chant_version(this.#handle));
+    this.#state = { version: guarded((w) => w.chant_version(this.#handle)), recipe };
     return true;
   }
 
@@ -369,10 +402,12 @@ export class Chant {
    */
   update(src) {
     const handle = this.#live();
-    return this.#changed(guarded((w) => {
-      putInput(String(src));
+    const source = String(src);
+    const status = guarded((w) => {
+      putInput(source);
       return w.chant_update(handle);
-    }));
+    });
+    return this.#changed(status, { ...this.#state.recipe, source });
   }
 
   /**
@@ -384,7 +419,8 @@ export class Chant {
   setOptions(options = {}) {
     const handle = this.#live();
     const args = chantArgs(options);
-    return this.#changed(guarded((w) => w.chant_set_options(handle, ...args)));
+    const status = guarded((w) => w.chant_set_options(handle, ...args));
+    return this.#changed(status, { ...this.#state.recipe, args });
   }
 
   /** The score's library entry, as `summarize` returns it. */
@@ -401,22 +437,20 @@ export class Chant {
 
   /**
    * A view of the score: a place that shows it (an editor's preview, a thumbnail), laid out
-   * with these options at whatever width it has. Lay it out with `view.layout(width)` on each
-   * change; the view keeps the page it last gave and the one before, frees older ones, and
-   * reuses lines between them. Give each place that shows the score its own view.
+   * with these options at whatever width it has. `view.layout(width)` gives the same page
+   * while nothing changed, and a new one, reusing the last one's lines, when something has.
    * @param {{ scale?: number, lastLine?: "ragged"|"justified", maxLines?: number,
    *   prefix?: string, svg?: "whole"|"lines", ids?: boolean }} [options] as `layout` takes.
    * @returns {View}
    */
   view(options = {}) {
-    this.#live();
     return new View(VIEW, this, options);
   }
 
   /**
    * Lays the score out at `width` output units (staff spaces times `scale`), as a new page
-   * each call. For a page that is shown and laid out again as the score changes, use a
-   * `view`, which frees the pages it replaces and reuses their lines.
+   * each call. A place that lays the score out again on each change does better through a
+   * `view`, which gives the same page while nothing changed and reuses lines when it has.
    * @param {number} width
    * @param {{ scale?: number, lastLine?: "ragged"|"justified", maxLines?: number, weights?: object, prefix?: string,
    *   svg?: "whole"|"lines", ids?: boolean }} [options]
@@ -437,16 +471,16 @@ export class Chant {
   /** Lays out a page, reusing the lines of `previous` (a page in parts) when given. */
   #make(width, view, weights, previous) {
     const handle = this.#live();
-    const before = previous && pageHandle(previous);
+    const before = previous ? pageHandle(previous) : undefined;
+    const at = [width, view.scale, view.last, view.maxLines];
     const made = guarded((w) => {
       putInput(view.prefix);
-      return w.chant_layout(handle, width, view.scale, view.last, view.maxLines, view.flags, before ?? 0xffffffff) >>> 0;
+      return w.chant_layout(handle, ...at, view.flags, before ?? -1);
     });
-    if (made === 0xffffffff) throw new Error("neuma: this Chant was freed");
     const out = takeOutput();
     const nul = out.indexOf("\0");
     const { width: w, height: h } = JSON.parse(out.slice(0, nul));
-    const page = new Page(PAGE, made, this.#changes, weights, w, h);
+    const page = new Page(PAGE, this, this.#state, at, weights, made, w, h);
     if (view.lines) {
       const [head, defs, rest, ...tail] = out.slice(nul + 1).split("\0");
       const lines = [];
@@ -465,13 +499,45 @@ export class Chant {
     return page;
   }
 
-  static {
-    layOut = (chant, width, view, weights, previous) => chant.#make(width, view, weights, previous);
+  /**
+   * Lays out again, for its hit tests, a page laid out at `state` with `at`: through this
+   * chant while it is in that state, else from the state's recipe in a chant of its own.
+   * Either way it lays out what it did the first time. Returns the engine's handle.
+   */
+  #relayOut(state, at) {
+    // A freed chant isn't engraved again just for a page: the page lays out from its recipe.
+    if (state === this.#state && this.#handle !== undefined && this.#generation === generation) {
+      const handle = this.#handle;
+      const made = guarded((w) => {
+        putInput("");
+        return w.chant_layout(handle, ...at, 16, -1);
+      });
+      if (made >= 0) return made;
+    }
+    const { source, args, psalm } = state.recipe;
+    return guarded((w) => {
+      putInput(psalm ? psalm.tone + "\0" + source : source);
+      const made = w.page_rebuild(psalm ? 1 : 0, psalm?.custom ?? 0, psalm?.intone ?? 0, psalm?.autoPoint ?? 0, ...args, ...at);
+      if (made < 0) throw new Error("neuma: a psalm page's tone could not be read again");
+      return made;
+    });
   }
 
-  /** Releases the engraving. Pages laid out before keep their own copy and keep answering. */
+  static {
+    layOut = (chant, width, view, weights, previous) => chant.#make(width, view, weights, previous);
+    relayOut = (chant, state, at) => chant.#relayOut(state, at);
+    versionOf = (chant) => chant.#state.version;
+  }
+
+  /**
+   * Drops the engine's engraving now rather than when the Chant is garbage collected: a
+   * hint, for when the chant goes away. The chant still works (used again, it engraves its
+   * source again, as the same state), and so do its pages and views.
+   */
   free() {
-    if (this.#handle !== undefined && this.#generation === generation && wasm) wasm.chant_free(this.#handle);
+    if (this.#handle === undefined) return;
+    unheld?.unregister(this);
+    if (this.#generation === generation && wasm) wasm.chant_free(this.#handle);
     this.#handle = undefined;
   }
 }
@@ -484,12 +550,10 @@ const linesOf = new WeakMap();
 
 /**
  * A place that shows a chant, laid out again as the chant or the place's width changes:
- * made by `chant.view(options)`. `view.layout(width)` returns its page for that width: the
- * same page while nothing changed, else a new one, made reusing the lines of the last (in
- * `svg: "lines"` mode). The view keeps its current page and the one before it, so a click
- * that lands between an edit and the next frame still finds what was on screen, and frees
- * any older page itself, unless the page was `keep()`-ed. An editor that lays out through a
- * view never needs to free a page.
+ * made by `chant.view(options)`. `view.layout(width)` returns the view's page for that
+ * width: the same page while nothing changed (it remembers its last two, so a caller
+ * alternating two widths gets each back), else a new one, made reusing the lines of the
+ * last (in `svg: "lines"` mode).
  */
 export class View {
   #chant;
@@ -519,98 +583,97 @@ export class View {
   layout(width, { weights } = {}) {
     const at = Number(width);
     const values = weightArgs(weights);
-    const same = (p) => p && !p.freed && !p.stale && pageWidth.get(p) === at && sameWeights(pageWeights(p), values);
+    const same = (p) => p && !p.stale && pageAsked(p) === at && sameWeights(pageWeights(p), values);
     if (same(this.#current)) return this.#current;
     if (same(this.#previous)) {
       [this.#current, this.#previous] = [this.#previous, this.#current];
       return this.#current;
     }
-    const last = this.#current && !this.#current.freed ? this.#current : undefined;
-    const page = layOut(this.#chant, at, this.#args, values, this.#args.lines ? last : undefined);
-    pageWidth.set(page, at);
-    const older = this.#previous;
+    const page = layOut(this.#chant, at, this.#args, values, this.#args.lines ? this.#current : undefined);
     this.#previous = this.#current;
     this.#current = page;
-    if (older && older !== this.#previous && older !== page) release(older, "by its View, two layouts later");
     return page;
   }
 
-  /** Frees the view's pages (but those kept). The view can lay out again after. */
+  /**
+   * Drops the engine's copies of the view's pages, as `page.free()` does: a hint for when
+   * the view goes away. The pages, and the view, still work.
+   */
   free() {
-    for (const p of [this.#current, this.#previous]) if (p) release(p, "with its View");
-    this.#current = this.#previous = null;
+    this.#current?.free();
+    this.#previous?.free();
   }
 }
 
-/** The width each view page was asked for. */
-const pageWidth = new WeakMap();
 const sameWeights = (a, b) => a.every((v, i) => Object.is(v, b[i]));
 
-/** Frees the engine's half of a page JavaScript no longer holds. */
-const unheld = typeof FinalizationRegistry === "function"
-  ? new FinalizationRegistry(({ handle, gen }) => {
-    if (gen === generation && wasm) wasm.page_free(handle);
-  })
-  : null;
-
-/** A page's engine handle, or undefined once it is freed or its engine stopped. */
+/** A page's engine handle while the engine may hold it, without laying it out again. */
 let pageHandle;
-/** A page's weights. */
+/** The width a page was asked for, and its weights. */
+let pageAsked;
 let pageWeights;
-/** Frees a page for its view, unless it was kept. */
-let release;
 
 /**
- * A layout of a Chant: `width`, `height`, and `svg` or `svgParts`. Its timeline and hit
- * tests answer for the score this page shows for as long as the page lives, whatever the
- * chant has laid out or become since. `stale` says the chant has changed since.
+ * A layout of a Chant: `width`, `height`, and `svg` or `svgParts`. Its `timeline()` and hit
+ * tests answer for the score this page shows for as long as the page is held, whatever the
+ * chant has laid out or become since, even after `chant.free()`. `stale` says the chant has
+ * changed since. None of them throws for the page's age.
  *
- * A page lives until it is freed: by `free()`, by its view two layouts later (unless it was
- * `keep()`-ed), or when it is garbage collected. A freed page's hit tests and `timeline()`
- * throw, as using a freed Chant does; `freed` says so without throwing, and its `svg`,
- * `svgParts` and a timeline already read stay.
+ * The engine keeps the layout behind a page in a cache of the most recently used layouts
+ * (see `setLayoutBudget`). A page whose layout was dropped lays itself out again when next
+ * asked, from what it was made from, to the same result. `free()` drops it now.
  */
 export class Page {
+  #chant;
+  /** The chant's state the page was laid out at, and its layout arguments. */
+  #state;
+  #at;
+  #weights;
   #handle;
   #generation;
-  /** The chant's changes, and its version when this page was laid out. */
-  #changes;
-  #version;
-  #weights;
   #timeline;
-  #kept = false;
-  #freedHow;
 
   static {
     pageHandle = (page) => (page.#generation === generation && wasm ? page.#handle : undefined);
+    pageAsked = (page) => page.#at[0];
     pageWeights = (page) => page.#weights;
-    release = (page, how) => {
-      if (!page.#kept) page.#free(how);
-    };
   }
 
   /** Pages come from `Chant.layout` and `View.layout`. */
-  constructor(token, handle, changes, weights, width, height) {
+  constructor(token, chant, state, at, weights, handle, width, height) {
     if (token !== PAGE) throw new TypeError("neuma: pages come from Chant.layout or View.layout");
-    this.#handle = handle;
-    this.#generation = generation;
-    this.#changes = changes;
-    this.#version = changes.version;
+    this.#chant = chant;
+    this.#state = state;
+    this.#at = at;
     this.#weights = weights;
     this.width = width;
     this.height = height;
-    unheld?.register(this, { handle, gen: generation }, this);
+    this.#hold(handle);
   }
 
-  #live() {
-    if (this.#handle === undefined) throw new Error(`neuma: this Page was freed ${this.#freedHow}`);
-    if (this.#generation !== generation) throw new Error("neuma: this Page belongs to an engine that stopped");
-    return this.#handle;
+  #hold(handle) {
+    this.#handle = handle;
+    this.#generation = generation;
+    unheld?.register(this, { handle, gen: generation, free: "page_free" }, this);
+  }
+
+  /**
+   * Runs `f` with the engine's handle for this page, laying the page out again first if the
+   * engine no longer holds its layout (`f` returns `unknown` then).
+   */
+  #ask(f, unknown) {
+    const handle = pageHandle(this);
+    const out = handle === undefined ? unknown : guarded((w) => f(w, handle));
+    if (out !== unknown) return out;
+    unheld?.unregister(this);
+    this.#hold(relayOut(this.#chant, this.#state, this.#at));
+    const again = this.#handle;
+    return guarded((w) => f(w, again));
   }
 
   /** The chant's `version` when this page was laid out. */
   get version() {
-    return this.#version;
+    return this.#state.version;
   }
 
   /**
@@ -618,12 +681,12 @@ export class Page {
    * A stale page still answers for the score it shows; lay out again to show the new one.
    */
   get stale() {
-    return this.#version !== this.#changes.version;
+    return this.#state.version !== versionOf(this.#chant);
   }
 
-  /** Whether the page was freed, so that its hit tests and `timeline()` throw. */
-  get freed() {
-    return this.#handle === undefined;
+  /** The source this page shows. */
+  get source() {
+    return this.#state.recipe.source;
   }
 
   /**
@@ -634,19 +697,15 @@ export class Page {
    */
   timeline() {
     if (this.#timeline === undefined) {
-      const handle = this.#live();
-      this.#timeline = guarded((w) => {
-        w.page_timeline(handle, ...this.#weights);
-        return JSON.parse(takeOutput());
-      });
+      this.#ask((w, h) => w.page_timeline(h, ...this.#weights), 0);
+      this.#timeline = JSON.parse(takeOutput());
     }
     return this.#timeline;
   }
 
   /** The id of the note under (`x`, `y`), or the nearest on that line; null off the lines. */
   noteAt(x, y) {
-    const handle = this.#live();
-    const id = guarded((w) => w.page_note_at(handle, x, y));
+    const id = this.#ask((w, h) => w.page_note_at(h, x, y), -2);
     return id < 0 ? null : id;
   }
 
@@ -660,11 +719,8 @@ export class Page {
    *   the box drawn, from its top left, and `cx` a note's notehead center.
    */
   sourceAt(x, y) {
-    const handle = this.#live();
-    return guarded((w) => {
-      w.page_source_at(handle, x, y);
-      return JSON.parse(takeOutput());
-    });
+    this.#ask((w, h) => w.page_source_at(h, x, y), 0);
+    return JSON.parse(takeOutput());
   }
 
   /**
@@ -676,41 +732,23 @@ export class Page {
    * @returns {Array<object>} elements as `sourceAt` returns them
    */
   elementsAt(caret, { unit = "utf16" } = {}) {
-    const handle = this.#live();
     // Past either end means at it: saturate to a u32 (the engine clamps to the source's
     // length) rather than let `>>>` wrap, and read NaN as 0.
     const at = Math.min(Math.max(Math.trunc(Number(caret)) || 0, 0), 0xffffffff);
-    return guarded((w) => {
-      w.page_elements_at(handle, at, unit === "utf8" ? 0 : 1);
-      return JSON.parse(takeOutput());
-    });
+    this.#ask((w, h) => w.page_elements_at(h, at, unit === "utf8" ? 0 : 1), 0);
+    return JSON.parse(takeOutput());
   }
 
   /**
-   * Takes the page out of its view's care: the view no longer frees it, so free it when
-   * done (or leave it to the garbage collector). For a page kept past the next two layouts,
-   * such as one compared against later or shown elsewhere.
-   * @returns {Page} this page
-   */
-  keep() {
-    this.#kept = true;
-    return this;
-  }
-
-  /**
-   * Releases the engine's copy of this layout now. The page then throws; its `svg`,
-   * `svgParts` and a timeline already read stay. Freeing twice does nothing.
+   * Drops the engine's copy of this layout now, rather than when the cache makes room or
+   * the page is garbage collected. The page still works: asked again, it lays itself out
+   * again. Freeing twice does nothing.
    */
   free() {
-    this.#free("by free()");
-  }
-
-  #free(how) {
-    if (this.#handle === undefined) return;
+    const handle = pageHandle(this);
     unheld?.unregister(this);
-    if (this.#generation === generation && wasm) wasm.page_free(this.#handle);
+    if (handle !== undefined) wasm.page_free(handle);
     this.#handle = undefined;
-    this.#freedHow = how;
   }
 }
 
@@ -718,7 +756,33 @@ if (typeof Symbol.dispose === "symbol") {
   Page.prototype[Symbol.dispose] = function () {
     this.free();
   };
-  View.prototype[Symbol.dispose] = function () {
-    this.free();
-  };
+}
+
+/** The layouts the engine keeps, when not set. */
+const DEFAULT_LAYOUT_BUDGET = 4;
+let layoutBudget = DEFAULT_LAYOUT_BUDGET;
+
+/**
+ * Sets how many pages' layouts the engine keeps, across every chant, view and page (default
+ * 4: an editor's page and thumbnail, each with the one before). Past it the least recently
+ * used is dropped, and its page lays itself out again if it is asked again, to the same
+ * answers. Each layout can hold an engraving of its own: under
+ * 200 KB for a typical score, about 4 MB for the longest. Laying a page out again costs
+ * little while its chant is still in the page's state, and a full layout (tens of
+ * milliseconds for the longest scores) once the chant has moved on. Lower it for a phone;
+ * raise it for many long scores shown and clicked at once.
+ * @param {number} count at least 1
+ */
+export function setLayoutBudget(count) {
+  layoutBudget = Math.max(1, Math.trunc(Number(count)) || DEFAULT_LAYOUT_BUDGET);
+  if (wasm) wasm.neuma_set_layout_budget(layoutBudget);
+}
+
+/**
+ * The engine's memory: `memory` (the WebAssembly memory's size in bytes, which only grows),
+ * `layouts` (the pages' layouts it holds) and `budget` (see `setLayoutBudget`).
+ */
+export function engineStats() {
+  const w = ready();
+  return { memory: w.memory.buffer.byteLength, layouts: w.neuma_layouts(), budget: layoutBudget };
 }

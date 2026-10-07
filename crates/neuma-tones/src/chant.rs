@@ -147,9 +147,10 @@ impl Deref for PsalmChant {
 ///     AnyChant::from(Chant::new("(c4) a(g) (::)")),
 ///     AnyChant::from(PsalmChant::new("Praise him * all ye nations.", tone, &PsalmOptions::default(), ChantOptions::default())),
 /// ];
+/// let made = chants.each_ref().map(|c| c.version());
 /// assert!(chants[0].update("(c4) a(h) (::)"));
 /// assert!(chants[1].update("Praise him * all ye peoples."));
-/// assert!(chants.iter().all(|c| c.version() == 1 && c.layout(600.0).line_count() == 1));
+/// assert!(chants.iter().zip(made).all(|(c, v)| c.version() > v && c.layout(600.0).line_count() == 1));
 /// assert_eq!(chants[1].psalm().unwrap().notes().len(), chants[1].layout(600.0).timeline().notes.len());
 /// ```
 #[derive(Debug)]

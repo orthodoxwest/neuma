@@ -234,10 +234,11 @@ fn sets_psalms() {
     assert_eq!(slice16(sung.source_utf16_start, sung.source_utf16_end), "pá");
     let hit = from_text.source_at(sung.cx, sung.cy).unwrap();
     assert_eq!(slice16(hit.utf16_start, hit.utf16_end), "pá");
-    assert_eq!(c.version(), 0);
+    let made = c.version();
     c.update(text.replace("glorious", "great"));
+    let edited = c.version();
     c.update(text.replace("glorious", "great"));
-    assert_eq!(c.version(), 1);
+    assert!(edited > made && c.version() == edited);
     assert_eq!(c.psalm().unwrap().notes.len(), s.notes.len() - 2);
     assert!(c.psalm().unwrap().gabc.contains("great"));
     assert!(chant("(c4) a(g)").psalm().is_none());
@@ -344,10 +345,12 @@ fn updates_in_place() {
     let c = chant("(c4) a-(g)");
     assert!(c.diagnostics().iter().any(|d| d.code == "gabc::hyphen-in-syllable"));
     let before = c.layout(400.0, options());
+    let made = c.version();
     c.update("(c4) a-(g)".to_string());
-    assert_eq!(c.version(), 0);
+    assert_eq!(c.version(), made);
     c.update("(c4) a(g) b(h)".to_string());
-    assert_eq!(c.version(), 1);
+    let edited = c.version();
+    assert!(edited > made);
     assert!(c.diagnostics().is_empty());
     // The layout from before still shows the old score.
     assert_eq!(timeline(&before).notes.len(), 1);
@@ -357,12 +360,12 @@ fn updates_in_place() {
     assert_eq!(c.summary().notes, 2);
     // The same options change nothing; a larger lyric size engraves again.
     c.set_options(ChantOptions::default());
-    assert_eq!(c.version(), 1);
+    assert_eq!(c.version(), edited);
     assert_eq!(c.layout(400.0, options()).page(), page);
     c.set_options(ChantOptions {
         lyric_size: 4.0,
         ..ChantOptions::default()
     });
-    assert_eq!(c.version(), 2);
+    assert!(c.version() > edited);
     assert!(c.layout(400.0, options()).page().height > page.height);
 }

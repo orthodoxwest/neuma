@@ -1,7 +1,7 @@
 // Smoke test for dist/neuma.mjs under Node: `node crates/neuma-wasm/test.mjs`.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { init, Chant, DEFAULT_WEIGHTS, Page, noteAtTime, point, psalm, summarize, toneNames } from "./dist/neuma.mjs";
+import { init, Chant, DEFAULT_WEIGHTS, Page, engineStats, noteAtTime, point, psalm, setLayoutBudget, summarize, toneNames } from "./dist/neuma.mjs";
 
 await init();
 const gabc = readFileSync(new URL("../neuma/tests/corpus/psalm-134.gabc", import.meta.url), "utf8");
@@ -52,16 +52,23 @@ const svg = porrectusPage.svg;
 for (const id of [0, 1, 2]) assert.match(svg, new RegExp(`data-note="[0-9 ]*\\b${id}\\b`));
 assert.match(svg, /data-note="0 1"/);
 
-// A freed Chant throws rather than reaching another score's handle; its pages keep answering.
+// A freed Chant's pages keep answering; the chant itself engraves again when used, as the
+// same state, so its pages stay current.
 const swash = porrectusPage.timeline().notes[1];
+const porrectusVersion = porrectus.version;
 porrectus.free();
-assert.throws(() => porrectus.layout(400), /freed/);
 assert.equal(porrectusPage.noteAt(swash.cx, swash.cy), 1);
-// A freed page throws, but what it already gave stays; freeing twice does nothing.
+assert.equal(porrectus.layout(400).svg, svg);
+assert.ok(porrectus.version === porrectusVersion && !porrectusPage.stale);
+assert.equal(porrectus.update("(c4) a(hgh)"), false);
+porrectus.free();
+porrectus.free();
+// A freed page lays itself out again from its source, even with its chant gone; freeing
+// twice does nothing.
+const porrectusHits = [porrectusPage.noteAt(swash.cx, swash.cy), porrectusPage.sourceAt(swash.cx, swash.cy), porrectusPage.elementsAt(8)];
 porrectusPage.free();
 porrectusPage.free();
-assert.throws(() => porrectusPage.noteAt(0, 0), /Page was freed/);
-assert.throws(() => porrectusPage.elementsAt(0), /Page was freed/);
+assert.deepEqual([porrectusPage.noteAt(swash.cx, swash.cy), porrectusPage.sourceAt(swash.cx, swash.cy), porrectusPage.elementsAt(8)], porrectusHits);
 assert.equal(porrectusPage.timeline().notes[1], swash);
 assert.ok(porrectusPage.svg.startsWith("<svg"));
 assert.equal(verse.layout(600, { weights: { note: null } }).timeline().notes[1].duration, 1);
@@ -85,7 +92,8 @@ one.free();
 assert.equal(wide.timeline(), wide.timeline());
 
 chant.free();
-assert.throws(() => chant.layout(400));
+assert.equal(chant.layout(900).noteAt(n.cx, n.cy), n.id);
+chant.free();
 // Library entries, from a Chant or straight from the source.
 const puer = "name: Puer natus est;\noffice-part: Introitus;\nmode: 7;\n%%\n(c3) Pu(g)er(gh) na(h)tus(hi) est(h.) (,) no(h)bis(g) (::)";
 const entry = summarize(puer);
@@ -239,45 +247,55 @@ assert.equal(ed.version, version);
 assert.equal(edView.layout(500), before);
 // A larger lyric engraves again; the page from before still answers for what it shows.
 assert.equal(ed.setOptions({ initial: 0, lyricSize: 4 }), true);
-assert.equal(ed.version, version + 1);
+assert.ok(ed.version > version);
+// Versions name states across chants: no other chant has had this one.
+assert.ok(![version, ed.version].includes(new Chant(fixed, { initial: 0 }).version));
 assert.ok(before.stale && before.version === version);
 const larger = edView.layout(500);
 assert.ok(larger.height > before.height && !larger.stale && larger.version === ed.version);
 assert.equal(before.noteAt(tap.cx, tap.cy), tap.id);
-// A page answers until it is freed: through many layouts at other widths and edits between,
-// and after its chant is freed.
+// A page answers for as long as it is held: through many layouts at other widths and edits
+// between, after its layout is dropped from the engine's cache, and after its chant is freed.
 const held = [500, 300, 400, 600, 700].map((w) => ed.layout(w));
 const kept = held[0].timeline().notes.at(-1);
-for (let i = 0; i < 6; i++) {
+const answers = (p) => JSON.stringify([p.noteAt(kept.cx, kept.cy), p.sourceAt(kept.cx, kept.cy), p.elementsAt(5), p.elementsAt(40)]);
+const firstAnswers = held.map(answers);
+for (let i = 0; i < 40; i++) {
   ed.update(edited + " a(g)".repeat(i + 1));
-  for (const w of [500, 300, 250]) ed.layout(w, { svg: i % 2 ? "lines" : "whole" }).free();
+  for (const w of [500, 300, 250]) ed.layout(w, { svg: i % 2 ? "lines" : "whole" });
 }
+assert.ok(engineStats().layouts <= engineStats().budget, "the engine keeps at most its budget");
 assert.ok(held.every((p) => p.stale));
+assert.deepEqual(held.map(answers), firstAnswers);
 assert.equal(held[0].noteAt(kept.cx, kept.cy), kept.id);
-// A view keeps its page and the one before; the one before that it frees, unless kept.
+// A view's pages are its own: freeing one only drops the engine's copy.
 const third = edView.layout(400);
-assert.ok(before.freed && !larger.freed && !third.freed && edView.page === third);
-assert.throws(() => before.noteAt(tap.cx, tap.cy), /freed by its View/);
+before.free();
+assert.equal(before.noteAt(tap.cx, tap.cy), tap.id);
 assert.equal(before.timeline().notes[0], tap, "a timeline already made stays");
-assert.equal(before.timeline, Page.prototype.timeline, "a method, so devtools can show a freed page");
-const keptPage = edView.layout(300).keep();
-edView.layout(250);
-edView.layout(200);
-assert.ok(larger.freed && third.freed && !keptPage.freed);
+assert.equal(before.timeline, Page.prototype.timeline, "a method, not a getter");
 // Alternating widths in one view swap its two pages without laying out again.
 const at200 = edView.layout(200), at250 = edView.layout(250);
 assert.equal(edView.layout(200), at200);
 assert.equal(edView.layout(250), at250);
 const after = edView.layout(500);
-assert.ok(!after.stale);
+assert.ok(!after.stale && !third.stale && after !== third);
 ed.free();
-assert.throws(() => ed.update(src), /freed/);
-assert.throws(() => edView.layout(600), /freed/);
 assert.equal(after.noteAt(kept.cx, kept.cy), kept.id);
 assert.ok(after.elementsAt(0).length > 0);
-for (const p of [...held, keptPage]) p.free();
+assert.equal(edView.layout(500), after, "a freed chant's view still knows its page");
 edView.free();
-assert.ok(after.freed && keptPage.freed);
+// Changed after it was freed, the chant changes as one never freed would.
+assert.equal(ed.update(src), true);
+assert.ok(after.stale);
+assert.equal(edView.layout(600).svg, new Chant(src, { initial: 0, lyricSize: 4 }).layout(600).svg);
+assert.deepEqual(held.map(answers), firstAnswers);
+// A budget of one layout: every other page lays itself out again when asked.
+const budget = engineStats().budget;
+setLayoutBudget(1);
+assert.ok(engineStats().layouts <= 1);
+assert.deepEqual(held.map(answers), firstAnswers);
+setLayoutBudget(budget);
 
 // Each view in parts, here a page and a thumbnail, reuses the lines of its own last page,
 // even when the caller has changed that page's parts.
@@ -314,18 +332,17 @@ assert.ok(after.freed && keptPage.freed);
   const twinPage = twin.layout(300);
   assert.notEqual(twinPage, main);
   twin.free();
-  assert.ok(twinPage.freed && !main.freed);
   const first = main.timeline().notes[0];
   assert.equal(main.noteAt(first.cx, first.cy), first.id);
-  // A page its owner freed is laid out again.
+  // A page its owner freed is still the view's page, and still answers.
   main.free();
-  const again = mainView.layout(300);
-  assert.notEqual(again, main);
-  assert.ok(again.svgParts.lines.length > 2);
+  assert.equal(mainView.layout(300), main);
+  assert.equal(main.noteAt(first.cx, first.cy), first.id);
   if (typeof Symbol.dispose === "symbol") {
     const p = doc.layout(200);
+    const hit = p.noteAt(first.cx, first.cy);
     p[Symbol.dispose]();
-    assert.throws(() => p.noteAt(0, 0), /freed/);
+    assert.equal(p.noteAt(first.cx, first.cy), hit);
   }
   doc.free();
 }

@@ -569,10 +569,12 @@ impl Chant {
         }
     }
 
-    /// Counts the chant's changes: 0 when made, and one more for each `update` or
-    /// `setOptions` that changed anything. Key a view on it (a Compose `remember`, a SwiftUI
-    /// `id`) so it lays out again exactly when the score changed; a layout made at an older
-    /// version is out of date.
+    /// Names the chant's current state: a number no other state of any chant has had, which
+    /// grows with each `update` or `setOptions` that changed anything and stays the same
+    /// otherwise. Key a view on it (a Compose `remember`, a SwiftUI `id`) so it lays out again
+    /// exactly when the score changed; a layout made at another version is out of date.
+    /// `update` then `version()` is two calls, not one: with several threads writing, another
+    /// change can land between them.
     pub fn version(&self) -> i64 {
         i64::try_from(self.read().source.version()).unwrap_or(i64::MAX)
     }

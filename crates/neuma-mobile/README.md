@@ -77,7 +77,7 @@ val timeline = layout.timeline(Weights(mediant = 3f))
 val id = layout.noteAt(x, y)  // the note under a tap, or null
 chant.update(edited)          // after an edit; lay it out again to see it
 chant.setOptions(ChantOptions(initial = 2, lyricSize = 3f)) // a new text size
-chant.version()               // counts the changes that changed anything
+chant.version()               // names the state: grows with each real change
 layout.close()                // when a new layout replaces it
 chant.close()
 ```
@@ -93,9 +93,10 @@ reference. That bounds memory; it doesn't make the edit cheaper. `page()` is mad
 layout, but each call copies it across the boundary, so keep the value rather than calling
 it on each recomposition or `body`.
 
-**When to lay out again.** `chant.version()` counts the changes that changed anything (0 when
-made); `update` with the current source, or `setOptions` with options that engrave the same,
-leave it as it is. Keep it in the app's state after each edit and key the layout on it, here
+**When to lay out again.** `chant.version()` names the chant's state: it grows with each
+change that changed anything, no two chants share one, and `update` with the current source,
+or `setOptions` with options that engrave the same, leave it as it is. `update` then
+`version()` is not atomic: with several threads writing, another change can land between. Keep it in the app's state after each edit and key the layout on it, here
 in Compose (in SwiftUI, `.id(version)` or an `onChange(of: version)`):
 
 ```kotlin

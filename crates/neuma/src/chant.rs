@@ -1,6 +1,7 @@
 //! [`Chant`]: one score and everything made from it, owned, for apps, servers and editors.
 
 use std::fmt;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, TryLockError};
 
 use crate::diag::Diagnostic;
@@ -192,7 +193,7 @@ pub struct Chant {
     /// `read`, then the engraving's.
     diagnostics: Vec<Diagnostic>,
     caches: Caches,
-    /// Counts the changes since the chant was made.
+    /// Names the chant's current state: see [`Chant::version`].
     version: u64,
 }
 
@@ -228,6 +229,12 @@ fn with_cache<C: Default, R>(m: &Mutex<C>, f: impl FnOnce(Option<&mut C>) -> R) 
     }
 }
 
+/// The next version of any chant in the process.
+fn next_version() -> u64 {
+    static NEXT: AtomicU64 = AtomicU64::new(1);
+    NEXT.fetch_add(1, Ordering::Relaxed)
+}
+
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
 }
@@ -245,7 +252,6 @@ impl Chant {
     pub fn with_options(gabc: &str, options: ChantOptions) -> Chant {
         let mut chant = Chant::empty(options);
         chant.update(gabc);
-        chant.version = 0;
         chant
     }
 
@@ -259,7 +265,6 @@ impl Chant {
     pub fn from_score(score: Score, source: &str, diagnostics: Vec<Diagnostic>, options: ChantOptions) -> Chant {
         let mut chant = Chant::empty(options);
         chant.update_score(score, source, diagnostics);
-        chant.version = 0;
         chant
     }
 
@@ -272,7 +277,7 @@ impl Chant {
             read: Vec::new(),
             diagnostics: Vec::new(),
             caches: Caches::default(),
-            version: 0,
+            version: next_version(),
         }
     }
 
@@ -310,7 +315,7 @@ impl Chant {
         self.source.push_str(source);
         self.utf16 = Arc::new(Utf16Index::new(source));
         self.engrave(score);
-        self.version += 1;
+        self.version = next_version();
         true
     }
 
@@ -329,15 +334,17 @@ impl Chant {
         if let Some(score) = self.engraved.take_score() {
             self.engrave(score);
         }
-        self.version += 1;
+        self.version = next_version();
         true
     }
 
-    /// Counts the changes made to the chant: 0 when made, and one more for each
-    /// [`update`](Self::update), [`update_score`](Self::update_score) or
-    /// [`set_options`](Self::set_options) that changed anything. A view keyed on it (a
-    /// Compose `remember`, a SwiftUI `id`, a memo) lays out again exactly when it must, and a
-    /// layout made at an older version is out of date.
+    /// Names the chant's current state: a number no other state of any chant in the process
+    /// has had, which grows with each [`update`](Self::update),
+    /// [`update_score`](Self::update_score) or [`set_options`](Self::set_options) that
+    /// changed anything and stays the same otherwise. A view keyed on it (a Compose
+    /// `remember`, a SwiftUI `id`, a memo) lays out again exactly when it must, a layout made
+    /// at another version is out of date, and a cache keyed on versions alone never confuses
+    /// two chants.
     #[must_use]
     pub fn version(&self) -> u64 {
         self.version
@@ -571,25 +578,26 @@ mod tests {
     #[test]
     fn says_whether_it_changed() {
         let mut chant = Chant::new("(c4) a(g)");
-        assert_eq!(chant.version(), 0);
+        let made = chant.version();
         let before = chant.layout(300.0);
         assert!(!chant.update("(c4) a(g)"));
         assert!(std::ptr::eq(chant.layout(300.0).source_map(), before.source_map()));
         assert!(!chant.set_options(ChantOptions::default()));
         assert!(std::ptr::eq(chant.layout(300.0).source_map(), before.source_map()));
-        assert_eq!(chant.version(), 0);
+        assert_eq!(chant.version(), made);
         assert!(chant.update("(c4) a(h)"));
-        assert_eq!(chant.version(), 1);
+        let edited = chant.version();
+        assert!(edited > made);
         assert!(chant.set_options(ChantOptions::default().with_lyric_size(3.0)));
-        assert_eq!(chant.version(), 2);
+        assert!(chant.version() > edited);
         let score = chant.score().clone();
         let source = chant.source().to_owned();
+        let now = chant.version();
         assert!(!chant.update_score(score, &source, Vec::new()));
-        assert_eq!(chant.version(), 2);
-        assert_eq!(
-            Chant::from_score(Score::default(), "", Vec::new(), ChantOptions::default()).version(),
-            0
-        );
+        assert_eq!(chant.version(), now);
+        // Another chant's versions are its own, even of the same source.
+        let other = Chant::new("(c4) a(g)");
+        assert!(![made, edited, now].contains(&other.version()));
     }
 
     #[test]

@@ -40,7 +40,8 @@ timelines, PDFs). Some behavior did change:
   `Chant::with_options(gabc, ChantOptions)`, `Chant::from_score(score, source, diagnostics,
   options)`, `update(source)` and `update_score(…)` (incremental), `set_options(ChantOptions)`
   (engraves again only if the options engrave differently), each returning whether anything
-  changed, `version()` (counts the changes that changed anything), `diagnostics()` (reading and engraving, one list), `summary()`, and
+  changed, `version()` (names the state: unique across every chant in the process, growing
+  with each change that changed anything), `diagnostics()` (reading and engraving, one list), `summary()`, and
   `layout(width)` / `layout_with(width, &LayoutOptions)` through `&self` (it remembers its
   last few layouts, keyed on the sanitized options). `ChantOptions` holds the lyric font, the `StyleOptions` (with a
   setter for each of its fields), and optionally a custom `TextMeasure` (`with_measure`).
@@ -140,22 +141,26 @@ timelines, PDFs). Some behavior did change:
 - Pages: `chant.layout(width, options)` returns a **`Page`**: `width`, `height`, `svg` or
   `svgParts`, `timeline()` (made on the first call), and its own `noteAt(x, y)`,
   `sourceAt(x, y)` and `elementsAt(caret, { unit })`, which answer for the score that page
-  shows for as long as it lives, whatever the chant has laid out or become since (and after
-  `chant.free()`). Each page holds its own layout in the engine until `page.free()` (or
-  `Symbol.dispose`, for `using`), or until it is garbage collected (a
-  `FinalizationRegistry`). A freed page's hit tests and `timeline()` throw; `page.freed`
-  says so without throwing. `page.stale` says the chant has changed since the page was laid
+  shows for as long as it is held, whatever the chant has laid out or become since (and
+  after `chant.free()`); `page.source` is the source it shows. No page throws for its age:
+  the engine keeps the layouts behind pages in a cache of the most recently used (4 by
+  default, across every chant, view and page; **`setLayoutBudget(count)`**), and a page
+  whose layout was dropped, or freed with `page.free()` (or `Symbol.dispose`), lays itself
+  out again when next asked, from its chant's source and options at the time, to the same
+  answers. A `FinalizationRegistry` only frees a collected page's layout sooner. New:
+  **`engineStats()`**, `{ memory, layouts, budget }`. `page.stale` says the chant has changed since the page was laid
   out, and `page.version` is the chant's version it was laid out at. `chant.layout` makes a
   new page on each call. `chant.noteAt`, `sourceAt` and `elementsAt`, and
   `layout(…, { timeline: false })`, are gone.
 - New: **views**, for a place that shows the score and lays it out again on each change:
-  `const view = chant.view(options)`, then `view.layout(width, { weights })`. A view keeps
-  its current page (`view.page`) and the one before, frees older ones itself (unless
-  `page.keep()`), returns the same page for the same width and weights while nothing
-  changed, and in parts reuses its last page's lines. An editor laying out through a view
-  needs no `free()`, and its memory stays flat.
-- `update` and `setOptions` return whether anything changed; `chant.version` counts the
-  changes.
+  `const view = chant.view(options)`, then `view.layout(width, { weights })`. A view
+  returns the same page for the same width and weights while nothing changed (its current
+  page, `view.page`, or the one before), and in parts reuses its last page's lines.
+- `chant.free()` is a hint too: a freed chant engraves its source again when next used, as
+  the same state. After the engine restarts (`init()` after an internal error), chants,
+  views and pages made before carry on.
+- `update` and `setOptions` return whether anything changed; `chant.version` names the
+  chant's state, unique across chants; `chant.source` is the source it was last given.
 - New: `Chant.fromPsalm(text, tone, { intone, autoPoint, …chantOptions })`, with
   `chant.psalm` (the setting, `{ gabc, notes, diagnostics }`, as `psalm` returns it) and
   `update(text)` setting new text to the same tone;
@@ -185,7 +190,7 @@ timelines, PDFs). Some behavior did change:
   waits on a layout in progress. `Page.timeline`, `LayoutOptions.timeline` and
   `LayoutOptions.weights` are gone, as are `Chant.noteAt`, `sourceAt` and `elementsAt`.
 - New: `Chant.update(src)` (engrave again after an edit), `Chant.setOptions(options)` (a new
-  text size), `Chant.version()` (counts the changes that changed anything, to key a view on),
+  text size), `Chant.version()` (names the state, unique across chants, to key a view on),
   and `Chant.fromPsalm(text, tone, PsalmOptions, ChantOptions)` with `psalm()`, the setting
   as `psalm` returns it.
 - `ToneException`'s message is the error's ("no built-in tone 9.z").

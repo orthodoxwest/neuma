@@ -216,7 +216,7 @@ const view = chant.view();
 let page = view.layout(host.clientWidth); // a page answers its own clicks
 textarea.addEventListener("input", () => {
   chant.update(textarea.value); // keeps the options; diagnostics follow the new source
-  page = view.layout(host.clientWidth); // the view frees pages two layouts old
+  page = view.layout(host.clientWidth); // a new page, or the same if nothing changed
   host.innerHTML = page.svg;
   showProblems(chant.diagnostics); // { severity, code, message, utf16Start, utf16End, fix }
 });

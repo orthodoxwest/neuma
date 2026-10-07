@@ -46,14 +46,40 @@ alone, and after `chant.update` or `chant.setOptions` a page made before still a
 the score it shows, so a click or a caret move between an edit and the next frame finds what
 is on screen. `page.stale` is true once the chant has changed since the page was laid out:
 lay out again to show the new score. `update` and `setOptions` return whether anything
-changed, and `chant.version` counts the changes (`page.version` is the chant's version the
-page was laid out at), as in Rust and on mobile.
+changed, and `chant.version` names the chant's state (`page.version` is the chant's version
+the page was laid out at): a number no other state of any chant has had, which grows with
+each change, as in Rust and on mobile.
+
+### Pages and memory
+
+**A page always answers.** The engine keeps the layouts behind pages in a cache of the
+most recently used: by default 4 across every chant, view and page, enough for an editor's
+page and thumbnail, each with the one before. A page whose layout was dropped (because
+newer ones pushed it out, or `page.free()`) lays itself out again the next time it is
+asked, from what it was made from: its chant's source and options at the time, its width
+and its weights. It gives the same answers, byte for byte. So no page throws for its age,
+nor after its chant is freed or changed.
+
+- `setLayoutBudget(count)` sets how many layouts the engine keeps. Each holds an
+  engraving: under 200 KB for a typical score, about 4 MB for the longest (about 4,900
+  notes), so the default stays near 45 MB of engine memory there however pages are made.
+  Lower it for a phone. Raise it when many scores are shown and clicked at once: laying a
+  page out again costs little while its chant hasn't changed, but a full layout once it
+  has (tens of milliseconds on the longest scores). On the longest scores each layout kept
+  also slows an edit a little (a few tenths of a millisecond), the memory touched growing.
+- `engineStats()` returns `{ memory, layouts, budget }`: the WebAssembly memory's size in
+  bytes (which only grows), the layouts held and the budget.
+- `page.free()` and `chant.free()` drop the engine's copies now: hints, for when a page or
+  a chant goes away. Both still work after it: a freed chant engraves its source again when
+  used, as the same state, so its pages stay current. A `FinalizationRegistry` drops the
+  copies of pages and chants that are garbage collected. For pages that only frees memory
+  sooner, since the budget bounds their layouts without it; a chant's own engraving lives
+  until it is freed or collected.
 
 ### Views: pages for a place that shows the score
 
-Each page holds its layout, a whole engraving's worth of memory on a long score, in the
-engine. A place that lays the score out again on every change, an editor's preview above
-all, does it through a **view**, which frees the pages it replaces:
+A place that lays the score out again on every change, an editor's preview above all, does
+it through a **view**:
 
 ```js
 const view = chant.view({ svg: "lines", ids: false }); // the options but width and weights
@@ -62,38 +88,19 @@ let page = view.layout(host.clientWidth);               // on each change and ea
 
 - `view.layout(width, { weights })` returns the view's page for the chant as it is now. Asked
   again with the same width and weights, and no change to the chant, it returns the same
-  page; otherwise a new one, made reusing the last page's lines (with `svg: "lines"`).
-- The view keeps its current page (`view.page`) and the one before it, so a click between an
-  edit and the next frame still finds what was on screen. It frees any older page itself.
-- `page.keep()` takes a page out of its view's care, for a page held longer (compared against
-  later, shown elsewhere); free a kept page yourself. `view.free()` frees the view's pages
-  but the kept ones.
-- Give each place its own view (each panel, each component instance): two views never share
-  pages, so one freeing its pages leaves the other's alone.
+  page (as it does for the width before, so alternating two widths lays out nothing);
+  otherwise a new one, made reusing the last page's lines (with `svg: "lines"`).
+  `view.page` is the page it last gave.
+- Give each place its own view (each panel, each component instance), so each reuses the
+  lines of its own last page. `view.free()` drops the engine's copies of its pages.
 
 `chant.layout(width, options)` makes a one-off page, a new one on each call: a static
-rendering, a print, a thumbnail drawn once. It lives until `page.free()` (or `using page =
-chant.layout(…)`, where the runtime has explicit resource management) or until it is garbage
-collected: a `FinalizationRegistry` frees its engine half then. That only runs between tasks
-and when the collector gets to it, so an editor that lays out with `chant.layout` on every
-keystroke and never frees grows the engine's memory far faster than the collector returns it
-(hundreds of megabytes on the longest scores, which a phone's browser may not survive). A
-view keeps an editor's memory flat.
+rendering, a print, a thumbnail drawn once.
 
-**A freed page throws** from its hit tests and `timeline()`, with a message saying how it was
-freed, as a freed `Chant` does: an answer of `null` would read as "nothing there" and hide
-the bug of asking an old page. `page.freed` says so without throwing, and the page's `svg`,
-`svgParts` and a timeline already made stay readable. With views, only a page held past two
-layouts of its view, without `keep()`, is freed under you.
-
-**Without `FinalizationRegistry`** (very old runtimes), nothing frees a page that is dropped:
-views still free what they replace, and pages from `chant.layout` must be freed by hand.
-
-**Memory and time.** A page held when the chant changes makes the update copy the engraving
-rather than change it in place, and an editor always holds the page on screen, so this copy
-is part of an edit's cost: on the longest scores (about 4,900 notes) about 1.7 ms of a 5 ms
-update, on typical ones next to nothing. Freeing replaced pages doesn't avoid it; it bounds
-memory, since each page kept past an edit keeps a whole engraving alive.
+**Memory and time.** A page whose layout is held when the chant changes makes the update
+copy the engraving rather than change it in place, and an editor always holds the page on
+screen, so this copy is part of an edit's cost: on the longest scores about 1.7 ms of a 5 ms
+update, on typical ones next to nothing.
 
 - **`timeline.notes`**: one entry per note, in singing order, with these fields:
   - `id`: stable across layouts of one `Chant`. Each SVG element lists the notes it draws
@@ -138,8 +145,7 @@ Each diagnostic has a `code` that stays stable across versions (see
 
 `page.noteAt(x, y)` returns the note under a point, or the nearest note on that line, or
 `null`. `chant.setOptions({ lyricSize: 3 })` engraves again with new options (those the
-constructor takes). `chant.free()` releases the score; using a freed `Chant` throws, and its
-pages keep answering for what they show.
+constructor takes).
 
 Weights default to `DEFAULT_WEIGHTS`: one pulse per note, two for a dotted note, and pauses
 that grow with the bar. Any key you pass with a number overrides its default, except a negative one; no weight
@@ -147,7 +153,8 @@ goes above 1000.
 
 If the engine ever stops on an internal error (a WebAssembly trap, or a `RangeError` for a
 stack overflow), that call throws and so does every later one until you call `init()` again,
-which starts a fresh engine. Make the `Chant`s again after that.
+which starts a fresh engine. `Chant`s, views and pages made before carry on in it, engraved
+again when next used.
 
 ## Editors
 
@@ -160,7 +167,7 @@ const view = chant.view({ svg: "lines", ids: false });
 let page = view.layout(host.clientWidth);
 textarea.addEventListener("input", () => {
   chant.update(textarea.value);    // keeps the options; diagnostics follow the new source
-  page = view.layout(host.clientWidth); // the view frees the pages it replaces
+  page = view.layout(host.clientWidth); // reuses the lines that didn't change
   // page.svgParts: { head, defs, rest, lines: [{ top, svg }] }
 });
 host.addEventListener("click", (e) => {
@@ -228,7 +235,7 @@ let page = null;                   // the page shown, which answers the caret an
 // Keep the chant and the preview in step with the document.
 function show(doc) {
   chant.update(doc);
-  const next = score.layout(host.clientWidth); // the view frees the pages it replaces
+  const next = score.layout(host.clientWidth); // the same page when nothing changed
   if (next === page) return;
   page = next;
   draw(page);                      // patch the preview from page.svgParts, as below
@@ -271,6 +278,62 @@ host.addEventListener("click", (e) => {
 over it, as the example page does. On a long score, laying out in an animation frame rather
 than on every keystroke saves work; a caret move in between is answered by the page still
 shown, for the score it shows (it is `stale` until the frame).
+
+### React
+
+A component keeps its chant and view in state, brings the chant up to its props in render,
+and reads the view's page. Rendering stays pure enough for StrictMode and concurrent
+rendering: `update` with the same text does nothing, `view.layout` with nothing changed
+returns the same page, and every page answers for what it shows, so a render React throws
+away, a remount, or a click that lands before the next commit finds nothing broken. A
+listener registered once reads the page on screen through a ref:
+
+```jsx
+import { useEffect, useRef, useState } from "react";
+import { Chant } from "./neuma.mjs";
+
+// A score that follows `gabc` at `width` and reports the note clicked.
+export function Score({ gabc, width, onNote }) {
+  // One chant and one view per instance. StrictMode makes each twice and keeps one; the
+  // other is collected.
+  const [chant] = useState(() => new Chant(gabc, { initial: 1 }));
+  const [view] = useState(() => chant.view());
+  chant.update(gabc);                // a free no-op when nothing changed, so fine in render
+  const page = view.layout(width);   // the same page while nothing changed
+
+  // The page on screen and the latest callback, for a listener registered once.
+  const shown = useRef(page);
+  const report = useRef(onNote);
+  useEffect(() => {
+    shown.current = page;
+    report.current = onNote;
+  });
+
+  const host = useRef(null);
+  useEffect(() => {
+    const el = host.current;
+    const click = (e) => {
+      const box = el.getBoundingClientRect();
+      const id = shown.current.noteAt(e.clientX - box.left, e.clientY - box.top);
+      if (id !== null) report.current?.(id);
+    };
+    el.addEventListener("click", click);
+    return () => el.removeEventListener("click", click);
+  }, []);
+
+  // Hints that drop the engine's copies when the component goes away. A remount (as
+  // StrictMode does) keeps using the chant and view: they work after `free()`.
+  useEffect(() => () => {
+    view.free();
+    chant.free();
+  }, [chant, view]);
+
+  return <div ref={host} dangerouslySetInnerHTML={{ __html: page.svg }} />;
+}
+```
+
+Pass a `useDeferredValue` of the text as `gabc` to keep typing ahead of a long score's
+layout.
 
 ## Library entries
 
