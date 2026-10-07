@@ -143,6 +143,21 @@ impl Layout {
             });
             self.push_line(&mut items, line, 0.0);
         }
+        self.push_initial(&mut items);
+        DisplayList {
+            width: self.width * s,
+            height: self.height * s,
+            staff_space: s,
+            lines,
+            items,
+            alt_text: eng.alt_text.clone(),
+        }
+    }
+
+    /// Appends the initial and its annotations, which hang beside the first lines.
+    pub(crate) fn push_initial(&self, items: &mut Vec<Item>) {
+        let s = self.scale;
+        let eng = &*self.eng;
         if let (Some(init), Some(placed), Some(_)) = (&eng.initial, &self.initial, self.lines.first()) {
             let column = placed.column;
             items.push(Item::Text {
@@ -171,14 +186,6 @@ impl Layout {
                     syllable: None,
                 });
             }
-        }
-        DisplayList {
-            width: self.width * s,
-            height: self.height * s,
-            staff_space: s,
-            lines,
-            items,
-            alt_text: eng.alt_text.clone(),
         }
     }
 
