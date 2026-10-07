@@ -396,9 +396,9 @@ pub(crate) struct Head {
     pub top: f32,
     pub bottom: f32,
     pub position: i8,
-    /// The note's hit box (left, top, right, bottom) when it isn't [`Head::center`] and
-    /// [`Head::size`] around the note's position: a porrectus end trimmed off its neighbours.
-    pub hit: Option<[f32; 4]>,
+    /// The note's hit box size when it isn't [`Head::size`]: a porrectus end's box, shrunk
+    /// about the notehead's center off its neighbours.
+    pub hit: Option<(f32, f32)>,
 }
 
 impl Head {
@@ -422,11 +422,9 @@ impl Head {
         }
     }
     /// The note's hit box: center x, center y, width and height.
+    /// Its center stays the notehead's center.
     pub fn hit_box(&self) -> (f32, f32, f32, f32) {
-        if let Some([l, t, r, b]) = self.hit {
-            return ((l + r) / 2.0, (t + b) / 2.0, r - l, b - t);
-        }
-        let (w, h) = self.size();
+        let (w, h) = self.hit.unwrap_or_else(|| self.size());
         (self.center(), -(self.position as f32), w, h)
     }
     fn swash(&self) -> bool {
@@ -437,36 +435,34 @@ impl Head {
     }
 }
 
-/// Trims the boxes of a porrectus swash's two ends off the other noteheads of the neume (the
-/// note stacked on the swash's end, the punctum before it), along the axis where they overlap
-/// least, so that hit testing never finds two notes at one point.
+/// Shrinks the boxes of a porrectus swash's two ends, about their centers, off the other
+/// noteheads of the neume (the note stacked on the swash's end, the punctum before it), along
+/// the axis where they overlap least, so that hit testing never finds two notes at one point
+/// and each box stays centered on its notehead.
 fn trim_swash_boxes(heads: &mut [Head]) {
     for i in 0..heads.len() {
         if !heads[i].swash() {
             continue;
         }
-        let (cx, cy, w, h) = heads[i].hit_box();
-        let [mut l, mut t, mut r, mut b] = [cx - w / 2.0, cy - h / 2.0, cx + w / 2.0, cy + h / 2.0];
+        let (cx, cy, w0, h0) = heads[i].hit_box();
+        let (mut w, mut h) = (w0, h0);
         for (j, o) in heads.iter().enumerate() {
             if j == i {
                 continue;
             }
             let (ox, oy, ow, oh) = o.hit_box();
-            let [ol, ot, or, ob] = [ox - ow / 2.0, oy - oh / 2.0, ox + ow / 2.0, oy + oh / 2.0];
-            let (dx, dy) = (r.min(or) - l.max(ol), b.min(ob) - t.max(ot));
+            let (dx, dy) = ((w + ow) / 2.0 - (cx - ox).abs(), (h + oh) / 2.0 - (cy - oy).abs());
             if dx <= 0.0 || dy <= 0.0 {
                 continue;
             }
             if dy <= dx {
-                if oy < cy { t = t.max(ob) } else { b = b.min(ot) }
-            } else if ox < cx {
-                l = l.max(or);
+                h -= 2.0 * dy;
             } else {
-                r = r.min(ol);
+                w -= 2.0 * dx;
             }
         }
-        if [l, t, r, b] != [cx - w / 2.0, cy - h / 2.0, cx + w / 2.0, cy + h / 2.0] && r > l && b > t {
-            heads[i].hit = Some([l, t, r, b]);
+        if (w, h) != (w0, h0) && w > 0.0 && h > 0.0 {
+            heads[i].hit = Some((w, h));
         }
     }
 }

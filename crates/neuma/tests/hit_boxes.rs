@@ -58,6 +58,10 @@ fn porrectus_hit_testing_finds_each_note() {
     for n in ns {
         assert_eq!(map.note_at(n.x, n.y), Some(n.id));
     }
+    // The swash's end keeps its notehead's center: the swash's right end, on its line.
+    let (start, end) = (&ns[0], &ns[1]);
+    assert_eq!(end.y - start.y, 6.0);
+    assert!((end.x - start.x - (neuma::glyphs::GlyphId::Porrectus1.width() - 1.0) * 6.0).abs() < 1e-3);
     // Just above the swash's end, inside the stacked note's box: the stacked note.
     let (end, top) = (&ns[1], &ns[2]);
     let y = top.y + top.h / 2.0 - 0.05;
