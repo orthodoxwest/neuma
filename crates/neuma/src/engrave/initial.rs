@@ -9,6 +9,29 @@ pub(crate) const MAX_LINES: u8 = 4;
 /// capital spans the staves.
 pub(crate) const CAP_HEIGHT: f32 = 0.65;
 
+/// How far a capital's ink runs past its advance, in ems, on the left and on the right: the
+/// tail of EB Garamond's Q sweeps well past it, and would reach the staff beside it.
+pub(crate) fn overhang(initial: &str) -> (f32, f32) {
+    let side = |c: Option<char>, table: &[(char, f32)]| c.and_then(|c| table.iter().find(|e| e.0 == c)).map_or(0.0, |e| e.1);
+    let left = side(initial.chars().next(), &[('J', 0.07)]);
+    let right = side(
+        initial.chars().find(|c| c.is_alphabetic()),
+        &[('Q', 0.12), ('Y', 0.045), ('W', 0.015)],
+    );
+    (left, right)
+}
+
+/// How far an initial's ink reaches below the baseline, in ems: the tails of Q and J, and a
+/// lowercase descender.
+pub(crate) fn depth(initial: &str) -> f32 {
+    match initial.chars().next() {
+        Some('Q') => 0.27,
+        Some('J') => 0.21,
+        Some('g' | 'j' | 'p' | 'q' | 'y' | 'ç' | 'ý' | 'ÿ') => 0.3,
+        _ => 0.02,
+    }
+}
+
 /// Whether to set the score's first letter as a drop cap, and how many staves tall.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Initial {

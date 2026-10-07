@@ -4,11 +4,13 @@
 
 mod cache;
 mod initial;
+mod lyric_top;
 pub(crate) mod neume;
 
 pub use cache::EngraveCache;
 pub use initial::Initial;
 pub(crate) use initial::{CAP_HEIGHT, strip_tex};
+pub(crate) use lyric_top::HYPHEN_TOP;
 
 use crate::diag::{Diagnostic, Sink};
 use crate::glyphs::GlyphId as G;
@@ -87,6 +89,17 @@ impl Piece {
             Mark::Glyph { x, .. } | Mark::Rect { x, .. } => *x += dx,
         }
         self
+    }
+
+    /// The ink's box: left, top, right, bottom.
+    pub(crate) fn ink_box(&self) -> [f32; 4] {
+        match self.mark {
+            Mark::Glyph { glyph, x, y } => {
+                let (a, b, c, d) = glyph.ink();
+                [x + a, y + b, x + c, y + d]
+            }
+            Mark::Rect { x, y, w, h } => [x, y, x + w, y + h],
+        }
     }
 
     /// Vertical ink extent.
@@ -176,6 +189,9 @@ pub(crate) struct LyricBox {
     /// initial took whole.
     pub lead_hyphen: bool,
     pub syllable: u32,
+    /// How high the letters reach: `(left, right, top)` in staff spaces, from the text's left
+    /// edge and above its baseline (see `lyric_top::profile`).
+    pub tops: Vec<(f32, f32, f32)>,
 }
 
 /// A notehead in a segment, for the note map.
@@ -266,8 +282,11 @@ pub(crate) struct InitialBox {
     /// the column; layout scales the capital to the staves it spans.
     pub size: f32,
     pub width: f32,
-    /// The initial's advance in ems.
+    /// The initial's width in ems: its advance, and its ink beyond it (see `initial::overhang`).
     pub advance_em: f32,
+    /// How far its ink reaches left of where it is set, and below its baseline, in ems.
+    pub lead_em: f32,
+    pub depth_em: f32,
     /// Room above the first staff for an accent on the capital, in staff spaces.
     pub accent_room: f32,
     /// The face's descent in ems, for a capital with a tail.
@@ -312,6 +331,9 @@ pub struct Engraving {
     pub(crate) lowest: StaffPosition,
     /// The first note after each segment, for its custos (so layout needn't scan ahead).
     pub(crate) next_note: Vec<Option<StaffPosition>>,
+    /// The segments from here on have no ink, only text, so a line of them alone draws no
+    /// staff; the segments' count when every segment has ink or none has.
+    pub(crate) inkless_from: usize,
     pub diagnostics: Vec<Diagnostic>,
 }
 
@@ -743,14 +765,19 @@ impl Score {
             } else {
                 Vec::new()
             };
-            let advance_em = measure.advance(&text, TextStyle::REGULAR);
+            // The column holds the capital's ink, which for a few letters runs past its advance.
+            let (lead, tail) = initial::overhang(&text);
+            let advance_em = measure.advance(&text, TextStyle::REGULAR) + lead + tail;
             // An accent on the capital rises above its cap height; leave room for it.
             let accented = !text.is_ascii();
             initial = Some(InitialBox {
                 width: advance_em * initial_size,
                 advance_em,
-                // Standing on the lyric line, a one-staff initial's accent stays below the staff's top.
-                accent_room: if accented && lines > 1 { 0.25 * initial_size } else { 0.0 },
+                lead_em: lead,
+                depth_em: initial::depth(&text),
+                // A one-staff initial's accent stays below the staff's top, but the annotation
+                // over it goes higher.
+                accent_room: if accented { 0.25 * initial_size } else { 0.0 },
                 descent,
                 text,
                 syllable: si as u32,
@@ -1169,7 +1196,9 @@ impl Pass<'_> {
                 }
             }
             let next_word = score.syllables.get(si as usize + 1).is_none_or(|s| s.word_start);
+            let tops = lyric_top::profile(&runs, self.measure, self.size);
             self.e.segments[k].lyric = Some(LyricBox {
+                tops,
                 runs,
                 left: anchor - center,
                 width,
@@ -1203,6 +1232,7 @@ impl Pass<'_> {
                 hyphenated: true,
                 lead_hyphen: true,
                 syllable: si,
+                tops: vec![(0.0, width, lyric_top::HYPHEN_TOP * self.size)],
             });
         }
     }
@@ -1223,13 +1253,28 @@ impl Pass<'_> {
         // that syllable's empty segment takes it (and is dropped), so none is left.
         debug_assert!(self.pending_break.is_none());
 
+        // The initial is drawn on the first line, so its syllable must start there: a bar or
+        // clef written before it (`(c4) (::) A(g)`) can't take a line of its own.
+        if let Some(init) = &self.initial {
+            for seg in e.segments.iter_mut().filter(|s| s.syllable < init.syllable) {
+                if !matches!(seg.after, Break::Forced { .. }) {
+                    seg.after = Break::Forbidden;
+                }
+            }
+        }
         let e = self.e;
         let lowest = e.notes.iter().map(|n| n.position).min().unwrap_or(0);
+        // Text after the last ink (a rubric after the final bar) draws no staff of its own.
+        let inkless_from = match e.segments.iter().rposition(|s| !s.pieces.is_empty()) {
+            Some(k) => k + 1,
+            None => e.segments.len(),
+        };
         let mut next_note = vec![None; e.segments.len()];
         for k in (0..e.segments.len().saturating_sub(1)).rev() {
             next_note[k] = e.segments[k + 1].first_note.or(next_note[k + 1]);
         }
         let engraving = Engraving {
+            inkless_from,
             next_note,
             segments: e.segments,
             initial: self.initial,

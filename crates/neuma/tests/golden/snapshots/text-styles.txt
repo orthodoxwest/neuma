@@ -6,8 +6,8 @@ info[text::synthetic-face] at 67..80: no face for this style; measured with the 
 # width 360
 size 360.00 x 234.23, staff space 6.00
 line top 0.00 bottom 73.07 staff 30.89 baseline 68.69
-line top 84.47 bottom 153.65 staff 111.47 baseline 149.27
-line top 165.05 bottom 234.23 staff 192.05 baseline 229.85
+line top 80.58 bottom 153.65 staff 111.47 baseline 149.27
+line top 161.16 bottom 234.23 staff 192.05 baseline 229.85
 staff rect 34.33 12.51 325.67 0.77
 staff rect 34.33 24.51 325.67 0.77
 staff rect 34.33 36.51 325.67 0.77
@@ -96,7 +96,7 @@ Initial 8.34 68.69 58.80 s1 "I"
 # width 720
 size 720.00 x 153.65, staff space 6.00
 line top 0.00 bottom 73.07 staff 30.89 baseline 68.69
-line top 90.47 bottom 153.65 staff 111.47 baseline 149.27
+line top 80.58 bottom 153.65 staff 111.47 baseline 149.27
 staff rect 34.33 12.51 685.67 0.77
 staff rect 34.33 24.51 685.67 0.77
 staff rect 34.33 36.51 685.67 0.77

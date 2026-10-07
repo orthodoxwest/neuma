@@ -11,11 +11,11 @@ warning[gabc::hyphen-in-syllable] at 620..621: a hyphen at the start of a syllab
 # width 360
 size 360.00 x 475.97, staff space 6.00
 line top 0.00 bottom 73.07 staff 30.89 baseline 68.69
-line top 90.47 bottom 153.65 staff 111.47 baseline 149.27
-line top 171.05 bottom 234.23 staff 192.05 baseline 229.85
-line top 251.63 bottom 314.81 staff 272.63 baseline 310.43
-line top 332.21 bottom 395.39 staff 353.21 baseline 391.01
-line top 412.79 bottom 475.97 staff 433.79 baseline 471.59
+line top 80.58 bottom 153.65 staff 111.47 baseline 149.27
+line top 161.16 bottom 234.23 staff 192.05 baseline 229.85
+line top 241.74 bottom 314.81 staff 272.63 baseline 310.43
+line top 322.32 bottom 395.39 staff 353.21 baseline 391.01
+line top 402.90 bottom 475.97 staff 433.79 baseline 471.59
 staff rect 48.86 12.51 311.14 0.77
 staff rect 48.86 24.51 311.14 0.77
 staff rect 48.86 36.51 311.14 0.77
@@ -240,8 +240,8 @@ Annotation 19.13 20.87 11.03 "viii"
 # width 720
 size 720.00 x 234.23, staff space 6.00
 line top 0.00 bottom 73.07 staff 30.89 baseline 68.69
-line top 90.47 bottom 153.65 staff 111.47 baseline 149.27
-line top 171.05 bottom 234.23 staff 192.05 baseline 229.85
+line top 80.58 bottom 153.65 staff 111.47 baseline 149.27
+line top 161.16 bottom 234.23 staff 192.05 baseline 229.85
 staff rect 48.86 12.51 671.14 0.77
 staff rect 48.86 24.51 671.14 0.77
 staff rect 48.86 36.51 671.14 0.77

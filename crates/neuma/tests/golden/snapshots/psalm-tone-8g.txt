@@ -2,9 +2,9 @@
 # width 360
 size 360.00 x 314.81, staff space 6.00
 line top 0.00 bottom 73.07 staff 30.89 baseline 68.69
-line top 90.47 bottom 153.65 staff 111.47 baseline 149.27
-line top 167.40 bottom 234.23 staff 192.05 baseline 229.85
-line top 247.98 bottom 314.81 staff 272.63 baseline 310.43
+line top 80.58 bottom 153.65 staff 111.47 baseline 149.27
+line top 161.16 bottom 234.23 staff 192.05 baseline 229.85
+line top 241.74 bottom 314.81 staff 272.63 baseline 310.43
 staff rect 48.68 12.51 311.32 0.77
 staff rect 48.68 24.51 311.32 0.77
 staff rect 48.68 36.51 311.32 0.77
@@ -186,7 +186,7 @@ Annotation 17.74 20.87 11.03 "8 G"
 # width 720
 size 720.00 x 153.65, staff space 6.00
 line top 0.00 bottom 73.07 staff 30.89 baseline 68.69
-line top 86.82 bottom 153.65 staff 111.47 baseline 149.27
+line top 80.58 bottom 153.65 staff 111.47 baseline 149.27
 staff rect 48.68 12.51 671.32 0.77
 staff rect 48.68 24.51 671.32 0.77
 staff rect 48.68 36.51 671.32 0.77

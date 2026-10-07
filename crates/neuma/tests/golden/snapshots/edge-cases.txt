@@ -1,64 +1,64 @@
 
 # width 360
-size 360.00 x 204.05, staff space 6.00
-line top 0.00 bottom 54.29 staff 30.89 baseline 51.29
-line top 60.29 bottom 123.47 staff 81.29 baseline 119.09
-line top 134.87 bottom 204.05 staff 161.87 baseline 199.67
-staff rect 55.03 12.51 304.97 0.77
-staff rect 55.03 24.51 304.97 0.77
-staff rect 55.03 36.51 304.97 0.77
-staff rect 55.03 48.51 304.97 0.77
+size 360.03 x 234.23, staff space 6.00
+line top 0.00 bottom 73.07 staff 30.89 baseline 68.69
+line top 80.58 bottom 153.65 staff 111.47 baseline 149.27
+line top 161.16 bottom 234.23 staff 192.05 baseline 229.85
+staff rect 55.03 12.51 305.00 0.77
+staff rect 55.03 24.51 305.00 0.77
+staff rect 55.03 36.51 305.00 0.77
+staff rect 55.03 48.51 305.00 0.77
 clef DoClef 55.03 12.89
 bar rect 70.03 12.89 0.77 36.00
 bar rect 75.36 12.89 0.77 36.00
-custos CustosShort 85.73 30.89
-staff rect 0.00 62.91 360.00 0.77
-staff rect 0.00 74.91 360.00 0.77
-staff rect 0.00 86.91 360.00 0.77
-staff rect 0.00 98.91 360.00 0.77
-clef DoClef 0.00 63.29
-note PunctumQuadratum 152.50 81.29 n0
-Lyric 0.00 119.09 14.70 s2 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-Lyric 344.96 119.09 14.70 s3 "no"
-custos CustosLong 165.10 75.29
-staff rect 0.00 143.49 360.00 0.77
-staff rect 0.00 155.49 360.00 0.77
-staff rect 0.00 167.49 360.00 0.77
-staff rect 0.00 179.49 360.00 0.77
-clef DoClef 0.00 143.87
-Lyric 3.60 199.67 14.70 s4 "notes"
-note PunctumQuadratum 18.00 155.87 n1
-note PunctumQuadratum 36.00 161.87 n2
-note PodatusLowerShort 54.00 161.87 n3
-note PodatusUpperShort 57.00 155.87 n4
-Lyric 50.36 199.67 14.70 s7 "on"
-stem rect 69.15 155.87 0.77 14.83 n5
-note PunctumQuadratum 72.15 155.87 n5
-note PunctumQuadratum 78.15 161.87 n6
-Lyric 65.40 199.67 14.70 s8 "ly"
-bar rect 90.75 137.87 0.77 12.00
-note PunctumQuadratum 104.12 161.87 n7
-note PunctumQuadratum 122.12 155.87 n8
-note PunctumQuadratum 140.12 161.87 n9
-Lyric 126.59 199.67 14.70 s12 "word"
-note PunctumQuadratum 171.08 155.87 n10
-Lyric 155.92 199.67 14.70 s13 "space"
-note PunctumQuadratum 199.96 161.87 n11
-Lyric 192.34 199.67 14.70 s14 "sep"
-note PunctumQuadratum 220.44 155.87 n12
-Lyric 217.51 199.67 14.70 s15 "a"
-note PunctumQuadratum 238.44 161.87 n13
-Lyric 230.60 199.67 14.70 s16 "ra"
-note PunctumQuadratum 256.44 155.87 n14
-Lyric 248.96 199.67 14.70 s17 "te"
-bar rect 269.04 143.87 0.77 36.00
-bar rect 274.37 143.87 0.77 36.00
+note PunctumQuadratum 207.53 30.89 n0
+Lyric 55.03 68.69 14.70 s2 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+custos CustosLong 220.13 24.89
+staff rect 0.00 93.09 360.03 0.77
+staff rect 0.00 105.09 360.03 0.77
+staff rect 0.00 117.09 360.03 0.77
+staff rect 0.00 129.09 360.03 0.77
+clef DoClef 0.00 93.47
+Lyric 3.60 149.27 14.70 s3 "no"
+custos CustosLong 24.60 105.47
+staff rect 0.00 173.67 360.03 0.77
+staff rect 0.00 185.67 360.03 0.77
+staff rect 0.00 197.67 360.03 0.77
+staff rect 0.00 209.67 360.03 0.77
+clef DoClef 0.00 174.05
+Lyric 3.60 229.85 14.70 s4 "notes"
+note PunctumQuadratum 18.00 186.05 n1
+note PunctumQuadratum 36.00 192.05 n2
+note PodatusLowerShort 54.00 192.05 n3
+note PodatusUpperShort 57.00 186.05 n4
+Lyric 50.36 229.85 14.70 s7 "on"
+stem rect 69.15 186.05 0.77 14.83 n5
+note PunctumQuadratum 72.15 186.05 n5
+note PunctumQuadratum 78.15 192.05 n6
+Lyric 65.40 229.85 14.70 s8 "ly"
+bar rect 90.75 168.05 0.77 12.00
+note PunctumQuadratum 104.12 192.05 n7
+note PunctumQuadratum 122.12 186.05 n8
+note PunctumQuadratum 140.12 192.05 n9
+Lyric 126.59 229.85 14.70 s12 "word"
+note PunctumQuadratum 171.08 186.05 n10
+Lyric 155.92 229.85 14.70 s13 "space"
+note PunctumQuadratum 199.96 192.05 n11
+Lyric 192.34 229.85 14.70 s14 "sep"
+note PunctumQuadratum 220.44 186.05 n12
+Lyric 217.51 229.85 14.70 s15 "a"
+note PunctumQuadratum 238.44 192.05 n13
+Lyric 230.60 229.85 14.70 s16 "ra"
+note PunctumQuadratum 256.44 186.05 n14
+Lyric 248.96 229.85 14.70 s17 "te"
+bar rect 269.04 174.05 0.77 36.00
+bar rect 274.37 174.05 0.77 36.00
 Initial 8.34 68.69 58.80 s2 "A"
 
 # width 720
 size 720.00 x 153.65, staff space 6.00
 line top 0.00 bottom 73.07 staff 30.89 baseline 68.69
-line top 84.47 bottom 153.65 staff 111.47 baseline 149.27
+line top 80.58 bottom 153.65 staff 111.47 baseline 149.27
 staff rect 55.03 12.51 664.97 0.77
 staff rect 55.03 24.51 664.97 0.77
 staff rect 55.03 36.51 664.97 0.77

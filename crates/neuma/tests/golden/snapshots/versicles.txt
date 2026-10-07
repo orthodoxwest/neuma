@@ -2,8 +2,8 @@
 # width 360
 size 360.00 x 234.23, staff space 6.00
 line top 0.00 bottom 73.07 staff 30.89 baseline 68.69
-line top 90.47 bottom 153.65 staff 111.47 baseline 149.27
-line top 171.05 bottom 234.23 staff 192.05 baseline 229.85
+line top 80.58 bottom 153.65 staff 111.47 baseline 149.27
+line top 161.16 bottom 234.23 staff 192.05 baseline 229.85
 staff rect 0.00 12.51 360.00 0.77
 staff rect 0.00 24.51 360.00 0.77
 staff rect 0.00 36.51 360.00 0.77
@@ -140,7 +140,7 @@ Hyphen 147.87 229.85 14.70 "-"
 # width 720
 size 720.00 x 153.65, staff space 6.00
 line top 0.00 bottom 73.07 staff 30.89 baseline 68.69
-line top 90.47 bottom 153.65 staff 111.47 baseline 149.27
+line top 80.58 bottom 153.65 staff 111.47 baseline 149.27
 staff rect 0.00 12.51 720.00 0.77
 staff rect 0.00 24.51 720.00 0.77
 staff rect 0.00 36.51 720.00 0.77

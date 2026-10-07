@@ -901,13 +901,19 @@ fn lyrics_sit_where_gregorio_sets_them() {
     }
     // A note below `c` anywhere in the score lowers the lyrics on every line by a staff space
     // a step.
-    let low = lines(&src.replacen("la(h)", "la(b)", 1));
+    let low = lines(&src.replacen("la(h)", "ma(b)", 1));
     for (drop, _) in &low {
         assert!((drop - 7.3).abs() < 0.01, "{low:?}");
     }
-    let lower = lines(&format!("{src} la(a)"));
+    let lower = lines(&format!("{src} ma(a)"));
     for (drop, _) in &lower {
         assert!((drop - 8.3).abs() < 0.01, "{lower:?}");
+    }
+    // A taller letter under a low note goes lower still, on its line only.
+    let tall = lines(&src.replacen("la(h)", "Lá(b)", 1));
+    assert!(tall[0].0 > 7.5, "{tall:?}");
+    for (drop, _) in &tall[1..] {
+        assert!((drop - 7.3).abs() < 0.01, "{tall:?}");
     }
 }
 

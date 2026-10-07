@@ -2,10 +2,10 @@ info[gabc::fusion] at 196..197: neume fusion isn't drawn yet; the notes are draw
 warning[gabc::pitch-range] at 233..234: `n` is above a four-line staff
 
 # width 360
-size 360.00 x 274.78, staff space 6.00
+size 360.00 x 284.67, staff space 6.00
 line top 0.00 bottom 85.07 staff 30.89 baseline 80.69
 line top 91.07 bottom 193.60 staff 139.42 baseline 189.22
-line top 199.60 bottom 274.78 staff 220.60 baseline 270.40
+line top 199.60 bottom 284.67 staff 230.49 baseline 280.29
 staff rect 43.45 12.51 316.55 0.77
 staff rect 43.45 24.51 316.55 0.77
 staff rect 43.45 36.51 316.55 0.77
@@ -122,50 +122,50 @@ Hyphen 201.96 189.22 14.70 "-"
 Hyphen 295.48 189.22 14.70 "-"
 Hyphen 346.91 189.22 14.70 "-"
 custos CustosShort 357.38 163.42
-staff rect 0.00 202.22 360.00 0.77
-staff rect 0.00 214.22 360.00 0.77
-staff rect 0.00 226.22 360.00 0.77
-staff rect 0.00 238.22 360.00 0.77
-clef DoClef 0.00 202.60
-stem rect 15.00 244.60 0.77 8.83 n52
-note PunctumQuadratum 18.00 244.60 n52
-note PunctumQuadratum 24.00 250.60 n53
-ledger rect 19.50 250.22 9.00 0.77 n53
-note PunctumQuadratum 33.00 256.60 n54
-ledger rect 28.50 250.22 9.00 0.77 n54
-Lyric 5.25 270.40 14.70 s27 "wer"
-note BeginningAscLiquescent 52.50 226.60 n55
-note TerminatingAscLiquescent 55.50 220.60 n56
-Lyric 47.17 270.40 14.70 s28 "li"
-stem rect 68.52 220.60 0.77 8.83 n57
-note BeginningDesLiquescent 71.52 220.60 n57
-note TerminatingDesLiquescent 74.52 226.60 n58
-Lyric 54.30 270.40 14.70 s29 "qui"
-note PunctumQuadratum 87.66 226.60 n59
-note PunctumQuadratum 93.66 220.60 n60
-stem rect 95.89 220.60 0.77 12.00 n61
-note TerminatingDesLiquescent 96.66 232.60 n61
-Lyric 77.35 270.40 14.70 s30 "des"
-note PunctumQuadratum 109.68 220.60 n62
-note PunctumQuadratumAscLiquescent 115.68 214.60 n63
-Lyric 100.97 270.40 14.70 s31 "cen"
-note PunctumQuadratum 131.70 226.60 n64
-note PunctumQuadratumDesLiquescent 137.70 220.60 n65
-Lyric 124.21 270.40 14.70 s32 "tes"
-note PunctumQuadratumLiquescent 152.52 226.60 n66
-Lyric 143.81 270.40 14.70 s33 "cens"
-bar rect 163.92 202.60 0.77 36.00
-bar rect 169.24 202.60 0.77 36.00
-Hyphen 73.32 270.40 14.70 "-"
-Hyphen 95.27 270.40 14.70 "-"
-Hyphen 120.16 270.40 14.70 "-"
-Hyphen 139.31 270.40 14.70 "-"
+staff rect 0.00 212.11 360.00 0.77
+staff rect 0.00 224.11 360.00 0.77
+staff rect 0.00 236.11 360.00 0.77
+staff rect 0.00 248.11 360.00 0.77
+clef DoClef 0.00 212.49
+stem rect 15.00 254.49 0.77 8.83 n52
+note PunctumQuadratum 18.00 254.49 n52
+note PunctumQuadratum 24.00 260.49 n53
+ledger rect 19.50 260.11 9.00 0.77 n53
+note PunctumQuadratum 33.00 266.49 n54
+ledger rect 28.50 260.11 9.00 0.77 n54
+Lyric 5.25 280.29 14.70 s27 "wer"
+note BeginningAscLiquescent 52.50 236.49 n55
+note TerminatingAscLiquescent 55.50 230.49 n56
+Lyric 47.17 280.29 14.70 s28 "li"
+stem rect 68.52 230.49 0.77 8.83 n57
+note BeginningDesLiquescent 71.52 230.49 n57
+note TerminatingDesLiquescent 74.52 236.49 n58
+Lyric 54.30 280.29 14.70 s29 "qui"
+note PunctumQuadratum 87.66 236.49 n59
+note PunctumQuadratum 93.66 230.49 n60
+stem rect 95.89 230.49 0.77 12.00 n61
+note TerminatingDesLiquescent 96.66 242.49 n61
+Lyric 77.35 280.29 14.70 s30 "des"
+note PunctumQuadratum 109.68 230.49 n62
+note PunctumQuadratumAscLiquescent 115.68 224.49 n63
+Lyric 100.97 280.29 14.70 s31 "cen"
+note PunctumQuadratum 131.70 236.49 n64
+note PunctumQuadratumDesLiquescent 137.70 230.49 n65
+Lyric 124.21 280.29 14.70 s32 "tes"
+note PunctumQuadratumLiquescent 152.52 236.49 n66
+Lyric 143.81 280.29 14.70 s33 "cens"
+bar rect 163.92 212.49 0.77 36.00
+bar rect 169.24 212.49 0.77 36.00
+Hyphen 73.32 280.29 14.70 "-"
+Hyphen 95.27 280.29 14.70 "-"
+Hyphen 120.16 280.29 14.70 "-"
+Hyphen 139.31 280.29 14.70 "-"
 Initial 8.34 80.69 58.80 s1 "o"
 
 # width 720
-size 720.00 x 183.71, staff space 6.00
+size 720.00 x 193.60, staff space 6.00
 line top 0.00 bottom 102.53 staff 48.35 baseline 98.15
-line top 108.53 bottom 183.71 staff 129.53 baseline 179.33
+line top 108.53 bottom 193.60 staff 139.42 baseline 189.22
 staff rect 43.45 29.96 676.55 0.77
 staff rect 43.45 41.96 676.55 0.77
 staff rect 43.45 53.96 676.55 0.77
@@ -283,35 +283,35 @@ Hyphen 530.36 98.15 14.70 "-"
 Hyphen 621.19 98.15 14.70 "-"
 Hyphen 671.29 98.15 14.70 "-"
 custos CustosLong 717.22 54.35
-staff rect 0.00 111.14 720.00 0.77
-staff rect 0.00 123.14 720.00 0.77
-staff rect 0.00 135.14 720.00 0.77
-staff rect 0.00 147.14 720.00 0.77
-clef DoClef 0.00 111.53
-note BeginningAscLiquescent 18.00 135.53 n55
-note TerminatingAscLiquescent 21.00 129.53 n56
-Lyric 12.67 179.33 14.70 s28 "li"
-stem rect 34.02 129.53 0.77 8.83 n57
-note BeginningDesLiquescent 37.02 129.53 n57
-note TerminatingDesLiquescent 40.02 135.53 n58
-Lyric 19.80 179.33 14.70 s29 "qui"
-note PunctumQuadratum 53.16 135.53 n59
-note PunctumQuadratum 59.16 129.53 n60
-stem rect 61.39 129.53 0.77 12.00 n61
-note TerminatingDesLiquescent 62.16 141.53 n61
-Lyric 42.85 179.33 14.70 s30 "des"
-note PunctumQuadratum 75.18 129.53 n62
-note PunctumQuadratumAscLiquescent 81.18 123.53 n63
-Lyric 66.47 179.33 14.70 s31 "cen"
-note PunctumQuadratum 97.20 135.53 n64
-note PunctumQuadratumDesLiquescent 103.20 129.53 n65
-Lyric 89.71 179.33 14.70 s32 "tes"
-note PunctumQuadratumLiquescent 118.02 135.53 n66
-Lyric 109.31 179.33 14.70 s33 "cens"
-bar rect 129.42 111.53 0.77 36.00
-bar rect 134.74 111.53 0.77 36.00
-Hyphen 38.82 179.33 14.70 "-"
-Hyphen 60.77 179.33 14.70 "-"
-Hyphen 85.66 179.33 14.70 "-"
-Hyphen 104.81 179.33 14.70 "-"
+staff rect 0.00 121.04 720.00 0.77
+staff rect 0.00 133.04 720.00 0.77
+staff rect 0.00 145.04 720.00 0.77
+staff rect 0.00 157.04 720.00 0.77
+clef DoClef 0.00 121.42
+note BeginningAscLiquescent 18.00 145.42 n55
+note TerminatingAscLiquescent 21.00 139.42 n56
+Lyric 12.67 189.22 14.70 s28 "li"
+stem rect 34.02 139.42 0.77 8.83 n57
+note BeginningDesLiquescent 37.02 139.42 n57
+note TerminatingDesLiquescent 40.02 145.42 n58
+Lyric 19.80 189.22 14.70 s29 "qui"
+note PunctumQuadratum 53.16 145.42 n59
+note PunctumQuadratum 59.16 139.42 n60
+stem rect 61.39 139.42 0.77 12.00 n61
+note TerminatingDesLiquescent 62.16 151.42 n61
+Lyric 42.85 189.22 14.70 s30 "des"
+note PunctumQuadratum 75.18 139.42 n62
+note PunctumQuadratumAscLiquescent 81.18 133.42 n63
+Lyric 66.47 189.22 14.70 s31 "cen"
+note PunctumQuadratum 97.20 145.42 n64
+note PunctumQuadratumDesLiquescent 103.20 139.42 n65
+Lyric 89.71 189.22 14.70 s32 "tes"
+note PunctumQuadratumLiquescent 118.02 145.42 n66
+Lyric 109.31 189.22 14.70 s33 "cens"
+bar rect 129.42 121.42 0.77 36.00
+bar rect 134.74 121.42 0.77 36.00
+Hyphen 38.82 189.22 14.70 "-"
+Hyphen 60.77 189.22 14.70 "-"
+Hyphen 85.66 189.22 14.70 "-"
+Hyphen 104.81 189.22 14.70 "-"
 Initial 8.34 98.15 58.80 s1 "o"

@@ -3,7 +3,7 @@
 size 360.00 x 308.57, staff space 6.00
 line top 0.00 bottom 66.83 staff 24.65 baseline 62.45
 line top 74.41 bottom 147.41 staff 105.23 baseline 143.03
-line top 161.16 bottom 227.99 staff 185.81 baseline 223.61
+line top 160.61 bottom 227.99 staff 185.81 baseline 223.61
 line top 242.05 bottom 308.57 staff 266.39 baseline 304.19
 staff rect 46.80 6.27 313.20 0.77
 staff rect 46.80 18.27 313.20 0.77

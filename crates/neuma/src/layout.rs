@@ -4,7 +4,7 @@
 //! and an optimal-fit breaker picks the breaks with the least total demerits. Arithmetic is
 //! limited to add, subtract, multiply, divide and comparison (DESIGN section 13).
 
-use crate::engrave::{Break, CAP_HEIGHT, Engraving, Segment, clef_pieces, custos_piece};
+use crate::engrave::{Break, CAP_HEIGHT, Engraving, HYPHEN_TOP, Piece, Segment, clef_pieces, custos_piece};
 use crate::score::{Clef, CustosRule};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -55,6 +55,8 @@ const INITIAL_ANNOTATION_GAP: f32 = 1.6;
 pub(crate) const INITIAL_BEFORE: f32 = 1.39;
 /// Gap between the initial's column and the staff.
 const INITIAL_GAP: f32 = 1.0;
+/// Gap between the tail of a one-staff initial and the ink of the line under it.
+const INITIAL_TAIL_GAP: f32 = 0.5;
 /// Gap before an end-of-line custos: GregorioTeX's `spacebeforeeolcustos` (0.23 cm).
 const CUSTOS_GAP: f32 = 1.6;
 /// Two syllables of a word whose texts are closer than this touch, and no hyphen goes between
@@ -84,9 +86,16 @@ const TEXT_DROP: f32 = 3.3;
 /// staff).
 const BELOW_STAFF: i8 = -4;
 const LOW_NOTE_DROP: f32 = 1.0;
+/// The least gap between ink hanging below the staff and the tops of the letters under it
+/// (an accent, a capital, an ascender), in staff spaces.
+const LYRIC_CLEARANCE: f32 = 0.25;
+/// How far to either side of ink a letter still counts as under it.
+const LYRIC_SIDE: f32 = 0.2;
 /// Distance between the lyric baselines of consecutive lines: GregorioTeX's `baselineskip`
 /// (55 pt on its default staff).
 pub(crate) const BASELINE_PITCH: f32 = 13.43;
+/// The extra space above a line of text with no staff.
+const TEXT_LINE_GAP: f32 = 1.5;
 /// Space between stacked lines, in staff spaces.
 const LINE_GAP: f32 = 1.0;
 /// Demerits for each line, which outweigh any line's own within the tolerance, so a score
@@ -121,6 +130,8 @@ pub(crate) struct PlacedLine {
     pub staff: f32,
     pub baseline: f32,
     pub bottom: f32,
+    /// The line has text and no ink, so it draws no staff (and `staff` is its top).
+    pub staffless: bool,
 }
 
 /// Where the initial's capital goes, in staff spaces.
@@ -491,7 +502,7 @@ impl Engraving {
     }
 
     fn line_start(&self, first: usize) -> (Option<Clef>, f32) {
-        if self.segments[first].starts_with_clef {
+        if self.segments[first].starts_with_clef || first >= self.inkless_from {
             return (None, 0.0);
         }
         let clef = self.clef_before(first);
@@ -676,6 +687,42 @@ impl Engraving {
         out
     }
 
+    /// How far below the staff's center a line's lyric baseline must lie for every letter
+    /// (and hyphen) to clear the ink over it by [`LYRIC_CLEARANCE`]; 0 if no ink hangs low
+    /// enough to matter. `xs` and the hyphens are the line's, as set; `others` is the ink not
+    /// in its segments (the clef and the custos), placed on the line.
+    fn text_clearance(&self, first: usize, xs: &[f32], hyphens: &[f32], hyphen: Option<f32>, others: &[Piece]) -> f32 {
+        let mut boxes: Vec<(f32, f32, f32)> = Vec::new();
+        for (seg, &x) in self.segments[first..].iter().zip(xs) {
+            if let Some(t) = &seg.lyric {
+                let left = x + t.left;
+                boxes.extend(t.tops.iter().map(|&(l, r, top)| (left + l, left + r, top)));
+            }
+        }
+        let h = self.hyphen / 2.0;
+        let hyphen_top = HYPHEN_TOP * self.lyric_size;
+        boxes.extend(hyphens.iter().chain(hyphen.as_ref()).map(|&c| (c - h, c + h, hyphen_top)));
+        let mut need = 0.0f32;
+        let segment_ink = self.segments[first..]
+            .iter()
+            .zip(xs)
+            .flat_map(|(seg, &x)| seg.pieces.iter().map(move |p| (p, x)));
+        for (p, x) in segment_ink.chain(others.iter().map(|p| (p, 0.0))) {
+            let [l, _, r, bottom] = p.ink_box();
+            // Ink within the staff can't reach the text.
+            if bottom <= 3.0 {
+                continue;
+            }
+            let (l, r) = (l + x - LYRIC_SIDE, r + x + LYRIC_SIDE);
+            for &(a, b, top) in &boxes {
+                if a < r && b > l {
+                    need = need.max(bottom + LYRIC_CLEARANCE + top);
+                }
+            }
+        }
+        need
+    }
+
     /// How far the lyric baseline lies below the staff's bottom line.
     fn text_drop(&self) -> f32 {
         TEXT_DROP + LOW_NOTE_DROP * (BELOW_STAFF - self.lowest).max(0) as f32
@@ -761,7 +808,10 @@ impl Engraving {
             // segment on a line of its own.
             let stuck = over && !breakable_seen;
             if breakable || stuck {
-                let end = if stuck && last > first { last - 1 } else { last };
+                // The initial's syllable keeps to the first line even when too wide for it:
+                // ending before it would part it from the bar or clef written before it.
+                let initial = self.initial.as_ref().is_some_and(|i| i.syllable == seg.syllable && seg.first);
+                let end = if stuck && last > first && !initial { last - 1 } else { last };
                 let gaps = (last - first) as f32;
                 // A stuck line ends before this segment, so the break it takes is `end`'s.
                 let (ragged, break_cost) = self.line_end(end, opts);
@@ -904,7 +954,7 @@ impl Engraving {
         ranges.reverse();
 
         let size = self.lyric_size;
-        let mut lines = Vec::new();
+        let mut lines: Vec<PlacedLine> = Vec::new();
         let mut y = 0.0f32;
         let kept = if opts.max_lines == 0 {
             ranges.len()
@@ -990,23 +1040,21 @@ impl Engraving {
             let hyphen = hyphen.map(|h| h + line_indent);
             let custos = custos.map(|(p, x)| (p, x + line_indent));
             // Vertical extent.
+            let custos_ink = custos.map(|(p, x)| custos_piece(p, x).0);
             let mut ink_top = -3.0f32;
             let mut ink_bottom = 3.0f32;
-            // A clef on the top line rises above the staff. Later lines leave that to the gap
-            // under the line above, as Gregorio does, but the first must not be clipped.
-            let clef_ink = clef.as_ref().filter(|_| li == 0).map(|c| clef_pieces(c, 0.0).0).unwrap_or_default();
-            for p in &clef_ink {
+            // A clef rises above the staff: on the top line it must not be clipped, and on a
+            // later one it must clear the descenders of the lyrics above.
+            let clef_ink = clef.as_ref().map(|c| clef_pieces(c, 0.0).0).unwrap_or_default();
+            let line_ink = self.segments[first..=last].iter().flat_map(|s| &s.pieces);
+            // The custos counts too: one announcing a high note rises above the staff.
+            for p in clef_ink.iter().chain(line_ink).chain(&custos_ink) {
                 let (a, b) = p.y_extent();
                 ink_top = ink_top.min(a);
                 ink_bottom = ink_bottom.max(b);
             }
-            for s in &self.segments[first..=last] {
-                for p in &s.pieces {
-                    let (a, b) = p.y_extent();
-                    ink_top = ink_top.min(a);
-                    ink_bottom = ink_bottom.max(b);
-                }
-            }
+            let has_lyrics = self.segments[first..=last].iter().any(|s| s.lyric.is_some());
+            let staffless = has_lyrics && first >= self.inkless_from;
             // The annotations sit above the first staff, over the initial and any accent on it.
             // Above a one-staff initial, which stands on the lyric line, they sit over the
             // capital, beside the staff.
@@ -1014,7 +1062,7 @@ impl Engraving {
                 && let Some(init) = &self.initial
                 && init.lines == 1
             {
-                let cap_top = 3.0 + self.text_drop() - CAP_HEIGHT * init.size;
+                let cap_top = 3.0 + self.text_drop() - CAP_HEIGHT * init.size - init.accent_room;
                 if !init.annotations.is_empty() {
                     let lines = init.annotations.len() as f32;
                     ink_top =
@@ -1031,20 +1079,33 @@ impl Engraving {
                     );
                 }
             }
-            let has_lyrics = self.segments[first..=last].iter().any(|s| s.lyric.is_some());
             let mut top = y;
             let mut staff = top + (-ink_top) + 0.5;
-            let mut baseline = if has_lyrics {
+            let mut baseline = if staffless {
+                // Text alone, as a rubric after the final bar: a line of text under the last
+                // staff's lyrics, set off from them by a little more than a line of text.
+                let tops = self.segments[first..=last]
+                    .iter()
+                    .filter_map(|s| s.lyric.as_ref())
+                    .flat_map(|t| &t.tops)
+                    .fold(0.0f32, |a, e| a.max(e.2));
+                staff = top;
+                top + TEXT_LINE_GAP + tops
+            } else if has_lyrics {
                 // GregorioTeX's lyric line: a fixed drop below the staff, more for a score that
-                // goes below the staff, the same on every line. Ink hanging lower still (a stem
-                // or a sign under a low note) pushes it down rather than into the text.
-                (staff + 3.0 + self.text_drop()).max(staff + ink_bottom + 0.2 + self.ascent * size * 0.5)
+                // goes below the staff, the same on every line. Ink hanging lower still over a
+                // letter (a low note over a capital or an accent, a sign under a note) pushes
+                // it down rather than into the text.
+                let others: Vec<Piece> = clef_ink.iter().map(|p| p.shifted(line_indent)).chain(custos_ink).collect();
+                let clear = self.text_clearance(first, &xs, &hyphens, hyphen, &others);
+                (staff + 3.0 + self.text_drop()).max(staff + clear)
             } else {
                 staff + ink_bottom + 0.4
             };
             // Lines of lyrics are as far apart as GregorioTeX's baselines, or farther if the
             // notes need the room.
             if has_lyrics
+                && !staffless
                 && let Some(prev) = prev_baseline
                 && baseline < prev + BASELINE_PITCH
             {
@@ -1053,8 +1114,38 @@ impl Engraving {
                 staff += shift;
                 baseline += shift;
             }
+            // Under a one-staff initial, which stands on the first line's lyric baseline, the
+            // second line's ink keeps clear of its tail (a Q's).
+            if li == 1
+                && let Some(init) = self.initial.as_ref().filter(|i| i.lines == 1)
+                && let Some(line0) = lines.first()
+            {
+                let reach = INITIAL_BEFORE + column + INITIAL_GAP;
+                let clef_ink = clef.as_ref().map(|c| clef_pieces(c, 0.0).0).unwrap_or_default();
+                let seg_ink = self.segments[first..=last]
+                    .iter()
+                    .zip(&xs)
+                    .flat_map(|(s, &x)| s.pieces.iter().map(move |p| p.shifted(x)));
+                let under = clef_ink
+                    .into_iter()
+                    .chain(seg_ink)
+                    .filter(|p| p.ink_box()[0] < reach)
+                    .map(|p| p.ink_box()[1])
+                    .fold(f32::INFINITY, f32::min);
+                let tail = line0.baseline + init.depth_em * init.size + INITIAL_TAIL_GAP;
+                let shift = tail - (staff + under);
+                if shift > 0.0 {
+                    top += shift;
+                    staff += shift;
+                    baseline += shift;
+                }
+            }
             prev_baseline = has_lyrics.then_some(baseline);
-            let bottom = baseline + if has_lyrics { self.descent * size } else { 0.5 };
+            let bottom = if has_lyrics {
+                (baseline + self.descent * size).max(staff + ink_bottom + 0.5)
+            } else {
+                baseline + 0.5
+            };
             let right = line_indent + if ragged { natural } else { target.max(natural) };
             rights.push(right);
             lines.push(PlacedLine {
@@ -1070,6 +1161,7 @@ impl Engraving {
                 staff,
                 baseline,
                 bottom,
+                staffless,
             });
             y = bottom + LINE_GAP;
         }
@@ -1096,7 +1188,7 @@ impl Engraving {
                     size,
                     column,
                     natural_width: width,
-                    annotation_baseline: baseline - CAP_HEIGHT * size - INITIAL_ANNOTATION_GAP,
+                    annotation_baseline: baseline - CAP_HEIGHT * size - init.accent_room - INITIAL_ANNOTATION_GAP,
                 });
             }
             let last = &lines[init.lines.min(lines.len()) - 1];

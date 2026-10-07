@@ -131,7 +131,7 @@ impl Layout<'_> {
         if let (Some(init), Some(placed), Some(_)) = (&eng.initial, &self.initial, self.lines.first()) {
             let column = placed.column;
             items.push(Item::Text {
-                x: placed.x * s,
+                x: (placed.x + init.lead_em * placed.size) * s,
                 baseline: placed.baseline * s,
                 size: placed.size * s,
                 runs: vec![TextRun {
@@ -175,7 +175,8 @@ impl Layout<'_> {
         let staff_weight = crate::engrave::neume::STEM;
         let staff = line.staff - top;
         let baseline = line.baseline - top;
-        for k in [-3.0f32, -1.0, 1.0, 3.0] {
+        let staff_lines: &[f32] = if line.staffless { &[] } else { &[-3.0, -1.0, 1.0, 3.0] };
+        for &k in staff_lines {
             let y = staff + k - staff_weight / 2.0;
             items.push(Item::Rect {
                 x: line.indent * s,

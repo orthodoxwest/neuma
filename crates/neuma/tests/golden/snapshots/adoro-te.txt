@@ -2,7 +2,7 @@
 # width 360
 size 360.00 x 239.59, staff space 6.00
 line top 0.00 bottom 78.43 staff 36.25 baseline 74.05
-line top 95.83 bottom 159.01 staff 116.83 baseline 154.63
+line top 91.62 bottom 159.01 staff 116.83 baseline 154.63
 line top 176.41 bottom 239.59 staff 197.41 baseline 235.21
 staff rect 55.03 17.87 304.97 0.77
 staff rect 55.03 29.87 304.97 0.77

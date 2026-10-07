@@ -2,8 +2,8 @@
 # width 360
 size 360.00 x 234.23, staff space 6.00
 line top 0.00 bottom 73.07 staff 30.89 baseline 68.69
-line top 80.65 bottom 153.65 staff 111.47 baseline 149.27
-line top 164.79 bottom 234.23 staff 192.05 baseline 229.85
+line top 80.58 bottom 153.65 staff 111.47 baseline 149.27
+line top 160.45 bottom 234.23 staff 191.34 baseline 229.85
 staff rect 56.09 12.51 303.91 0.77
 staff rect 56.09 24.51 303.91 0.77
 staff rect 56.09 36.51 303.91 0.77
@@ -122,50 +122,50 @@ Hyphen 157.32 149.27 14.70 "-"
 Hyphen 267.17 149.27 14.70 "-"
 Hyphen 338.32 149.27 14.70 "-"
 custos CustosShort 357.38 111.47
-staff rect 0.00 173.67 360.00 0.77
-staff rect 0.00 185.67 360.00 0.77
-staff rect 0.00 197.67 360.00 0.77
-staff rect 0.00 209.67 360.00 0.77
-clef DoClef 0.00 174.05
-note PunctumQuadratum 18.00 192.05 n52
+staff rect 0.00 172.96 360.00 0.77
+staff rect 0.00 184.96 360.00 0.77
+staff rect 0.00 196.96 360.00 0.77
+staff rect 0.00 208.96 360.00 0.77
+clef DoClef 0.00 173.34
+note PunctumQuadratum 18.00 191.34 n52
 Lyric 10.52 229.85 14.70 s23 "tem"
-accidental Flat 34.35 180.05
-note PodatusLower 46.17 192.05 n53
-stem rect 48.40 174.05 0.77 18.00 n54
-note PodatusUpper 49.17 174.05 n54
-note PunctumQuadratum 55.17 174.05 n55
+accidental Flat 34.35 179.34
+note PodatusLower 46.17 191.34 n53
+stem rect 48.40 173.34 0.77 18.00 n54
+note PodatusUpper 49.17 173.34 n54
+note PunctumQuadratum 55.17 173.34 n55
 Lyric 39.36 229.85 14.70 s24 "au"
-stem rect 68.19 174.05 0.77 14.83 n56
-note PunctumQuadratum 71.19 174.05 n56
-stem rect 73.42 174.05 0.77 12.00 n57
-note PunctumQuadratum 76.42 186.05 n57
-mora Mora 73.92 169.55 n56
-note Quilisma 82.42 180.05 n58
-note PunctumQuadratum 88.42 174.05 n59
-stem rect 90.65 174.05 0.77 16.20 n59
-note PunctumInclinatum 96.65 180.05 n60
-note PunctumInclinatum 104.65 192.05 n61
-ictus VerticalEpisemaBelow 104.65 199.85 n61
-note Quilisma 110.65 186.05 n62
-note PunctumQuadratum 116.65 180.05 n63
-stem rect 118.88 180.05 0.77 10.80 n63
-note PunctumInclinatum 124.88 186.05 n64
-note PunctumInclinatum 128.88 192.05 n65
+stem rect 68.19 173.34 0.77 14.83 n56
+note PunctumQuadratum 71.19 173.34 n56
+stem rect 73.42 173.34 0.77 12.00 n57
+note PunctumQuadratum 76.42 185.34 n57
+mora Mora 73.92 168.84 n56
+note Quilisma 82.42 179.34 n58
+note PunctumQuadratum 88.42 173.34 n59
+stem rect 90.65 173.34 0.77 16.20 n59
+note PunctumInclinatum 96.65 179.34 n60
+note PunctumInclinatum 104.65 191.34 n61
+ictus VerticalEpisemaBelow 104.65 199.14 n61
+note Quilisma 110.65 185.34 n62
+note PunctumQuadratum 116.65 179.34 n63
+stem rect 118.88 179.34 0.77 10.80 n63
+note PunctumInclinatum 124.88 185.34 n64
+note PunctumInclinatum 128.88 191.34 n65
 Lyric 63.70 229.85 14.70 s25 "tem"
-note PunctumQuadratum 146.88 198.05 n66
-stem rect 149.11 198.05 0.77 16.20 n66
-mora Mora 150.00 193.55 n66
-note PunctumQuadratum 155.88 198.05 n67
-note PunctumQuadratum 164.88 198.05 n68
+note PunctumQuadratum 146.88 197.34 n66
+stem rect 149.11 197.34 0.77 16.20 n66
+mora Mora 150.00 192.84 n66
+note PunctumQuadratum 155.88 197.34 n67
+note PunctumQuadratum 164.88 197.34 n68
 Lyric 132.34 229.85 14.70 s26 "cru"
-stem rect 177.90 198.05 0.77 20.83 n69
-note PunctumQuadratum 180.90 198.05 n69
-stem rect 183.13 198.05 0.77 18.00 n70
-note PunctumQuadratum 186.13 216.05 n70
-episema rect 177.90 190.50 6.00 0.96 n69
+stem rect 177.90 197.34 0.77 20.83 n69
+note PunctumQuadratum 180.90 197.34 n69
+stem rect 183.13 197.34 0.77 18.00 n70
+note PunctumQuadratum 186.13 215.34 n70
+episema rect 177.90 189.78 6.00 0.96 n69
 Lyric 173.12 229.85 14.70 s27 "cis."
-bar rect 198.73 174.05 0.77 36.00
-bar rect 204.06 174.05 0.77 36.00
+bar rect 198.73 173.34 0.77 36.00
+bar rect 204.06 173.34 0.77 36.00
 Hyphen 52.97 229.85 14.70 "-"
 Hyphen 150.75 229.85 14.70 "-"
 Initial 8.34 68.69 58.80 s1 "C"
@@ -173,7 +173,7 @@ Initial 8.34 68.69 58.80 s1 "C"
 # width 720
 size 720.00 x 153.65, staff space 6.00
 line top 0.00 bottom 73.07 staff 30.89 baseline 68.69
-line top 84.53 bottom 153.65 staff 111.47 baseline 149.27
+line top 79.87 bottom 153.65 staff 110.76 baseline 149.27
 staff rect 56.09 12.51 663.91 0.77
 staff rect 56.09 24.51 663.91 0.77
 staff rect 56.09 36.51 663.91 0.77
@@ -295,41 +295,41 @@ Hyphen 576.28 68.69 14.70 "-"
 Hyphen 644.63 68.69 14.70 "-"
 Hyphen 702.42 68.69 14.70 "-"
 custos CustosDescLong 717.22 12.89
-staff rect 0.00 93.09 720.00 0.77
-staff rect 0.00 105.09 720.00 0.77
-staff rect 0.00 117.09 720.00 0.77
-staff rect 0.00 129.09 720.00 0.77
-clef DoClef 0.00 93.47
-stem rect 15.00 93.47 0.77 14.83 n56
-note PunctumQuadratum 18.00 93.47 n56
-stem rect 20.23 93.47 0.77 12.00 n57
-note PunctumQuadratum 23.23 105.47 n57
-mora Mora 20.74 88.97 n56
-note Quilisma 29.23 99.47 n58
-note PunctumQuadratum 35.23 93.47 n59
-stem rect 37.46 93.47 0.77 16.20 n59
-note PunctumInclinatum 43.46 99.47 n60
-note PunctumInclinatum 51.46 111.47 n61
-ictus VerticalEpisemaBelow 51.46 119.27 n61
-note Quilisma 57.46 105.47 n62
-note PunctumQuadratum 63.46 99.47 n63
-stem rect 65.70 99.47 0.77 10.80 n63
-note PunctumInclinatum 71.70 105.47 n64
-note PunctumInclinatum 75.70 111.47 n65
+staff rect 0.00 92.38 720.00 0.77
+staff rect 0.00 104.38 720.00 0.77
+staff rect 0.00 116.38 720.00 0.77
+staff rect 0.00 128.38 720.00 0.77
+clef DoClef 0.00 92.76
+stem rect 15.00 92.76 0.77 14.83 n56
+note PunctumQuadratum 18.00 92.76 n56
+stem rect 20.23 92.76 0.77 12.00 n57
+note PunctumQuadratum 23.23 104.76 n57
+mora Mora 20.74 88.26 n56
+note Quilisma 29.23 98.76 n58
+note PunctumQuadratum 35.23 92.76 n59
+stem rect 37.46 92.76 0.77 16.20 n59
+note PunctumInclinatum 43.46 98.76 n60
+note PunctumInclinatum 51.46 110.76 n61
+ictus VerticalEpisemaBelow 51.46 118.56 n61
+note Quilisma 57.46 104.76 n62
+note PunctumQuadratum 63.46 98.76 n63
+stem rect 65.70 98.76 0.77 10.80 n63
+note PunctumInclinatum 71.70 104.76 n64
+note PunctumInclinatum 75.70 110.76 n65
 Lyric 10.52 149.27 14.70 s25 "tem"
-note PunctumQuadratum 93.70 117.47 n66
-stem rect 95.93 117.47 0.77 16.20 n66
-mora Mora 96.82 112.97 n66
-note PunctumQuadratum 102.70 117.47 n67
-note PunctumQuadratum 111.70 117.47 n68
+note PunctumQuadratum 93.70 116.76 n66
+stem rect 95.93 116.76 0.77 16.20 n66
+mora Mora 96.82 112.26 n66
+note PunctumQuadratum 102.70 116.76 n67
+note PunctumQuadratum 111.70 116.76 n68
 Lyric 79.15 149.27 14.70 s26 "cru"
-stem rect 124.72 117.47 0.77 20.83 n69
-note PunctumQuadratum 127.72 117.47 n69
-stem rect 129.95 117.47 0.77 18.00 n70
-note PunctumQuadratum 132.95 135.47 n70
-episema rect 124.72 109.92 6.00 0.96 n69
+stem rect 124.72 116.76 0.77 20.83 n69
+note PunctumQuadratum 127.72 116.76 n69
+stem rect 129.95 116.76 0.77 18.00 n70
+note PunctumQuadratum 132.95 134.76 n70
+episema rect 124.72 109.20 6.00 0.96 n69
 Lyric 119.93 149.27 14.70 s27 "cis."
-bar rect 145.55 93.47 0.77 36.00
-bar rect 150.88 93.47 0.77 36.00
+bar rect 145.55 92.76 0.77 36.00
+bar rect 150.88 92.76 0.77 36.00
 Hyphen 97.57 149.27 14.70 "-"
 Initial 8.34 68.69 58.80 s1 "C"
