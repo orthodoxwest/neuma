@@ -184,8 +184,19 @@ pub(super) fn parse(text: &str, map: &TextMap, state: &mut LyricState, sink: &mu
                             if space {
                                 out.push(' ', style(state), state.elision > 0);
                             }
-                        } else if inner.chars().any(char::is_alphanumeric) {
-                            sink.warn(map.span(i, end), "gabc::verbatim-dropped", "verbatim TeX is dropped");
+                        } else {
+                            // TeX: its text, as TeX would print it in the common cases.
+                            let (chars, unknown) = super::tex::text(inner, style(state));
+                            for (ch, st, sign) in chars {
+                                out.push(ch, st, sign || state.elision > 0);
+                            }
+                            if let Some(cmd) = unknown {
+                                sink.warn(
+                                    map.span(i, end),
+                                    "gabc::verbatim-dropped",
+                                    format!("verbatim TeX `{cmd}` isn't run; the text in and around it is kept"),
+                                );
+                            }
                         }
                         (end + "</v>".len()).min(text.len())
                     }

@@ -20,6 +20,6 @@ warning	gabc::unknown-notation	459	159
 warning	gabc::unknown-special	104	14
 warning	gabc::unsupported-tag	741	286
 warning	gabc::unterminated-header	875	856
-warning	gabc::verbatim-dropped	559	234
+warning	gabc::verbatim-dropped	16	12
 info	gabc::zero-width	89	89
 info	text::synthetic-face	130	130

@@ -38,7 +38,7 @@ engine renders what it can and says what it did.
 | `gabc::unclosed-tag` | warning | the opening tag | insert the closing tag at the end of the syllable | A style tag (`<i>`, `<b>`, `<sc>`, `<ul>`, `<c>`, `<e>`) is never closed and styles the rest of the score, or a `<sp>`, `<v>` or `<alt>` has no closer in its syllable and runs to the syllable's end. |
 | `gabc::unknown-tag` | warning | the tag | | An unknown `<tag>` is set as text. |
 | `gabc::unknown-special` | warning | the text inside `<sp>` | | `<sp>…</sp>` names no known character. |
-| `gabc::verbatim-dropped` | warning | the `<v>` element | | Verbatim TeX can't be drawn and is dropped. |
+| `gabc::verbatim-dropped` | warning | the `<v>` element | | Verbatim TeX holds a command neuma doesn't run (spacing such as `\hspace`, or one it doesn't know); the text in and around it is kept. The common style and colour commands (`\textit`, `\textcolor`), accents (`\'a`) and symbols (`\ae`, `\P`) are followed and give no warning. |
 | `gabc::translation-ignored` | info | the `[…]` | | Translation text isn't drawn yet. |
 | `gabc::above-lines-text` | info | the `<alt>` element | | Above-lines text isn't drawn yet. |
 | `gabc::lyric-tie` | info | the `~` | | Lyric ties are drawn as a space. |

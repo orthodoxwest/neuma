@@ -3,6 +3,7 @@
 
 mod lyric;
 mod notes;
+mod tex;
 mod write;
 
 use std::ops::Range;
