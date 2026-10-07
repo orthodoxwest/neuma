@@ -11,6 +11,8 @@ use crate::text::TextMeasure;
 const ACCENTED_LOWER: f32 = 0.67;
 /// An accent over a capital.
 const ACCENTED_CAPITAL: f32 = 0.86;
+/// Two accents stacked over a lowercase letter (`ễ`).
+const STACKED_LOWER: f32 = 0.82;
 /// Ascenders, and anything this table doesn't know.
 const ASCENDER: f32 = 0.72;
 const CAPITAL: f32 = 0.7;
@@ -41,9 +43,17 @@ fn char_top(c: char, small_caps: bool) -> f32 {
         '0'..='9' | '†' | '‡' | '!' | '?' | '*' | '℣' | '℟' | 'Æ' | 'Œ' | 'Ç' | 'Ø' => CAPITAL,
         'A'..='Z' => CAPITAL,
         c if c.is_ascii() => ASCENDER,
-        // Latin letters with an accent: `á`, `ǽ`, `Ú`.
+        // Latin letters with an accent: `á`, `ǽ`, `Ú`, and Vietnamese `ễ`, whose accents stack.
         c if c.is_lowercase() && ('\u{c0}'..='\u{24f}').contains(&c) => ACCENTED_LOWER,
         c if c.is_uppercase() && ('\u{c0}'..='\u{24f}').contains(&c) => ACCENTED_CAPITAL,
+        c if c.is_lowercase() && ('\u{1e00}'..='\u{1eff}').contains(&c) => STACKED_LOWER,
+        c if c.is_uppercase() && ('\u{1e00}'..='\u{1eff}').contains(&c) => ACCENTED_CAPITAL + 0.1,
+        // Greek and Cyrillic.
+        'Α'..='Ω' | 'А'..='Я' => CAPITAL,
+        'Ά'..='Ώ' | 'Ѐ'..='Џ' => ACCENTED_CAPITAL,
+        'β' | 'δ' | 'ζ' | 'θ' | 'λ' | 'ξ' | 'φ' | 'ψ' | 'б' | 'ф' => ASCENDER,
+        'ά'..='ί' | 'ό'..='ώ' | 'ΐ' | 'ΰ' | 'й' | 'ѐ'..='џ' => ACCENTED_LOWER,
+        'α'..='ω' | 'а'..='я' => X_HEIGHT,
         _ => ASCENDER,
     }
 }
