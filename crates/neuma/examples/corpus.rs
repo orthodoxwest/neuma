@@ -22,7 +22,7 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use neuma::{Font, LayoutOptions, MetricsTable, Severity, StyleOptions, SvgOptions, Weights};
+use neuma::{LyricFont, MetricsTable, Severity, StyleOptions};
 
 const WIDTHS: [f32; 3] = [320.0, 720.0, 1400.0];
 
@@ -100,11 +100,11 @@ fn run(src: &str, metrics: &MetricsTable) -> Outcome {
     }
     let mut lines = 0;
     for width in WIDTHS {
-        let layout = engraving.layout(width, &LayoutOptions::default());
+        let layout = engraving.layout(width);
         lines = layout.line_count();
         let _ = layout.display();
-        let _ = layout.notes(&Weights::SOLESMES);
-        let _ = layout.svg(&SvgOptions::default());
+        let _ = layout.timeline();
+        let _ = layout.svg();
     }
     let once = parsed.score.to_gabc();
     let twice = neuma::parse(&once).score.to_gabc();
@@ -172,7 +172,7 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    let metrics = MetricsTable::from_bytes(Font::Google.table_bytes()).expect("built-in metrics");
+    let metrics = MetricsTable::from_bytes(LyricFont::Google.metrics_bytes()).expect("built-in metrics");
 
     // A panic's message, kept for the report instead of printed as it happens.
     let last_panic: Arc<Mutex<String>> = Arc::default();

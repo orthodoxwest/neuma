@@ -63,25 +63,31 @@ neuma = { git = "https://github.com/orthodoxwest/neuma" }
 ```
 
 ```rust
-use neuma::{Font, LayoutOptions, StyleOptions, SvgOptions, Weights};
+use neuma::Chant;
 
 let gabc = "name: Regina caeli;\nmode: 6;\n%%\n\
     (c4) RE(f)gí(g)na(h) cae(hj)li,(h) lae(ghg)tá(fe)re,(f.) (;) al(f)le(g)lú(hg)ia.(g.) (::)";
 
 // Parsing never fails: problems come back as diagnostics.
-let parsed = neuma::parse(gabc);
-for d in &parsed.diagnostics {
+let chant = Chant::new(gabc); // engraved once; keep it, share it: it is Send + Sync
+for d in chant.diagnostics() {
     eprintln!("{d}");
 }
 
-// Engrave once (width-independent: cache it), then lay out at any width.
-let engraving = parsed.score.engrave(Font::Google.table(), &StyleOptions::default());
-let layout = engraving.layout(720.0, &LayoutOptions::default());
-
-let svg = layout.svg(&SvgOptions::default()); // lyrics set in EB Garamond
-let timeline = layout.notes(&Weights::default()); // where and when each note is
+// Lay out at any width: cheap enough for every resize. A layout is an owned value.
+let layout = chant.layout(720.0);
+let svg = layout.svg(); // lyrics set in EB Garamond
+let timeline = layout.timeline(); // where and when each note is
 assert!(svg.starts_with("<svg") && timeline.notes.len() == 17);
+let first = &timeline.notes[0];
+assert_eq!(layout.note_at(first.cx, first.cy), Some(first.id)); // hit tests, per layout
 ```
+
+Options are built with `with_*` setters
+(`ChantOptions::default().with_initial(Initial::Lines(2))`,
+`LayoutOptions::default().with_scale(8.0)`) and passed to the `_with` form of each call:
+`Chant::with_options`, `chant.layout_with(width, &options)`, `layout.svg_with(&svg_options)`,
+`layout.timeline_with(&weights)`.
 
 ### Browser
 
@@ -101,9 +107,11 @@ await init(); // once; every call after this is synchronous
 const chant = new Chant(gabc);
 for (const d of chant.diagnostics) console.warn(`${d.code}: ${d.message}`);
 
-const draw = () => { host.innerHTML = chant.layout(host.clientWidth).svg; };
+const view = chant.view(); // where the score is shown; it frees the pages it replaces
+const draw = () => { host.innerHTML = view.layout(host.clientWidth).svg; };
 draw();
 addEventListener("resize", draw); // a new layout for each width is cheap
+host.addEventListener("click", (e) => console.log(view.page.noteAt(e.offsetX, e.offsetY))); // a note id
 ```
 
 The module fetches nothing (it works inside sandboxed pages), and lyrics are spaced for
@@ -113,15 +121,16 @@ EB Garamond from Google Fonts: load `family=EB+Garamond:ital@0;1` on the page. S
 ### iOS and Android
 
 ```swift
-let chant = Chant(gabc: source, options: defaultChantOptions())
-let page = chant.layout(width: Float(bounds.width), options: defaultLayoutOptions())
-// page.items: glyphs (outlines from glyphOutline(id:)), rectangles and text to draw;
-// page.notes: the timeline; chant.noteAt(x:y:) hit-tests a tap.
+let chant = Chant(gabc: source, options: ChantOptions())
+let layout = chant.layout(width: Float(bounds.width), options: LayoutOptions())
+// layout.page().items: glyphs (outlines from glyphOutline(id:)), rectangles and text to draw;
+// layout.timeline(weights:): when each note sounds; layout.noteAt(x:y:) hit-tests a tap.
+chant.update(src: edited) // after an edit: only what changed is engraved again
 ```
 
 ```kotlin
-val chant = Chant(source, defaultChantOptions())
-val page = chant.layout(widthPx, defaultLayoutOptions())
+val chant = Chant(source, ChantOptions())
+val page = chant.layout(widthPx, LayoutOptions(scale = 8f)).page()
 ```
 
 Build the native libraries and generate the bindings as
@@ -144,8 +153,9 @@ neuma check score.gabc            # diagnostics; exits 1 on errors
   <img src="docs/images/reflow.svg" width="100%" alt="Salve Regina laid out at widths from 840 to 420 pixels, one after another, its lines breaking anew at each width">
 </p>
 
-`Score::engrave` does the expensive, width-independent work once: neumes, glyphs, lyrics
-measured against the font, vowel centring and spacing. `Engraving::layout` only breaks lines
+A `Chant` does the expensive, width-independent work once, when it is made or updated:
+neumes, glyphs, lyrics measured against the font, vowel centring and spacing. `layout` only
+breaks lines
 (into the fewest lines that fit, as GregorioTeX does), places clefs and custodes, and
 justifies. It is cheap enough to call on every resize, rotation or text-size change.
 
@@ -155,17 +165,20 @@ A layout comes out in three forms:
   `neuma-staff`, `neuma-rubric`, …), so CSS themes it, dark mode included.
 - **A display list** of glyphs, rectangles and text runs in output units, for native canvases.
   Glyph outlines are plain `M L C Z` path data.
-- **A timeline** (`layout.notes(&weights)`), below.
+- **A timeline** (`layout.timeline()`), below.
+
+Every position is in output units (staff spaces times the layout's `scale`, 6 by default)
+from the layout's top left, with y down. Boxes are `x, y, w, h` from their top-left corner;
+the one point that is a center, a timeline note's notehead, is named `cx, cy`.
 
 ```rust
-use neuma::{Font, Initial, Item, LayoutOptions, StyleOptions};
+use neuma::{Chant, ChantOptions, Initial, Item};
 
 let gabc = "(c4) Al(f)le(gf)lú(gh)ia.(g.) (::)";
-let style = StyleOptions { initial: Initial::Lines(2), ..StyleOptions::default() };
-let engraving = neuma::parse(gabc).score.engrave(Font::Google.table(), &style);
+let chant = Chant::with_options(gabc, ChantOptions::default().with_initial(Initial::Lines(2)));
 
 for width in [800.0, 400.0] {
-    let list = engraving.layout(width, &LayoutOptions::default()).display();
+    let list = chant.layout(width).display();
     for item in &list.items {
         match item {
             Item::Glyph { glyph, x, y, scale, .. } => {
@@ -173,10 +186,17 @@ for width in [800.0, 400.0] {
             }
             Item::Rect { x, y, w, h, .. } => {} // staff and ledger lines, stems, bars, episemata
             Item::Text { x, baseline, size, runs, .. } => {} // lyrics, the initial, annotations
+            _ => {}                                          // kinds added later
         }
     }
 }
 ```
+
+For a GABC editor, `chant.update(&source)` engraves again only around the edit, the next
+layout reuses the line breaks it can, and `layout.svg_parts_reusing(&shown, &options)` reuses
+each line's SVG that the page already shows. Each layout links itself and the source both
+ways: `layout.source_at(x, y)`, `layout.note_at(x, y)`, and `layout.elements_at(byte)` or
+`layout.elements_at_utf16(caret)` for a caret counted in UTF-16 units.
 
 ### Live editing in the browser
 
@@ -192,15 +212,18 @@ CodeMirror's lint and update listeners.
 
 ```js
 const chant = new Chant(textarea.value);
+const view = chant.view();
+let page = view.layout(host.clientWidth); // a page answers its own clicks
 textarea.addEventListener("input", () => {
   chant.update(textarea.value); // keeps the options; diagnostics follow the new source
-  host.innerHTML = chant.layout(host.clientWidth, { timeline: false }).svg;
-  showProblems(chant.diagnostics); // { severity, code, message, from, to, fix }
+  page = view.layout(host.clientWidth); // a new page, or the same if nothing changed
+  host.innerHTML = page.svg;
+  showProblems(chant.diagnostics); // { severity, code, message, utf16Start, utf16End, fix }
 });
 host.addEventListener("click", (e) => {
   const box = host.getBoundingClientRect();
-  const hit = chant.sourceAt(e.clientX - box.left, e.clientY - box.top); // note, bar or syllable
-  if (hit) textarea.setSelectionRange(hit.from, hit.to);
+  const hit = page.sourceAt(e.clientX - box.left, e.clientY - box.top); // note, bar or syllable
+  if (hit) textarea.setSelectionRange(hit.utf16Start, hit.utf16End);
 });
 ```
 
@@ -221,24 +244,27 @@ note and two for a dotted note by default. Each piece of ink in the SVG lists it
 `data-note`, so following along is a few lines:
 
 ```js
+import { noteAtTime } from "./neuma.mjs";
+
 const page = chant.layout(host.clientWidth);
 host.innerHTML = page.svg;
-const { notes, duration } = page.timeline;
+const timeline = page.timeline(); // made on the first call
+const { notes, duration } = timeline;
 
 const secondsPerPulse = 0.35;
 const t0 = performance.now();
 requestAnimationFrame(function tick(now) {
   const t = (now - t0) / 1000 / secondsPerPulse;
   host.querySelectorAll(".sung").forEach((el) => el.classList.remove("sung"));
-  const note = notes.findLast((n) => n.start <= t);
-  if (note && t < note.start + note.duration) {
+  const note = noteAtTime(timeline, t); // null during a pause
+  if (note) {
     host.querySelectorAll(`[data-note~="${note.id}"]`).forEach((el) => el.classList.add("sung"));
   }
   if (t < duration) requestAnimationFrame(tick);
 });
 ```
 
-`chant.noteAt(x, y)` answers the reverse question for a tap or a click. The timeline also
+`page.noteAt(x, y)` answers the reverse question for a tap or a click. The timeline also
 marks recitation, accents, the start of each syllable, and the verse and half-verse.
 
 ### Psalm tones and automatic pointing
@@ -253,25 +279,31 @@ an acute on each accented syllable, then sets the text as chant. Every note know
 the tone, for practice tools.
 
 ```rust
-use neuma_tones::{Options, Role, Tone, apply_text, point_text};
+use neuma::ChantOptions;
+use neuma_tones::{PsalmChant, PsalmOptions, Tone, ToneRole, point, psalm};
 
 let tone = Tone::named("8.G").unwrap();
-let psalm = "1 O praise the Lord, all ye heathen * praise him, all ye nations.\n\
+let text = "1 O praise the Lord, all ye heathen * praise him, all ye nations.\n\
              2 For his merciful kindness is ever more and more towards us * \
                and the truth of the Lord endureth for ever. Praise the Lord.";
 
-let pointing = point_text(tone, psalm);
+let pointing = point(text, tone);
 assert_eq!(
-    pointing.text(),
+    pointing.text,
     "1 O praise the Lord, all ye · héathen * praise him, · all ye nátions.\n\
      2 For his merciful kindness is ever more and more tow·árds us * \
        and the truth of the Lord endureth for · ever. Práise the Lord.\n"
 );
 let sure = pointing.halves.iter().all(|h| h.confidence >= 0.8); // per half-verse, 0 to 1
 
-let setting = apply_text(tone, psalm, &Options::default());
-let score = neuma::parse(&setting.gabc).score; // engrave it like any other
-assert_eq!(setting.notes[0].role, Role::Intonation);
+let setting = psalm(text, tone, &PsalmOptions::default());
+assert_eq!(setting.notes[0].role, ToneRole::Intonation);
+// Engrave it with its spans in the psalm text, so a tapped note's source is its syllable
+// in `text`, and the setting's diagnostics (such as `point::unsure`) are the chant's. Its
+// `update` sets new text to the same tone, and `notes()` follow.
+let chant = PsalmChant::new(text, tone, &PsalmOptions::default(), ChantOptions::default());
+let first = &chant.layout(600.0).timeline().notes[0];
+assert_eq!(&text[first.span.clone()], "O");
 ```
 
 Hand-pointed text is kept as written, so a correction survives pointing again. The pointer is
@@ -282,7 +314,8 @@ of them, and those agree about 92% of the time. The ones below 80% come back as 
 diagnostics to check. The Solesmes tones and their usual endings are built in, and a tone of
 your own is a few lines of text. See [crates/neuma-tones](crates/neuma-tones/README.md).
 
-In the browser it is `point(text, "8.G")` and `psalm(text, "8.G")`; on the command line,
+In the browser it is `point(text, "8.G")`, `psalm(text, "8.G")` and
+`Chant.fromPsalm(text, "8.G")`; on the command line,
 `neuma point --tone 8.G psalm.txt` and `neuma psalm --tone 8.G psalm.txt | neuma render -`.
 
 ### Print booklets
@@ -325,13 +358,15 @@ be searched and copied; with no font it uses the standard Times faces every PDF 
 ### iOS and Android
 
 [`neuma-mobile`](crates/neuma-mobile/README.md) wraps the engine with UniFFI. A `Chant` is
-thread-safe; `layout` returns a `Page` with the items to draw (each glyph's outline is fetched
-once with `glyphOutline`) and the same timeline as the browser.
+thread-safe; `layout` returns a `ChantLayout`, whose `page()` has the items to draw (each
+glyph's outline is fetched once with `glyphOutline`), whose `timeline(weights)` is the
+browser's, and whose hit tests answer for it alone, so a thumbnail and the main view don't
+mix. Close a layout when a new one replaces it: it holds the engraving it was drawn from.
 
 ```swift
-let chant = Chant(gabc: source, options: defaultChantOptions())
-let page = chant.layout(width: Float(bounds.width), options: defaultLayoutOptions())
-for item in page.items {
+let chant = Chant(gabc: source, options: ChantOptions())
+let layout = chant.layout(width: Float(bounds.width), options: LayoutOptions())
+for item in layout.page().items {
     switch item {
     case let .glyph(glyph, x, y, scale, _, _):
         fillGlyph(glyphOutline(id: glyph)!.path, x: x, y: y, scale: scale) // your drawing code
@@ -341,42 +376,41 @@ for item in page.items {
         drawLyrics(runs.map { $0.text }.joined(), x: x, baseline: baseline, size: size)
     }
 }
-let tapped = chant.noteAt(x: Float(point.x), y: Float(point.y)) // a note id, or nil
+let tapped = layout.noteAt(x: Float(point.x), y: Float(point.y)) // a note id, or nil
 ```
 
 ```kotlin
-val chant = Chant(source, defaultChantOptions())
-val page = chant.layout(width, defaultLayoutOptions())
-for (item in page.items) when (item) {
+val chant = Chant(source, ChantOptions())
+val layout = chant.layout(width, LayoutOptions())
+for (item in layout.page().items) when (item) {
     is Item.Glyph -> drawGlyph(glyphOutline(item.glyph)!!.path, item.x, item.y, item.scale)
     is Item.Rect -> drawRect(item.x, item.y, item.w, item.h)
     is Item.Text -> drawLyrics(item.runs.joinToString("") { it.text }, item.x, item.baseline, item.size)
 }
-val id = chant.noteAt(x, y) // the note under a tap, or null
+val id = layout.noteAt(x, y) // the note under a tap, or null
+layout.close()
 chant.close()
 ```
 
 The bindings also cover diagnostics with fixes, `sourceAt` and `elementsAt` for editors,
-library entries and psalm tones.
+`setOptions` for a new text size, library entries and psalm tones (`Chant.fromPsalm`).
 
 ### Library entries
 
-`summarize` reads a score's catalogue entry without engraving it for display, cheap enough to
+`summarize` reads a score's library entry without engraving it for display, cheap enough to
 index a whole collection. It holds the headers (typed where they have a meaning, such as the
 office part and mode), the incipit and the sung text for search, the range and final in
-semitones, and counts and length:
+semitones (`lowest`, `highest`, `finalPitch`), and counts and length:
 
 ```console
-$ neuma info crates/neuma/tests/golden/regina-caeli-simple.gabc | jq '{name, kind, mode: .mode.number, incipit, range, notes, duration}'
+$ neuma info crates/neuma/tests/golden/regina-caeli-simple.gabc | jq '{name, kind, mode: .mode.number, incipit, lowest, highest, notes, duration}'
 {
   "name": "Regina caeli (simple tone)",
   "kind": "antiphon",
   "mode": 6,
   "incipit": "Regína caeli, laetáre,",
-  "range": [
-    -8,
-    0
-  ],
+  "lowest": -8,
+  "highest": 0,
   "notes": 47,
   "duration": 63
 }
@@ -391,7 +425,7 @@ The same entry is `neuma::summarize` in Rust, `summarize(gabc)` in the browser a
 neuma render [--width PX] [--scale PX] [--initial LINES] [--max-lines N] FILE|-   SVG to stdout
 neuma check FILE                    diagnostics, with fixes; exits 1 on errors
 neuma notes FILE                    the layout and timeline as JSON
-neuma info FILE...                  one catalogue entry per file, as JSON lines
+neuma info FILE...                  one library entry per file, as JSON lines
 neuma tones                         the built-in psalm tones
 neuma point --tone TONE FILE        psalm text with pointing marks added
 neuma psalm --tone TONE FILE        psalm text set to a tone, as GABC

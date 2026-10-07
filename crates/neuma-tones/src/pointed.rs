@@ -40,7 +40,7 @@ pub struct Verse {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum PartKind {
+pub enum VersePart {
     /// Up to the flex `†`.
     Flex,
     /// Up to the mediant `*`.
@@ -51,7 +51,7 @@ pub enum PartKind {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Part {
-    pub kind: PartKind,
+    pub kind: VersePart,
     pub syllables: Vec<Syllable>,
     /// Dashes before the first syllable: notes of the tone the pointing leaves out, such as
     /// the preparatory notes of a half-verse too short for them ("– · – – práise the Lord").
@@ -102,8 +102,16 @@ pub(crate) fn has_acute(text: &str) -> bool {
     text.chars().any(|c| "áéíóúýǽÁÉÍÓÚÝǼ\u{301}".contains(c))
 }
 
+impl Pointed {
+    /// Parses pointed text: one verse per line.
+    #[must_use]
+    pub fn parse(src: &str) -> Pointed {
+        parse(src)
+    }
+}
+
 /// Parses pointed text: one verse per line.
-pub fn parse(src: &str) -> Pointed {
+pub(crate) fn parse(src: &str) -> Pointed {
     let mut out = Pointed::default();
     let mut offset = 0;
     for line in src.split_inclusive('\n') {
@@ -163,13 +171,7 @@ fn tokens(line: &str) -> Vec<Range<usize>> {
 }
 
 fn diag(diags: &mut Vec<Diagnostic>, severity: Severity, span: Range<usize>, code: &'static str, message: &str) {
-    diags.push(Diagnostic {
-        severity,
-        span,
-        code,
-        message: message.to_string(),
-        fix: None,
-    });
+    diags.push(Diagnostic::new(severity, span, code, message));
 }
 
 fn parse_verse(line: &str, base: usize, diags: &mut Vec<Diagnostic>) -> Option<Verse> {
@@ -187,7 +189,7 @@ fn parse_verse(line: &str, base: usize, diags: &mut Vec<Diagnostic>) -> Option<V
         }
     }
     let mut part = Part {
-        kind: PartKind::Mediant,
+        kind: VersePart::Mediant,
         syllables: Vec::new(),
         omitted: 0,
         held_end: 0,
@@ -198,7 +200,7 @@ fn parse_verse(line: &str, base: usize, diags: &mut Vec<Diagnostic>) -> Option<V
     let mut cadence = false;
     let mut held = false;
     let mut rubrics: Vec<String> = Vec::new();
-    let close = |verse: &mut Verse, part: &mut Part, kind: PartKind, next: PartKind, span: Range<usize>, diags: &mut Vec<Diagnostic>| {
+    let close = |verse: &mut Verse, part: &mut Part, kind: VersePart, next: VersePart, span: Range<usize>, diags: &mut Vec<Diagnostic>| {
         if part.syllables.is_empty() {
             diag(
                 diags,
@@ -233,7 +235,7 @@ fn parse_verse(line: &str, base: usize, diags: &mut Vec<Diagnostic>) -> Option<V
                 pending_mark(cadence, held, &span, diags);
                 cadence = false;
                 held = false;
-                close(&mut verse, &mut part, PartKind::Mediant, PartKind::Termination, span, diags);
+                close(&mut verse, &mut part, VersePart::Mediant, VersePart::Termination, span, diags);
             }
             "†" => {
                 if seen_mediant {
@@ -260,7 +262,7 @@ fn parse_verse(line: &str, base: usize, diags: &mut Vec<Diagnostic>) -> Option<V
                 pending_mark(cadence, held, &span, diags);
                 cadence = false;
                 held = false;
-                close(&mut verse, &mut part, PartKind::Flex, PartKind::Mediant, span, diags);
+                close(&mut verse, &mut part, VersePart::Flex, VersePart::Mediant, span, diags);
             }
             "·" => cadence = true,
             // Before the first syllable a dash leaves a note out; after one it holds it.
@@ -300,7 +302,7 @@ fn parse_verse(line: &str, base: usize, diags: &mut Vec<Diagnostic>) -> Option<V
                 "a verse without a mediant `*` is sung as one half-verse",
             );
         }
-        part.kind = PartKind::Termination;
+        part.kind = VersePart::Termination;
         if part.syllables.is_empty() {
             diag(
                 diags,
@@ -499,9 +501,9 @@ impl Pointed {
                     out.push_str(" –");
                 }
                 match p.kind {
-                    PartKind::Flex => out.push_str(" †"),
-                    PartKind::Mediant => out.push_str(" *"),
-                    PartKind::Termination => {}
+                    VersePart::Flex => out.push_str(" †"),
+                    VersePart::Mediant => out.push_str(" *"),
+                    VersePart::Termination => {}
                 }
             }
             for r in &v.end_rubrics {
@@ -610,7 +612,7 @@ mod tests {
         assert_eq!(v.number, Some(1));
         assert_eq!(v.parts.len(), 2);
         let med = &v.parts[0];
-        assert_eq!(med.kind, PartKind::Mediant);
+        assert_eq!(med.kind, VersePart::Mediant);
         let cad = med.syllables.iter().position(|s| s.cadence).unwrap();
         assert_eq!(med.syllables[cad].text, "góodness;");
         assert!(med.syllables[cad].accent);
@@ -627,7 +629,7 @@ mod tests {
         let v4 = &p.verses[2];
         assert_eq!(
             v4.parts.iter().map(|p| p.kind).collect::<Vec<_>>(),
-            [PartKind::Flex, PartKind::Mediant, PartKind::Termination]
+            [VersePart::Flex, VersePart::Mediant, VersePart::Termination]
         );
         let f = &v4.parts[0].syllables;
         assert_eq!((f[f.len() - 1].text.as_str(), f[f.len() - 1].joint), ("ned,", Joint::Hyphen));

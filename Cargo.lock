@@ -380,7 +380,6 @@ dependencies = [
  "neuma",
  "neuma-book",
  "neuma-tones",
- "neuma-wasm",
 ]
 
 [[package]]

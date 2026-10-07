@@ -11,6 +11,7 @@ pub(crate) const CAP_HEIGHT: f32 = 0.65;
 
 /// Whether to set the score's first letter as a drop cap, and how many staves tall.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Initial {
     None,
     /// The initial spans this many staves (at most 4, and no more than the layout has): its
@@ -18,6 +19,18 @@ pub enum Initial {
     /// `Lines(1)`, the default, is GregorioTeX's default initial instead: four times the lyric
     /// size, standing on the first line's lyric baseline.
     Lines(u8),
+}
+
+impl Initial {
+    /// An initial `staves` staves tall, as the bindings and the CLI take a count: 0 or less
+    /// for none, and more than 4 for 4.
+    #[must_use]
+    pub fn from_staves(staves: i64) -> Initial {
+        match staves {
+            ..=0 => Initial::None,
+            n => Initial::Lines(n.min(i64::from(MAX_LINES)) as u8),
+        }
+    }
 }
 
 impl Default for Initial {

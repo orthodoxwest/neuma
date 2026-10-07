@@ -3,7 +3,7 @@
 
 use neuma::display::{DisplayList, Item, TextRole};
 use neuma::{Diagnostic, Initial, LastLine, LayoutOptions, Severity, StyleOptions};
-use neuma_tones::{Intone, Options, Tone};
+use neuma_tones::{Intone, PsalmOptions, Tone};
 
 use crate::book::{Book, Piece, Psalm, PsalmSet, Settings, Source};
 use crate::font::Fonts;
@@ -209,13 +209,12 @@ pub fn blocks(book: &Book, fonts: &Fonts) -> (Vec<Block>, Vec<Problem>) {
         }
         let right = out[start..].iter().flat_map(|b| &b.ops).map(Op::right).fold(0.0, f32::max);
         if right > m.width + 0.5 {
-            diags.push(Diagnostic {
-                severity: Severity::Warning,
-                span: 0..0,
-                code: "book::overflow",
-                message: format!("runs {:.1}pt past the right margin", right - m.width),
-                fix: None,
-            });
+            diags.push(Diagnostic::new(
+                Severity::Warning,
+                0..0,
+                "book::overflow",
+                format!("runs {:.1}pt past the right margin", right - m.width),
+            ));
         }
         problems.extend(diags.into_iter().map(|diagnostic| Problem { piece: i, diagnostic }));
     }
@@ -281,20 +280,17 @@ fn score_blocks(
     space_before: f32,
     diags: &mut Vec<Diagnostic>,
 ) -> Vec<Block> {
-    let style = StyleOptions {
-        lyric_size: m.lyric,
-        initial: if initial == 0 { Initial::None } else { Initial::Lines(initial) },
-        ..StyleOptions::default()
-    };
+    let style =
+        StyleOptions::default()
+            .with_lyric_size(m.lyric)
+            .with_initial(if initial == 0 { Initial::None } else { Initial::Lines(initial) });
     let eng = score.engrave(fonts, &style);
     diags.extend(eng.diagnostics.iter().cloned());
-    let layout = eng.layout(
+    let layout = eng.layout_with(
         width,
-        &LayoutOptions {
-            scale: m.scale,
-            last_line: if m.justify_last { LastLine::Justified } else { LastLine::Ragged },
-            ..LayoutOptions::default()
-        },
+        &LayoutOptions::default()
+            .with_scale(m.scale)
+            .with_last_line(if m.justify_last { LastLine::Justified } else { LastLine::Ragged }),
     );
     let dl = layout.display();
     let mut blocks = split_lines(&dl, fonts);
@@ -383,6 +379,7 @@ fn split_lines(dl: &DisplayList, fonts: &Fonts) -> Vec<Block> {
                 }
                 (k, out)
             }
+            _ => continue,
         };
         for op in &mut op_list {
             op.shift(0.0, -tops[k]);
@@ -405,13 +402,7 @@ fn split_lines(dl: &DisplayList, fonts: &Fonts) -> Vec<Block> {
 }
 
 fn error(diags: &mut Vec<Diagnostic>, message: String) {
-    diags.push(Diagnostic {
-        severity: Severity::Error,
-        span: 0..0,
-        code: "book::psalm",
-        message,
-        fix: None,
-    });
+    diags.push(Diagnostic::new(Severity::Error, 0..0, "book::psalm", message));
 }
 
 fn find_tone(ps: &Psalm, diags: &mut Vec<Diagnostic>) -> Option<Tone> {
@@ -428,7 +419,7 @@ fn find_tone(ps: &Psalm, diags: &mut Vec<Diagnostic>) -> Option<Tone> {
         },
         None => Vec::new(),
     };
-    let t = Tone::find(&custom, &ps.tone).or_else(|| Tone::named(&ps.tone)).cloned();
+    let t = Tone::find(&custom, &ps.tone).or_else(|| Tone::named(&ps.tone).ok()).cloned();
     if t.is_none() {
         error(diags, format!("no psalm tone `{}`; `neuma tones` lists them", ps.tone));
     }
@@ -553,16 +544,9 @@ fn psalm_blocks(ps: &Psalm, s: &Settings, fonts: &Fonts, m: &Metrics, diags: &mu
         };
         // Verse numbers are for the pointed text; chant verses go without.
         let words = strip_number(verse);
-        let setting = neuma_tones::apply_text(
-            &tone,
-            words,
-            &Options {
-                intone,
-                // The accents place the cadence; under notes they would only clutter.
-                strip_accents: true,
-                ..Options::default()
-            },
-        );
+        // The accents place the cadence; under notes they would only clutter.
+        let options = PsalmOptions::default().with_intone(intone).with_strip_accents(true);
+        let setting = neuma_tones::psalm(words, &tone, &options);
         let shift = offset_of(&text, words);
         diags.extend(setting.diagnostics.into_iter().map(|d| place(d, shift, &labels[vi], source_len)));
         let mut b = score_blocks(
@@ -597,35 +581,29 @@ fn psalm_blocks(ps: &Psalm, s: &Settings, fonts: &Fonts, m: &Metrics, diags: &mu
             let vi = chant_verses + i;
             let shift = offset_of(&text, verses[vi]) as isize - starts[i] as isize;
             let moved = |r: &std::ops::Range<usize>| (r.start as isize + shift).max(0) as usize..(r.end as isize + shift).max(0) as usize;
-            let d = Diagnostic {
-                span: moved(&d.span),
-                fix: d.fix.map(|f| neuma::Fix { span: moved(&f.span), ..f }),
-                ..d
-            };
+            let mut d = d;
+            d.span = moved(&d.span);
+            if let Some(f) = &mut d.fix {
+                f.span = moved(&f.span);
+            }
             place(d, 0, &labels[vi], source_len)
         };
-        let pointing = neuma_tones::point_text(&tone, &rest);
-        diags.extend(pointing.pointed.diagnostics.iter().cloned().map(relocate));
-        for h in pointing
-            .halves
-            .iter()
-            .filter(|h| !h.kept && h.confidence < neuma_tones::apply::UNSURE)
-        {
-            let verse = &pointing.pointed.verses[h.verse];
-            diags.push(relocate(Diagnostic {
-                severity: Severity::Info,
-                span: verse.span.clone(),
-                code: "point::unsure",
-                message: format!(
+        let pointing = neuma_tones::point(&rest, &tone);
+        diags.extend(pointing.diagnostics.iter().cloned().map(relocate));
+        for h in pointing.halves.iter().filter(|h| !h.kept && h.confidence < neuma_tones::UNSURE) {
+            diags.push(relocate(Diagnostic::new(
+                Severity::Info,
+                h.span.clone(),
+                "point::unsure",
+                format!(
                     "pointed automatically, but only {:.0}% sure: check where the accents fall",
                     h.confidence * 100.0
                 ),
-                fix: None,
-            }));
+            )));
         }
         let nsize = size * 0.9;
         let number_w = fonts.width("000", fonts.resolve(false, false), false) * nsize + size * 0.45;
-        let pointed = pointing.text();
+        let pointed = &pointing.text;
         for (k, line) in pointed.lines().enumerate() {
             let line = line.replace("\\-", "-");
             let (num, body) = split_number(&line);
@@ -678,19 +656,17 @@ fn offset_of(text: &str, part: &str) -> usize {
 
 /// A diagnostic from one verse, with its span moved by `shift` into the psalm's text (or
 /// emptied for the Gloria, which isn't in it) and the verse named in its message.
-fn place(d: Diagnostic, shift: usize, label: &str, source_len: usize) -> Diagnostic {
+fn place(mut d: Diagnostic, shift: usize, label: &str, source_len: usize) -> Diagnostic {
     let span = d.span.start + shift..d.span.end + shift;
     // A fix moves with its diagnostic, and goes when the text it edits isn't in the source.
-    let fix = d.fix.map(|f| neuma::Fix {
-        span: f.span.start + shift..f.span.end + shift,
-        ..f
+    let fix = d.fix.take().map(|mut f| {
+        f.span = f.span.start + shift..f.span.end + shift;
+        f
     });
-    Diagnostic {
-        span: if span.start >= source_len { 0..0 } else { span.clone() },
-        fix: fix.filter(|f| span.start < source_len && f.span.end <= source_len),
-        message: format!("{label}: {}", d.message),
-        ..d
-    }
+    d.fix = fix.filter(|f| span.start < source_len && f.span.end <= source_len);
+    d.span = if span.start >= source_len { 0..0 } else { span };
+    d.message = format!("{label}: {}", d.message);
+    d
 }
 
 fn strip_number(verse: &str) -> &str {

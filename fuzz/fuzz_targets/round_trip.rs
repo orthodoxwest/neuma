@@ -33,7 +33,7 @@ fn ambiguous_neighbours(score: &neuma::Score) -> bool {
         matches!(
             f,
             Figure::Bar(Bar {
-                kind: BarKind::Maior | BarKind::DottedMaior | BarKind::Finalis,
+                kind: BarKind::Full | BarKind::DottedFull | BarKind::Double,
                 ..
             })
         )
@@ -49,7 +49,7 @@ fn ambiguous_neighbours(score: &neuma::Score) -> bool {
             ) || (matches!(
                 &w[0],
                 Figure::Bar(Bar {
-                    kind: BarKind::Maior,
+                    kind: BarKind::Full,
                     high: false,
                     ..
                 })
