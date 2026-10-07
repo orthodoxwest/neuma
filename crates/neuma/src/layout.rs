@@ -208,13 +208,16 @@ fn place(cur: &Cursor, seg: &Segment, hyphen: f32, word_space: f32, line_start: 
     }
     let mut touching = false;
     if let Some(t) = &seg.lyric {
+        // A word ending in a syllable with no text (`quam(e)(/) *()`) leaves the text before
+        // it unended; the next word's text still keeps a word space from it.
+        let word_continues = cur.word_continues && !seg.word_start;
         match cur.lyric_right {
             // A text with its own hyphen may touch the next one, and needs no other.
-            Some(r) if cur.word_continues && cur.own_hyphen => {
+            Some(r) if word_continues && cur.own_hyphen => {
                 x = x.max(r - t.left);
                 touching = x + t.left - r <= HYPHEN_MIN_GAP;
             }
-            Some(r) if cur.word_continues => {
+            Some(r) if word_continues => {
                 // Within a word the texts may touch. If the notes hold them apart, a hyphen
                 // follows the first text, and the second must clear it.
                 x = x.max(r - t.left);
@@ -626,6 +629,7 @@ impl Engraving {
                     // parted touching ones, which leaves room for it; the final positions'
                     // floats aren't tested again.
                     if let Some((r, true)) = prev_lyric
+                        && !s.word_start
                         && (!trial.touching[i] || spread)
                     {
                         hyphens.push(r + self.hyphen / 2.0);
@@ -633,8 +637,13 @@ impl Engraving {
                     prev_lyric = Some((l + t.width, !t.word_end && !t.hyphenated));
                 }
             }
+            // The word goes on past the line only if the next text is in it.
+            let next_in_word = self.segments[last + 1..]
+                .iter()
+                .find(|s| s.lyric.is_some())
+                .is_some_and(|s| !s.word_start);
             let hyphen = match prev_lyric {
-                Some((r, true)) if last + 1 < self.segments.len() => Some(r + self.hyphen / 2.0),
+                Some((r, true)) if next_in_word => Some(r + self.hyphen / 2.0),
                 _ => None,
             };
             for x in xs.iter_mut().chain(hyphens.iter_mut()) {

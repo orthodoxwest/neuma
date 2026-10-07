@@ -638,6 +638,77 @@ fn justifying_a_one_word_line_never_parts_its_syllables_without_a_hyphen() {
     }
 }
 
+/// A text and its left and right ends.
+type Span = (String, f32, f32);
+
+/// Each line's lyric and hyphen texts, left to right.
+fn line_spans(src: &str, width: f32, style: &StyleOptions) -> Vec<Vec<Span>> {
+    use neuma::TextMeasure;
+    let list = parse(src)
+        .score
+        .engrave(&ApproxMeasure, style)
+        .layout(width, &LayoutOptions::default())
+        .display();
+    let mut lines: Vec<(f32, Vec<Span>)> = Vec::new();
+    for item in &list.items {
+        if let Item::Text {
+            runs,
+            x,
+            size,
+            role,
+            baseline,
+            ..
+        } = item
+            && matches!(role, TextRole::Lyric | TextRole::Hyphen)
+        {
+            let text: String = runs.iter().map(|r| r.text.as_str()).collect();
+            let right = x + ApproxMeasure.advance(&text, Default::default()) * size;
+            match lines.iter_mut().find(|l| l.0 == *baseline) {
+                Some(l) => l.1.push((text, *x, right)),
+                None => lines.push((*baseline, vec![(text, *x, right)])),
+            }
+        }
+    }
+    lines
+        .into_iter()
+        .map(|(_, mut l)| {
+            l.sort_by(|a, b| a.1.total_cmp(&b.1));
+            l
+        })
+        .collect()
+}
+
+#[test]
+fn a_word_after_one_ending_in_an_empty_syllable_keeps_its_space() {
+    // The empty syllable continues the first word, but the next text starts a new one: a word
+    // space apart, however squeezed the line, and with no hyphen between.
+    for (src, a) in [
+        ("(c4) quam(eg/fssded)(/) *() la(g) (::)", "quam"),
+        ("(c4) o(jr1)(ir) u(i) la(g) (::)", "o"),
+        ("(c4) Glo(i)(j) ri(j) la(g) (::)", "Glo"),
+    ] {
+        let src = format!("(c4) {}", [&src[5..]; 6].join(" "));
+        for lyric_size in [1.0, 2.45, 8.0] {
+            let style = StyleOptions {
+                lyric_size,
+                ..NO_INITIAL.clone()
+            };
+            for width in (100..700).step_by(9) {
+                for line in line_spans(&src, width as f32, &style) {
+                    for p in line.windows(2) {
+                        assert!(p[1].1 >= p[0].2 - 0.01, "{width} {lyric_size}: {line:?}");
+                        assert!(!(p[0].0 == a && p[1].0 == "-"), "{width} {lyric_size}: {line:?}");
+                    }
+                    // Nor at a line's end, when the next word goes on the next line.
+                    if line.last().is_some_and(|t| t.0 == "-") {
+                        assert_ne!(line[line.len() - 2].0, a, "{width} {lyric_size}: {line:?}");
+                    }
+                }
+            }
+        }
+    }
+}
+
 #[test]
 fn a_hyphen_ends_a_line_inside_a_word() {
     use neuma::TextMeasure;
