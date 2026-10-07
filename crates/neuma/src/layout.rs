@@ -4,8 +4,12 @@
 //! and an optimal-fit breaker picks the breaks with the least total demerits. Arithmetic is
 //! limited to add, subtract, multiply, divide and comparison (DESIGN section 13).
 
+use std::fmt;
+use std::sync::{Arc, OnceLock};
+
 use crate::engrave::{Break, CAP_HEIGHT, Engraving, Segment, clef_pieces, custos_piece};
 use crate::score::{Clef, CustosRule};
+use crate::source::{SourceMap, Utf16Index};
 
 /// How the last line of a layout is set.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -49,6 +53,27 @@ crate::setters!(LayoutOptions {
     last_line: LastLine => with_last_line,
     max_lines: usize => with_max_lines,
 });
+
+impl LayoutOptions {
+    /// These options as a layout uses them: a scale that isn't positive and finite replaced
+    /// by the default.
+    pub(crate) fn sanitized(self) -> LayoutOptions {
+        LayoutOptions {
+            scale: if self.scale > 0.0 && self.scale.is_finite() {
+                self.scale
+            } else {
+                LayoutOptions::default().scale
+            },
+            ..self
+        }
+    }
+}
+
+/// A width as a layout uses it: a non-finite or negative width can't be laid out, so it is
+/// treated as the narrowest or the widest column, and the output stays finite.
+pub(crate) fn usable_width(width: f32) -> f32 {
+    if width.is_nan() { 0.0 } else { width.clamp(0.0, MAX_WIDTH) }
+}
 
 /// The least space between the notes of two syllables, and of two words: GregorioTeX's
 /// `intersyllablespacenotes` (0.24 cm) and `interwordspacenotes` (0.29 cm) on its default
@@ -152,45 +177,85 @@ pub(crate) struct PlacedInitial {
     pub annotation_baseline: f32,
 }
 
-/// A layout's lines: its own, or a [`crate::Chant`]'s kept from its last layout.
+/// A layout's lines, shared by its clones.
 #[derive(Clone, Debug)]
-pub(crate) enum Lines<'e> {
-    Owned(Vec<PlacedLine>),
-    Borrowed(&'e [PlacedLine]),
-}
+pub(crate) struct Lines(Arc<[PlacedLine]>);
 
-impl std::ops::Deref for Lines<'_> {
-    type Target = [PlacedLine];
-    fn deref(&self) -> &[PlacedLine] {
-        match self {
-            Lines::Owned(v) => v,
-            Lines::Borrowed(s) => s,
-        }
+impl Lines {
+    pub(crate) fn new(lines: Vec<PlacedLine>) -> Lines {
+        Lines(lines.into())
     }
 }
 
-impl<'a> IntoIterator for &'a Lines<'_> {
+impl std::ops::Deref for Lines {
+    type Target = [PlacedLine];
+    fn deref(&self) -> &[PlacedLine] {
+        &self.0
+    }
+}
+
+impl<'a> IntoIterator for &'a Lines {
     type Item = &'a PlacedLine;
     type IntoIter = std::slice::Iter<'a, PlacedLine>;
     fn into_iter(self) -> Self::IntoIter {
-        self.iter()
+        self.0.iter()
     }
 }
 
-/// A layout at one width: the input to every output (SVG, display list, timeline, source
-/// map). Coordinates in all of them have their origin at the layout's top left, with y
-/// growing downward, in output units: staff spaces times [`LayoutOptions::scale`].
-#[derive(Clone, Debug)]
-pub struct Layout<'e> {
-    pub(crate) eng: &'e Engraving,
-    pub(crate) lines: Lines<'e>,
+/// A layout at one width: the input to every output (SVG, display list, timeline), and the
+/// answer to hit tests. Coordinates in all of them have their origin at the layout's top
+/// left, with y growing downward, in output units: staff spaces times
+/// [`LayoutOptions::scale`].
+///
+/// A layout owns what it needs (it shares its engraving), so it can be kept, sent to another
+/// thread and cloned cheaply, and it keeps answering for the score it was laid out from
+/// after its [`Chant`](crate::Chant) is edited.
+#[derive(Clone)]
+pub struct Layout {
+    pub(crate) eng: Arc<Engraving>,
+    pub(crate) lines: Lines,
     pub(crate) initial: Option<PlacedInitial>,
     pub(crate) width: f32,
     pub(crate) height: f32,
     pub(crate) scale: f32,
+    /// The UTF-16 index of the source the spans count, for a layout a `Chant` made.
+    pub(crate) utf16: Option<Arc<Utf16Index>>,
+    /// The source map, made when first asked for and shared by clones.
+    pub(crate) sources: Arc<OnceLock<SourceMap>>,
 }
 
-impl Layout<'_> {
+impl fmt::Debug for Layout {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Layout")
+            .field("width", &(self.width * self.scale))
+            .field("height", &(self.height * self.scale))
+            .field("scale", &self.scale)
+            .field("lines", &self.lines.len())
+            .finish_non_exhaustive()
+    }
+}
+
+impl Layout {
+    pub(crate) fn new(
+        eng: Arc<Engraving>,
+        lines: Vec<PlacedLine>,
+        initial: Option<PlacedInitial>,
+        width: f32,
+        height: f32,
+        scale: f32,
+    ) -> Layout {
+        Layout {
+            eng,
+            lines: Lines::new(lines),
+            initial,
+            width,
+            height,
+            scale,
+            utf16: None,
+            sources: Arc::default(),
+        }
+    }
+
     /// Width and height in output units.
     #[must_use]
     pub fn size(&self) -> (f32, f32) {
@@ -201,6 +266,13 @@ impl Layout<'_> {
     #[must_use]
     pub fn line_count(&self) -> usize {
         self.lines.len()
+    }
+
+    /// For a layout a [`Chant`](crate::Chant) made, the UTF-16 index of the source its spans
+    /// count, to convert offsets for editors that count UTF-16 units.
+    #[must_use]
+    pub fn utf16(&self) -> Option<&Utf16Index> {
+        self.utf16.as_deref()
     }
 }
 
@@ -502,7 +574,7 @@ impl BreakTable {
 /// What [`Engraving::layout_cached`] keeps between layouts: the line breaker's work, so a
 /// layout after a small edit redoes only the lines the edit touched.
 #[derive(Clone, Debug, Default)]
-pub struct LayoutCache {
+pub(crate) struct LayoutCache {
     /// Most recent last; one per column and indent the breaker has run with lately.
     tables: Vec<BreakTable>,
 }
@@ -849,15 +921,18 @@ impl Engraving {
         n - 1
     }
 
-    /// Lays the engraving out at `width` output units, with the default [`LayoutOptions`].
+    /// Lays the engraving out at `width` output units, with the default [`LayoutOptions`]. The
+    /// layout shares the engraving, so it is laid out from an `Arc`:
+    /// `Arc::new(score.engrave(metrics, &style)).layout(600.0)`. A
+    /// [`Chant`](crate::Chant) does this for you.
     #[must_use]
-    pub fn layout(&self, width: f32) -> Layout<'_> {
+    pub fn layout(self: &Arc<Self>, width: f32) -> Layout {
         self.layout_with(width, &LayoutOptions::default())
     }
 
     /// Lays the engraving out at `width` output units.
     #[must_use]
-    pub fn layout_with(&self, width: f32, opts: &LayoutOptions) -> Layout<'_> {
+    pub fn layout_with(self: &Arc<Self>, width: f32, opts: &LayoutOptions) -> Layout {
         self.layout_cached(width, opts, &mut LayoutCache::default())
     }
 
@@ -865,8 +940,7 @@ impl Engraving {
     /// work from the last layout made with `cache` wherever the engraving is unchanged. The
     /// layout is the same as without the cache; a small edit costs a few lines' breaking
     /// rather than the score's.
-    #[must_use]
-    pub fn layout_cached(&self, width: f32, opts: &LayoutOptions, cache: &mut LayoutCache) -> Layout<'_> {
+    pub(crate) fn layout_cached(self: &Arc<Self>, width: f32, opts: &LayoutOptions, cache: &mut LayoutCache) -> Layout {
         let mut layout = self.lay_out(width, opts, None, cache);
         // A capital spanning staves farther apart than the nominal pitch is wider than the
         // column the breaker left for it; break again with room for it. A new break can
@@ -882,26 +956,13 @@ impl Engraving {
         layout
     }
 
-    fn lay_out(&self, width: f32, opts: &LayoutOptions, column: Option<f32>, cache: &mut LayoutCache) -> Layout<'_> {
-        let scale = if opts.scale > 0.0 && opts.scale.is_finite() {
-            opts.scale
-        } else {
-            LayoutOptions::default().scale
-        };
-        // A non-finite or negative width can't be laid out; treat it as the narrowest or the
-        // widest column so the output stays finite.
-        let width = if width.is_nan() { 0.0 } else { width.clamp(0.0, MAX_WIDTH) };
+    fn lay_out(self: &Arc<Self>, width: f32, opts: &LayoutOptions, column: Option<f32>, cache: &mut LayoutCache) -> Layout {
+        let scale = opts.sanitized().scale;
+        let width = usable_width(width);
         let target = (width / scale).min(MAX_WIDTH);
         let n = self.segments.len();
         if n == 0 {
-            return Layout {
-                eng: self,
-                lines: Lines::Owned(Vec::new()),
-                initial: None,
-                width: target,
-                height: 0.0,
-                scale,
-            };
+            return Layout::new(Arc::clone(self), Vec::new(), None, target, 0.0, scale);
         }
         // The first `indented` lines make room for the initial, so the breaker tracks how many
         // lines came before, up to that count.
@@ -1186,14 +1247,7 @@ impl Engraving {
             rights.push(if ragged { natural } else { target.max(natural) });
         }
         let max_width = rights.iter().fold(0.0f32, |a, &b| a.max(b));
-        Layout {
-            eng: self,
-            lines: Lines::Owned(lines),
-            initial,
-            width: target.max(max_width),
-            height,
-            scale,
-        }
+        Layout::new(Arc::clone(self), lines, initial, target.max(max_width), height, scale)
     }
 }
 
@@ -1274,9 +1328,10 @@ mod tests {
                 .unwrap();
             let gap = natural.xs[k] + t.left - prev;
             for j in 0..8 {
-                let mut eng = base.clone();
+                let mut eng = (*base).clone();
                 // A gap just under or at the threshold, in steps finer than f32's rounding.
                 eng.segments[k].lyric.as_mut().unwrap().left += HYPHEN_MIN_GAP * (1.0 - j as f32 * 1.0e-4) - gap;
+                let eng = Arc::new(eng);
                 for width in (60..400).step_by(5) {
                     let layout = eng.layout_with(width as f32, &opts);
                     for line in &layout.lines {
@@ -1305,11 +1360,12 @@ mod tests {
         // A line stuck behind forbidden breaks ends before the segment that overflowed, so its
         // cost and raggedness are those of the segment it ends after, not the overflowing one.
         let style = StyleOptions::default().with_initial(Initial::None);
-        let mut eng = parse("(c4) a(g) b(h) c(g)").score.engrave(&ApproxMeasure, &style);
+        let mut eng = Arc::unwrap_or_clone(parse("(c4) a(g) b(h) c(g)").score.engrave(&ApproxMeasure, &style));
         let opts = LayoutOptions::default();
         let n = eng.segments.len();
         eng.segments[n - 3].after = Break::Forbidden;
         eng.segments[n - 2].after = Break::InMelisma;
+        let eng = Arc::new(eng);
         assert_eq!(eng.line_end(n - 3, &opts), (false, 0.0));
         assert_eq!(eng.line_end(n - 2, &opts), (false, MELISMA_DEMERITS));
         assert_eq!(eng.line_end(n - 1, &opts), (true, 0.0));

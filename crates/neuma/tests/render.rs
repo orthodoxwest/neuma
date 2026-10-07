@@ -461,7 +461,7 @@ fn max_lines_keeps_the_first_lines_as_broken() {
                     assert_eq!(map.pauses[..], full_map.pauses[..map.pauses.len()], "{ctx}");
                     if kept < full_list.lines.len() {
                         let last = map.notes.last().unwrap();
-                        let end = map.pauses.last().map_or(0.0, |p| p.start + p.weight);
+                        let end = map.pauses.last().map_or(0.0, |p| p.start + p.duration);
                         let expected = (last.start + last.duration).max(end);
                         assert!((map.duration - expected).abs() < 1e-4, "{ctx}");
                         assert!(map.pauses.iter().all(|p| p.before_note <= last.id + 1), "{ctx}");
@@ -878,7 +878,7 @@ fn a_double_mora_on_a_clivis_dots_each_note() {
     assert_eq!((dots[0].2, dots[1].2), (Some(0), Some(1)));
     let weights = Weights::default();
     let map = layout.timeline_with(&weights);
-    assert!(map.notes.iter().all(|n| n.weight == weights.mora), "{:?}", map.notes);
+    assert!(map.notes.iter().all(|n| n.duration == weights.mora), "{:?}", map.notes);
     // A double mora on a single note stays two dots side by side, on that note.
     let eng = parse("(c4) a(h..)").score.engrave(&ApproxMeasure, &NO_INITIAL);
     let list = eng.layout(400.0).display();

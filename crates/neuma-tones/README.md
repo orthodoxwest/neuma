@@ -13,9 +13,9 @@ let text = "1 The Lord is King, and hath put on glorious ap·pá-rel; * \
     the Lord hath put on his apparel, and gird·ed him-sélf with strength.";
 let setting = psalm(text, tone, &PsalmOptions::default());
 // setting.gabc:    "(c4) The(g) Lord(h) is(j) King,(j) … ap(j)pá(k)rel;(j) *(:) …"
-// setting.notes[i] describes note i of the engraved score, and its `source` is the sung
-// syllable's bytes in `text`. So are the spans of `setting.score`:
-let chant = neuma::Chant::from_score(setting.score, text, neuma::ChantOptions::default());
+// setting.notes[i] describes note i of the engraved score, and its `span` is the sung
+// syllable's bytes in `text`. So are the spans of `setting.score`, and the chant's:
+let chant = setting.into_chant(neuma::ChantOptions::default());
 ```
 
 `PsalmOptions::default().with_intone(Intone::EveryVerse)` sings the intonation on every
@@ -33,7 +33,7 @@ use neuma_tones::{Tone, point};
 
 let p = point("O come, let us sing unto the Lord * \
     let us heartily rejoice in the strength of our salvation.", Tone::named("8.G").unwrap());
-assert_eq!(p.text(), "O come, let us sing unto the · Lórd * let us heartily rejoice in the \
+assert_eq!(p.text, "O come, let us sing unto the · Lórd * let us heartily rejoice in the \
     strength of · our salvátion.\n");
 // p.halves[i].confidence: how sure the pointer is of each half-verse, 0 to 1.
 ```

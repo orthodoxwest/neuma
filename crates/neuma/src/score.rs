@@ -5,6 +5,7 @@ use std::ops::Range;
 
 /// Header fields in source order. Names keep their spelling; lookups ignore ASCII case.
 #[derive(Clone, Debug, Default)]
+#[non_exhaustive]
 pub struct Header {
     pub fields: Vec<(String, String)>,
     /// Each parsed field's source span, parallel to `fields`; not part of equality.
@@ -20,6 +21,17 @@ impl PartialEq for Header {
 impl Eq for Header {}
 
 impl Header {
+    /// An empty header.
+    #[must_use]
+    pub fn new() -> Header {
+        Header::default()
+    }
+
+    /// Adds a field after the others.
+    pub fn push(&mut self, name: &str, value: &str) {
+        self.fields.push((name.to_string(), value.to_string()));
+    }
+
     /// The source span of the first field named `name`, from its name through its closing
     /// `;`, for a header read from GABC.
     pub fn span(&self, name: &str) -> Option<Range<usize>> {
@@ -44,15 +56,26 @@ impl Header {
     }
 }
 
+/// The model's structs are `#[non_exhaustive]`: build them with their constructors (or
+/// [`ScoreBuilder`]) and set the public fields after.
 #[derive(Clone, Debug, Default, PartialEq)]
+#[non_exhaustive]
 pub struct Score {
     pub header: Header,
     pub syllables: Vec<Syllable>,
 }
 
+impl Score {
+    #[must_use]
+    pub fn new(header: Header, syllables: Vec<Syllable>) -> Score {
+        Score { header, syllables }
+    }
+}
+
 /// One syllable of text with the notation sung on it. A syllable may have no text (a clef or
 /// bar on its own) and no notation.
 #[derive(Clone, Debug, Default, PartialEq)]
+#[non_exhaustive]
 pub struct Syllable {
     pub text: Lyric,
     /// Whether this syllable starts a new word (the source had a space before it).
@@ -69,15 +92,34 @@ pub struct Syllable {
     pub euouae: bool,
 }
 
+impl Syllable {
+    /// A syllable with no source span and no `<nlba>` or `<eu>` marks.
+    #[must_use]
+    pub fn new(text: Lyric, word_start: bool, notation: Vec<Figure>) -> Syllable {
+        Syllable {
+            text,
+            word_start,
+            notation,
+            ..Syllable::default()
+        }
+    }
+}
+
 /// Lyric text as styled runs, plus an optional forced centering range (from `{…}`), in chars of
 /// the concatenated plain text.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Lyric {
     pub runs: Vec<LyricRun>,
     pub center: Option<Range<usize>>,
 }
 
 impl Lyric {
+    #[must_use]
+    pub fn new(runs: Vec<LyricRun>, center: Option<Range<usize>>) -> Lyric {
+        Lyric { runs, center }
+    }
+
     pub fn plain(&self) -> String {
         self.runs.iter().map(|r| r.text.as_str()).collect()
     }
@@ -91,22 +133,31 @@ impl Lyric {
             return Lyric::default();
         }
         Lyric {
-            runs: vec![LyricRun {
-                text: text.to_string(),
-                style: TextStyle::default(),
-                consonant: false,
-            }],
+            runs: vec![LyricRun::new(text, TextStyle::default())],
             center: None,
         }
     }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct LyricRun {
     pub text: String,
     pub style: TextStyle,
     /// Counts as consonants for vowel finding (special characters, elisions).
     pub consonant: bool,
+}
+
+impl LyricRun {
+    /// A run of `text` in `style` whose letters count for vowel finding.
+    #[must_use]
+    pub fn new(text: &str, style: TextStyle) -> LyricRun {
+        LyricRun {
+            text: text.to_string(),
+            style,
+            consonant: false,
+        }
+    }
 }
 
 /// How a run of text is set.
@@ -199,6 +250,7 @@ pub enum ClefKind {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Clef {
     pub kind: ClefKind,
     /// Staff line, 1 (bottom) to 4.
@@ -209,6 +261,17 @@ pub struct Clef {
 }
 
 impl Clef {
+    /// A clef on staff line `line` (1, the bottom, to 4), with no key flat.
+    #[must_use]
+    pub fn new(kind: ClefKind, line: u8, span: Range<usize>) -> Clef {
+        Clef {
+            kind,
+            line,
+            flat: false,
+            span,
+        }
+    }
+
     /// Staff position of the clef's line.
     pub fn position(&self) -> StaffPosition {
         2 * self.line as i8 - 5
@@ -256,6 +319,7 @@ pub enum Placement {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub struct Note {
     pub position: StaffPosition,
     pub shape: NoteShape,
@@ -303,12 +367,24 @@ impl Note {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Episema {
     pub placement: Placement,
     /// `_2`: don't bridge to the next episema.
     pub no_bridge: bool,
     /// `_3` `_4` `_5`: a small episema aligned left, center or right.
     pub small: Option<u8>,
+}
+
+impl Episema {
+    /// A full-width episema that bridges to the next.
+    #[must_use]
+    pub fn new(placement: Placement) -> Episema {
+        Episema {
+            placement,
+            ..Episema::default()
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -358,26 +434,35 @@ pub enum BarKind {
     Virgula,
     /// `^`
     Minimis,
-    /// `,`: the quarter bar.
-    Minima,
-    /// `;`: the half bar.
-    Minor,
-    /// `:`: the full bar.
-    Maior,
+    /// `,`: the quarter bar (divisio minima).
+    Quarter,
+    /// `;`: the half bar (divisio minor).
+    Half,
+    /// `:`: the full bar (divisio maior).
+    Full,
     /// `:?`: the dotted full bar.
-    DottedMaior,
-    /// `::`: the double bar.
-    Finalis,
+    DottedFull,
+    /// `::`: the double bar (divisio finalis).
+    Double,
     /// `;1`–`;8`
     Dominican(u8),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Bar {
     pub kind: BarKind,
     /// `` `0 `` `,0` `^0`: drawn on the ledger line above the staff.
     pub high: bool,
     pub span: Range<usize>,
+}
+
+impl Bar {
+    /// A bar at its usual height.
+    #[must_use]
+    pub fn new(kind: BarKind, span: Range<usize>) -> Bar {
+        Bar { kind, high: false, span }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -409,18 +494,13 @@ impl ScoreBuilder {
     }
 
     pub fn header(mut self, name: &str, value: &str) -> ScoreBuilder {
-        self.score.header.fields.push((name.to_string(), value.to_string()));
+        self.score.header.push(name, value);
         self
     }
 
     /// Adds a syllable. `word_start` is true for the first syllable of each word.
     pub fn syllable(mut self, text: Lyric, word_start: bool, notation: Vec<Figure>) -> ScoreBuilder {
-        self.score.syllables.push(Syllable {
-            text,
-            word_start,
-            notation,
-            ..Syllable::default()
-        });
+        self.score.syllables.push(Syllable::new(text, word_start, notation));
         self
     }
 
@@ -434,28 +514,11 @@ impl ScoreBuilder {
     }
 
     pub fn clef(self, kind: ClefKind, line: u8) -> ScoreBuilder {
-        self.syllable(
-            Lyric::default(),
-            true,
-            vec![Figure::Clef(Clef {
-                kind,
-                line,
-                flat: false,
-                span: 0..0,
-            })],
-        )
+        self.syllable(Lyric::default(), true, vec![Figure::Clef(Clef::new(kind, line, 0..0))])
     }
 
     pub fn bar(self, kind: BarKind) -> ScoreBuilder {
-        self.syllable(
-            Lyric::default(),
-            true,
-            vec![Figure::Bar(Bar {
-                kind,
-                high: false,
-                span: 0..0,
-            })],
-        )
+        self.syllable(Lyric::default(), true, vec![Figure::Bar(Bar::new(kind, 0..0))])
     }
 
     pub fn build(self) -> Score {

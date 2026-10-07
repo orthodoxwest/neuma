@@ -115,7 +115,7 @@ impl Parser<'_, '_> {
                         self.i += 1;
                         self.bar(BarKind::Dominican(d - b'0'), false, start);
                     } else {
-                        self.bar(BarKind::Minima, high, start);
+                        self.bar(BarKind::Quarter, high, start);
                     }
                 }
                 b';' => {
@@ -124,17 +124,17 @@ impl Parser<'_, '_> {
                         self.i += 1;
                         self.bar(BarKind::Dominican(d - b'0'), false, start);
                     } else {
-                        self.bar(BarKind::Minor, false, start);
+                        self.bar(BarKind::Half, false, start);
                     }
                 }
                 b':' => {
                     self.i += 1;
                     if self.take(b':') {
-                        self.bar(BarKind::Finalis, false, start);
+                        self.bar(BarKind::Double, false, start);
                     } else if self.take(b'?') {
-                        self.bar(BarKind::DottedMaior, false, start);
+                        self.bar(BarKind::DottedFull, false, start);
                     } else {
-                        self.bar(BarKind::Maior, false, start);
+                        self.bar(BarKind::Full, false, start);
                     }
                 }
                 b'z' | b'Z' => {

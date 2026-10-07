@@ -4,111 +4,169 @@
 
 Editor support: source maps, diagnostics with fixes, SVG a line at a time, and faster
 engraving and layout. Then the API for 0.1: one front door (`neuma::Chant`) that the
-browser, mobile and command-line front ends wrap, and one name for each concept in Rust,
-JavaScript, Kotlin/Swift and the JSON. The rendered output (SVG, display lists, timelines,
-PDFs) is byte-identical to before; only names and shapes changed.
+browser, mobile and command-line front ends wrap, owned layouts that answer their own hit
+tests, and one name for each concept in Rust, JavaScript, Kotlin/Swift and the JSON.
+
+What renders is byte-identical to before for the same options (SVG, display lists,
+timelines, PDFs). Some behavior did change:
+
+- A `LayoutOptions::scale` that isn't positive and finite now falls back to the default 6
+  (it was 1), and a lyric size that isn't to 2.45, in every front end.
+- The mobile bindings' lyric font default is now Google Fonts' EB Garamond, as in the browser
+  and the CLI (it was EB Garamond 12).
+- Hit tests answer for the layout asked, not for whichever layout ran last: a thumbnail laid
+  out after the main view no longer changes what a tap on the main view finds.
+- The browser package makes a page's timeline only when it is read, and returns the same
+  page for a repeated `layout` call; the mobile `Layout` makes its timeline when asked.
+- Weights follow one rule everywhere: a negative or non-finite weight keeps its default, and
+  none goes above 1000.
+- `neuma book` reports `point::unsure` at the half-verse's syllables rather than the whole
+  verse.
 
 ### The 0.1 API (breaking)
 
 **Rust: `neuma`**
 
-- New: **`Chant`**, an owned, `Send + Sync` score that keeps its engraving and its layout and
-  SVG caches. `Chant::new(gabc)`, `Chant::with_options(gabc, ChantOptions)`,
-  `Chant::from_score(score, source, options)`, `update(gabc)` (incremental),
-  `diagnostics()` (parse and engrave, one list), `summary()`, `layout(width)` /
-  `layout_with(width, &LayoutOptions)` (a repeat at the same width and options returns the
-  kept layout), `svg_parts()` / `svg_parts_with(&SvgOptions)`, and hit tests on the last
-  layout: `note_at(x, y)`, `source_at(x, y)`, `elements_at(offset, OffsetUnit)`.
-  `ChantOptions` holds the lyric font, the `StyleOptions`, and optionally a custom
-  `TextMeasure` (`with_measure`).
+- New: **`Chant`**, an owned, `Send + Sync` score that keeps its engraving and the caches
+  that make the next edit and layout cheap. `Chant::new(gabc)`,
+  `Chant::with_options(gabc, ChantOptions)`, `Chant::from_score(score, source, diagnostics,
+  options)`, `update(gabc)` and `update_score(…)` (incremental), `set_options(ChantOptions)`
+  (engraves again only if the options engrave differently), `diagnostics()` (reading and
+  engraving, one list), `summary()`, `layout(width)` / `layout_with(width, &LayoutOptions)`
+  through `&self` (it remembers its last few layouts, keyed on the sanitized options), and
+  `svg_parts(&layout, &SvgOptions)`, which reuses each unchanged line's SVG and says which in
+  `SvgLine::reused_from`. `ChantOptions` holds the lyric font, the `StyleOptions` (with a
+  setter for each of its fields), and optionally a custom `TextMeasure` (`with_measure`).
+  Its `Debug` leaves out the engraving and caches.
+- **`Layout`** is owned (`'static`), cheap to clone and `Send + Sync`: it shares its
+  engraving through an `Arc`. Hit tests live on it: `note_at(x, y)`, `source_at(x, y)` and
+  `elements_at(byte_offset)`, over `source_map()`, which is made once per layout and shared
+  by its clones. `Layout::utf16()` converts carets counted in UTF-16 units, for layouts a
+  `Chant` made.
+- `Score::engrave` returns an **`Arc<Engraving>`**, and `Engraving::layout` takes one, so
+  layouts share it; `Chant::update` takes it back without a copy once no layout holds it.
 - Calls with options come in two forms: the plain one uses the defaults and `_with` takes
   them. `Engraving::layout(width, &opts)` is now `layout(width)` / `layout_with(width, &opts)`;
   `Layout::svg(&opts)` is `svg()` / `svg_with(&opts)`; `Layout::svg_parts(&opts)` is
   `svg_parts()` / `svg_parts_with(&opts)`; `DisplayList::svg(&opts)` likewise.
 - `NoteMap` → **`Timeline`**, `MappedNote` → **`TimelineNote`**, `Layout::notes(&weights)` →
   **`Layout::timeline()`** / `timeline_with(&weights)`. `TimelineNote.x`/`y` → **`cx`/`cy`**
-  (they are the notehead's center). New: `Timeline::note_at_time(t)` for a playhead.
+  (they are the notehead's center). `TimelineNote.weight` (the same as `duration`) and
+  `quilisma` (the same as `shape == Quilisma`) are gone; `staff_position`, `semitones` and
+  `half` are `i32`/`u32` like the other numbers, as are `Summary`'s pitches. `Pause.weight`
+  → **`duration`**. `Timeline::note_at(x, y)` is gone: hit testing is the layout's. New:
+  `Timeline::note_at_time(t)` for a playhead.
+- `BarKind` speaks English, as the JSON, the bindings and `Weights` do: `Minima`, `Minor`,
+  `Maior`, `DottedMaior`, `Finalis` → **`Quarter`, `Half`, `Full`, `DottedFull`, `Double`**.
 - `Weights` fields `minima`, `minor`, `maior`, `finalis` → **`quarter`, `half`, `full`,
-  `double`**, the names the bindings and pause kinds already used. `Layout::timeline_with`
-  now applies the bindings' rule: a negative or non-finite weight keeps its default and
-  none goes above `Weights::MAX` (1000); `Weights::sanitized` does it by hand.
+  `double`**. `Weights::sanitized` applies the rule above by hand.
 - `Font` → **`LyricFont`**, `Font::table()` → `LyricFont::metrics()`, `Font::table_bytes()` →
-  `LyricFont::metrics_bytes()`.
-- `SourceMap::at(offset)` → **`SourceMap::elements_at(offset)`**; new `SourceMap::note_at(x, y)`
-  (hit testing needs no `Weights`); new `OffsetUnit { Utf8, Utf16 }`.
+  `LyricFont::metrics_bytes()`. The metrics table's `Face` → `FaceMetrics`, so the one
+  `Face` is the text style's.
+- `SourceMap::at(offset)` → **`SourceMap::elements_at(offset)`**; new `SourceMap::note_at(x, y)`.
+  `SourceMap.lines` are `LineBox`es (top, bottom, staff, baseline), and `Element.cx`, a
+  note's notehead center, is public (and in the JSON as `cx`).
 - `Summary.range: Option<(i16, i16)>` → **`lowest`, `highest`**.
+- The score model (`Score`, `Header`, `Syllable`, `Lyric`, `LyricRun`, `Note`, `Clef`, `Bar`,
+  `Episema`) is `#[non_exhaustive]`, with constructors: `Score::new`, `Header::new` and
+  `push`, `Syllable::new`, `Lyric::new`, `LyricRun::new`, `Note::new`, `Clef::new`,
+  `Bar::new`, `Episema::new`, and `ScoreBuilder`.
 - Options and output structs, and enums that may grow, are `#[non_exhaustive]`: build options
   with `with_*` setters (`LayoutOptions::default().with_scale(8.0)`) instead of struct
   literals, and give matches on `Item`, `Ink`, `TextRole`, `PauseKind`, `BarKind`,
   `NoteShape`, `OfficePart`, `ElementKind` a `_` arm. `Severity` stays exhaustive.
   `Diagnostic::new(severity, span, code, message).with_fix(fix)` builds a diagnostic.
-  `Initial::lines(n)` reads a staff count as the bindings and CLI do (0 or less is none, at
-  most 4).
-- A `LayoutOptions::scale` that isn't positive and finite now falls back to the default 6
-  (it was 1); a lyric size that isn't is replaced by 2.45, everywhere.
+  `Initial::from_staves(n)` reads a staff count as the bindings and CLI do (0 or less is
+  none, at most 4).
 - `#[must_use]` on the pure functions and builders.
-- Re-exported at the root: `BarKind`, `NoteShape`, `TextStyle`, `MetricsError`,
-  `OffsetUnit`. Removed from the root: `to_gabc` (use `Score::to_gabc`). Hidden:
-  `decimal` (now private), `glyphs` (the generated table; `glyph_outline` stays), and the
-  metrics builders `Face::new`, `Face::set_*`, `MetricsTable::to_bytes` (for
-  `neuma-metrics`).
+- Re-exported at the root: `BarKind`, `NoteShape`, `TextStyle`, `MetricsError`. Removed from
+  the root: `to_gabc` (use `Score::to_gabc`; `gabc::to_gabc` is private). Private now:
+  `EngraveCache`, `LayoutCache`, `SvgCache`, `Engraving::layout_cached`,
+  `Layout::svg_parts_cached` (a `Chant` keeps them) and `decimal`. Hidden: `glyphs` (the
+  generated table; `glyph_outline` stays), the metrics builders `FaceMetrics::new`,
+  `FaceMetrics::set_*`, `MetricsTable::to_bytes` (for `neuma-metrics`), and
+  `json::{string, number, span, source_span}` (for the bindings).
 - New `json` feature: `neuma::json`, the JSON the browser package and the CLI print.
 
 **Rust: `neuma-tones`**
 
-- `apply_text(tone, text, &Options)` → **`psalm(text, tone, &PsalmOptions)`**, `apply(tone,
-  &Pointed, …)` → `psalm_pointed(&Pointed, tone, …)`, `point_text(tone, text)` →
-  **`point(text, tone)`**, `point(tone, &Pointed)` → `point_pointed(&Pointed, tone)`: the text
-  comes first everywhere.
+- `apply_text(tone, text, &Options)` → **`psalm(text, tone, &PsalmOptions)`**,
+  `point_text(tone, text)` → **`point(text, tone)`**: the text comes first.
+  `PsalmSetting::into_chant(ChantOptions)` engraves a setting with its spans in the psalm
+  text, and its diagnostics (such as `point::unsure`) as the chant's; `PsalmSetting.text` is
+  the text it was set from.
 - `Options` → **`PsalmOptions`** (setters `with_intone`, `with_auto_point`,
   `with_strip_accents`, `with_name`); `no_auto_point` → **`auto_point`** (default `true`).
-- `Setting` → **`PsalmSetting`**, `NoteRole` → **`PsalmNote`**, `Role` → **`ToneRole`**,
-  `PartKind` → **`VersePart`**, matching the mobile bindings.
+- `Setting` → **`PsalmSetting`**, `NoteRole` → **`PsalmNote`** (its `source` → **`span`**),
+  `Role` → **`ToneRole`**, `PartKind` → **`VersePart`**, matching the mobile bindings.
 - `PsalmSetting.score`'s spans now count bytes of the psalm text (a note's is its sung
-  syllable's, a bar's is empty at the end of its half-verse), so
-  `Chant::from_score(setting.score, text, …)` hit-tests and times in the text.
+  syllable's, a bar's is empty at the end of its half-verse).
+- `Pointing` is `{ text, halves, diagnostics }`: the pointed text as a field (it was the
+  `text()` method beside `Pointed::to_text()`), and each `HalfPointing` has its `span` in the
+  text. The parsed `Pointed` model (`Verse`, `Part`, `Joint`, `Syllable`), `apply`/
+  `psalm_pointed` and `point`/`point_pointed` on it are private; `VersePart` stays.
 - `ToneError` is an enum, `Unknown { name }` or `Invalid { reason }`, and
   `Tone::named` returns `Result<&Tone, ToneError>`.
 - `UNSURE` is at the root; the modules are private (everything public is re-exported), and
-  `point::training` and `syllable::syllables` are gone. `Pointed::parse` replaces
-  `pointed::parse`.
+  `point::training` and `syllable::syllables` are gone.
 
 **Rust: `neuma-book`.** `compose`, `paginate`, `pdf`, `svg` and `text` are private; the
 `Document`, `Book` and font APIs are unchanged.
 
 **Browser (`neuma.mjs`) and the JSON (`neuma notes`, `neuma info`)**
 
+- `chant.layout(width, options)` returns a **`Page`**: `width`, `height`, `svg` or
+  `svgParts`, a `timeline` getter that asks the engine on first read, and its own
+  `noteAt(x, y)`, `sourceAt(x, y)` and `elementsAt(caret, { unit })`, which answer for that
+  page whatever was laid out since. After `update` or `setOptions` a page made before throws
+  on its next question. `chant.noteAt`, `sourceAt` and `elementsAt`, and
+  `layout(…, { timeline: false })`, are gone. The same `layout` arguments with no change
+  between return the same page.
+- New: `Chant.fromPsalm(text, tone, { intone, autoPoint, …chantOptions })`, with
+  `chant.psalm` (`{ gabc, notes }`) and `update(text)` setting new text to the same tone;
+  `chant.setOptions(options)`; `noteAtTime(timeline, t)`.
 - Diagnostics, fixes and source elements: `from`/`to` → **`utf16Start`/`utf16End`**;
-  `fix.insert` → **`fix.replacement`**.
+  `fix.insert` → **`fix.replacement`**. Source elements gain `cx`.
 - Timeline notes: `x`/`y` → **`cx`/`cy`**; `spanStart`/`spanEnd` → **`sourceStart`/
-  `sourceEnd`**, with new `sourceUtf16Start`/`sourceUtf16End`.
+  `sourceEnd`**, with new `sourceUtf16Start`/`sourceUtf16End`; `quilisma` is gone (it is
+  `shape`). Pauses: `weight` → **`duration`**.
+- Psalm notes: `start`/`end` → **`sourceStart`/`sourceEnd`**, with
+  `sourceUtf16Start`/`sourceUtf16End`, as the timeline names a note's source. Pointed halves
+  gain the same four.
 - Library entries: `range: [lo, hi]` → **`lowest`, `highest`**.
 - `tones()` → **`toneNames()`**; `psalm(…, { pointing: "manual" })` → `psalm(…, { autoPoint:
-  false })`; `elementsAt(caret, { units })` → `elementsAt(caret, { unit })`. Psalm notes gain
-  `utf16Start`/`utf16End`. New: `noteAtTime(timeline, t)`.
+  false })`.
 - The scale, weight, initial and lyric-size rules are the engine's; the glue no longer
-  checks the scale itself. Laying out again at the same width and options reuses the layout.
+  checks the scale itself.
 - `neuma-wasm` (the Rust side) is a thin wrapper over `neuma::Chant`; its `json` module
-  moved to `neuma::json`, and `Chant::layout_with` is `Chant::layout`.
+  moved to `neuma::json`, and `Outputs` is gone.
 
 **Mobile (UniFFI)**
 
-- `Chant.update(gabc)`: engrave again after an edit, as in the browser.
+- `Chant.layout(width, options)` returns a **`Layout`** object: `page()` (what to draw),
+  `timeline(weights)`, `noteAtTime(t, weights)` (keeping the timeline between calls),
+  `noteAt`, `sourceAt` and `elementsAt`. Each answers for its layout, and a tap no longer
+  waits on a layout in progress. `Page.timeline`, `LayoutOptions.timeline` and
+  `LayoutOptions.weights` are gone, as are `Chant.noteAt`, `sourceAt` and `elementsAt`.
+- New: `Chant.update(src)` (engrave again after an edit), `Chant.setOptions(options)` (a new
+  text size), and `Chant.fromPsalm(text, tone, PsalmOptions, ChantOptions)` with
+  `psalmNotes()`.
+- `ToneException`'s message is the error's ("no built-in tone 9.z").
 - Every option record field has a default: `ChantOptions()`, `LayoutOptions()`,
   `Weights()`, `PsalmOptions()`. `defaultChantOptions()`, `defaultLayoutOptions()` and
-  `defaultWeights()` are gone. Enum fields (`font`, `lastLine`, `intone`) are optional, null
-  for the default, since the bindings can't give an enum field a default value.
-- The lyric font default is now **Google Fonts' EB Garamond**, as in the browser and the CLI
-  (it was EB Garamond 12). `ChantOptions.lyricSize` defaults to 2.45, `LayoutOptions.scale`
-  to 6, and a value the engine can't use falls back the same way.
+  `defaultWeights()` are gone. Enum fields (`font`, `lastLine`, `intone`) are nullable, null
+  meaning the default each field names, since the bindings can't give an enum field another
+  default.
+- `ChantOptions.lyricSize` defaults to 2.45, `LayoutOptions.scale` to 6, and a value the
+  engine can't use falls back the same way.
 - Ids, indices, counts and offsets are signed `Int` (`Int32` in Swift), glyph ids
   included.
-- `Page.notes`, `pauses` and `duration` → **`Page.timeline`** (`notes`, `pauses`,
-  `duration`), null with `LayoutOptions(timeline = false)`. `Note` → **`TimelineNote`**, `x`/`y`
-  → `cx`/`cy`, `spanStart`/`spanEnd` → `sourceStart`/`sourceEnd`, plus
-  `sourceUtf16Start`/`sourceUtf16End`.
+- `Note` → **`TimelineNote`**, `x`/`y` → `cx`/`cy`, `spanStart`/`spanEnd` →
+  `sourceStart`/`sourceEnd`, plus `sourceUtf16Start`/`sourceUtf16End`; `quilisma` is gone.
+  `Pause.weight` → **`duration`**. `SourceElement` gains `cx`.
 - `psalm(text, tone, intone)` → `psalm(text, tone, PsalmOptions(intone, autoPoint))`, likewise
-  `psalmWithTone`; `PsalmNote` gains `utf16Start`/`utf16End`.
+  `psalmWithTone`; `PsalmNote`'s range is `sourceStart`/`sourceEnd` and
+  `sourceUtf16Start`/`sourceUtf16End`, and `HalfPointing` gains the same.
 
 **Command line.** `neuma psalm --no-point` → `--no-auto-point`. `neuma-cli` no longer depends on
 `neuma-wasm`. The JSON renames above apply to `neuma notes` and `neuma info`.
@@ -141,12 +199,10 @@ PDFs) is byte-identical to before; only names and shapes changed.
 - `Fix` on diagnostics where one edit makes sense, with `Fix::apply`.
 - `Layout::svg_parts()`: the SVG as a head, definitions and one string per line, so a page
   can replace only the lines an edit changed.
-- `EngraveCache`, `Engraving::layout_cached` with `LayoutCache`, and
-  `Layout::svg_parts_cached` with `SvgCache`: after an edit, engraving, line breaking and
-  each line's SVG are redone only where the edit could change them, with the same result as
-  doing them afresh. `neuma::Chant` uses them, and the browser package passes only the lines
-  that changed from the engine to the page.
-- Browser package: `Chant.update`, `sourceAt`, `elementsAt`, `layout(…, { timeline: false,
-  svg: "lines", ids: false })`, and UTF-16 offsets and fixes on diagnostics; an example
-  editor in `crates/neuma-wasm/examples/editor.html`.
-- Mobile bindings: `Chant.sourceAt`, `Chant.elementsAt`, UTF-16 offsets and fixes.
+- Incremental engraving, line breaking and SVG: after an edit, `neuma::Chant` redoes each
+  only where the edit could change it, with the same result as doing it afresh, and the
+  browser package passes only the lines that changed from the engine to the page.
+- Browser package: `Chant.update`, hit tests, `layout(…, { svg: "lines", ids: false })`, and
+  UTF-16 offsets and fixes on diagnostics; an example editor in
+  `crates/neuma-wasm/examples/editor.html`.
+- Mobile bindings: hit tests for editors, UTF-16 offsets and fixes.

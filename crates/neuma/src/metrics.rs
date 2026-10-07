@@ -14,7 +14,7 @@ use crate::text::TextMeasure;
 /// One face's metrics in a [`MetricsTable`]. Its constructor and setters are for the table
 /// builder (`neuma-metrics`); the stability contract is the `NMET` format version.
 #[derive(Clone, Debug, PartialEq)]
-pub struct Face {
+pub struct FaceMetrics {
     pub italic: bool,
     pub bold: bool,
     pub sha256: [u8; 32],
@@ -25,10 +25,10 @@ pub struct Face {
     kerning: Vec<(u32, u32, f32)>,
 }
 
-impl Face {
+impl FaceMetrics {
     #[doc(hidden)]
-    pub fn new(italic: bool, bold: bool, sha256: [u8; 32], ascent: f32, descent: f32) -> Face {
-        Face {
+    pub fn new(italic: bool, bold: bool, sha256: [u8; 32], ascent: f32, descent: f32) -> FaceMetrics {
+        FaceMetrics {
             italic,
             bold,
             sha256,
@@ -104,7 +104,7 @@ impl Face {
 /// [`LyricFont::metrics`](crate::LyricFont::metrics).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct MetricsTable {
-    pub faces: Vec<Face>,
+    pub faces: Vec<FaceMetrics>,
 }
 
 /// Why a metrics table can't be read.
@@ -173,7 +173,7 @@ impl MetricsTable {
             sha256.copy_from_slice(r.take(32)?);
             let ascent = r.f32()?;
             let descent = r.f32()?;
-            let mut face = Face::new(flags & 1 != 0, flags & 2 != 0, sha256, ascent, descent);
+            let mut face = FaceMetrics::new(flags & 1 != 0, flags & 2 != 0, sha256, ascent, descent);
             for _ in 0..r.u32()? {
                 face.advances.push((r.u32()?, r.f32()?));
             }
@@ -223,12 +223,12 @@ impl MetricsTable {
     }
 
     /// The face for `style`, if the table has one.
-    fn face(&self, style: TextStyle) -> Option<&Face> {
+    fn face(&self, style: TextStyle) -> Option<&FaceMetrics> {
         self.faces.iter().find(|f| f.italic == style.italic && f.bold == style.bold)
     }
 
     /// The face to measure `style` with: its own, else the same slant without bold, else any.
-    fn fallback(&self, style: TextStyle) -> Option<&Face> {
+    fn fallback(&self, style: TextStyle) -> Option<&FaceMetrics> {
         self.face(style)
             .or_else(|| self.faces.iter().find(|f| f.italic == style.italic && !f.bold))
             .or_else(|| self.faces.iter().find(|f| !f.italic && !f.bold))
@@ -259,7 +259,7 @@ mod tests {
 
     #[test]
     fn round_trip_and_measure() {
-        let mut f = Face::new(false, false, [7; 32], 0.8, 0.25);
+        let mut f = FaceMetrics::new(false, false, [7; 32], 0.8, 0.25);
         f.set_advance('A', 0.7);
         f.set_advance('V', 0.7);
         f.set_advance('a', 0.45);

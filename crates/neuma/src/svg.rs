@@ -101,7 +101,7 @@ fn escape(s: &str, out: &mut String) {
     }
 }
 
-impl Layout<'_> {
+impl Layout {
     /// This layout as one SVG document, with the default [`SvgOptions`].
     #[must_use]
     pub fn svg(&self) -> String {
@@ -132,8 +132,9 @@ impl Layout<'_> {
     /// As [`Layout::svg_parts_with`], taking each line's SVG from `cache` when the line draws the
     /// same as one the cache saw last time (and keeping this layout's lines there for the
     /// next). After a small edit most lines draw as before, so only the lines it touched
-    /// are written again; the result is the same as `svg_parts`.
-    pub fn svg_parts_cached(&self, opts: &SvgOptions, cache: &mut SvgCache) -> SvgParts {
+    /// are written again; the result is the same as `svg_parts` but for each line's
+    /// [`reused_from`](SvgLine::reused_from).
+    pub(crate) fn svg_parts_cached(&self, opts: &SvgOptions, cache: &mut SvgCache) -> SvgParts {
         let p = prefix(opts);
         if cache.prefix != p || cache.ids != opts.ids {
             *cache = SvgCache {
@@ -150,18 +151,12 @@ impl Layout<'_> {
             }
         }
         let s = self.scale;
-        let one = |line: crate::layout::PlacedLine, initial| Layout {
-            eng: self.eng,
-            lines: crate::layout::Lines::Owned(vec![line]),
-            initial,
-            width: self.width,
-            height: self.height,
-            scale: self.scale,
+        let one = |line: crate::layout::PlacedLine, initial| {
+            Layout::new(self.eng.clone(), vec![line], initial, self.width, self.height, self.scale)
         };
         let mut used = BTreeSet::new();
         let mut glyph_scale = None;
         let mut lines = Vec::with_capacity(self.lines.len());
-        cache.reused.clear();
         for line in &self.lines {
             let top = line.top;
             let mut items = Vec::new();
@@ -176,21 +171,18 @@ impl Layout<'_> {
             let seen = by_hash
                 .get(&hash)
                 .and_then(|ks| ks.iter().copied().find(|&k| old[k].as_ref().is_some_and(|l| l.items == items)));
-            let svg = match seen.and_then(|k| old[k].take()) {
-                Some(l) => {
-                    cache.reused.push(seen);
-                    l.svg
-                }
+            let (svg, reused_from) = match seen.and_then(|k| old[k].take()) {
+                Some(l) => (l.svg, seen),
                 None => {
-                    cache.reused.push(None);
                     let mut svg = String::with_capacity(items.len() * 96);
                     write_items(&mut svg, &items, &p, opts.ids);
-                    svg
+                    (svg, None)
                 }
             };
             lines.push(SvgLine {
                 top: top * s,
                 svg: svg.clone(),
+                reused_from,
             });
             cache.lines.push(CachedLine { hash, items, svg });
         }
@@ -223,21 +215,10 @@ impl Layout<'_> {
 
 /// What [`Layout::svg_parts_cached`] keeps between layouts: each line's drawing and SVG.
 #[derive(Clone, Debug, Default)]
-pub struct SvgCache {
+pub(crate) struct SvgCache {
     prefix: String,
     ids: bool,
     lines: Vec<CachedLine>,
-    reused: Vec<Option<usize>>,
-}
-
-impl SvgCache {
-    /// For each line of the last [`Layout::svg_parts_cached`], the line of the call before
-    /// it whose SVG it took, if it took one: a page that kept those lines' SVG need not read
-    /// it again.
-    #[must_use]
-    pub fn reused(&self) -> &[Option<usize>] {
-        &self.reused
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -315,6 +296,10 @@ pub struct SvgLine {
     /// The line's elements, positioned relative to its top: draw them translated down by
     /// `top`.
     pub svg: String,
+    /// From [`Chant::svg_parts`](crate::Chant::svg_parts): the line of the parts that call
+    /// last returned whose SVG this line has, unchanged, so a page that kept that line's
+    /// SVG need not read it again. Always `None` from [`Layout::svg_parts`].
+    pub reused_from: Option<usize>,
 }
 
 impl SvgParts {

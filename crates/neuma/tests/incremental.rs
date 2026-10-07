@@ -5,9 +5,24 @@
 //! some rarer notation. `NEUMA_CORPUS=<dir>` runs every `.gabc` in a directory as well (the
 //! GregoBase corpus takes a few minutes in release); `NEUMA_EDITS=<n>` sets the edits per score.
 
-use neuma::{ApproxMeasure, EngraveCache, Initial, LastLine, LayoutCache, LayoutOptions, StyleOptions, SvgCache, SvgOptions, parse};
+use neuma::{ApproxMeasure, Chant, ChantOptions, Initial, LastLine, LayoutOptions, StyleOptions, SvgOptions, SvgParts, parse};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+/// A chant that measures as the fresh engravings do.
+fn chant(style: &StyleOptions) -> Chant {
+    let options = ChantOptions::default()
+        .with_style(style.clone())
+        .with_measure(Arc::new(ApproxMeasure));
+    Chant::with_options("", options)
+}
+
+/// Parts as they draw, leaving out which lines were reused.
+fn drawn(p: &SvgParts) -> (f32, f32, &str, &str, Vec<(f32, &str)>, &str) {
+    let lines = p.lines.iter().map(|l| (l.top, l.svg.as_str())).collect();
+    (p.width, p.height, &p.head, &p.defs, lines, &p.rest)
+}
 
 /// xorshift64*: a small, seeded generator, so a failure names the edit that caused it.
 struct Rng(u64);
@@ -196,11 +211,9 @@ const WIDTHS: [f32; 4] = [900.0, 600.0, 330.0, 140.0];
 fn check(name: &str, src: &str, seed: u64, edits: usize) {
     let mut rng = Rng(seed | 1);
     let mut src = src.to_string();
-    let mut cache = LayoutCache::default();
-    let mut engraved = EngraveCache::default();
-    let mut lines = SvgCache::default();
     let initial = [Initial::Lines(1), Initial::None, Initial::Lines(2)][rng.below(3)];
     let style = StyleOptions::default().with_initial(initial);
+    let mut chant = chant(&style);
     let mut width = WIDTHS[rng.below(WIDTHS.len())];
     for step in 0..edits {
         // Now and then the column changes too, as when a window is resized.
@@ -210,21 +223,17 @@ fn check(name: &str, src: &str, seed: u64, edits: usize) {
         let opts = LayoutOptions::default().with_last_line(if rng.below(5) == 0 { LastLine::Justified } else { LastLine::Ragged });
         let what = || format!("{name}, seed {seed}, edit {step}, width {width}:\n{src}");
         let eng = parse(&src).score.engrave(&ApproxMeasure, &style);
-        let again = engraved.engrave(parse(&src).score, &ApproxMeasure, &style);
-        assert!(*again == eng, "{}", what());
-        let cached = again.layout_cached(width, &opts, &mut cache);
+        chant.update(&src);
+        assert!(chant.engraving() == &*eng, "{}", what());
+        let cached = chant.layout_with(width, &opts);
         let fresh = eng.layout_with(width, &opts);
         let svg = SvgOptions::default();
         assert_eq!(cached.svg_with(&svg), fresh.svg_with(&svg), "{}", what());
         assert_eq!(cached.svg_parts_with(&svg), fresh.svg_parts_with(&svg), "{}", what());
         // An editor's lines, mostly without ids; now and then with them.
         let parts = SvgOptions::default().with_ids(rng.below(8) == 0);
-        assert_eq!(
-            cached.svg_parts_cached(&parts, &mut lines),
-            fresh.svg_parts_with(&parts),
-            "{}",
-            what()
-        );
+        let (cached_parts, fresh_parts) = (chant.svg_parts(&cached, &parts), fresh.svg_parts_with(&parts));
+        assert_eq!(drawn(&cached_parts), drawn(&fresh_parts), "{}", what());
         assert_eq!(cached.timeline(), fresh.timeline(), "{}", what());
         assert_eq!(cached.source_map(), fresh.source_map(), "{}", what());
         src = edit(&src, &mut rng);
@@ -288,22 +297,20 @@ fn edits_whose_effects_reach_past_them() {
         for initial in styles {
             let style = StyleOptions::default().with_initial(initial);
             let (before, after) = (format!("{before}{tail}"), format!("{after}{tail}"));
-            let mut cache = EngraveCache::default();
-            let mut layouts = LayoutCache::default();
-            let mut lines = SvgCache::default();
+            let mut chant = chant(&style);
             for src in [&before, &after, &before] {
                 let fresh = parse(src).score.engrave(&ApproxMeasure, &style);
-                let again = cache.engrave(parse(src).score, &ApproxMeasure, &style);
-                assert!(*again == fresh, "{initial:?}: {before:?} to {src:?}");
+                chant.update(src);
+                assert!(chant.engraving() == &*fresh, "{initial:?}: {before:?} to {src:?}");
                 let opts = LayoutOptions::default();
                 let svg = SvgOptions::default();
                 for width in [900.0, 150.0] {
-                    let cached = again.layout_cached(width, &opts, &mut layouts);
+                    let cached = chant.layout_with(width, &opts);
                     let fresh = fresh.layout_with(width, &opts);
                     assert_eq!(cached.svg_with(&svg), fresh.svg_with(&svg), "{initial:?}: {before:?} to {src:?}");
                     let parts = svg.clone().with_ids(false);
-                    let (cached, fresh) = (cached.svg_parts_cached(&parts, &mut lines), fresh.svg_parts_with(&parts));
-                    assert_eq!(cached, fresh, "{initial:?}: {before:?} to {src:?}");
+                    let (cached, fresh) = (chant.svg_parts(&cached, &parts), fresh.svg_parts_with(&parts));
+                    assert_eq!(drawn(&cached), drawn(&fresh), "{initial:?}: {before:?} to {src:?}");
                 }
             }
         }

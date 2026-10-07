@@ -1,7 +1,7 @@
 // Smoke test for dist/neuma.mjs under Node: `node crates/neuma-wasm/test.mjs`.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { init, Chant, DEFAULT_WEIGHTS, noteAtTime, point, psalm, summarize, toneNames } from "./dist/neuma.mjs";
+import { init, Chant, DEFAULT_WEIGHTS, Page, noteAtTime, point, psalm, summarize, toneNames } from "./dist/neuma.mjs";
 
 await init();
 const gabc = readFileSync(new URL("../neuma/tests/corpus/psalm-134.gabc", import.meta.url), "utf8");
@@ -21,8 +21,8 @@ assert.equal(ids(narrow), ids(wide));
 const notes = wide.timeline.notes;
 for (let i = 1; i < notes.length; i++) assert.ok(notes[i].start >= notes[i - 1].start + notes[i - 1].duration - 1e-3);
 for (const p of wide.timeline.pauses) {
-  if (p.kind === "mediant") assert.equal(p.weight, 3);
-  if (p.kind === "full") assert.equal(p.weight, 2.5);
+  if (p.kind === "mediant") assert.equal(p.duration, 3);
+  if (p.kind === "full") assert.equal(p.duration, 2.5);
 }
 assert.ok(wide.timeline.pauses.some((p) => p.kind === "half"));
 // A playhead finds the note sounding at a time.
@@ -30,8 +30,8 @@ assert.equal(noteAtTime(wide.timeline, -1), null);
 assert.equal(noteAtTime(wide.timeline, notes[3].start), notes[3]);
 assert.equal(noteAtTime(wide.timeline, notes[3].start + notes[3].duration / 2), notes[3]);
 assert.equal(noteAtTime(wide.timeline, 1e9), null);
-const rest = wide.timeline.pauses.find((p) => p.weight > 0);
-assert.equal(noteAtTime(wide.timeline, rest.start + rest.weight / 2), null, "silent in a pause");
+const rest = wide.timeline.pauses.find((p) => p.duration > 0);
+assert.equal(noteAtTime(wide.timeline, rest.start + rest.duration / 2), null, "silent in a pause");
 
 // Psalm marks pause by kind, and the half-verse counter turns at the mediant.
 const verse = new Chant("(c4) Di(h)xit(h) Dó(h)mi(h)nus(h) *(:) Dó(h)mi(g)no(h) me(h)o(g) †(,) se(g)de(h) (::)", { initial: 0 });
@@ -40,28 +40,36 @@ assert.deepEqual(t.pauses.map((p) => p.kind), ["mediant", "full", "flex", "quart
 assert.deepEqual(t.notes.map((n) => n.half).join(""), "000001111111");
 assert.ok(t.notes[0].recitation && t.notes[2].accent);
 // The mediant is the whole pause at its bar.
-assert.deepEqual(t.pauses.slice(0, 2).map((p) => p.weight), [DEFAULT_WEIGHTS.mediant, 0]);
+assert.deepEqual(t.pauses.slice(0, 2).map((p) => p.duration), [DEFAULT_WEIGHTS.mediant, 0]);
 // Recitation doesn't run across a bar.
 const runs = new Chant("(c4) a(h) (::) b(h) (::) c(h)", { initial: 0 }).layout(400).timeline.notes;
 assert.ok(runs.every((n) => !n.recitation));
 
 // A porrectus swash carries both of the notes it draws.
 const porrectus = new Chant("(c4) a(hgh)", { initial: 0 });
-const svg = porrectus.layout(400).svg;
+const porrectusPage = porrectus.layout(400);
+const svg = porrectusPage.svg;
 for (const id of [0, 1, 2]) assert.match(svg, new RegExp(`data-note="[0-9 ]*\\b${id}\\b`));
 assert.match(svg, /data-note="0 1"/);
 
 // A freed Chant throws rather than reaching another score's handle.
 porrectus.free();
 assert.throws(() => porrectus.layout(400), /freed/);
-assert.throws(() => porrectus.noteAt(0, 0), /freed/);
+assert.throws(() => porrectusPage.noteAt(0, 0), /freed/);
 assert.equal(verse.layout(600, { weights: { note: null } }).timeline.notes[1].duration, 1);
 verse.free();
 
-// Hit testing finds the note whose box holds the point.
-const n = notes[5];
-assert.equal(chant.noteAt(n.cx, n.cy), n.id);
-assert.equal(chant.noteAt(-50, -50), null);
+// Hit testing finds the note whose box holds the point, on each page whatever was laid out
+// since: here a one-line thumbnail that leaves the note out.
+const n = notes.at(-1);
+const thumb = chant.layout(900, { maxLines: 1 });
+assert.ok(!thumb.timeline.notes.some((m) => m.id === n.id));
+assert.equal(wide.noteAt(n.cx, n.cy), n.id);
+assert.equal(wide.noteAt(-50, -50), null);
+assert.ok(wide instanceof Page);
+// The same arguments give the same page, and its timeline is made once.
+assert.equal(chant.layout(900, { weights: { mediant: 3, full: 2.5 } }), chant.layout(900, { weights: { mediant: 3, full: 2.5 } }));
+assert.equal(wide.timeline, wide.timeline);
 
 chant.free();
 assert.throws(() => chant.layout(400));
@@ -101,8 +109,22 @@ assert.equal(psNotes.length, ps.notes.length);
 assert.equal(ps.notes[0].role, "intonation");
 const accent = ps.notes.findIndex((n) => n.role === "accent");
 assert.equal(psNotes[accent].syllableText, "pá");
-assert.equal(new TextDecoder().decode(new TextEncoder().encode(text).slice(ps.notes[accent].start, ps.notes[accent].end)), "pá");
-assert.equal(text.slice(ps.notes[accent].utf16Start, ps.notes[accent].utf16End), "pá");
+const sung = ps.notes[accent];
+assert.equal(new TextDecoder().decode(new TextEncoder().encode(text).slice(sung.sourceStart, sung.sourceEnd)), "pá");
+assert.equal(text.slice(sung.sourceUtf16Start, sung.sourceUtf16End), "pá");
+// Engraved from the psalm, the chant's sources are in the text.
+const fromPsalm = Chant.fromPsalm(text, "8.G", { initial: 0 });
+assert.deepEqual(fromPsalm.psalm, { gabc: ps.gabc, notes: ps.notes });
+const psPage = fromPsalm.layout(500);
+const psNote = psPage.timeline.notes[accent];
+assert.equal(text.slice(psNote.sourceUtf16Start, psNote.sourceUtf16End), "pá");
+assert.equal(text.slice(...(({ utf16Start, utf16End }) => [utf16Start, utf16End])(psPage.sourceAt(psNote.cx, psNote.cy))), "pá");
+fromPsalm.update(text.replace("glorious", "great"));
+assert.ok(fromPsalm.psalm.gabc.includes("great"));
+assert.throws(() => psPage.noteAt(0, 0), /laid out before the chant changed/);
+assert.ok(Chant.fromPsalm("Lord ! * God ?", "1.D").diagnostics.some((d) => d.code === "point::unsure"));
+assert.throws(() => Chant.fromPsalm(text, "9.z"), /no built-in tone/);
+fromPsalm.free();
 assert.ok(ps.notes.some((n) => n.verse === 1 && n.number === 2 && n.part === "termination"));
 assert.throws(() => psalm(text, "9.z"), /no built-in tone/);
 const ownTone = psalm(text, "name: mine\nclef: c4\nmediant: f g hr 'g hr h\ntermination: hr g f 'g hr h");
@@ -131,39 +153,37 @@ ed.update(fixed);
 assert.deepEqual(ed.diagnostics, []);
 assert.equal(new Chant("Ky(g)", { initial: 0 }).diagnostics[0].fix.replacement, "(c4) ");
 
-const quick = ed.layout(500, { timeline: false });
-assert.equal(quick.timeline, undefined);
-assert.ok(quick.svg.startsWith("<svg"));
 const page = ed.layout(500);
+assert.ok(page.svg.startsWith("<svg"));
 for (const n of page.timeline.notes) {
-  const hit = ed.sourceAt(n.cx, n.cy);
+  const hit = page.sourceAt(n.cx, n.cy);
   assert.equal(hit.kind, "note");
   assert.equal(hit.index, n.id);
 }
 const hi = fixed.indexOf("hi");
-const at = ed.elementsAt(hi + 1);
+const at = page.elementsAt(hi + 1);
 assert.deepEqual(at.map((e) => e.kind), ["note", "syllable"]);
 assert.equal(fixed.slice(at[0].utf16Start, at[0].utf16End), "i");
 assert.equal(fixed.slice(at[1].utf16Start, at[1].utf16End), "ri(hi)");
-const bar = ed.elementsAt(fixed.indexOf(","));
+const bar = page.elementsAt(fixed.indexOf(","));
 assert.equal(bar[0].kind, "bar");
-assert.equal(ed.sourceAt(bar[0].x + bar[0].w / 2, bar[0].y + 1).kind, "bar");
+assert.equal(page.sourceAt(bar[0].x + bar[0].w / 2, bar[0].y + 1).kind, "bar");
 // The same caret as a byte offset.
 const bytes = new TextEncoder().encode(fixed.slice(0, hi + 1)).length;
-assert.deepEqual(ed.elementsAt(bytes, { unit: "utf8" }), at);
-assert.equal(ed.sourceAt(-100, -100), null);
+assert.deepEqual(page.elementsAt(bytes, { unit: "utf8" }), at);
+assert.equal(page.sourceAt(-100, -100), null);
 // Carets past either end are at it, however far: none wraps around to the start.
-const atEnd = ed.elementsAt(fixed.length);
+const atEnd = page.elementsAt(fixed.length);
 for (const far of [fixed.length + 1, 2 ** 32, 2 ** 32 + 5, 2 ** 53, Infinity]) {
-  assert.deepEqual(ed.elementsAt(far), atEnd, String(far));
-  if (far > 2 ** 31) assert.deepEqual(ed.elementsAt(far, { unit: "utf8" }), atEnd, String(far));
+  assert.deepEqual(page.elementsAt(far), atEnd, String(far));
+  if (far > 2 ** 31) assert.deepEqual(page.elementsAt(far, { unit: "utf8" }), atEnd, String(far));
 }
 for (const before of [-1, -(2 ** 32), -Infinity, NaN]) {
-  assert.deepEqual(ed.elementsAt(before), ed.elementsAt(0), String(before));
+  assert.deepEqual(page.elementsAt(before), page.elementsAt(0), String(before));
 }
 
 // The SVG a line at a time, without ids, draws what the whole SVG draws.
-const parts = ed.layout(500, { svg: "lines", ids: false, timeline: false }).svgParts;
+const parts = ed.layout(500, { svg: "lines", ids: false }).svgParts;
 assert.ok(parts.head.startsWith("<svg") && parts.defs.startsWith("<path"));
 assert.equal(parts.lines.length, page.timeline.lines.length);
 const count = (text, tag) => text.split(tag).length - 1;
@@ -171,9 +191,9 @@ const lineSvg = parts.lines.map((l) => l.svg).join("");
 assert.equal(count(lineSvg, "<use ") + count(parts.rest, "<use "), count(page.svg, "<use "));
 assert.ok(!lineSvg.includes("data-note"));
 assert.ok(parts.lines.every((l, i) => i === 0 || l.top > parts.lines[i - 1].top));
-// Without the timeline, notes are still found under a point.
+// Notes are found under a point after other layouts.
 const first = page.timeline.notes[0];
-assert.equal(ed.noteAt(first.cx, first.cy), first.id);
+assert.equal(page.noteAt(first.cx, first.cy), first.id);
 // Edits one after another: the lines the engine kept, and those it made again, are what a
 // fresh Chant draws, with ids or without.
 let edited = fixed;
@@ -181,14 +201,20 @@ for (let i = 0; i < 12; i++) {
   const at = edited.indexOf("(", (i * 37) % edited.length);
   edited = i % 3 === 2 ? edited.slice(0, at) + edited.slice(at + 3) : edited.slice(0, at) + "a" + edited.slice(at);
   ed.update(edited);
-  const opts = { svg: "lines", ids: i % 4 === 3, timeline: false };
+  const opts = { svg: "lines", ids: i % 4 === 3 };
   const fresh = new Chant(edited, { initial: 0 });
   assert.deepEqual(ed.layout(200, opts), fresh.layout(200, opts), `edit ${i}`);
   fresh.free();
 }
+// A larger lyric engraves again, and the page from before says so.
+const before = ed.layout(500);
+ed.setOptions({ initial: 0, lyricSize: 4 });
+assert.ok(ed.layout(500).height > before.height);
+assert.throws(() => before.sourceAt(0, 0), /laid out before the chant changed/);
+const after = ed.layout(500);
 ed.free();
 assert.throws(() => ed.update(src), /freed/);
-assert.throws(() => ed.sourceAt(0, 0), /freed/);
+assert.throws(() => after.sourceAt(0, 0), /freed/);
 
 // A RangeError from the caller's own arguments, before the engine runs, is rethrown and
 // leaves the engine and its Chants alive.

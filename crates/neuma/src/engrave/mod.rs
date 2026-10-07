@@ -6,7 +6,7 @@ mod cache;
 mod initial;
 pub(crate) mod neume;
 
-pub use cache::EngraveCache;
+pub(crate) use cache::EngraveCache;
 pub use initial::Initial;
 pub(crate) use initial::{CAP_HEIGHT, strip_tex};
 
@@ -19,6 +19,7 @@ use crate::score::{
 use crate::text::TextMeasure;
 use crate::vowel::VowelRules;
 use neume::{INTRA, STEM};
+use std::sync::Arc;
 
 /// What a piece of ink is, so themes can color staff, notes and rubrics separately.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -447,10 +448,10 @@ fn bar_pieces(kind: BarKind, high: bool, left: f32) -> (Vec<Piece>, f32) {
             (vec![p], w)
         }
         BarKind::Minimis => (vec![bar(4, 3)], STEM),
-        BarKind::Minima => (vec![bar(4, 2)], STEM),
-        BarKind::Minor => (vec![bar(2, -2)], STEM),
-        BarKind::Maior => (vec![bar(3, -3)], STEM),
-        BarKind::DottedMaior => {
+        BarKind::Quarter => (vec![bar(4, 2)], STEM),
+        BarKind::Half => (vec![bar(2, -2)], STEM),
+        BarKind::Full => (vec![bar(3, -3)], STEM),
+        BarKind::DottedFull => {
             let mut out = Vec::new();
             let mut y = -3.0;
             while y < 3.0 {
@@ -469,7 +470,7 @@ fn bar_pieces(kind: BarKind, high: bool, left: f32) -> (Vec<Piece>, f32) {
             }
             (out, STEM)
         }
-        BarKind::Finalis => {
+        BarKind::Double => {
             // Two thin bars, as GregorioTeX draws `::`.
             let second = left + FINALIS_SEP;
             (vec![bar(3, -3), rect(second, 3 + shift, -3 + shift, Ink::Bar)], FINALIS_SEP + STEM)
@@ -676,14 +677,15 @@ impl Engraver<'_> {
 }
 
 impl Score {
-    /// Engraves the score: neumes, signs and lyric boxes, independent of width.
+    /// Engraves the score: neumes, signs and lyric boxes, independent of width. The
+    /// engraving comes shared, as the layouts made from it share it.
     #[must_use]
-    pub fn engrave(&self, measure: &dyn TextMeasure, style: &StyleOptions) -> Engraving {
+    pub fn engrave(&self, measure: &dyn TextMeasure, style: &StyleOptions) -> Arc<Engraving> {
         let mut pass = self.pass(measure, style, false);
         for (si, syl) in self.syllables.iter().enumerate() {
             pass.syllable(self, si, syl);
         }
-        pass.finish(self).0
+        Arc::new(pass.finish(self).0)
     }
 
     /// Sets up engraving: the vowel rules, the text metrics and the initial.
@@ -1307,7 +1309,7 @@ mod tests {
 
     #[test]
     fn a_double_bar_is_two_thin_bars() {
-        let (pieces, w) = bar_pieces(BarKind::Finalis, false, 0.0);
+        let (pieces, w) = bar_pieces(BarKind::Double, false, 0.0);
         let rects: Vec<(f32, f32)> = pieces
             .iter()
             .filter_map(|p| match p.mark {

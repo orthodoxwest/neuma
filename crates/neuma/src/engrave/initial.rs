@@ -22,11 +22,11 @@ pub enum Initial {
 }
 
 impl Initial {
-    /// An initial `lines` staves tall, as the bindings and the CLI take it: 0 or less for
-    /// none, and at most 4.
+    /// An initial `staves` staves tall, as the bindings and the CLI take a count: 0 or less
+    /// for none, and more than 4 for 4.
     #[must_use]
-    pub fn lines(lines: i64) -> Initial {
-        match lines {
+    pub fn from_staves(staves: i64) -> Initial {
+        match staves {
             ..=0 => Initial::None,
             n => Initial::Lines(n.min(i64::from(MAX_LINES)) as u8),
         }

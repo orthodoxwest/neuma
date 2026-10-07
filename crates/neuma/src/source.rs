@@ -7,6 +7,7 @@
 
 use std::ops::Range;
 
+use crate::display::LineBox;
 use crate::layout::Layout;
 
 /// What kind of thing an [`Element`] is.
@@ -31,17 +32,17 @@ pub struct Element {
     pub span: Range<usize>,
     pub line: u32,
     /// The box's left, top, width and height, in output units. A note's is its notehead,
-    /// less a porrectus end's overlap with its neighbours (the box
-    /// [`crate::Timeline::note_at`] tests); a bar's its ink; and a syllable's runs from the
-    /// line's top to its bottom across the syllable's notation and lyric (or across the
-    /// initial, for the syllable it starts).
+    /// less a porrectus end's overlap with its neighbours; a bar's its ink; and a syllable's
+    /// runs from the line's top to its bottom across the syllable's notation and lyric (or
+    /// across the initial, for the syllable it starts).
     pub x: f32,
     pub y: f32,
     pub w: f32,
     pub h: f32,
-    /// For a note, the x of its notehead's center (the box can be trimmed off center); else
-    /// the box's center.
-    cx: f32,
+    /// The x of a note's notehead center, as [`crate::TimelineNote::cx`] (the box can be
+    /// trimmed off center); for a bar or syllable, the box's center. A tap between notes
+    /// finds the note whose `cx` is nearest.
+    pub cx: f32,
 }
 
 impl Element {
@@ -55,8 +56,9 @@ impl Element {
     }
 }
 
-/// Every note, bar and syllable of a layout with its source span. Build it with
-/// [`Layout::source_map`], or let a [`crate::Chant`] keep one for its last layout.
+/// Every note, bar and syllable of a layout with its source span: what [`Layout::note_at`],
+/// [`Layout::source_at`] and [`Layout::elements_at`] search. Get it with
+/// [`Layout::source_map`].
 #[derive(Clone, Debug, Default, PartialEq)]
 #[non_exhaustive]
 pub struct SourceMap {
@@ -67,32 +69,22 @@ pub struct SourceMap {
     /// In source order. A syllable split across lines has an element per line, and the
     /// syllable the initial comes from has one more for the initial.
     pub syllables: Vec<Element>,
-    /// Each line's top and bottom, in output units.
-    pub lines: Vec<(f32, f32)>,
+    /// Each line's box, staff center and lyric baseline, in output units.
+    pub lines: Vec<LineBox>,
     /// One staff space in output units.
     pub staff_space: f32,
 }
 
-/// How an offset into the source counts.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub enum OffsetUnit {
-    /// UTF-8 bytes, as neuma's spans count.
-    Utf8,
-    /// UTF-16 code units: JavaScript, Java and Kotlin string indices, and `NSString` ranges.
-    #[default]
-    Utf16,
-}
-
 impl SourceMap {
     /// The note under (`x`, `y`) in output units: one whose box holds the point, else the
-    /// nearest note on the line the point falls in. `None` outside every line. The same
-    /// note [`Timeline::note_at`](crate::Timeline::note_at) finds, without needing a timeline.
+    /// note on the line the point falls in whose [`cx`](Element::cx) is nearest. `None`
+    /// outside every line.
     #[must_use]
     pub fn note_at(&self, x: f32, y: f32) -> Option<crate::NoteRef> {
         if let Some(n) = self.notes.iter().find(|n| n.contains(x, y, 0.0)) {
             return Some(n.index);
         }
-        let line = self.lines.iter().position(|&(top, bottom)| y >= top && y <= bottom)? as u32;
+        let line = self.line_at(y)?;
         self.notes
             .iter()
             .filter(|n| n.line == line)
@@ -113,7 +105,7 @@ impl SourceMap {
         if let Some(b) = self.bars.iter().find(|b| b.contains(x, y, pad)) {
             return Some(b);
         }
-        let line = self.lines.iter().position(|&(top, bottom)| y >= top && y <= bottom)? as u32;
+        let line = self.line_at(y)?;
         // Lyrics can overhang their neighbours' boxes; the nearest center wins.
         let center = |e: &&Element| (e.x + e.w / 2.0 - x).abs();
         let on_line = || self.syllables.iter().filter(|s| s.line == line);
@@ -124,6 +116,10 @@ impl SourceMap {
             return Some(s);
         }
         on_line().min_by(|a, b| a.distance(x).total_cmp(&b.distance(x)).then(center(a).total_cmp(&center(b))))
+    }
+
+    fn line_at(&self, y: f32) -> Option<u32> {
+        Some(self.lines.iter().position(|l| y >= l.top && y <= l.bottom)? as u32)
     }
 
     /// What to highlight for a caret at byte `offset`: the note and the bar whose span holds
@@ -157,11 +153,42 @@ impl SourceMap {
     }
 }
 
-impl Layout<'_> {
-    /// Every note, bar and syllable on this layout's lines with its source span and box.
+impl Layout {
+    /// Every note, bar and syllable on this layout's lines with its source span and box, made
+    /// when first asked for and kept (clones of the layout share it).
     #[must_use]
-    pub fn source_map(&self) -> SourceMap {
-        let eng = self.eng;
+    pub fn source_map(&self) -> &SourceMap {
+        self.sources.get_or_init(|| self.make_source_map())
+    }
+
+    /// The note under (`x`, `y`): one whose box holds the point, else the nearest on the line
+    /// the point falls in. `None` outside every line. See [`SourceMap::note_at`].
+    #[must_use]
+    pub fn note_at(&self, x: f32, y: f32) -> Option<crate::NoteRef> {
+        self.source_map().note_at(x, y)
+    }
+
+    /// The note, bar or syllable under (`x`, `y`), with its source span: a notehead, else a
+    /// bar within half a staff space, else a syllable's box, else the nearest syllable on
+    /// that line. `None` outside every line. See [`SourceMap::source_at`].
+    #[must_use]
+    pub fn source_at(&self, x: f32, y: f32) -> Option<&Element> {
+        self.source_map().source_at(x, y)
+    }
+
+    /// What to highlight for a caret at byte `offset` of the source: the notes and bar whose
+    /// source holds it, then a box per line for its syllable, most specific first. A caret
+    /// just after a note, as after typing it, counts as on it; for a [`Chant`](crate::Chant)'s
+    /// layout, one past the end of the source is at its end. For a caret in UTF-16 units,
+    /// convert it first with [`Layout::utf16`]. See [`SourceMap::elements_at`].
+    #[must_use]
+    pub fn elements_at(&self, offset: usize) -> Vec<&Element> {
+        let offset = self.utf16().map_or(offset, |u| offset.min(u.len));
+        self.source_map().elements_at(offset)
+    }
+
+    fn make_source_map(&self) -> SourceMap {
+        let eng = &*self.eng;
         let s = self.scale;
         let mut map = SourceMap {
             staff_space: s,
@@ -169,7 +196,12 @@ impl Layout<'_> {
         };
         for (li, line) in self.lines.iter().enumerate() {
             let li = li as u32;
-            map.lines.push((line.top * s, line.bottom * s));
+            map.lines.push(LineBox {
+                top: line.top * s,
+                bottom: line.bottom * s,
+                staff: line.staff * s,
+                baseline: line.baseline * s,
+            });
             // The syllable being gathered on this line, and its left and right.
             let mut open: Option<(u32, f32, f32)> = None;
             let close = |open: &mut Option<(u32, f32, f32)>, map: &mut SourceMap| {
@@ -198,7 +230,6 @@ impl Layout<'_> {
                         index: h.note,
                         span: info.span.clone(),
                         line: li,
-                        // The box `Timeline::note_at` tests, so both find the same note.
                         x: (x0 + h.hit[0]) * s,
                         y: (line.staff + h.hit[1]) * s,
                         w: (h.hit[2] - h.hit[0]) * s,
@@ -363,7 +394,7 @@ mod tests {
     fn map(src: &str) -> SourceMap {
         let style = StyleOptions::default().with_initial(Initial::None);
         let eng = parse(src).score.engrave(&ApproxMeasure, &style);
-        eng.layout(600.0).source_map()
+        eng.layout(600.0).source_map().clone()
     }
 
     #[test]
@@ -383,13 +414,13 @@ mod tests {
     }
 
     #[test]
-    fn notes_are_found_where_note_at_finds_them() {
+    fn a_point_on_a_notehead_finds_that_note() {
         // Porrectus ends stacked on other notes, whose boxes are trimmed off them.
         let src = "(c4) a(hgh) b(ihi) c(jhj) d(gfgh) e(hghi) (::)";
         let style = StyleOptions::default().with_initial(crate::Initial::None);
         let eng = parse(src).score.engrave(&ApproxMeasure, &style);
         let layout = eng.layout(600.0);
-        let (m, notes) = (layout.source_map(), layout.timeline());
+        let m = layout.source_map();
         let (w, h) = layout.size();
         let mut checked = 0;
         for i in 0..400 {
@@ -398,7 +429,7 @@ mod tests {
                 let Some(e) = m.notes.iter().find(|n| n.contains(x, y, 0.0)) else {
                     continue;
                 };
-                assert_eq!(notes.note_at(x, y), Some(e.index), "at ({x}, {y})");
+                assert_eq!(layout.note_at(x, y), Some(e.index), "at ({x}, {y})");
                 checked += 1;
             }
         }
@@ -418,7 +449,7 @@ mod tests {
         assert_eq!((hit.kind, hit.index), (ElementKind::Bar, 0));
         // Under a note, on its lyric: the syllable.
         let ky = &m.syllables[0];
-        let (top, bottom) = m.lines[0];
+        let (top, bottom) = (m.lines[0].top, m.lines[0].bottom);
         let hit = m.source_at(ky.x + 1.0, bottom - 1.0).unwrap();
         assert_eq!((hit.kind, &src[hit.span.clone()]), (ElementKind::Syllable, "Ky(g)"));
         // Past the end of the line: the nearest syllable.
@@ -451,7 +482,8 @@ mod tests {
         let melisma = format!("(c4) A({}) (::)", "g/h/".repeat(40));
         let style = StyleOptions::default().with_initial(Initial::None);
         let eng = parse(&melisma).score.engrave(&ApproxMeasure, &style);
-        let m = eng.layout(200.0).source_map();
+        let layout = eng.layout(200.0);
+        let m = layout.source_map();
         let a: Vec<_> = m.syllables.iter().filter(|s| s.index == 1).collect();
         assert!(a.len() > 1, "{a:?}");
         assert!(a.windows(2).all(|w| w[0].line < w[1].line));

@@ -17,7 +17,10 @@
 //! ("café") counts as a mark, since it is how the markup writes an accent.
 
 use std::collections::HashMap;
+use std::ops::Range;
 use std::sync::OnceLock;
+
+use neuma::Diagnostic;
 
 use crate::pointed::{Joint, Part, Pointed, VersePart};
 use crate::syllable::fold;
@@ -35,25 +38,23 @@ pub struct HalfPointing {
     pub confidence: f32,
     /// The half already carried marks, which were kept.
     pub kept: bool,
+    /// The half's sung syllables in the text, in UTF-8 bytes from the first one's start to
+    /// the last one's end; empty, at the verse's start, for a half with none.
+    pub span: Range<usize>,
 }
 
 /// A pointed text and how sure the pointer is of each half-verse.
 #[derive(Clone, Debug, Default, PartialEq)]
 #[non_exhaustive]
 pub struct Pointing {
-    /// The text with the marks added, split into sung syllables.
-    pub pointed: Pointed,
+    /// The text with the marks added, a verse a line, in the markup [`psalm`](crate::psalm())
+    /// reads: pointing it again gives the same text.
+    pub text: String,
     /// The mediant and termination of each verse, in order. A flex is never pointed: its
     /// cadence falls on the last syllable before the `†`.
     pub halves: Vec<HalfPointing>,
-}
-
-impl Pointing {
-    /// The pointed text in the markup [`Pointed::parse`] reads.
-    #[must_use]
-    pub fn text(&self) -> String {
-        self.pointed.to_text()
-    }
+    /// Problems reading the text, with spans in it.
+    pub diagnostics: Vec<Diagnostic>,
 }
 
 /// Points plain (or partly pointed) text for `tone`: one verse per line, with the mediant `*`
@@ -61,12 +62,17 @@ impl Pointing {
 /// of is worth checking.
 #[must_use]
 pub fn point(text: &str, tone: &Tone) -> Pointing {
-    point_pointed(&Pointed::parse(text), tone)
+    let (pointed, halves) = point_parsed(&Pointed::parse(text), tone);
+    Pointing {
+        text: pointed.to_text(),
+        halves,
+        diagnostics: pointed.diagnostics,
+    }
 }
 
-/// [`point`] for text already parsed. Its diagnostics are kept.
-#[must_use]
-pub fn point_pointed(text: &Pointed, tone: &Tone) -> Pointing {
+/// [`point`] for text already parsed: the text split into sung syllables with the marks
+/// added (its diagnostics kept), and each half-verse's choice.
+pub(crate) fn point_parsed(text: &Pointed, tone: &Tone) -> (Pointed, Vec<HalfPointing>) {
     let mut out = text.syllabified();
     let mut halves = Vec::new();
     for (vi, verse) in out.verses.iter_mut().enumerate() {
@@ -79,15 +85,20 @@ pub fn point_pointed(text: &Pointed, tone: &Tone) -> Pointing {
             let kept = part.omitted > 0 || part.held_end > 0 || part.syllables.iter().any(|s| s.accent || s.cadence || s.held);
             let zero = may_end_on_accent(part.kind, tone);
             let confidence = if kept { 1.0 } else { point_part(part, cadence, zero) };
+            let span = match (part.syllables.first(), part.syllables.last()) {
+                (Some(a), Some(b)) => a.span.start..b.span.end,
+                _ => verse.span.start..verse.span.start,
+            };
             halves.push(HalfPointing {
                 verse: vi,
                 part: part.kind,
                 confidence,
                 kept,
+                span,
             });
         }
     }
-    Pointing { pointed: out, halves }
+    (out, halves)
 }
 
 /// Marks one unpointed half and returns the confidence.
@@ -473,13 +484,13 @@ mod tests {
             tone("8.G"),
         );
         assert_eq!(
-            p.text().trim_end(),
+            p.text.trim_end(),
             "O come, let us sing unto the · Lórd * let us heartily rejoice in the strength of · our salvátion."
         );
         assert!(p.halves.iter().all(|h| !h.kept && h.confidence > 0.0 && h.confidence <= 1.0));
         // Pointing again keeps every half, and the marks read back as written.
-        let again = point_pointed(&Pointed::parse(&p.text()), tone("8.G"));
-        assert_eq!(again.text(), p.text());
+        let again = point(&p.text, tone("8.G"));
+        assert_eq!(again.text, p.text);
         assert!(again.halves.iter().all(|h| h.kept && h.confidence == 1.0));
     }
 
@@ -503,8 +514,8 @@ mod tests {
 
     #[test]
     fn punctuation_takes_no_accent() {
-        let p = point("I called upon the Lord ! * and he heard me ?", tone("1.D"));
-        for part in p.pointed.verses.iter().flat_map(|v| &v.parts) {
+        let p = point_parsed(&Pointed::parse("I called upon the Lord ! * and he heard me ?"), tone("1.D")).0;
+        for part in p.verses.iter().flat_map(|v| &v.parts) {
             for s in &part.syllables {
                 assert!(!s.accent || s.text.chars().any(char::is_alphanumeric), "{:?}", s.text);
             }
@@ -515,14 +526,14 @@ mod tests {
     fn short_halves_skip_punctuation() {
         let p = point("Lord ! * God ?", tone("1.D"));
         assert_eq!(p.halves[0].confidence, 0.0);
-        assert!(p.text().starts_with("· Lórd ! *"), "{}", p.text());
+        assert!(p.text.starts_with("· Lórd ! *"), "{}", p.text);
     }
 
     #[test]
     fn dashes_are_kept() {
         let p = point("– – praise the Lord * O my soul", tone("1.D"));
         assert!(p.halves[0].kept);
-        assert!(p.text().starts_with("– – praise the Lord *"), "{}", p.text());
+        assert!(p.text.starts_with("– – praise the Lord *"), "{}", p.text);
     }
 
     #[test]

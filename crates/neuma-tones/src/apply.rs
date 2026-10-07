@@ -2,8 +2,8 @@
 
 use std::ops::Range;
 
-use neuma::score::{Bar, BarKind, Clef, Figure, Lyric};
-use neuma::{Diagnostic, Score, ScoreBuilder, Severity};
+use neuma::score::{Bar, BarKind, Figure, Lyric};
+use neuma::{Chant, ChantOptions, Diagnostic, Score, ScoreBuilder, Severity};
 
 use crate::pointed::{self, Part, Pointed, Syllable, VersePart};
 use crate::syllable::fold;
@@ -107,17 +107,19 @@ pub struct PsalmNote {
     pub role: ToneRole,
     /// The sung syllable's UTF-8 bytes in the psalm text: the same span as the engraved
     /// note's (`TimelineNote::span`).
-    pub source: Range<usize>,
+    pub span: Range<usize>,
 }
 
 /// Psalm text set to a tone.
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub struct PsalmSetting {
+    /// The psalm text the setting was made from.
+    pub text: String,
     /// The setting as a score whose spans count UTF-8 bytes of the psalm text: a note's is its
     /// sung syllable's, a syllable's its text, and a bar's is empty at the end of its
-    /// half-verse. Engrave it with `neuma::Chant::from_score(score, text, options)`, and hit
-    /// tests and the timeline answer in the text.
+    /// half-verse. Engrave it with [`into_chant`](Self::into_chant), and hit tests and the
+    /// timeline answer in the text.
     pub score: Score,
     /// The score as GABC, for a GABC editor or file (parsed again, its spans count GABC).
     pub gabc: String,
@@ -125,6 +127,26 @@ pub struct PsalmSetting {
     pub notes: Vec<PsalmNote>,
     /// Problems in the text and its pointing, with spans in the text.
     pub diagnostics: Vec<Diagnostic>,
+}
+
+impl PsalmSetting {
+    /// Engraves the setting as a [`Chant`] whose source is the psalm text, so hit tests and
+    /// the timeline answer there, and whose diagnostics start with the setting's (such as
+    /// `point::unsure`).
+    ///
+    /// ```
+    /// use neuma_tones::{PsalmOptions, Tone, psalm};
+    ///
+    /// let text = "O praise the Lord, all ye heathen * praise him, all ye nations.";
+    /// let chant = psalm(text, Tone::named("8.G").unwrap(), &PsalmOptions::default())
+    ///     .into_chant(neuma::ChantOptions::default());
+    /// let first = &chant.layout(600.0).timeline().notes[0];
+    /// assert_eq!(&chant.source()[first.span.clone()], "O");
+    /// ```
+    #[must_use]
+    pub fn into_chant(self, options: ChantOptions) -> Chant {
+        Chant::from_score(self.score, &self.text, self.diagnostics, options)
+    }
 }
 
 /// Sets psalm text (a verse a line, the mediant marked `*`, optionally pointed with `†`, `·`,
@@ -137,33 +159,30 @@ pub struct PsalmSetting {
 ///
 /// let text = "O praise the Lord, all ye heathen * praise him, all ye nations.";
 /// let setting = psalm(text, Tone::named("8.G").unwrap(), &PsalmOptions::default());
-/// assert_eq!(&text[setting.notes[0].source.clone()], "O");
+/// assert_eq!(&text[setting.notes[0].span.clone()], "O");
 /// ```
 #[must_use]
 pub fn psalm(text: &str, tone: &Tone, options: &PsalmOptions) -> PsalmSetting {
-    let parsed = Pointed::parse(text);
-    let mut setting = psalm_pointed(&parsed, tone, options);
-    let mut diags = parsed.diagnostics;
+    let mut parsed = Pointed::parse(text);
+    let mut diags = std::mem::take(&mut parsed.diagnostics);
+    let mut setting = set_pointed(&parsed, tone, options);
     diags.append(&mut setting.diagnostics);
     setting.diagnostics = diags;
+    setting.text = text.to_string();
     setting
 }
 
-/// [`psalm`] for text already parsed. Its diagnostics are not repeated in the setting's.
-#[must_use]
-pub fn psalm_pointed(pointed: &Pointed, tone: &Tone, options: &PsalmOptions) -> PsalmSetting {
+/// [`psalm`] for text already parsed, with only the setting's own diagnostics.
+fn set_pointed(pointed: &Pointed, tone: &Tone, options: &PsalmOptions) -> PsalmSetting {
     let mut unsure = Vec::new();
     let text = if !options.auto_point {
         pointed.syllabified()
     } else {
-        let p = crate::point::point_pointed(pointed, tone);
-        for h in p.halves.iter().filter(|h| !h.kept && h.confidence < UNSURE) {
-            let part = p.pointed.verses[h.verse].parts.iter().find(|x| x.kind == h.part);
-            if let Some(syls) = part.map(|x| &x.syllables).filter(|s| !s.is_empty()) {
-                unsure.push((syls[0].span.start..syls[syls.len() - 1].span.end, h.confidence));
-            }
+        let (text, halves) = crate::point::point_parsed(pointed, tone);
+        for h in halves.iter().filter(|h| !h.kept && h.confidence < UNSURE && !h.span.is_empty()) {
+            unsure.push((h.span.clone(), h.confidence));
         }
-        p.pointed
+        text
     };
     let mut b = ScoreBuilder::new();
     if let Some(name) = &options.name {
@@ -226,7 +245,7 @@ pub fn psalm_pointed(pointed: &Pointed, tone: &Tone, options: &PsalmOptions) -> 
                                     number: verse.number,
                                     part: part.kind,
                                     role: *role,
-                                    source: s.span.clone(),
+                                    span: s.span.clone(),
                                 });
                             }
                             Figure::Alteration(a) => a.span = s.span.clone(),
@@ -245,15 +264,11 @@ pub fn psalm_pointed(pointed: &Pointed, tone: &Tone, options: &PsalmOptions) -> 
             }
             let end = part.syllables.last().map_or(verse.span.end, |s| s.span.end);
             let (mark, kind) = match part.kind {
-                VersePart::Flex => ("†", BarKind::Minima),
-                VersePart::Mediant => ("*", BarKind::Maior),
-                VersePart::Termination => ("", if vi == last_verse { BarKind::Finalis } else { BarKind::Maior }),
+                VersePart::Flex => ("†", BarKind::Quarter),
+                VersePart::Mediant => ("*", BarKind::Full),
+                VersePart::Termination => ("", if vi == last_verse { BarKind::Double } else { BarKind::Full }),
             };
-            let bar = vec![Figure::Bar(Bar {
-                kind,
-                high: false,
-                span: end..end,
-            })];
+            let bar = vec![Figure::Bar(Bar::new(kind, end..end))];
             b = b.syllable(Lyric::from_plain(mark), true, bar);
             spans.push(end..end);
         }
@@ -264,6 +279,7 @@ pub fn psalm_pointed(pointed: &Pointed, tone: &Tone, options: &PsalmOptions) -> 
         syl.span = span;
     }
     PsalmSetting {
+        text: String::new(),
         gabc: score.to_gabc(),
         score,
         notes,
@@ -286,7 +302,7 @@ impl Figures {
             .syllables
             .into_iter()
             .last()
-            .map(|s| s.notation.into_iter().filter(|f| !matches!(f, Figure::Clef(Clef { .. }))).collect())
+            .map(|s| s.notation.into_iter().filter(|f| !matches!(f, Figure::Clef(_))).collect())
             .unwrap_or_default();
         self.0.push((neume.to_string(), f.clone()));
         f
@@ -680,7 +696,7 @@ mod tests {
         assert_eq!(map.notes.len(), s.notes.len());
         // Every note's role points at its syllable in the pointed text.
         for (n, r) in map.notes.iter().zip(&s.notes) {
-            let src = text[r.source.clone()].replace('-', "");
+            let src = text[r.span.clone()].replace('-', "");
             assert!(src.contains(n.syllable_text.as_str()), "{src} vs {}", n.syllable_text);
         }
         // The second verse isn't intoned.
@@ -738,18 +754,20 @@ mod tests {
         let text = "1 O praise the Lord, all ye · héathen * praise him, · all ye nátions.\n\
                     2 For his merciful kindness * and the truth of the Lord endureth for ever.";
         let s = set("8.G", text);
-        let mut chant = neuma::Chant::from_score(s.score.clone(), text, neuma::ChantOptions::default());
-        let timeline = chant.layout(600.0).timeline();
+        let chant = s.clone().into_chant(neuma::ChantOptions::default());
+        assert_eq!(chant.source(), text);
+        let layout = chant.layout(600.0);
+        let timeline = layout.timeline();
         assert_eq!(timeline.notes.len(), s.notes.len());
         for (note, role) in timeline.notes.iter().zip(&s.notes) {
-            assert_eq!(note.span, role.source);
+            assert_eq!(note.span, role.span);
         }
-        assert_eq!(&text[s.notes[0].source.clone()], "O");
+        assert_eq!(&text[s.notes[0].span.clone()], "O");
         // A click on a note finds its syllable in the text.
         let first = &timeline.notes[0];
-        let hit = chant.source_at(first.cx, first.cy).unwrap();
+        let hit = layout.source_at(first.cx, first.cy).unwrap();
         assert_eq!(&text[hit.span.clone()], "O");
-        let map = chant.source_map().unwrap();
+        let map = layout.source_map();
         for e in map.syllables.iter().chain(&map.bars) {
             assert!(text.get(e.span.clone()).is_some(), "{e:?}");
         }

@@ -35,10 +35,16 @@ page that serves the EB Garamond 12 files instead passes `{ font: "eb-garamond-1
 the SVG text's size, weight and letter-spacing alone: CSS that changes them changes the
 widths the layout planned for.
 
-`page` is `{ width, height, svg, timeline }`. Every position is in output units (staff
-spaces times `scale`, the SVG's user units) from the layout's top left, with y down. A box
-is `x`, `y`, `w`, `h` from its top-left corner; a point that is a center is named `cx`, `cy`.
-Laying out again at the same width and options reuses the last layout.
+`page` is a `Page`: `{ width, height, svg }`, its `timeline`, made when first read, and its
+hit tests (below). Every position is in output units (staff spaces times `scale`, the SVG's
+user units) from the layout's top left, with y down. A box is `x`, `y`, `w`, `h` from its
+top-left corner; a point that is a center is named `cx`, `cy`. Laying out again with the same
+arguments and no change between returns the same page.
+
+A page answers for itself, whatever the chant has laid out since: a thumbnail made with
+`maxLines: 1` leaves the main page's hit tests alone. After `chant.update` or
+`chant.setOptions`, a page made before throws on its next question (a timeline it has
+already made stays readable); lay out again.
 
 - **`timeline.notes`**: one entry per note, in singing order, with these fields:
   - `id`: stable across layouts of one `Chant`. Each SVG element lists the notes it draws
@@ -50,7 +56,7 @@ Laying out again at the same width and options reuses the last layout.
   - `start`, `duration`: in weight units. Choose your own tempo.
   - `staffPosition`, `degree`, `semitones`: `semitones` counts from the clef's do, with
     flats applied.
-  - `syllableText`, `vowel`, `shape`, `liquescent`, `quilisma`.
+  - `syllableText`, `vowel`, `shape` (`quilisma` among them), `liquescent`.
   - `accent`: the syllable has an acute in the source.
   - `newSyllable`: the first note of its syllable.
   - `recitation`: inferred from three or more single-note syllables on one pitch.
@@ -58,10 +64,10 @@ Laying out again at the same width and options reuses the last layout.
     the mediant `*`.
   - `sourceStart`, `sourceEnd`: the note's bytes in the GABC source;
     `sourceUtf16Start`, `sourceUtf16End`: the same in UTF-16 units.
-- **`timeline.pauses`**: `{ beforeNote, kind, weight, start }`. `kind` is one of
+- **`timeline.pauses`**: `{ beforeNote, kind, start, duration }`. `kind` is one of
   `virgula`, `minimis`, `quarter`, `half`, `full`, `dotted-full`, `double`, `dominican`,
   `mediant` (`*`) or `flex` (`†`). A mediant or flex is the whole pause at its bar: the bar
-  right after it stays in the list with weight 0.
+  right after it stays in the list with duration 0.
 - **`timeline.lines`**: each line's `top`, `bottom`, `staff` (the middle line) and
   `baseline` (the lyrics).
 - **`timeline.duration`**: the total length.
@@ -81,8 +87,10 @@ Each diagnostic has a `code` that stays stable across versions (see
 `{ start, end, utf16Start, utf16End, replacement, title }`, replacing
 `utf16Start`..`utf16End` with `replacement`.
 
-`chant.noteAt(x, y)` returns the note under a point in the last layout, or the nearest note
-on that line, or `null`. `chant.free()` releases the score; using a freed `Chant` throws.
+`page.noteAt(x, y)` returns the note under a point, or the nearest note on that line, or
+`null`. `chant.setOptions({ lyricSize: 3 })` engraves again with new options (those the
+constructor takes). `chant.free()` releases the score; using a freed `Chant`, or a page of
+one, throws.
 
 Weights default to `DEFAULT_WEIGHTS`: one pulse per note, two for a dotted note, and pauses
 that grow with the bar. Any key you pass with a number overrides its default, except a negative one; no weight
@@ -99,9 +107,10 @@ and link the source and the score both ways.
 
 ```js
 const chant = new Chant(textarea.value, { initial: 1 });
+let page = chant.layout(host.clientWidth, { svg: "lines", ids: false });
 textarea.addEventListener("input", () => {
   chant.update(textarea.value);    // keeps the options; diagnostics follow the new source
-  const page = chant.layout(host.clientWidth, { timeline: false, svg: "lines", ids: false });
+  page = chant.layout(host.clientWidth, { svg: "lines", ids: false });
   // page.svgParts: { head, defs, rest, lines: [{ top, svg }] }
 });
 host.addEventListener("click", (e) => {
@@ -110,15 +119,15 @@ host.addEventListener("click", (e) => {
   const box = host.getBoundingClientRect();
   const x = e.clientX - box.left - host.clientLeft + host.scrollLeft;
   const y = e.clientY - box.top - host.clientTop + host.scrollTop;
-  const hit = chant.sourceAt(x, y); // { kind, index, utf16Start, utf16End, x, y, w, h, … }
+  const hit = page.sourceAt(x, y); // { kind, index, utf16Start, utf16End, x, y, w, h, cx, … }
   if (hit) textarea.setSelectionRange(hit.utf16Start, hit.utf16End);
 });
-const lit = chant.elementsAt(textarea.selectionStart); // what to highlight for the caret
+const lit = page.elementsAt(textarea.selectionStart); // what to highlight for the caret
 ```
 
 - **`chant.update(gabc)`** replaces the score, keeping the options. Lay it out again to see it.
-- **`layout(width, { timeline: false })`** skips the playback timeline, which on a long score
-  is most of the layout's cost. `page.timeline` is then absent.
+- **`page.timeline`** is made only when read, so an editor that never reads it skips what on
+  a long score is most of the layout's cost.
 - **`layout(width, { svg: "lines" })`** returns `page.svgParts` instead of `page.svg`:
   `head` (the `<svg>` start tag and style), `defs` (the glyph `<path>`s, for a `<defs>`),
   `rest` (the initial and its annotations) and `lines`, each `{ top, svg }` with the line's
@@ -129,14 +138,14 @@ const lit = chant.elementsAt(textarea.selectionStart); // what to highlight for 
   the whole SVG costs the browser far more than the engine's work. Giving each line its own
   `<svg>` (`<use>` finds the glyphs in one shared `<defs>` anywhere in the page) keeps the
   browser's work to the changed line as well; the example below does.
-- **`chant.sourceAt(x, y)`** returns what is under a point of the last layout, most specific
+- **`page.sourceAt(x, y)`** returns what is under a point of the page, most specific
   first: a notehead, a bar (within half a staff space), a syllable's box, or the nearest
   syllable on that line; `null` outside the lines. The result is
-  `{ kind: "note"|"bar"|"syllable", index, start, end, utf16Start, utf16End, line, x, y, w, h }`:
+  `{ kind: "note"|"bar"|"syllable", index, start, end, utf16Start, utf16End, line, x, y, w, h, cx }`:
   `utf16Start`..`utf16End` is the source to select, and `x`, `y`, `w`, `h` the box drawn (a syllable's
-  box spans its line's height, across its notes and lyric). `index` is the note id, or the
-  bar's or syllable's index in the score.
-- **`chant.elementsAt(caret)`** returns what to highlight for a caret: the notes and bar
+  box spans its line's height, across its notes and lyric); `cx` is a note's notehead
+  center. `index` is the note id, or the bar's or syllable's index in the score.
+- **`page.elementsAt(caret)`** returns what to highlight for a caret: the notes and bar
   whose source holds it, then a box per line for its syllable. A caret just after a note,
   as after typing it, counts as on it. Pass `{ unit: "utf8" }` to give a byte offset.
 
@@ -173,7 +182,7 @@ const gabcLint = linter((view) => {
 
 // Highlight the caret's note, bar and syllable in the preview.
 const follow = EditorView.updateListener.of((u) => {
-  if (u.selectionSet || u.docChanged) highlight(chant.elementsAt(u.state.selection.main.head));
+  if (u.selectionSet || u.docChanged) highlight(page.elementsAt(u.state.selection.main.head));
 });
 ```
 
@@ -211,7 +220,7 @@ be in the whole score. An initial that spans more staves keeps its full size, an
 height includes it. The timeline ends with the kept lines: their notes and the pauses drawn
 on them.
 
-`neuma notes FILE` prints the same layout JSON from the command line, without the SVG.
+`neuma notes FILE` prints the page's size and timeline as JSON from the command line.
 `neuma info FILE...` prints one library entry per file, as a line of JSON with a `file`
 field.
 
@@ -219,12 +228,19 @@ field.
 
 `psalm(text, tone, { intone, autoPoint })` sets psalm text, a verse per line with the mediant
 marked `*`, to a tone: a built-in name from `toneNames()` such as `"8.G"`, or a tone block of your
-own. It returns `{ gabc, notes, diagnostics }`: engrave `gabc` with `new Chant(gabc)`, and
-`notes[i]` gives note `i`'s verse, half and role in the tone (intonation, tenor, preparatory,
-accent, ending), with the sung syllable's offsets in `text` (`start`, `end`, `utf16Start`,
-`utf16End`). Text can be hand-pointed (`·`, acutes, `†`, `–`); half-verses with no marks
-are pointed automatically unless `autoPoint: false`, and a `point::unsure` diagnostic
-flags each one worth checking.
+own. It returns `{ gabc, notes, diagnostics }`: `notes[i]` gives note `i`'s verse, half and
+role in the tone (intonation, tenor, preparatory, accent, ending), with the sung syllable's
+source in `text` named as the timeline names a note's (`sourceStart`, `sourceEnd`,
+`sourceUtf16Start`, `sourceUtf16End`). Text can be hand-pointed (`·`, acutes, `†`, `–`);
+half-verses with no marks are pointed automatically unless `autoPoint: false`, and a
+`point::unsure` diagnostic flags each one worth checking.
+
+`Chant.fromPsalm(text, tone, { intone, autoPoint, ...chantOptions })` sets and engraves it in
+one step, with its sources in `text`: a tap on a note finds its syllable in the psalm text,
+and the diagnostics count the text. `chant.psalm` is the setting's `{ gabc, notes }`, and
+`chant.update(text)` sets new text to the same tone. `new Chant(gabc)` engraves the GABC
+instead, with sources in the GABC.
 
 `point(text, tone)` returns the pointed text itself, `{ text, halves, diagnostics }`, with the
-pointer's confidence (0 to 1) for each half-verse it marked, for an editor to show.
+pointer's confidence (0 to 1) for each half-verse it marked, and each half's source in
+`text`, for an editor to show.

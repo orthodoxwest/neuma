@@ -47,7 +47,9 @@ fuzz_target!(|data: &[u8]| {
         let _ = layout.display();
         let timeline = layout.timeline();
         if let Some(n) = timeline.notes.first() {
-            let _ = timeline.note_at(n.cx, n.cy);
+            let _ = layout.note_at(n.cx, n.cy);
+            let _ = layout.source_at(n.cx, n.cy);
+            let _ = layout.elements_at(n.span.start);
         }
         let _ = layout.svg();
     }

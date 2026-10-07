@@ -14,11 +14,11 @@
 
   What it shows:
   - the score redrawn as you type, at most once per animation frame, replacing only the
-    SVG lines whose markup changed (layout with svg: "lines", ids: false, timeline: false);
+    SVG lines whose markup changed (layout with svg: "lines", ids: false);
   - diagnostics underlined in the source (hover for the message) and listed, with the fix
     as a button where there is one;
-  - a click on the score selects the note, bar or syllable's source (sourceAt);
-  - the caret's note, bar and syllable highlighted in the score (elementsAt).
+  - a click on the score selects the note, bar or syllable's source (page.sourceAt);
+  - the caret's note, bar and syllable highlighted in the score (page.elementsAt).
 -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital@0;1&display=swap">
@@ -140,6 +140,7 @@ const stats = $("stats"), tip = $("tip"), preview = $("preview");
 await init();
 text.value = SAMPLE;
 const chant = new Chant(text.value, { initial: 1 });
+let page = null;          // the page shown, which answers clicks and the caret
 
 // ---- Rendering, coalesced to one per animation frame -------------------------------------
 
@@ -158,12 +159,12 @@ function render() {
   if (dirtySource) chant.update(text.value);
   if (dirtySource || dirtyLayout) {
     const width = Math.max(200, Math.floor(preview.clientWidth - 32));
-    const page = chant.layout(width, { timeline: false, svg: "lines", ids: false });
+    page = chant.layout(width, { svg: "lines", ids: false });
     engine = performance.now() - t0;
     patched = patch(page.svgParts);
   }
   if (dirtySource) showDiagnostics(chant.diagnostics);
-  if (dirtySource || dirtyLayout || dirtyCaret) highlight(chant.elementsAt(text.selectionStart));
+  if (dirtySource || dirtyLayout || dirtyCaret) highlight(page.elementsAt(text.selectionStart));
   if (patched) {
     const total = performance.now() - t0;
     stats.textContent = `${text.value.length.toLocaleString()} chars · engine ${engine.toFixed(1)} ms · ` +
@@ -258,7 +259,7 @@ function highlight(elements) {
 
 host.addEventListener("click", (event) => {
   const box = host.getBoundingClientRect();
-  const hit = chant.sourceAt(event.clientX - box.left, event.clientY - box.top);
+  const hit = page?.sourceAt(event.clientX - box.left, event.clientY - box.top);
   if (!hit) return;
   text.focus({ preventScroll: true });
   text.setSelectionRange(hit.utf16Start, hit.utf16End);

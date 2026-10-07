@@ -1,12 +1,13 @@
 //! Note hit boxes: a porrectus swash's ends find themselves, except where a neighbour's
 //! notehead is.
 
-use neuma::{ApproxMeasure, Initial, StyleOptions, Timeline, TimelineNote, parse};
+use neuma::{ApproxMeasure, Initial, Layout, StyleOptions, Timeline, TimelineNote, parse};
 
-fn note_map(src: &str) -> Timeline {
+fn note_map(src: &str) -> (Layout, Timeline) {
     let style = StyleOptions::default().with_initial(Initial::None);
-    let eng = parse(src).score.engrave(&ApproxMeasure, &style);
-    eng.layout(2000.0).timeline()
+    let layout = parse(src).score.engrave(&ApproxMeasure, &style).layout(2000.0);
+    let timeline = layout.timeline();
+    (layout, timeline)
 }
 
 /// Whether (`x`, `y`) is inside the note's notehead box.
@@ -35,7 +36,7 @@ fn porrectus_ends_hit_test_as_themselves_except_where_a_neighbour_is() {
         ("ghgh~", 1),
         ("fgfg", 1),
     ] {
-        let map = note_map(&format!("(c4) a({neume}) b(g)"));
+        let (layout, map) = note_map(&format!("(c4) a({neume}) b(g)"));
         let ns = &map.notes;
         for end in [first, first + 1] {
             // Sample the swash end's whole notehead box: a point inside a neighbour's box
@@ -46,7 +47,7 @@ fn porrectus_ends_hit_test_as_themselves_except_where_a_neighbour_is() {
                 for j in 0..N {
                     let x = e.cx - e.w / 2.0 + e.w * (i as f32 + 0.5) / N as f32;
                     let y = e.cy - e.h / 2.0 + e.h * (j as f32 + 0.5) / N as f32;
-                    let found = map.note_at(x, y);
+                    let found = layout.note_at(x, y);
                     let neighbours: Vec<u32> = ns.iter().filter(|n| n.id != e.id && inside(n, x, y)).map(|n| n.id).collect();
                     if neighbours.is_empty() {
                         assert_eq!(found, Some(e.id), "{neume}: ({x}, {y}) in note {end}'s box");
@@ -64,21 +65,21 @@ fn porrectus_ends_hit_test_as_themselves_except_where_a_neighbour_is() {
 
 #[test]
 fn porrectus_hit_testing_finds_each_note() {
-    let map = note_map("(c4) a(hgh)");
+    let (layout, map) = note_map("(c4) a(hgh)");
     let ns = &map.notes;
     assert_eq!(ns.len(), 3);
     for n in ns {
-        assert_eq!(map.note_at(n.cx, n.cy), Some(n.id));
+        assert_eq!(layout.note_at(n.cx, n.cy), Some(n.id));
     }
     // The swash's end keeps its notehead's center: the swash's right end, on its line.
     let (start, end) = (&ns[0], &ns[1]);
     assert_eq!(end.cy - start.cy, 6.0);
     assert!((end.cx - start.cx - (neuma::glyphs::GlyphId::Porrectus1.width() - 1.0) * 6.0).abs() < 1e-3);
     // Off the swash's end on the side away from the stacked note: still the swash's end.
-    assert_eq!(map.note_at(end.cx + 2.5, end.cy + 2.3), Some(end.id));
+    assert_eq!(layout.note_at(end.cx + 2.5, end.cy + 2.3), Some(end.id));
     // Just above the swash's end, inside the stacked note's box: the stacked note.
     let (end, top) = (&ns[1], &ns[2]);
     let y = top.cy + top.h / 2.0 - 0.05;
     assert!(y < end.cy);
-    assert_eq!(map.note_at(top.cx, y), Some(top.id));
+    assert_eq!(layout.note_at(top.cx, y), Some(top.id));
 }

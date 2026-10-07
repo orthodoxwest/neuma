@@ -9,7 +9,7 @@
 //! let setting = psalm(text, tone, &PsalmOptions::default());
 //! assert!(setting.gabc.contains("pá(k)"));
 //! // Engraved with its spans in the text, so the timeline and hit tests answer there.
-//! let mut chant = neuma::Chant::from_score(setting.score, text, neuma::ChantOptions::default());
+//! let chant = setting.into_chant(neuma::ChantOptions::default());
 //! let first = &chant.layout(600.0).timeline().notes[0];
 //! assert_eq!(&text[first.span.clone()], "The");
 //! # Ok::<(), neuma_tones::ToneError>(())
@@ -21,7 +21,7 @@ mod pointed;
 mod syllable;
 mod tone;
 
-pub use apply::{Intone, PsalmNote, PsalmOptions, PsalmSetting, ToneRole, UNSURE, psalm, psalm_pointed};
-pub use point::{HalfPointing, Pointing, point, point_pointed};
-pub use pointed::{Joint, Part, Pointed, Syllable, Verse, VersePart};
+pub use apply::{Intone, PsalmNote, PsalmOptions, PsalmSetting, ToneRole, UNSURE, psalm};
+pub use point::{HalfPointing, Pointing, point};
+pub use pointed::VersePart;
 pub use tone::{Cadence, Slot, Tone, ToneError};

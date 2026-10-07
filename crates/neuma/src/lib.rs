@@ -17,10 +17,13 @@
 //! assert!(svg.starts_with("<svg") && timeline.notes.len() == 6);
 //! ```
 //!
+//! A [`Layout`] is an owned value, cheap to clone and `Send + Sync`: keep layouts at several
+//! widths at once, and ask each for its SVG, display list, timeline, source map and hit tests
+//! (`note_at`, `source_at`, `elements_at`) while the chant changes.
+//!
 //! Under it is the pipeline, for advanced use: [`parse`] → [`Score`] → [`Score::engrave`]
-//! (width-independent; cache it, or engrave again after an edit with [`EngraveCache`]) →
-//! [`Engraving::layout`] (cheap; rerun on every resize) → [`Layout`]'s SVG, display list,
-//! timeline and source map.
+//! (width-independent; share it in an `Arc`) → [`Engraving::layout`] (cheap; rerun on every
+//! resize) → [`Layout`]. Only a [`Chant`] engraves again incrementally after an edit.
 //!
 //! # Coordinates and units
 //!
@@ -79,19 +82,19 @@ pub mod vowel;
 pub use chant::{Chant, ChantOptions};
 pub use diag::{Diagnostic, Fix, Severity};
 pub use display::{DisplayList, Item, LineBox, NoteRef, TextRole, TextRun};
-pub use engrave::{AlterationScope, CustosPolicy, EngraveCache, Engraving, Initial, Ink, StyleOptions};
+pub use engrave::{AlterationScope, CustosPolicy, Engraving, Initial, Ink, StyleOptions};
 #[cfg(feature = "fonts")]
 pub use fonts::LyricFont;
 pub use gabc::{Parsed, parse};
 pub use glyphs::{GlyphOutline, glyph_outline};
-pub use layout::{LastLine, Layout, LayoutCache, LayoutOptions};
+pub use layout::{LastLine, Layout, LayoutOptions};
 pub use metrics::{MetricsError, MetricsTable};
 pub use notes::{Pause, PauseKind, Timeline, TimelineNote, Weights};
 pub use score::{BarKind, NoteShape, Score, ScoreBuilder, TextStyle};
-pub use source::{Element, ElementKind, OffsetUnit, SourceMap, Utf16Index};
+pub use source::{Element, ElementKind, SourceMap, Utf16Index};
 pub use summary::{Mode, OfficePart, Summary, summarize};
 #[cfg(feature = "svg")]
-pub use svg::{SvgCache, SvgLine, SvgOptions, SvgParts};
+pub use svg::{SvgLine, SvgOptions, SvgParts};
 pub use text::{ApproxMeasure, TextMeasure};
 pub use vowel::VowelRules;
 

@@ -13,6 +13,7 @@
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use neuma::{DisplayList, Engraving, Initial, Item, LayoutOptions, LyricFont, StyleOptions, TextRole};
 use neuma_book::font::{FontFiles, Fonts, ITALIC, REGULAR, Seg};
@@ -50,7 +51,7 @@ fn read(path: &str) -> std::io::Result<String> {
 }
 
 /// Parses and engraves a score with the metrics of the font the images are drawn with.
-fn engrave(gabc: &str, initial: Initial) -> Engraving {
+fn engrave(gabc: &str, initial: Initial) -> Arc<Engraving> {
     let parsed = neuma::parse(gabc);
     for d in &parsed.diagnostics {
         eprintln!("{d}");
@@ -276,7 +277,7 @@ fn reflow(fonts: &Fonts) -> std::io::Result<String> {
 fn psalm(fonts: &Fonts) -> String {
     let tone = Tone::named("8.G").expect("built-in tone");
     let text = read("tools/readme/scores/psalm-117.txt").expect("psalm text");
-    let pointed = point(&text, tone).text();
+    let pointed = point(&text, tone).text;
     let options = PsalmOptions::default().with_strip_accents(true);
     let setting = neuma_tones::psalm(&text, tone, &options);
     for d in &setting.diagnostics {

@@ -69,16 +69,18 @@ let gabc = "name: Regina caeli;\nmode: 6;\n%%\n\
     (c4) RE(f)gí(g)na(h) cae(hj)li,(h) lae(ghg)tá(fe)re,(f.) (;) al(f)le(g)lú(hg)ia.(g.) (::)";
 
 // Parsing never fails: problems come back as diagnostics.
-let mut chant = Chant::new(gabc); // engraved once; keep it, it is Send + Sync
+let chant = Chant::new(gabc); // engraved once; keep it, share it: it is Send + Sync
 for d in chant.diagnostics() {
     eprintln!("{d}");
 }
 
-// Lay out at any width: cheap enough for every resize.
+// Lay out at any width: cheap enough for every resize. A layout is an owned value.
 let layout = chant.layout(720.0);
 let svg = layout.svg(); // lyrics set in EB Garamond
 let timeline = layout.timeline(); // where and when each note is
 assert!(svg.starts_with("<svg") && timeline.notes.len() == 17);
+let first = &timeline.notes[0];
+assert_eq!(layout.note_at(first.cx, first.cy), Some(first.id)); // hit tests, per layout
 ```
 
 Options are built with `with_*` setters
@@ -105,9 +107,11 @@ await init(); // once; every call after this is synchronous
 const chant = new Chant(gabc);
 for (const d of chant.diagnostics) console.warn(`${d.code}: ${d.message}`);
 
-const draw = () => { host.innerHTML = chant.layout(host.clientWidth).svg; };
+let page;
+const draw = () => { page = chant.layout(host.clientWidth); host.innerHTML = page.svg; };
 draw();
 addEventListener("resize", draw); // a new layout for each width is cheap
+host.addEventListener("click", (e) => console.log(page.noteAt(e.offsetX, e.offsetY))); // a note id
 ```
 
 The module fetches nothing (it works inside sandboxed pages), and lyrics are spaced for
@@ -118,15 +122,15 @@ EB Garamond from Google Fonts: load `family=EB+Garamond:ital@0;1` on the page. S
 
 ```swift
 let chant = Chant(gabc: source, options: ChantOptions())
-let page = chant.layout(width: Float(bounds.width), options: LayoutOptions())
-// page.items: glyphs (outlines from glyphOutline(id:)), rectangles and text to draw;
-// page.timeline: when each note sounds; chant.noteAt(x:y:) hit-tests a tap.
-chant.update(gabc: edited) // after an edit: only what changed is engraved again
+let layout = chant.layout(width: Float(bounds.width), options: LayoutOptions())
+// layout.page().items: glyphs (outlines from glyphOutline(id:)), rectangles and text to draw;
+// layout.timeline(weights:): when each note sounds; layout.noteAt(x:y:) hit-tests a tap.
+chant.update(src: edited) // after an edit: only what changed is engraved again
 ```
 
 ```kotlin
 val chant = Chant(source, ChantOptions())
-val page = chant.layout(widthPx, LayoutOptions(scale = 8f))
+val page = chant.layout(widthPx, LayoutOptions(scale = 8f)).page()
 ```
 
 Build the native libraries and generate the bindings as
@@ -171,7 +175,7 @@ the one point that is a center, a timeline note's notehead, is named `cx, cy`.
 use neuma::{Chant, ChantOptions, Initial, Item};
 
 let gabc = "(c4) Al(f)le(gf)lú(gh)ia.(g.) (::)";
-let mut chant = Chant::with_options(gabc, ChantOptions::default().with_initial(Initial::Lines(2)));
+let chant = Chant::with_options(gabc, ChantOptions::default().with_initial(Initial::Lines(2)));
 
 for width in [800.0, 400.0] {
     let list = chant.layout(width).display();
@@ -189,9 +193,10 @@ for width in [800.0, 400.0] {
 ```
 
 For a GABC editor, `chant.update(&source)` engraves again only around the edit, the next
-layout reuses the line breaks it can, and `chant.svg_parts()` reuses each unchanged line's
-SVG. `chant.source_at(x, y)`, `chant.note_at(x, y)` and `chant.elements_at(caret, unit)`
-link the source and the last layout both ways, in UTF-8 bytes or UTF-16 units.
+layout reuses the line breaks it can, and `chant.svg_parts(&layout, &options)` reuses each
+unchanged line's SVG. Each layout links itself and the source both ways:
+`layout.source_at(x, y)`, `layout.note_at(x, y)` and `layout.elements_at(byte)`, with
+`chant.utf16()` to convert a caret counted in UTF-16 units.
 
 ### Live editing in the browser
 
@@ -207,14 +212,16 @@ CodeMirror's lint and update listeners.
 
 ```js
 const chant = new Chant(textarea.value);
+let page = chant.layout(host.clientWidth); // a page answers its own clicks
 textarea.addEventListener("input", () => {
   chant.update(textarea.value); // keeps the options; diagnostics follow the new source
-  host.innerHTML = chant.layout(host.clientWidth, { timeline: false }).svg;
+  page = chant.layout(host.clientWidth);
+  host.innerHTML = page.svg;
   showProblems(chant.diagnostics); // { severity, code, message, utf16Start, utf16End, fix }
 });
 host.addEventListener("click", (e) => {
   const box = host.getBoundingClientRect();
-  const hit = chant.sourceAt(e.clientX - box.left, e.clientY - box.top); // note, bar or syllable
+  const hit = page.sourceAt(e.clientX - box.left, e.clientY - box.top); // note, bar or syllable
   if (hit) textarea.setSelectionRange(hit.utf16Start, hit.utf16End);
 });
 ```
@@ -240,7 +247,7 @@ import { noteAtTime } from "./neuma.mjs";
 
 const page = chant.layout(host.clientWidth);
 host.innerHTML = page.svg;
-const { notes, duration } = page.timeline;
+const { notes, duration } = page.timeline; // made when first read
 
 const secondsPerPulse = 0.35;
 const t0 = performance.now();
@@ -255,7 +262,7 @@ requestAnimationFrame(function tick(now) {
 });
 ```
 
-`chant.noteAt(x, y)` answers the reverse question for a tap or a click. The timeline also
+`page.noteAt(x, y)` answers the reverse question for a tap or a click. The timeline also
 marks recitation, accents, the start of each syllable, and the verse and half-verse.
 
 ### Psalm tones and automatic pointing
@@ -280,7 +287,7 @@ let text = "1 O praise the Lord, all ye heathen * praise him, all ye nations.\n\
 
 let pointing = point(text, tone);
 assert_eq!(
-    pointing.text(),
+    pointing.text,
     "1 O praise the Lord, all ye · héathen * praise him, · all ye nátions.\n\
      2 For his merciful kindness is ever more and more tow·árds us * \
        and the truth of the Lord endureth for · ever. Práise the Lord.\n"
@@ -289,9 +296,9 @@ let sure = pointing.halves.iter().all(|h| h.confidence >= 0.8); // per half-vers
 
 let setting = psalm(text, tone, &PsalmOptions::default());
 assert_eq!(setting.notes[0].role, ToneRole::Intonation);
-// Engrave it like any other score. Its spans count the psalm text, so a tapped note's
-// source is its syllable in `text`.
-let mut chant = Chant::from_score(setting.score, text, ChantOptions::default());
+// Engrave it with its spans in the psalm text, so a tapped note's source is its syllable
+// in `text`, and the setting's diagnostics (such as `point::unsure`) are the chant's.
+let chant = setting.into_chant(ChantOptions::default());
 let first = &chant.layout(600.0).timeline().notes[0];
 assert_eq!(&text[first.span.clone()], "O");
 ```
@@ -304,7 +311,8 @@ of them, and those agree about 92% of the time. The ones below 80% come back as 
 diagnostics to check. The Solesmes tones and their usual endings are built in, and a tone of
 your own is a few lines of text. See [crates/neuma-tones](crates/neuma-tones/README.md).
 
-In the browser it is `point(text, "8.G")` and `psalm(text, "8.G")`; on the command line,
+In the browser it is `point(text, "8.G")`, `psalm(text, "8.G")` and
+`Chant.fromPsalm(text, "8.G")`; on the command line,
 `neuma point --tone 8.G psalm.txt` and `neuma psalm --tone 8.G psalm.txt | neuma render -`.
 
 ### Print booklets
@@ -347,13 +355,14 @@ be searched and copied; with no font it uses the standard Times faces every PDF 
 ### iOS and Android
 
 [`neuma-mobile`](crates/neuma-mobile/README.md) wraps the engine with UniFFI. A `Chant` is
-thread-safe; `layout` returns a `Page` with the items to draw (each glyph's outline is fetched
-once with `glyphOutline`) and the same timeline as the browser.
+thread-safe; `layout` returns a `Layout`, whose `page()` has the items to draw (each glyph's
+outline is fetched once with `glyphOutline`), whose `timeline(weights)` is the browser's,
+and whose hit tests answer for it alone, so a thumbnail and the main view don't mix.
 
 ```swift
 let chant = Chant(gabc: source, options: ChantOptions())
-let page = chant.layout(width: Float(bounds.width), options: LayoutOptions())
-for item in page.items {
+let layout = chant.layout(width: Float(bounds.width), options: LayoutOptions())
+for item in layout.page().items {
     switch item {
     case let .glyph(glyph, x, y, scale, _, _):
         fillGlyph(glyphOutline(id: glyph)!.path, x: x, y: y, scale: scale) // your drawing code
@@ -363,23 +372,24 @@ for item in page.items {
         drawLyrics(runs.map { $0.text }.joined(), x: x, baseline: baseline, size: size)
     }
 }
-let tapped = chant.noteAt(x: Float(point.x), y: Float(point.y)) // a note id, or nil
+let tapped = layout.noteAt(x: Float(point.x), y: Float(point.y)) // a note id, or nil
 ```
 
 ```kotlin
 val chant = Chant(source, ChantOptions())
-val page = chant.layout(width, LayoutOptions())
-for (item in page.items) when (item) {
+val layout = chant.layout(width, LayoutOptions())
+for (item in layout.page().items) when (item) {
     is Item.Glyph -> drawGlyph(glyphOutline(item.glyph)!!.path, item.x, item.y, item.scale)
     is Item.Rect -> drawRect(item.x, item.y, item.w, item.h)
     is Item.Text -> drawLyrics(item.runs.joinToString("") { it.text }, item.x, item.baseline, item.size)
 }
-val id = chant.noteAt(x, y) // the note under a tap, or null
+val id = layout.noteAt(x, y) // the note under a tap, or null
+layout.close()
 chant.close()
 ```
 
 The bindings also cover diagnostics with fixes, `sourceAt` and `elementsAt` for editors,
-library entries and psalm tones.
+`setOptions` for a new text size, library entries and psalm tones (`Chant.fromPsalm`).
 
 ### Library entries
 

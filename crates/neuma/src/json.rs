@@ -11,6 +11,7 @@ use crate::{
 };
 
 /// A JSON string literal for `s`.
+#[doc(hidden)]
 pub fn string(out: &mut String, s: &str) {
     out.push('"');
     // Most strings need no escapes: copy them whole.
@@ -37,6 +38,7 @@ pub fn string(out: &mut String, s: &str) {
 
 /// A finite number with at most three decimals (0 for a non-finite one: JSON has no
 /// infinities).
+#[doc(hidden)]
 pub fn number(out: &mut String, v: f32) {
     if !v.is_finite() {
         out.push('0');
@@ -69,11 +71,19 @@ fn field(out: &mut String, first: &mut bool, name: &str) {
 
 /// `"start":…,"end":…` in UTF-8 bytes, then `"utf16Start":…,"utf16End":…` in UTF-16 units
 /// when the source's index is at hand (fields to go inside an object).
+#[doc(hidden)]
 pub fn span(out: &mut String, span: &Range<usize>, utf16: Option<&Utf16Index>) {
     named_span(out, ["start", "end", "utf16Start", "utf16End"], span, utf16);
 }
 
 /// [`span`] under other names (`sourceStart` and so on).
+/// `"sourceStart":…,"sourceEnd":…`, then `"sourceUtf16Start":…,"sourceUtf16End":…` with
+/// `utf16`: a note's source, as the timeline names it.
+#[doc(hidden)]
+pub fn source_span(out: &mut String, span: &Range<usize>, utf16: Option<&Utf16Index>) {
+    named_span(out, ["sourceStart", "sourceEnd", "sourceUtf16Start", "sourceUtf16End"], span, utf16);
+}
+
 fn named_span(out: &mut String, [start, end, start16, end16]: [&str; 4], span: &Range<usize>, utf16: Option<&Utf16Index>) {
     let _ = write!(out, r#""{start}":{},"{end}":{}"#, span.start, span.end);
     if let Some(idx) = utf16 {
@@ -120,8 +130,8 @@ pub fn diagnostics(out: &mut String, diags: &[Diagnostic], utf16: Option<&Utf16I
     out.push(']');
 }
 
-/// A source map element: `{ kind, index, start, end, utf16Start, utf16End, line, x, y, w, h }`,
-/// its box from its top-left corner.
+/// A source map element: `{ kind, index, start, end, utf16Start, utf16End, line, x, y, w, h,
+/// cx }`, its box from its top-left corner (`cx` as [`Element::cx`]).
 pub fn element(out: &mut String, e: &Element, utf16: &Utf16Index) {
     let kind = match e.kind {
         ElementKind::Note => "note",
@@ -138,6 +148,8 @@ pub fn element(out: &mut String, e: &Element, utf16: &Utf16Index) {
     number(out, e.w);
     out.push_str(",\"h\":");
     number(out, e.h);
+    out.push_str(",\"cx\":");
+    number(out, e.cx);
     out.push('}');
 }
 
@@ -145,11 +157,11 @@ fn bar_name(b: BarKind) -> &'static str {
     match b {
         BarKind::Virgula => "virgula",
         BarKind::Minimis => "minimis",
-        BarKind::Minima => "quarter",
-        BarKind::Minor => "half",
-        BarKind::Maior => "full",
-        BarKind::DottedMaior => "dotted-full",
-        BarKind::Finalis => "double",
+        BarKind::Quarter => "quarter",
+        BarKind::Half => "half",
+        BarKind::Full => "full",
+        BarKind::DottedFull => "dotted-full",
+        BarKind::Double => "double",
         BarKind::Dominican(_) => "dominican",
     }
 }
@@ -225,12 +237,7 @@ pub fn timeline(out: &mut String, map: &Timeline, utf16: Option<&Utf16Index>) {
             integer(out, v);
         }
         out.push(',');
-        named_span(
-            out,
-            ["sourceStart", "sourceEnd", "sourceUtf16Start", "sourceUtf16End"],
-            &n.span,
-            utf16,
-        );
+        source_span(out, &n.span, utf16);
         field(out, &mut first, "syllableText");
         string(out, &n.syllable_text);
         field(out, &mut first, "vowel");
@@ -242,7 +249,6 @@ pub fn timeline(out: &mut String, map: &Timeline, utf16: Option<&Utf16Index>) {
         string(out, shape_name(n.shape));
         for (name, v) in [
             ("liquescent", n.liquescent),
-            ("quilisma", n.quilisma),
             ("accent", n.accent),
             ("newSyllable", n.new_syllable),
             ("recitation", n.recitation),
@@ -259,11 +265,11 @@ pub fn timeline(out: &mut String, map: &Timeline, utf16: Option<&Utf16Index>) {
         }
         let _ = write!(
             out,
-            "{{\"beforeNote\":{},\"kind\":\"{}\",\"weight\":",
+            "{{\"beforeNote\":{},\"kind\":\"{}\",\"duration\":",
             p.before_note,
             pause_name(p.kind)
         );
-        number(out, p.weight);
+        number(out, p.duration);
         out.push_str(",\"start\":");
         number(out, p.start);
         out.push('}');

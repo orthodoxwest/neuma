@@ -1,5 +1,6 @@
 //! neuma for iOS and Android: a `Chant` engraves a score once and lays it out at any
-//! width, returning a display list to draw natively and the playback timeline.
+//! width. Each `Layout` it returns gives the display list to draw natively, the playback
+//! timeline and hit tests, for itself alone.
 //!
 //! The bindings are UniFFI (namespace `neuma`). An app builds this crate as its native
 //! library, or depends on it from its own UniFFI crate and generates bindings for both in
@@ -8,12 +9,14 @@
 //! item's position and scale. Lyrics are drawn with the app's EB Garamond, ligatures off.
 //!
 //! Every option record field has a default, so `ChantOptions()` and `LayoutOptions()` are
-//! the usual options, and the engine's own rules apply to any value it can't use. Ids,
+//! the usual options, and the engine's own rules apply to any value it can't use. An
+//! option field of an enum type is nullable and defaults to null, which means the default
+//! its documentation names (UniFFI can't give an enum field another default). Ids,
 //! indices, counts and offsets are signed `Int`s. Positions are in output units (staff
 //! spaces times `LayoutOptions.scale`) from the page's top left, y down; boxes are `x, y,
 //! w, h` from their top-left corner, and a timeline note's notehead center is `cx, cy`.
 
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError, RwLock};
 
 uniffi::setup_scaffolding!("neuma");
 
@@ -69,7 +72,7 @@ impl Default for ChantOptions {
 impl From<ChantOptions> for neuma::ChantOptions {
     fn from(o: ChantOptions) -> neuma::ChantOptions {
         neuma::ChantOptions::default()
-            .with_initial(neuma::Initial::lines(o.initial.into()))
+            .with_initial(neuma::Initial::from_staves(o.initial.into()))
             .with_annotation(o.annotation)
             .with_lyric_size(o.lyric_size)
             .with_font(o.font.unwrap_or_default().into())
@@ -162,12 +165,6 @@ pub struct LayoutOptions {
     /// its full size, and the height includes it. The timeline ends with the kept lines.
     #[uniffi(default = 0)]
     pub max_lines: i32,
-    /// Make the playback timeline; a view that only draws the score can skip it.
-    #[uniffi(default = true)]
-    pub timeline: bool,
-    /// The timeline's durations.
-    #[uniffi(default)]
-    pub weights: Weights,
 }
 
 impl Default for LayoutOptions {
@@ -176,8 +173,6 @@ impl Default for LayoutOptions {
             scale: 6.0,
             last_line: None,
             max_lines: 0,
-            timeline: true,
-            weights: Weights::default(),
         }
     }
 }
@@ -268,6 +263,9 @@ pub struct SourceElement {
     pub y: f32,
     pub w: f32,
     pub h: f32,
+    /// A note's notehead center (the box can be trimmed off center); for a bar or
+    /// syllable, the box's center.
+    pub cx: f32,
 }
 
 /// What a piece of ink is, so a theme can color it.
@@ -391,7 +389,6 @@ pub struct TimelineNote {
     pub vowel: Option<String>,
     pub shape: NoteShape,
     pub liquescent: bool,
-    pub quilisma: bool,
     /// The syllable has an acute accent in the source.
     pub accent: bool,
     /// The first note of its syllable.
@@ -426,14 +423,15 @@ pub enum PauseKind {
     Flex,
 }
 
-/// A pause before note `before_note` (the note count means after the last note). A mediant
-/// or flex is the whole pause at its bar: the bar right after it has weight 0.
+/// A pause before note `before_note` (the note count means after the last note), its
+/// start and duration in weight units. A mediant or flex is the whole pause at its bar: the
+/// bar right after it lasts 0.
 #[derive(Clone, Copy, Debug, PartialEq, uniffi::Record)]
 pub struct Pause {
     pub before_note: i32,
     pub kind: PauseKind,
-    pub weight: f32,
     pub start: f32,
+    pub duration: f32,
 }
 
 /// When each note sounds, and where it is drawn.
@@ -445,7 +443,7 @@ pub struct Timeline {
     pub duration: f32,
 }
 
-/// A layout at one width: what to draw, and when each note sounds.
+/// What a layout draws.
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]
 pub struct Page {
     pub width: f32,
@@ -454,8 +452,6 @@ pub struct Page {
     pub staff_space: f32,
     pub items: Vec<Item>,
     pub lines: Vec<LineBox>,
-    /// null when `LayoutOptions.timeline` is off.
-    pub timeline: Option<Timeline>,
     /// The lyrics as plain text, for the accessibility label.
     pub alt_text: String,
 }
@@ -477,24 +473,34 @@ pub fn glyph_outline(id: i32) -> Option<GlyphOutline> {
 }
 
 /// One score: engraved once, laid out on demand, and updated in place as it is edited.
-/// Safe to share across threads, but `note_at`, `source_at` and `elements_at` answer for
-/// this Chant's most recent layout, so give each view its own Chant.
+/// Safe to share across threads; layouts run side by side, and each `Layout` answers for
+/// itself, so a thumbnail and the main view never disturb each other's hit tests.
 #[derive(Debug, uniffi::Object)]
 pub struct Chant {
-    inner: Mutex<Inner>,
+    inner: RwLock<Inner>,
 }
 
 #[derive(Debug)]
 struct Inner {
     chant: neuma::Chant,
     diagnostics: Vec<Diagnostic>,
+    psalm: Option<Psalm>,
+}
+
+/// A psalm the chant was set from, to set again on each update.
+#[derive(Debug)]
+struct Psalm {
+    tone: neuma_tones::Tone,
+    options: neuma_tones::PsalmOptions,
+    notes: Vec<PsalmNote>,
 }
 
 impl Inner {
-    fn new(chant: neuma::Chant) -> Inner {
+    fn new(chant: neuma::Chant, psalm: Option<Psalm>) -> Inner {
         let mut inner = Inner {
             chant,
             diagnostics: Vec::new(),
+            psalm,
         };
         inner.refresh();
         inner
@@ -510,37 +516,117 @@ impl Inner {
 impl Chant {
     #[uniffi::constructor]
     pub fn new(gabc: String, options: ChantOptions) -> Arc<Chant> {
-        Arc::new(Chant {
-            inner: Mutex::new(Inner::new(neuma::Chant::with_options(&gabc, options.into()))),
-        })
+        Chant::wrap(Inner::new(neuma::Chant::with_options(&gabc, options.into()), None))
     }
 
-    /// Replaces the score with `gabc`, keeping the options, as an editor does on each
-    /// change: only the syllables around the edit are engraved again, and the next layout
-    /// reuses the line breaks it can. Lay it out again to see it.
-    pub fn update(&self, gabc: String) {
-        let mut inner = self.lock();
-        inner.chant.update(&gabc);
+    /// Sets psalm text to a tone, as [`psalm`] does, and engraves it with its spans in the
+    /// text: timeline notes' and hit tests' sources, and diagnostics, count the text, and
+    /// `psalm_notes` tells each note's place in the tone. `tone` is a built-in tone's name
+    /// such as `8.G`, or a tone block (`name:`, `clef:`, `mediant:` and `termination:`
+    /// lines). `update` sets new text to the same tone.
+    #[uniffi::constructor]
+    pub fn from_psalm(text: String, tone: String, psalm: PsalmOptions, options: ChantOptions) -> Result<Arc<Chant>, ToneError> {
+        let tone = if tone.contains(':') {
+            neuma_tones::Tone::parse(&tone)?
+        } else {
+            neuma_tones::Tone::named(&tone)?.clone()
+        };
+        let options_in = psalm_options(psalm);
+        let s = neuma_tones::psalm(&text, &tone, &options_in);
+        let notes = psalm_notes(&s, &neuma::Utf16Index::new(&text));
+        let psalm = Psalm {
+            tone,
+            options: options_in,
+            notes,
+        };
+        Ok(Chant::wrap(Inner::new(s.into_chant(options.into()), Some(psalm))))
+    }
+
+    /// Replaces the score with `src` (GABC, or psalm text for a chant made with
+    /// `from_psalm`), keeping the options, as an editor does on each change: only the
+    /// syllables around the edit are engraved again, and the next layout reuses the line
+    /// breaks it can. Layouts made before keep showing the old score.
+    pub fn update(&self, src: String) {
+        let mut inner = self.write();
+        let inner = &mut *inner;
+        match &mut inner.psalm {
+            None => inner.chant.update(&src),
+            Some(p) => {
+                let s = neuma_tones::psalm(&src, &p.tone, &p.options);
+                p.notes = psalm_notes(&s, &neuma::Utf16Index::new(&src));
+                inner.chant.update_score(s.score, &src, s.diagnostics);
+            }
+        }
+        inner.refresh();
+    }
+
+    /// Engraves the score again with new options, as when the reader changes the text size
+    /// (Dynamic Type, say). Options that engrave the same change nothing.
+    pub fn set_options(&self, options: ChantOptions) {
+        let mut inner = self.write();
+        inner.chant.set_options(options.into());
         inner.refresh();
     }
 
     /// Problems found while reading the score.
     pub fn diagnostics(&self) -> Vec<Diagnostic> {
-        self.lock().diagnostics.clone()
+        self.read().diagnostics.clone()
     }
 
     /// The score's library entry.
     pub fn summary(&self) -> Summary {
-        summary(self.lock().chant.summary())
+        summary(self.read().chant.summary())
     }
 
-    /// Lays the score out `width` output units wide.
-    pub fn layout(&self, width: f32, options: LayoutOptions) -> Page {
-        let mut inner = self.lock();
+    /// For a chant made with `from_psalm`, each note's place in the tone: `psalm_notes()[i]`
+    /// describes note `i`. Empty otherwise.
+    pub fn psalm_notes(&self) -> Vec<PsalmNote> {
+        self.read().psalm.as_ref().map(|p| p.notes.clone()).unwrap_or_default()
+    }
+
+    /// Lays the score out `width` output units wide. The chant remembers its last few
+    /// layouts, so asking again with the same width and options is cheap.
+    pub fn layout(&self, width: f32, options: LayoutOptions) -> Arc<Layout> {
+        let inner = self.read();
         let layout = inner.chant.layout_with(width, &options.into());
-        let list = layout.display();
-        let timeline = options.timeline.then(|| layout.timeline_with(&options.weights.into()));
-        let utf16 = inner.chant.utf16();
+        Arc::new(Layout {
+            layout,
+            timeline: Mutex::new(None),
+        })
+    }
+}
+
+impl Chant {
+    fn wrap(inner: Inner) -> Arc<Chant> {
+        Arc::new(Chant { inner: RwLock::new(inner) })
+    }
+
+    // A panic is an engine bug, and UniFFI reports it to the caller; the Chant is still
+    // whole (each update replaces what it changes), so later calls go on.
+    fn read(&self) -> std::sync::RwLockReadGuard<'_, Inner> {
+        self.inner.read().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn write(&self) -> std::sync::RwLockWriteGuard<'_, Inner> {
+        self.inner.write().unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
+/// A layout of a chant at one width: what to draw, when each note sounds, and what is under
+/// a point or a caret. It keeps answering for the score it was made from after the chant is
+/// updated.
+#[derive(Debug, uniffi::Object)]
+pub struct Layout {
+    layout: neuma::Layout,
+    /// The last timeline made, by the weights (as sanitized) it was timed with.
+    timeline: Mutex<Option<(neuma::Weights, Arc<neuma::Timeline>)>>,
+}
+
+#[uniffi::export]
+impl Layout {
+    /// What to draw.
+    pub fn page(&self) -> Page {
+        let list = self.layout.display();
         Page {
             width: list.width,
             height: list.height,
@@ -556,64 +642,83 @@ impl Chant {
                     baseline: l.baseline,
                 })
                 .collect(),
-            timeline: timeline.map(|t| Timeline {
-                notes: t.notes.iter().map(|n| note(n, utf16)).collect(),
-                pauses: t
-                    .pauses
-                    .iter()
-                    .map(|p| Pause {
-                        before_note: int(p.before_note),
-                        kind: pause_kind(p.kind),
-                        weight: p.weight,
-                        start: p.start,
-                    })
-                    .collect(),
-                duration: t.duration,
-            }),
             alt_text: list.alt_text,
         }
     }
 
-    /// The note under (`x`, `y`) in the last layout, or the nearest on that line; `None`
-    /// outside every line or before the first layout.
+    /// When each note sounds, timed with `weights`.
+    pub fn timeline(&self, weights: Weights) -> Timeline {
+        let t = self.timed(weights);
+        let utf16 = self.utf16();
+        Timeline {
+            notes: t.notes.iter().map(|n| note(n, utf16)).collect(),
+            pauses: t
+                .pauses
+                .iter()
+                .map(|p| Pause {
+                    before_note: int(p.before_note),
+                    kind: pause_kind(p.kind),
+                    start: p.start,
+                    duration: p.duration,
+                })
+                .collect(),
+            duration: t.duration,
+        }
+    }
+
+    /// The note sounding at time `t` (in weight units) of the timeline timed with
+    /// `weights`: null during a pause, before the first note and after the last. For a
+    /// playhead that follows audio, on each frame; the timeline is kept between calls.
+    pub fn note_at_time(&self, t: f32, weights: Weights) -> Option<TimelineNote> {
+        let timeline = self.timed(weights);
+        timeline.note_at_time(t).map(|n| note(n, self.utf16()))
+    }
+
+    /// The note under (`x`, `y`), or the nearest on that line; null outside every line.
     pub fn note_at(&self, x: f32, y: f32) -> Option<i32> {
-        self.lock().chant.note_at(x, y).map(int)
+        self.layout.note_at(x, y).map(int)
     }
 
-    /// The note, bar or syllable under (`x`, `y`) in the last layout, with its source: a
-    /// notehead, else a bar within half a staff space, else a syllable's box, else the
-    /// nearest syllable on that line. `None` outside every line or before the first layout.
+    /// The note, bar or syllable under (`x`, `y`), with its source: a notehead, else a bar
+    /// within half a staff space, else a syllable's box, else the nearest syllable on that
+    /// line. null outside every line.
     pub fn source_at(&self, x: f32, y: f32) -> Option<SourceElement> {
-        let inner = self.lock();
-        let utf16 = inner.chant.utf16();
-        inner.chant.source_at(x, y).map(|e| element(e, utf16))
+        let utf16 = self.utf16();
+        self.layout.source_at(x, y).map(|e| element(e, utf16))
     }
 
-    /// What to highlight for a caret at `offset` in the source, in the last layout: the notes
+    /// What to highlight for a caret at `offset` in the source, counted in `unit`: the notes
     /// and bar whose source holds it, then a box per line for its syllable, most specific
-    /// first. A caret just after a note, as after typing it, counts as on it.
+    /// first. A caret just after a note, as after typing it, counts as on it; one past the
+    /// end is at the end, and a negative one at the start.
     pub fn elements_at(&self, offset: i32, unit: OffsetUnit) -> Vec<SourceElement> {
-        let inner = self.lock();
-        let utf16 = inner.chant.utf16();
-        let unit = match unit {
-            OffsetUnit::Utf8 => neuma::OffsetUnit::Utf8,
-            OffsetUnit::Utf16 => neuma::OffsetUnit::Utf16,
-        };
+        let utf16 = self.utf16();
         let offset = usize::try_from(offset).unwrap_or(0);
-        inner
-            .chant
-            .elements_at(offset, unit)
-            .into_iter()
-            .map(|e| element(e, utf16))
-            .collect()
+        let byte = match unit {
+            OffsetUnit::Utf8 => offset,
+            OffsetUnit::Utf16 => utf16.to_utf8(offset),
+        };
+        self.layout.elements_at(byte).into_iter().map(|e| element(e, utf16)).collect()
     }
 }
 
-impl Chant {
-    fn lock(&self) -> MutexGuard<'_, Inner> {
-        // A panic is an engine bug, and UniFFI reports it to the caller; the Chant is still
-        // whole (each update replaces what it changes), so later calls go on.
-        self.inner.lock().unwrap_or_else(PoisonError::into_inner)
+impl Layout {
+    fn utf16(&self) -> &neuma::Utf16Index {
+        self.layout.utf16().expect("a chant's layouts know its source")
+    }
+
+    /// The timeline timed with `weights`, kept for the next call with the same weights.
+    fn timed(&self, weights: Weights) -> Arc<neuma::Timeline> {
+        let weights = neuma::Weights::from(weights).sanitized();
+        let mut kept = self.timeline.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some((w, t)) = kept.as_ref()
+            && *w == weights
+        {
+            return Arc::clone(t);
+        }
+        let t = Arc::new(self.layout.timeline_with(&weights));
+        *kept = Some((weights, Arc::clone(&t)));
+        t
     }
 }
 
@@ -645,6 +750,7 @@ fn element(e: &neuma::Element, utf16: &neuma::Utf16Index) -> SourceElement {
         y: e.y,
         w: e.w,
         h: e.h,
+        cx: e.cx,
     }
 }
 
@@ -828,15 +934,16 @@ pub struct PsalmNote {
     pub number: Option<i32>,
     pub part: VersePart,
     pub role: ToneRole,
-    /// The sung syllable's UTF-8 bytes in the text.
-    pub start: i32,
-    pub end: i32,
+    /// The sung syllable's UTF-8 bytes in the text, as a timeline note's source.
+    pub source_start: i32,
+    pub source_end: i32,
     /// The same range in UTF-16 code units.
-    pub utf16_start: i32,
-    pub utf16_end: i32,
+    pub source_utf16_start: i32,
+    pub source_utf16_end: i32,
 }
 
-/// Psalm text set to a tone. Engrave `gabc` with `Chant`; `notes[i]` describes note `i`.
+/// Psalm text set to a tone; `notes[i]` describes note `i`. To engrave it with its spans in
+/// the text, use `Chant.from_psalm`.
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]
 pub struct PsalmSetting {
     pub gabc: String,
@@ -845,7 +952,9 @@ pub struct PsalmSetting {
     pub diagnostics: Vec<Diagnostic>,
 }
 
+/// A tone that can't be had. Its message says why ("no built-in tone 9.z").
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Error)]
+#[uniffi(flat_error)]
 pub enum ToneError {
     /// No built-in tone has that name.
     Unknown { name: String },
@@ -901,6 +1010,12 @@ pub struct HalfPointing {
     pub confidence: f32,
     /// The half already carried marks, which were kept.
     pub kept: bool,
+    /// The half's sung syllables in the text, first to last, in UTF-8 bytes.
+    pub source_start: i32,
+    pub source_end: i32,
+    /// The same range in UTF-16 code units.
+    pub source_utf16_start: i32,
+    pub source_utf16_end: i32,
 }
 
 /// Psalm text with pointing marks added.
@@ -938,18 +1053,25 @@ fn pointing(tone: &neuma_tones::Tone, text: &str) -> Pointing {
     let p = neuma_tones::point(text, tone);
     let utf16 = neuma::Utf16Index::new(text);
     Pointing {
-        text: p.text(),
         halves: p
             .halves
             .iter()
-            .map(|h| HalfPointing {
-                verse: int(h.verse),
-                part: verse_part(h.part),
-                confidence: h.confidence,
-                kept: h.kept,
+            .map(|h| {
+                let r = utf16.range_to_utf16(&h.span);
+                HalfPointing {
+                    verse: int(h.verse),
+                    part: verse_part(h.part),
+                    confidence: h.confidence,
+                    kept: h.kept,
+                    source_start: int(h.span.start),
+                    source_end: int(h.span.end),
+                    source_utf16_start: int(r.start),
+                    source_utf16_end: int(r.end),
+                }
             })
             .collect(),
-        diagnostics: p.pointed.diagnostics.iter().map(|d| diagnostic(d, &utf16)).collect(),
+        diagnostics: p.diagnostics.iter().map(|d| diagnostic(d, &utf16)).collect(),
+        text: p.text,
     }
 }
 
@@ -970,34 +1092,40 @@ fn tone_role(r: neuma_tones::ToneRole) -> ToneRole {
     }
 }
 
-fn setting(tone: &neuma_tones::Tone, text: &str, options: PsalmOptions) -> PsalmSetting {
-    let utf16 = neuma::Utf16Index::new(text);
-    let options = neuma_tones::PsalmOptions::default()
+fn psalm_options(options: PsalmOptions) -> neuma_tones::PsalmOptions {
+    neuma_tones::PsalmOptions::default()
         .with_intone(match options.intone.unwrap_or_default() {
             Intone::FirstVerse => neuma_tones::Intone::FirstVerse,
             Intone::EveryVerse => neuma_tones::Intone::EveryVerse,
             Intone::Never => neuma_tones::Intone::Never,
         })
-        .with_auto_point(options.auto_point);
-    let s = neuma_tones::psalm(text, tone, &options);
+        .with_auto_point(options.auto_point)
+}
+
+fn psalm_notes(s: &neuma_tones::PsalmSetting, utf16: &neuma::Utf16Index) -> Vec<PsalmNote> {
+    s.notes
+        .iter()
+        .map(|n| {
+            let r = utf16.range_to_utf16(&n.span);
+            PsalmNote {
+                verse: int(n.verse),
+                number: n.number.map(int),
+                part: verse_part(n.part),
+                role: tone_role(n.role),
+                source_start: int(n.span.start),
+                source_end: int(n.span.end),
+                source_utf16_start: int(r.start),
+                source_utf16_end: int(r.end),
+            }
+        })
+        .collect()
+}
+
+fn setting(tone: &neuma_tones::Tone, text: &str, options: PsalmOptions) -> PsalmSetting {
+    let utf16 = neuma::Utf16Index::new(text);
+    let s = neuma_tones::psalm(text, tone, &psalm_options(options));
     PsalmSetting {
-        notes: s
-            .notes
-            .iter()
-            .map(|n| {
-                let r = utf16.range_to_utf16(&n.source);
-                PsalmNote {
-                    verse: int(n.verse),
-                    number: n.number.map(int),
-                    part: verse_part(n.part),
-                    role: tone_role(n.role),
-                    start: int(n.source.start),
-                    end: int(n.source.end),
-                    utf16_start: int(r.start),
-                    utf16_end: int(r.end),
-                }
-            })
-            .collect(),
+        notes: psalm_notes(&s, &utf16),
         diagnostics: s.diagnostics.iter().map(|d| diagnostic(d, &utf16)).collect(),
         gabc: s.gabc,
     }
@@ -1058,9 +1186,9 @@ fn summary(s: neuma::Summary) -> Summary {
             .collect(),
         incipit: s.incipit,
         text: s.text,
-        lowest: s.lowest.map(i32::from),
-        highest: s.highest.map(i32::from),
-        final_pitch: s.final_pitch.map(i32::from),
+        lowest: s.lowest,
+        highest: s.highest,
+        final_pitch: s.final_pitch,
         notes: int(s.notes),
         syllables: int(s.syllables),
         words: int(s.words),
@@ -1196,19 +1324,18 @@ fn note(n: &neuma::TimelineNote, utf16: &neuma::Utf16Index) -> TimelineNote {
         h: n.h,
         start: n.start,
         duration: n.duration,
-        staff_position: n.staff_position.into(),
+        staff_position: n.staff_position,
         degree: n.degree,
-        semitones: n.semitones.into(),
+        semitones: n.semitones,
         syllable_text: n.syllable_text.clone(),
         vowel: n.vowel.map(String::from),
         shape: note_shape(n.shape),
         liquescent: n.liquescent,
-        quilisma: n.quilisma,
         accent: n.accent,
         new_syllable: n.new_syllable,
         recitation: n.recitation,
         verse: int(n.verse),
-        half: n.half.into(),
+        half: int(n.half),
         source_start: int(n.span.start),
         source_end: int(n.span.end),
         source_utf16_start: int(r.start),
@@ -1223,12 +1350,12 @@ fn pause_kind(k: neuma::PauseKind) -> PauseKind {
         neuma::PauseKind::Bar(b) => match b {
             B::Virgula => PauseKind::Virgula,
             B::Minimis => PauseKind::Minimis,
-            B::Minima => PauseKind::Quarter,
-            B::Maior => PauseKind::Full,
-            B::DottedMaior => PauseKind::DottedFull,
-            B::Finalis => PauseKind::Double,
+            B::Quarter => PauseKind::Quarter,
+            B::Full => PauseKind::Full,
+            B::DottedFull => PauseKind::DottedFull,
+            B::Double => PauseKind::Double,
             B::Dominican(_) => PauseKind::Dominican,
-            B::Minor | _ => PauseKind::Half,
+            B::Half | _ => PauseKind::Half,
         },
         neuma::PauseKind::Mediant => PauseKind::Mediant,
         neuma::PauseKind::Flex => PauseKind::Flex,

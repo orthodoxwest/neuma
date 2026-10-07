@@ -68,7 +68,7 @@ fn main() -> ExitCode {
                 }
             }
             "--initial" => match it.next().and_then(|v| v.parse::<u8>().ok()).filter(|n| *n <= 4) {
-                Some(n) => options = options.with_initial(Initial::lines(n.into())),
+                Some(n) => options = options.with_initial(Initial::from_staves(n.into())),
                 None => {
                     eprintln!("neuma: --initial takes a number of staves from 0 to 4\n{USAGE}");
                     return ExitCode::from(2);
@@ -162,7 +162,7 @@ fn main() -> ExitCode {
     let Some(src) = read(files.first().map_or("-", String::as_str)) else {
         return ExitCode::from(2);
     };
-    let mut chant = Chant::with_options(&src, options);
+    let chant = Chant::with_options(&src, options);
     match cmd.as_str() {
         "render" => {
             out!("{}", chant.layout_with(width, &layout).svg());
@@ -244,14 +244,13 @@ fn psalm_command(src: &str, tone: &neuma_tones::Tone, options: &neuma_tones::Psa
 fn point_command(src: &str, tone: &neuma_tones::Tone) -> ExitCode {
     let p = neuma_tones::point(src, tone);
     let mut errors = false;
-    for d in &p.pointed.diagnostics {
+    for d in &p.diagnostics {
         let (line, col) = neuma::diag::line_col(src, d.span.start);
         eprintln!("{line}:{col}: {d}");
         errors |= d.severity == Severity::Error;
     }
     for h in p.halves.iter().filter(|h| !h.kept && h.confidence < neuma_tones::UNSURE) {
-        let verse = &p.pointed.verses[h.verse];
-        let (line, _) = neuma::diag::line_col(src, verse.span.start);
+        let (line, _) = neuma::diag::line_col(src, h.span.start);
         let part = match h.part {
             neuma_tones::VersePart::Flex => "flex",
             neuma_tones::VersePart::Mediant => "first half",
@@ -259,7 +258,7 @@ fn point_command(src: &str, tone: &neuma_tones::Tone) -> ExitCode {
         };
         eprintln!("{line}: check the {part}: {:.0}% sure", h.confidence * 100.0);
     }
-    out!("{}", p.text().trim_end());
+    out!("{}", p.text.trim_end());
     if errors { ExitCode::FAILURE } else { ExitCode::SUCCESS }
 }
 

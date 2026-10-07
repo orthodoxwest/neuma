@@ -38,11 +38,11 @@ pub struct Summary {
     /// other signs set as text are left out.
     pub text: String,
     /// The lowest note, in semitones above the clef's do.
-    pub lowest: Option<i16>,
+    pub lowest: Option<i32>,
     /// The highest note, in semitones above the clef's do.
-    pub highest: Option<i16>,
+    pub highest: Option<i32>,
     /// The last note, in semitones above the clef's do.
-    pub final_pitch: Option<i16>,
+    pub final_pitch: Option<i32>,
     pub notes: u32,
     /// Syllables and words that carry text.
     pub syllables: u32,
@@ -283,11 +283,11 @@ impl Engraving {
         let take = bar_words.unwrap_or(words).min(INCIPIT_WORDS);
         let incipit = word_texts[..take].join(" ");
 
-        let pitches: Vec<i16> = self.notes.iter().map(|n| pitch(n).1).collect();
+        let pitches: Vec<i32> = self.notes.iter().map(|n| pitch(n).1).collect();
         let (lowest, highest) = (pitches.iter().min().copied(), pitches.iter().max().copied());
         let weights = Weights::default();
         let duration = self.notes.iter().map(|n| weights.of_note(n)).sum::<f32>()
-            + timed_pauses(&self.pauses, &weights).iter().map(|p| p.weight).sum::<f32>();
+            + timed_pauses(&self.pauses, &weights).iter().map(|p| p.duration).sum::<f32>();
 
         let office_part = field(header, "office-part");
         Summary {
@@ -364,7 +364,7 @@ mod tests {
         // Pitches, range and length agree with the timeline.
         let eng = crate::parse(PUER).score.engrave(&ApproxMeasure, &StyleOptions::default());
         let map = eng.layout(2000.0).timeline();
-        let semis: Vec<i16> = map.notes.iter().map(|n| n.semitones).collect();
+        let semis: Vec<i32> = map.notes.iter().map(|n| n.semitones).collect();
         assert_eq!((s.lowest, s.highest), (semis.iter().min().copied(), semis.iter().max().copied()));
         assert_eq!(s.final_pitch, semis.last().copied());
         assert_eq!(s.duration, map.duration);

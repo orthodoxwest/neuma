@@ -589,12 +589,11 @@ fn psalm_blocks(ps: &Psalm, s: &Settings, fonts: &Fonts, m: &Metrics, diags: &mu
             place(d, 0, &labels[vi], source_len)
         };
         let pointing = neuma_tones::point(&rest, &tone);
-        diags.extend(pointing.pointed.diagnostics.iter().cloned().map(relocate));
+        diags.extend(pointing.diagnostics.iter().cloned().map(relocate));
         for h in pointing.halves.iter().filter(|h| !h.kept && h.confidence < neuma_tones::UNSURE) {
-            let verse = &pointing.pointed.verses[h.verse];
             diags.push(relocate(Diagnostic::new(
                 Severity::Info,
-                verse.span.clone(),
+                h.span.clone(),
                 "point::unsure",
                 format!(
                     "pointed automatically, but only {:.0}% sure: check where the accents fall",
@@ -604,7 +603,7 @@ fn psalm_blocks(ps: &Psalm, s: &Settings, fonts: &Fonts, m: &Metrics, diags: &mu
         }
         let nsize = size * 0.9;
         let number_w = fonts.width("000", fonts.resolve(false, false), false) * nsize + size * 0.45;
-        let pointed = pointing.text();
+        let pointed = &pointing.text;
         for (k, line) in pointed.lines().enumerate() {
             let line = line.replace("\\-", "-");
             let (num, body) = split_number(&line);

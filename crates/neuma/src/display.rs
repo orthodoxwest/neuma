@@ -123,12 +123,12 @@ fn runs(r: &[LyricRun]) -> Vec<TextRun> {
         .collect()
 }
 
-impl Layout<'_> {
+impl Layout {
     /// This layout as a display list.
     #[must_use]
     pub fn display(&self) -> DisplayList {
         let s = self.scale;
-        let eng = self.eng;
+        let eng = &*self.eng;
         let mut items = Vec::new();
         let mut lines = Vec::new();
         for line in &self.lines {
@@ -182,7 +182,7 @@ impl Layout<'_> {
     /// Appends the items of one line, `top` higher up than the layout places it.
     pub(crate) fn push_line(&self, items: &mut Vec<Item>, line: &PlacedLine, top: f32) {
         let s = self.scale;
-        let eng = self.eng;
+        let eng = &*self.eng;
         let size = eng.lyric_size * s;
         let staff_weight = crate::engrave::neume::STEM;
         let staff = line.staff - top;
