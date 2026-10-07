@@ -26,7 +26,7 @@ fn spells_nlba_in_notes(gabc: &str) -> bool {
 }
 
 /// Whether the score has two figures in a row that GABC writes as one: `/` before `/`, `//`,
-/// `/0` or `/!`; `!` before a space, which reads back as `! `; or `:` before `:`, `:?` or
+/// `/0`, `/!`, `!` or `! `; `!` before a space, which reads back as `! `; or `:` before `:`, `:?` or
 /// `::`. Valid GABC never has them.
 fn ambiguous_neighbours(score: &neuma::Score) -> bool {
     let colon = |f: &Figure| {
@@ -44,7 +44,7 @@ fn ambiguous_neighbours(score: &neuma::Score) -> bool {
                 (&w[0], &w[1]),
                 (
                     Figure::Space(Space::Small),
-                    Figure::Space(Space::Small | Space::Medium | Space::Half | Space::Tiny)
+                    Figure::Space(Space::Small | Space::Medium | Space::Half | Space::Tiny | Space::Zero | Space::LargeNoBreak)
                 ) | (Figure::Space(Space::Zero), Figure::Space(Space::Large | Space::LargeNoBreak))
             ) || (matches!(
                 &w[0],
