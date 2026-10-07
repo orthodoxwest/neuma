@@ -238,7 +238,8 @@ fn place(cur: &Cursor, seg: &Segment, hyphen: f32, word_space: f32, line_start: 
     } else {
         1.0
     };
-    let shrink = if seg.first && seg.word_start && !seg.is_bar() && !cur.after_bar {
+    // Nothing shrinks before a line's first text, which may sit right at the line's start.
+    let shrink = if seg.first && seg.word_start && !seg.is_bar() && !cur.after_bar && cur.lyric_right.is_some() {
         SHRINK.min(word_space * SHRINK_OF_WORD_SPACE)
     } else {
         0.0

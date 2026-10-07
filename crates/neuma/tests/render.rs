@@ -737,6 +737,28 @@ fn a_text_past_the_last_syllable_stays_in_the_box() {
 }
 
 #[test]
+fn a_line_starting_without_text_keeps_its_first_text_in_the_box() {
+    // A line that opens with an empty syllable sets its first text at the line's
+    // start at the least; squeezing the gaps before it mustn't push it past.
+    let src = format!("(c4) {} (::)", ["() * Quidquid(ghGF) est(h) in(g) di(h)ce(g)re(h)"; 12].join(" "));
+    for lyric_size in [2.45, 4.0, 8.0] {
+        let style = StyleOptions {
+            lyric_size,
+            ..NO_INITIAL.clone()
+        };
+        let eng = parse(&src).score.engrave(&ApproxMeasure, &style);
+        for width in (150..900).step_by(3) {
+            let list = eng.layout(width as f32, &LayoutOptions::default()).display();
+            for item in &list.items {
+                if let Item::Text { runs, x, .. } = item {
+                    assert!(*x >= -0.01, "{lyric_size} {width}: {runs:?} {x}");
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn a_hyphen_ends_a_line_inside_a_word() {
     use neuma::TextMeasure;
     let src = format!("(c4) {} (::)", ["la(g)ta(h)"; 30].join("-").replace("-", ""));
