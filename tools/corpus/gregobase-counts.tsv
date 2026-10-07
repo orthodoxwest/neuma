@@ -9,11 +9,13 @@ warning	gabc::hyphen-in-syllable	2627	358
 warning	gabc::lined-note	25	12
 info	gabc::lyric-tie	447	98
 warning	gabc::nabc	193	193
+warning	gabc::no-clef	41	41
 warning	gabc::pitch-range	5	3
 warning	gabc::trailing-text	42	42
 info	gabc::translation-ignored	1115	45
 info	gabc::tuning-ignored	9412	2461
 error	gabc::unclosed-notes	2	2
+warning	gabc::unclosed-tag	2	2
 warning	gabc::unknown-notation	459	159
 warning	gabc::unknown-special	104	14
 warning	gabc::unsupported-tag	741	286

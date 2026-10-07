@@ -165,12 +165,69 @@ pub enum Severity {
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
 pub struct Diagnostic {
     pub severity: Severity,
-    /// UTF-8 byte range in the source (not UTF-16 string indices).
+    /// UTF-8 byte range in the source.
     pub start: u64,
     pub end: u64,
-    /// A stable code such as `gabc::hyphen-in-syllable`.
+    /// The same range in UTF-16 code units: Kotlin and Java string indices, and `NSRange`.
+    pub utf16_start: u64,
+    pub utf16_end: u64,
+    /// A stable code such as `gabc::hyphen-in-syllable` (listed in docs/diagnostics.md).
     pub code: String,
     pub message: String,
+    /// The one edit that fixes the problem, where there is one.
+    pub fix: Option<Fix>,
+}
+
+/// A source edit: replace the range (empty to insert) with `replacement`.
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct Fix {
+    /// UTF-8 byte range in the source.
+    pub start: u64,
+    pub end: u64,
+    /// The same range in UTF-16 code units.
+    pub utf16_start: u64,
+    pub utf16_end: u64,
+    pub replacement: String,
+    /// What the edit does, for a quick-fix menu.
+    pub title: String,
+}
+
+/// What a source-map element is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum ElementKind {
+    Note,
+    Bar,
+    Syllable,
+}
+
+/// How an offset into the source counts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum OffsetUnit {
+    /// UTF-8 bytes, as spans are stored.
+    Utf8,
+    /// UTF-16 code units: Kotlin and Java string indices, and `NSRange` locations.
+    Utf16,
+}
+
+/// A note, bar or syllable as drawn, with its source.
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct SourceElement {
+    pub kind: ElementKind,
+    /// The note id, or the bar's or syllable's index in the score.
+    pub index: u32,
+    /// UTF-8 byte range in the source.
+    pub start: u64,
+    pub end: u64,
+    /// The same range in UTF-16 code units.
+    pub utf16_start: u64,
+    pub utf16_end: u64,
+    pub line: u32,
+    /// The box drawn: left, top, width and height, in output units. A syllable's box spans
+    /// its line's height across its notes and lyric.
+    pub x: f32,
+    pub y: f32,
+    pub w: f32,
+    pub h: f32,
 }
 
 /// What a piece of ink is, so a theme can color it.
@@ -367,14 +424,16 @@ pub fn glyph_outline(id: u16) -> Option<GlyphOutline> {
 }
 
 /// One score: engraved once, laid out on demand. Safe to share across threads, but
-/// `note_at` answers for this Chant's most recent layout, so give each view its own Chant.
+/// `note_at`, `source_at` and `elements_at` answer for this Chant's most recent layout, so
+/// give each view its own Chant.
 #[derive(Debug, uniffi::Object)]
 pub struct Chant {
     engraving: Engraving,
     diagnostics: Vec<Diagnostic>,
     summary: Summary,
-    /// The last layout's timeline, for `note_at`.
-    last: Mutex<Option<neuma::NoteMap>>,
+    utf16: neuma::Utf16Index,
+    /// The last layout's timeline and source map, for hit testing.
+    last: Mutex<Option<(neuma::NoteMap, neuma::SourceMap)>>,
 }
 
 #[uniffi::export]
@@ -397,12 +456,19 @@ impl Chant {
             ..defaults
         };
         let engraving = parsed.score.engrave(EngineFont::from(options.font).table(), &style);
-        let diagnostics = parsed.diagnostics.iter().chain(&engraving.diagnostics).map(diagnostic).collect();
+        let utf16 = neuma::Utf16Index::new(&gabc);
+        let diagnostics = parsed
+            .diagnostics
+            .iter()
+            .chain(&engraving.diagnostics)
+            .map(|d| diagnostic(d, &utf16))
+            .collect();
         let summary = summary(engraving.summary(&parsed.score.header));
         Arc::new(Chant {
             engraving,
             diagnostics,
             summary,
+            utf16,
             last: Mutex::new(None),
         })
     }
@@ -463,19 +529,62 @@ impl Chant {
             duration: map.duration,
             alt_text: list.alt_text,
         };
-        *self.last_map() = Some(map);
+        *self.last_map() = Some((map, layout.source_map()));
         page
     }
 
     /// The note under (`x`, `y`) in the last layout, or the nearest on that line; `None`
     /// outside every line or before the first layout.
     pub fn note_at(&self, x: f32, y: f32) -> Option<u32> {
-        self.last_map().as_ref()?.note_at(x, y)
+        self.last_map().as_ref()?.0.note_at(x, y)
+    }
+
+    /// The note, bar or syllable under (`x`, `y`) in the last layout, with its source: a
+    /// notehead, else a bar within half a staff space, else a syllable's box, else the
+    /// nearest syllable on that line. `None` outside every line or before the first layout.
+    pub fn source_at(&self, x: f32, y: f32) -> Option<SourceElement> {
+        let last = self.last_map();
+        last.as_ref()?.1.source_at(x, y).map(|e| self.element(e))
+    }
+
+    /// What to highlight for a caret at `offset` in the source, in the last layout: the notes
+    /// and bar whose source holds it, then a box per line for its syllable, most specific
+    /// first. A caret just after a note, as after typing it, counts as on it.
+    pub fn elements_at(&self, offset: u64, unit: OffsetUnit) -> Vec<SourceElement> {
+        let offset = usize::try_from(offset).unwrap_or(usize::MAX);
+        let byte = match unit {
+            OffsetUnit::Utf8 => offset,
+            OffsetUnit::Utf16 => self.utf16.to_utf8(offset),
+        };
+        let last = self.last_map();
+        let Some((_, map)) = last.as_ref() else { return Vec::new() };
+        map.at(byte).into_iter().map(|e| self.element(e)).collect()
     }
 }
 
 impl Chant {
-    fn last_map(&self) -> MutexGuard<'_, Option<neuma::NoteMap>> {
+    fn element(&self, e: &neuma::Element) -> SourceElement {
+        let r = self.utf16.range_to_utf16(&e.span);
+        SourceElement {
+            kind: match e.kind {
+                neuma::ElementKind::Note => ElementKind::Note,
+                neuma::ElementKind::Bar => ElementKind::Bar,
+                neuma::ElementKind::Syllable => ElementKind::Syllable,
+            },
+            index: e.index,
+            start: e.span.start as u64,
+            end: e.span.end as u64,
+            utf16_start: r.start as u64,
+            utf16_end: r.end as u64,
+            line: e.line,
+            x: e.x,
+            y: e.y,
+            w: e.w,
+            h: e.h,
+        }
+    }
+
+    fn last_map(&self) -> MutexGuard<'_, Option<(neuma::NoteMap, neuma::SourceMap)>> {
         // The map is replaced whole, so a panic elsewhere can't leave it half-written.
         self.last.lock().unwrap_or_else(PoisonError::into_inner)
     }
@@ -569,7 +678,9 @@ pub fn summarize(gabc: String) -> Summary {
     summary(neuma::summarize(&gabc))
 }
 
-fn diagnostic(d: &neuma::Diagnostic) -> Diagnostic {
+/// A diagnostic, with UTF-16 offsets from `utf16`, the index of the text its spans count.
+fn diagnostic(d: &neuma::Diagnostic, utf16: &neuma::Utf16Index) -> Diagnostic {
+    let r = utf16.range_to_utf16(&d.span);
     Diagnostic {
         severity: match d.severity {
             neuma::Severity::Info => Severity::Info,
@@ -578,8 +689,21 @@ fn diagnostic(d: &neuma::Diagnostic) -> Diagnostic {
         },
         start: d.span.start as u64,
         end: d.span.end as u64,
+        utf16_start: r.start as u64,
+        utf16_end: r.end as u64,
         code: d.code.to_string(),
         message: d.message.clone(),
+        fix: d.fix.as_ref().map(|f| {
+            let r = utf16.range_to_utf16(&f.span);
+            Fix {
+                start: f.span.start as u64,
+                end: f.span.end as u64,
+                utf16_start: r.start as u64,
+                utf16_end: r.end as u64,
+                replacement: f.replacement.clone(),
+                title: f.title.clone(),
+            }
+        }),
     }
 }
 
@@ -721,6 +845,7 @@ fn verse_part(k: neuma_tones::PartKind) -> VersePart {
 
 fn pointing(tone: &neuma_tones::Tone, text: &str) -> Pointing {
     let p = neuma_tones::point_text(tone, text);
+    let utf16 = neuma::Utf16Index::new(text);
     Pointing {
         text: p.text(),
         halves: p
@@ -733,7 +858,7 @@ fn pointing(tone: &neuma_tones::Tone, text: &str) -> Pointing {
                 kept: h.kept,
             })
             .collect(),
-        diagnostics: p.pointed.diagnostics.iter().map(diagnostic).collect(),
+        diagnostics: p.pointed.diagnostics.iter().map(|d| diagnostic(d, &utf16)).collect(),
     }
 }
 
@@ -744,6 +869,7 @@ pub fn tone_names() -> Vec<String> {
 }
 
 fn setting(tone: &neuma_tones::Tone, text: &str, intone: Intone) -> PsalmSetting {
+    let utf16 = neuma::Utf16Index::new(text);
     let options = neuma_tones::Options {
         intone: match intone {
             Intone::FirstVerse => neuma_tones::Intone::FirstVerse,
@@ -772,7 +898,7 @@ fn setting(tone: &neuma_tones::Tone, text: &str, intone: Intone) -> PsalmSetting
                 end: n.source.end as u64,
             })
             .collect(),
-        diagnostics: s.diagnostics.iter().map(diagnostic).collect(),
+        diagnostics: s.diagnostics.iter().map(|d| diagnostic(d, &utf16)).collect(),
         gabc: s.gabc,
     }
 }

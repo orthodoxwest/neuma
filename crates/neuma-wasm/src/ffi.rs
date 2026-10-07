@@ -6,7 +6,7 @@ use std::cell::RefCell;
 
 use neuma::{LayoutOptions, SvgOptions};
 
-use crate::{Chant, ChantOptions, Font, last_line, weights_from};
+use crate::{Chant, ChantOptions, Font, Outputs, SvgOutput, last_line, weights_from};
 
 thread_local! {
     static INPUT: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
@@ -93,8 +93,10 @@ pub extern "C" fn chant_free(handle: u32) {
 }
 
 /// Lays out at `width`, keeping at most `max_lines` lines (0 for all), with the weights as
-/// ten numbers (NaN keeps a default) and the SVG class prefix in the input buffer. Leaves
-/// the layout JSON in the output buffer; returns 0 for an unknown handle.
+/// ten numbers (NaN keeps a default) and the SVG class prefix in the input buffer. `flags`:
+/// 1 leaves out the timeline, 2 makes the SVG in parts (see `Chant::layout_with`), 4 leaves
+/// out `data-note` and `data-syllable`. Leaves the layout JSON in the output buffer;
+/// returns 0 for an unknown handle.
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
 #[allow(clippy::too_many_arguments)]
@@ -114,6 +116,7 @@ pub extern "C" fn chant_layout(
     finalis: f32,
     mediant: f32,
     flex: f32,
+    flags: u32,
 ) -> u32 {
     let prefix = input();
     let weights = weights_from(&[note, mora, episema, virgula, minima, minor, maior, finalis, mediant, flex]);
@@ -124,10 +127,15 @@ pub extern "C" fn chant_layout(
     };
     let svg = SvgOptions {
         prefix: if prefix.is_empty() { SvgOptions::default().prefix } else { prefix },
+        ids: flags & 4 == 0,
         ..SvgOptions::default()
     };
+    let outputs = Outputs {
+        timeline: flags & 1 == 0,
+        svg: if flags & 2 != 0 { SvgOutput::Lines } else { SvgOutput::Whole },
+    };
     with_chant(handle, |c| {
-        c.layout(width, &opts, &weights, &svg);
+        c.layout_with(width, &opts, &weights, &svg, outputs);
         output(c.layout_json());
     })
     .map_or(0, |_| 1)
@@ -138,6 +146,35 @@ pub extern "C" fn chant_layout(
 #[unsafe(no_mangle)]
 pub extern "C" fn chant_summary(handle: u32) -> u32 {
     with_chant(handle, |c| output(c.summary_json())).map_or(0, |_| 1)
+}
+
+/// Replaces the score with the GABC in the input buffer, keeping the options, and leaves the
+/// diagnostics JSON in the output buffer; returns 0 for an unknown handle.
+#[allow(unsafe_code)]
+#[unsafe(no_mangle)]
+pub extern "C" fn chant_update(handle: u32) -> u32 {
+    let gabc = input();
+    with_chant(handle, |c| {
+        c.update(&gabc);
+        output(c.diagnostics_json());
+    })
+    .map_or(0, |_| 1)
+}
+
+/// Leaves the element under (`x`, `y`) in the last layout as JSON (or `null`) in the output
+/// buffer; returns 0 for an unknown handle.
+#[allow(unsafe_code)]
+#[unsafe(no_mangle)]
+pub extern "C" fn chant_source_at(handle: u32, x: f32, y: f32) -> u32 {
+    with_chant(handle, |c| output(&c.source_at_json(x, y))).map_or(0, |_| 1)
+}
+
+/// Leaves what to highlight for a caret at `offset` (UTF-16 units if `utf16` is 1, else UTF-8
+/// bytes) as a JSON array in the output buffer; returns 0 for an unknown handle.
+#[allow(unsafe_code)]
+#[unsafe(no_mangle)]
+pub extern "C" fn chant_elements_at(handle: u32, offset: u32, utf16: u32) -> u32 {
+    with_chant(handle, |c| output(&c.elements_at_json(offset as usize, utf16 == 1))).map_or(0, |_| 1)
 }
 
 /// Summarizes the GABC in the input buffer without engraving it for display, leaving the
@@ -189,7 +226,8 @@ pub extern "C" fn neuma_psalm(custom: u32, intone: u32, manual: u32) {
                 no_auto_point: manual == 1,
                 ..neuma_tones::Options::default()
             };
-            crate::json::setting(&mut out, &neuma_tones::apply_text(&tone, &text, &options));
+            let index = neuma::Utf16Index::new(&text);
+            crate::json::setting(&mut out, &neuma_tones::apply_text(&tone, &text, &options), Some(&index));
         }
         Err(e) => error(&mut out, &e),
     }
@@ -203,7 +241,10 @@ pub extern "C" fn neuma_psalm(custom: u32, intone: u32, manual: u32) {
 pub extern "C" fn neuma_point(custom: u32) {
     let mut out = String::new();
     match tone_and_text(custom) {
-        Ok((tone, text)) => crate::json::pointing(&mut out, &neuma_tones::point_text(&tone, &text)),
+        Ok((tone, text)) => {
+            let index = neuma::Utf16Index::new(&text);
+            crate::json::pointing(&mut out, &neuma_tones::point_text(&tone, &text), Some(&index));
+        }
         Err(e) => error(&mut out, &e),
     }
     output(&out);

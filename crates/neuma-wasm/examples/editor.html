@@ -1,0 +1,427 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GABC Editor</title>
+<!--
+  A live GABC editor on neuma, without dependencies. Build the package and serve the
+  repository root over HTTP, then open crates/neuma-wasm/examples/editor.html:
+
+    cargo build -p neuma-wasm --target wasm32-unknown-unknown --profile wasm
+    node crates/neuma-wasm/build.mjs
+    npx http-server .        # or any static server
+
+  What it shows:
+  - the score redrawn as you type, at most once per animation frame, replacing only the
+    SVG lines whose markup changed (layout with svg: "lines", ids: false, timeline: false);
+  - diagnostics underlined in the source (hover for the message) and listed, with the fix
+    as a button where there is one;
+  - a click on the score selects the note, bar or syllable's source (sourceAt);
+  - the caret's note, bar and syllable highlighted in the score (elementsAt).
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital@0;1&display=swap">
+<style>
+  :root {
+    --bg: #fbfaf7; --panel: #ffffff; --ink: #1d1b18; --muted: #6b665e; --line: #e2ded6;
+    --error: #c62828; --warning: #b26a00; --info: #2f6db3;
+    --note: rgba(232, 120, 0, 0.55); --bar: rgba(232, 120, 0, 0.45); --syllable: rgba(47, 109, 179, 0.10);
+    --rubric: #a3211c;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #171614; --panel: #1f1e1b; --ink: #ebe7df; --muted: #a29c91; --line: #34312c;
+      --error: #ef6f6c; --warning: #e0a03a; --info: #79a8e0;
+      --note: rgba(255, 160, 40, 0.60); --bar: rgba(255, 160, 40, 0.50); --syllable: rgba(121, 168, 224, 0.14);
+      --rubric: #e0675f;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #171614; --panel: #1f1e1b; --ink: #ebe7df; --muted: #a29c91; --line: #34312c;
+    --error: #ef6f6c; --warning: #e0a03a; --info: #79a8e0;
+    --note: rgba(255, 160, 40, 0.60); --bar: rgba(255, 160, 40, 0.50); --syllable: rgba(121, 168, 224, 0.14);
+    --rubric: #e0675f;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+    display: grid; grid-template-rows: auto 1fr; overflow: hidden;
+  }
+  header { display: flex; gap: 16px; align-items: baseline; padding: 10px 16px; border-bottom: 1px solid var(--line); }
+  header h1 { font-size: 15px; margin: 0; font-weight: 600; }
+  #stats { color: var(--muted); font-variant-numeric: tabular-nums; margin-left: auto; font-size: 12px; }
+  main { display: grid; grid-template-columns: minmax(280px, 2fr) 3fr; min-height: 0; }
+  @media (max-width: 760px) { main { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; } body { overflow: auto; } }
+  #left { display: grid; grid-template-rows: 1fr auto; min-height: 0; border-right: 1px solid var(--line); }
+
+  /* The source: a transparent textarea over a backdrop that draws the underlines. */
+  #source { position: relative; min-height: 0; background: var(--panel); }
+  #backdrop, #text {
+    position: absolute; inset: 0; margin: 0; padding: 12px 16px; border: 0;
+    font: 13px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    white-space: pre-wrap; overflow-wrap: break-word; word-break: normal; tab-size: 4;
+    overflow: auto; scrollbar-gutter: stable;
+  }
+  #backdrop { color: transparent; overflow: hidden; }
+  #text { background: transparent; color: var(--ink); resize: none; outline: none; caret-color: var(--ink); }
+  #backdrop mark { color: transparent; background: none; text-decoration: underline wavy; text-underline-offset: 3px; text-decoration-skip-ink: none; }
+  #backdrop mark.error { text-decoration-color: var(--error); }
+  #backdrop mark.warning { text-decoration-color: var(--warning); }
+  #backdrop mark.info { text-decoration-color: var(--info); text-decoration-style: dotted; }
+  #backdrop mark.empty::after { content: "\200b"; border-left: 2px solid var(--warning); margin-left: -1px; }
+  #backdrop mark.empty.error::after { border-color: var(--error); }
+
+  #problems { max-height: 34vh; overflow: auto; border-top: 1px solid var(--line); background: var(--bg); }
+  #problems h2 { font-size: 12px; font-weight: 600; margin: 0; padding: 8px 16px 4px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  #problems ol { list-style: none; margin: 0; padding: 0 0 8px; }
+  #problems li { display: flex; gap: 8px; align-items: baseline; padding: 4px 16px; cursor: pointer; }
+  #problems li:hover { background: var(--line); }
+  #problems .sev { font-size: 11px; font-weight: 600; min-width: 52px; }
+  #problems .error .sev { color: var(--error); }
+  #problems .warning .sev { color: var(--warning); }
+  #problems .info .sev { color: var(--info); }
+  #problems .msg { flex: 1; }
+  #problems code { color: var(--muted); font-size: 11px; }
+  #problems button {
+    font: inherit; font-size: 12px; padding: 1px 8px; border-radius: 4px; cursor: pointer;
+    border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+  }
+  #problems .none { color: var(--muted); padding: 4px 16px 10px; }
+
+  /* The score, with highlight boxes drawn over it. */
+  #preview { overflow: auto; min-height: 0; padding: 16px; background: var(--panel); }
+  #host { position: relative; color: var(--ink); --neuma-rubric: var(--rubric); cursor: pointer; }
+  #host svg { position: absolute; left: 0; top: 0; overflow: visible; }
+  #host .hl-note, #host .hl-bar { fill: var(--note); }
+  #host .hl-syllable { fill: var(--syllable); }
+
+  #tip {
+    position: fixed; z-index: 10; max-width: 360px; padding: 6px 8px; border-radius: 6px; pointer-events: none;
+    background: var(--ink); color: var(--bg); font-size: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.2);
+  }
+  #tip[hidden] { display: none; }
+  #tip code { opacity: .7; }
+</style>
+</head>
+<body>
+<header>
+  <h1>GABC editor</h1>
+  <span id="stats"></span>
+</header>
+<main>
+  <section id="left">
+    <div id="source">
+      <div id="backdrop" aria-hidden="true"><div id="marks"></div></div>
+      <textarea id="text" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="GABC source"></textarea>
+    </div>
+    <section id="problems" aria-live="polite"></section>
+  </section>
+  <section id="preview"><div id="host"></div></section>
+</main>
+<div id="tip" role="tooltip" hidden></div>
+
+<script type="module">
+import { init, Chant } from "../dist/neuma.mjs";
+
+const SAMPLE = `name: Puer natus est;
+mode: 7;
+%%
+(c3) PU(ei)ER(i) *() na(iji)tus(h) est(hhh) no(ih/ji)bis,(i) (;) et(ei~) fí(iji)li(hg)us(f) da(hhi)tus(h) est(h) no(hihh)bis:(efe) (:) cu(e)jus(f) im(h)pé(gi!jk)ri(ih)um(h) (,) su(h)per(h) hú(ih/ji)me(hg)rum(hhh) e(hf//hghvGF)jus:(gf) (:) et(hg) vo(h)cá(hji)bi(h)tur(hhh) no(h)men(hhh) e(highvGF)jus,(gf) (;) ma(hj)gni(i) con(eh~)sí(h)li(hhhf)i(f) An(fhf!gwh)ge(efe)lus.(e) (::)
+`;
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+const $ = (id) => document.getElementById(id);
+const text = $("text"), marks = $("marks"), host = $("host"), problems = $("problems");
+const stats = $("stats"), tip = $("tip"), preview = $("preview");
+
+await init();
+text.value = SAMPLE;
+const chant = new Chant(text.value, { initial: 1 });
+
+// ---- Rendering, coalesced to one per animation frame -------------------------------------
+
+let dirtySource = true;   // the text changed: update the chant and lay it out
+let dirtyLayout = true;   // the width changed: lay it out
+let dirtyCaret = true;    // the caret moved: redraw the highlight
+let frame = 0;
+function schedule() {
+  if (!frame) frame = requestAnimationFrame(render);
+}
+
+function render() {
+  frame = 0;
+  const t0 = performance.now();
+  let engine = 0, patched = null;
+  if (dirtySource) chant.update(text.value);
+  if (dirtySource || dirtyLayout) {
+    const width = Math.max(200, Math.floor(preview.clientWidth - 32));
+    const page = chant.layout(width, { timeline: false, svg: "lines", ids: false });
+    engine = performance.now() - t0;
+    patched = patch(page.svgParts);
+  }
+  if (dirtySource) showDiagnostics(chant.diagnostics);
+  if (dirtySource || dirtyLayout || dirtyCaret) highlight(chant.elementsAt(text.selectionStart));
+  if (patched) {
+    const total = performance.now() - t0;
+    stats.textContent = `${text.value.length.toLocaleString()} chars · engine ${engine.toFixed(1)} ms · ` +
+      `page ${total.toFixed(1)} ms · ${patched.changed}/${patched.lines} lines redrawn`;
+  }
+  dirtySource = dirtyLayout = dirtyCaret = false;
+}
+
+// ---- Patching the SVG a line at a time -----------------------------------------------------
+//
+// Each line is its own <svg>, stacked at its `top` over a base <svg> that holds the style,
+// the glyph <defs> (which <use> finds anywhere in the document), the highlights and the
+// initial. A browser lays out and paints a changed <svg> on its own, so a keystroke costs
+// one line, not the page.
+
+let base = null, defs = null, restGroup = null, overlay = null, style = null, lineClass = "";
+let last = { head: null, defs: null, rest: null, lines: [] };
+let width = 0, height = 0;
+
+function patch(parts) {
+  if (!base) {
+    base = document.createElementNS(SVG_NS, "svg");
+    defs = document.createElementNS(SVG_NS, "defs");
+    overlay = document.createElementNS(SVG_NS, "g");
+    restGroup = document.createElementNS(SVG_NS, "g");
+    base.append(defs, overlay, restGroup);
+    host.append(base);
+  }
+  if (parts.head !== last.head) {
+    // The head is the <svg> start tag and its <style>: copy its attributes and style over.
+    const tpl = document.createElement("template");
+    tpl.innerHTML = parts.head + "</svg>";
+    const fresh = tpl.content.firstElementChild;
+    for (const a of [...base.attributes]) base.removeAttribute(a.name);
+    for (const a of fresh.attributes) base.setAttribute(a.name, a.value);
+    if (style) style.remove();
+    style = fresh.querySelector("style");
+    if (style) base.prepend(style);
+    width = Number(fresh.getAttribute("width"));
+    height = Number(fresh.getAttribute("height"));
+    lineClass = fresh.getAttribute("class") || "";
+    host.style.width = `${width}px`;
+    host.style.height = `${height}px`;
+  }
+  if (parts.defs !== last.defs) defs.innerHTML = parts.defs;
+  if (parts.rest !== last.rest) restGroup.innerHTML = parts.rest;
+
+  let changed = 0;
+  const kids = host.children;   // the base, then a <svg> per line
+  parts.lines.forEach((line, i) => {
+    let el = kids[i + 1];
+    if (!el) {
+      el = document.createElementNS(SVG_NS, "svg");
+      el.setAttribute("aria-hidden", "true");
+      host.append(el);
+    }
+    const prev = last.lines[i];
+    const bottom = i + 1 < parts.lines.length ? parts.lines[i + 1].top : height;
+    const h = Math.max(1, bottom - line.top);
+    if (!prev || prev.top !== line.top || el.getAttribute("height") !== String(h)) {
+      el.style.top = `${line.top}px`;
+      el.setAttribute("width", width);
+      el.setAttribute("height", h);
+      el.setAttribute("class", lineClass);
+    }
+    if (!prev || prev.svg !== line.svg) {
+      el.innerHTML = line.svg;
+      changed += 1;
+    }
+  });
+  while (kids.length > parts.lines.length + 1) kids[kids.length - 1].remove();
+  last = parts;
+  return { changed, lines: parts.lines.length };
+}
+
+// ---- Caret highlight and click-to-select ---------------------------------------------------
+
+function highlight(elements) {
+  if (!overlay) return;
+  overlay.replaceChildren(...elements.map((e) => {
+    const r = document.createElementNS(SVG_NS, "rect");
+    const pad = e.kind === "syllable" ? 0 : 2.5;
+    r.setAttribute("x", e.x - pad);
+    r.setAttribute("y", e.y - pad);
+    r.setAttribute("width", e.w + 2 * pad);
+    r.setAttribute("height", e.h + 2 * pad);
+    r.setAttribute("rx", e.kind === "syllable" ? 3 : 2);
+    r.setAttribute("class", `hl-${e.kind}`);
+    return r;
+  }));
+}
+
+host.addEventListener("click", (event) => {
+  const box = host.getBoundingClientRect();
+  const hit = chant.sourceAt(event.clientX - box.left, event.clientY - box.top);
+  if (!hit) return;
+  text.focus({ preventScroll: true });
+  text.setSelectionRange(hit.from, hit.to);
+  revealSelection();
+  dirtyCaret = true;
+  schedule();
+});
+
+// Scrolls the textarea so the selection shows: measure where it falls in the backdrop.
+function revealSelection() {
+  const probe = document.createElement("span");
+  probe.textContent = "\u200b";
+  const before = document.createTextNode(text.value.slice(0, text.selectionStart));
+  const mirror = marks.cloneNode(false);
+  mirror.removeAttribute("id");
+  mirror.style.visibility = "hidden";
+  mirror.append(before, probe);
+  marks.after(mirror);
+  const y = probe.offsetTop - mirror.offsetTop;
+  mirror.remove();
+  if (y < text.scrollTop || y > text.scrollTop + text.clientHeight - 24) {
+    text.scrollTop = Math.max(0, y - text.clientHeight / 3);
+  }
+}
+
+// ---- Diagnostics -----------------------------------------------------------------------------
+
+let diagnostics = [];
+
+function showDiagnostics(list) {
+  const had = diagnostics.length;
+  diagnostics = list;
+  // Underlines: the source with each diagnostic's range wrapped in a <mark>. Ranges can
+  // overlap, so each character takes the most severe diagnostic covering it. The text after
+  // the last one is left out: laying out a long source on each keystroke would cost more
+  // than the engine's work.
+  const rank = { error: 3, warning: 2, info: 1 };
+  const src = text.value.slice(0, Math.max(0, ...list.map((d) => d.to)));
+  const cuts = new Set([0, src.length]);
+  for (const d of list) { cuts.add(d.from); cuts.add(d.to); }
+  const points = [...cuts].sort((a, b) => a - b);
+  const frag = document.createDocumentFragment();
+  for (let i = 0; i + 1 < points.length; i++) {
+    const [a, b] = [points[i], points[i + 1]];
+    let worst = null;
+    for (const d of list) {
+      if (d.from <= a && b <= d.to && (!worst || rank[d.severity] > rank[worst.severity])) worst = d;
+    }
+    const chunk = document.createTextNode(src.slice(a, b));
+    if (worst) {
+      const m = document.createElement("mark");
+      m.className = worst.severity;
+      m.dataset.diag = list.indexOf(worst);
+      m.append(chunk);
+      frag.append(m);
+    } else {
+      frag.append(chunk);
+    }
+  }
+  // Empty spans (an insertion point) draw as a thin bar.
+  for (const [i, d] of list.entries()) {
+    if (d.from === d.to) {
+      const m = document.createElement("mark");
+      m.className = `${d.severity} empty`;
+      m.dataset.diag = i;
+      placeAt(frag, d.from, m);
+    }
+  }
+  if (list.length || had) marks.replaceChildren(frag);
+
+  // The list.
+  const head = document.createElement("h2");
+  head.textContent = list.length ? `Problems (${list.length})` : "Problems";
+  const ol = document.createElement("ol");
+  for (const [i, d] of list.entries()) {
+    const li = document.createElement("li");
+    li.className = d.severity;
+    li.title = `${d.code} at ${lineCol(d.from)}`;
+    const sev = document.createElement("span");
+    sev.className = "sev";
+    sev.textContent = d.severity;
+    const msg = document.createElement("span");
+    msg.className = "msg";
+    const code = document.createElement("code");
+    code.textContent = ` ${d.code} · ${lineCol(d.from)}`;
+    msg.append(d.message, code);
+    li.append(sev, msg);
+    if (d.fix) {
+      const fix = document.createElement("button");
+      fix.textContent = d.fix.title;
+      fix.addEventListener("click", (e) => { e.stopPropagation(); applyFix(d.fix); });
+      li.append(fix);
+    }
+    li.addEventListener("click", () => {
+      text.focus();
+      text.setSelectionRange(d.from, Math.max(d.to, d.from));
+      revealSelection();
+    });
+    li.dataset.diag = i;
+    ol.append(li);
+  }
+  problems.replaceChildren(head, list.length ? ol : Object.assign(document.createElement("div"), { className: "none", textContent: "No problems." }));
+}
+
+// Inserts `node` at character `offset` of the fragment's text, splitting a text node.
+function placeAt(frag, offset, node) {
+  let pos = 0;
+  const walker = document.createTreeWalker(frag, NodeFilter.SHOW_TEXT);
+  for (let t = walker.nextNode(); t; t = walker.nextNode()) {
+    const len = t.data.length;
+    if (offset <= pos + len) {
+      const rest = t.splitText(offset - pos);
+      rest.parentNode.insertBefore(node, rest);
+      return;
+    }
+    pos += len;
+  }
+  frag.append(node);
+}
+
+function lineCol(offset) {
+  const before = text.value.slice(0, offset);
+  const line = before.split("\n").length;
+  return `${line}:${offset - before.lastIndexOf("\n")}`;
+}
+
+// Applies a fix as an edit the browser can undo, where it can.
+function applyFix(fix) {
+  text.focus();
+  text.setSelectionRange(fix.from, fix.to);
+  if (!document.execCommand("insertText", false, fix.insert)) {
+    text.setRangeText(fix.insert, fix.from, fix.to, "end");
+    text.dispatchEvent(new Event("input"));
+  }
+}
+
+// Hovering an underline shows its message. The textarea sits over the backdrop, so look
+// through it for a mark under the pointer.
+text.addEventListener("mousemove", (event) => {
+  const mark = document.elementsFromPoint(event.clientX, event.clientY).find((el) => el.tagName === "MARK");
+  const d = mark && diagnostics[mark.dataset.diag];
+  if (!d) { tip.hidden = true; return; }
+  tip.replaceChildren(d.message, document.createElement("br"), Object.assign(document.createElement("code"), {
+    textContent: d.fix ? `${d.code} · fix: ${d.fix.title}` : d.code,
+  }));
+  tip.hidden = false;
+  tip.style.left = `${Math.min(event.clientX + 12, innerWidth - tip.offsetWidth - 8)}px`;
+  tip.style.top = `${event.clientY + 16}px`;
+});
+text.addEventListener("mouseleave", () => { tip.hidden = true; });
+
+// ---- Wiring ----------------------------------------------------------------------------------
+
+text.addEventListener("input", () => { dirtySource = true; schedule(); });
+text.addEventListener("scroll", () => { marks.style.transform = `translateY(${-text.scrollTop}px)`; });
+document.addEventListener("selectionchange", () => {
+  if (document.activeElement === text) { dirtyCaret = true; schedule(); }
+});
+new ResizeObserver(() => { dirtyLayout = true; schedule(); }).observe(preview);
+schedule();
+
+// For tests and the console.
+window.neumaEditor = { chant, text, render: () => { render(); return last; } };
+</script>
+</body>
+</html>

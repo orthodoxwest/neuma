@@ -4,12 +4,29 @@
 use std::ops::Range;
 
 /// Header fields in source order. Names keep their spelling; lookups ignore ASCII case.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default)]
 pub struct Header {
     pub fields: Vec<(String, String)>,
+    /// Each parsed field's source span, parallel to `fields`; not part of equality.
+    pub(crate) spans: Vec<Range<usize>>,
 }
 
+impl PartialEq for Header {
+    fn eq(&self, other: &Header) -> bool {
+        self.fields == other.fields
+    }
+}
+
+impl Eq for Header {}
+
 impl Header {
+    /// The source span of the first field named `name`, from its name through its closing
+    /// `;`, for a header read from GABC.
+    pub fn span(&self, name: &str) -> Option<Range<usize>> {
+        let i = self.fields.iter().position(|(n, _)| n.eq_ignore_ascii_case(name))?;
+        self.spans.get(i).cloned()
+    }
+
     /// The first value for `name`.
     pub fn get(&self, name: &str) -> Option<&str> {
         self.fields

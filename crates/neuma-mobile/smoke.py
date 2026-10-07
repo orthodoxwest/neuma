@@ -55,4 +55,18 @@ except neuma.ToneError.Unknown:
 pt = neuma.point("O come, let us sing unto the Lord * let us heartily rejoice in the strength of our salvation.", "8.G")
 assert len(pt.halves) == 2 and "·" in pt.text and pt.halves[0].part == neuma.VersePart.MEDIANT
 
+# Editors: fixes, UTF-16 offsets, and links between the source and the score.
+src = "(c4) Kŷ-(g)ri(hi) (,) e(h) (::)"
+ed = neuma.Chant(src, neuma.default_chant_options())
+hyphen = next(d for d in ed.diagnostics() if d.code == "gabc::hyphen-in-syllable")
+assert hyphen.fix.replacement == "" and hyphen.utf16_start == hyphen.start - 1
+page = ed.layout(500.0, neuma.default_layout_options())
+for n in page.notes:
+    hit = ed.source_at(n.x, n.y)
+    assert hit.kind == neuma.ElementKind.NOTE and hit.index == n.id
+caret = src.encode("utf-16-le").find("hi".encode("utf-16-le")) // 2 + 1
+at = ed.elements_at(caret, neuma.OffsetUnit.UTF16)
+assert [e.kind for e in at] == [neuma.ElementKind.NOTE, neuma.ElementKind.SYLLABLE]
+assert src.encode()[at[0].start:at[0].end] == b"i"
+
 print(f"ok: {len(narrow.notes)} notes, {len(narrow.lines)} lines at 120, {len(glyphs)} glyphs")

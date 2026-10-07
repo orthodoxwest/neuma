@@ -189,6 +189,16 @@ pub(crate) struct HeadBox {
     pub hit: [f32; 4],
 }
 
+/// A bar in a segment, for the source map: its score-wide index and ink box.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct BarBox {
+    pub bar: u32,
+    pub x: f32,
+    pub w: f32,
+    pub top: f32,
+    pub bottom: f32,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Segment {
     pub syllable: u32,
@@ -197,6 +207,7 @@ pub(crate) struct Segment {
     pub word_start: bool,
     pub pieces: Vec<Piece>,
     pub heads: Vec<HeadBox>,
+    pub bars: Vec<BarBox>,
     /// Horizontal extent of the notation, if there is any.
     pub ink: Option<(f32, f32)>,
     pub lyric: Option<LyricBox>,
@@ -282,6 +293,9 @@ pub struct Engraving {
     pub(crate) notes: Vec<NoteInfo>,
     pub(crate) syllable_text: Vec<String>,
     pub(crate) syllable_word: Vec<u32>,
+    /// Each syllable's source span, and each bar's, in source order.
+    pub(crate) syllable_spans: Vec<std::ops::Range<usize>>,
+    pub(crate) bar_spans: Vec<std::ops::Range<usize>>,
     pub(crate) lyric_size: f32,
     pub(crate) hyphen: f32,
     pub(crate) word_space: f32,
@@ -294,6 +308,8 @@ pub struct Engraving {
     pub(crate) custos_never: bool,
     /// The lowest note's staff position, or 0 for a score without notes.
     pub(crate) lowest: StaffPosition,
+    /// The first note after each segment, for its custos (so layout needn't scan ahead).
+    pub(crate) next_note: Vec<Option<StaffPosition>>,
     pub diagnostics: Vec<Diagnostic>,
 }
 
@@ -471,6 +487,7 @@ struct Engraver<'a> {
 struct Open {
     pieces: Vec<Piece>,
     heads: Vec<HeadBox>,
+    bars: Vec<BarBox>,
     x: f32,
     gap: Option<f32>,
     starts_with_clef: bool,
@@ -483,6 +500,7 @@ impl Open {
         Open {
             pieces: Vec::new(),
             heads: Vec::new(),
+            bars: Vec::new(),
             x: 0.0,
             gap: None,
             starts_with_clef: false,
@@ -590,6 +608,7 @@ impl Engraver<'_> {
             word_start,
             pieces: open.pieces,
             heads: open.heads,
+            bars: open.bars,
             ink,
             lyric: None,
             after: Break::Allowed,
@@ -660,7 +679,7 @@ impl Score {
             && VowelRules::builtin(lang).is_none()
         {
             e.sink.info(
-                0..0,
+                self.header.span("language").unwrap_or(0..0),
                 "engrave::vowel-rules",
                 format!("no vowel rules for `{lang}`; centering with the Latin rules"),
             );
@@ -733,6 +752,8 @@ impl Score {
             first_lyric = Some((si, rest));
         }
         let mut syllable_text = Vec::new();
+        let mut syllable_spans = Vec::with_capacity(self.syllables.len());
+        let mut bar_spans = Vec::new();
         let mut syllable_word = Vec::new();
         let mut alt_text = String::new();
         let mut word = 0u32;
@@ -754,8 +775,11 @@ impl Score {
                 alt_text.push_str(&plain);
             }
             syllable_text.push(plain);
+            syllable_spans.push(syl.span.clone());
             e.reset_alterations(syl.word_start, false);
             let pauses_before = e.pauses.len();
+            // This syllable's notes are the ones pushed from here on.
+            let notes_from = e.notes.len();
 
             let mut open = Open::new();
             let mut run = Run {
@@ -872,6 +896,18 @@ impl Score {
                         e.reset_alterations(false, true);
                         let x = open.advance(SYLLABLE_GAP);
                         let (pieces, w) = bar_pieces(b.kind, b.high, x);
+                        let (top, bottom) = pieces
+                            .iter()
+                            .map(Piece::y_extent)
+                            .fold((f32::MAX, f32::MIN), |(t, b), (pt, pb)| (t.min(pt), b.max(pb)));
+                        open.bars.push(BarBox {
+                            bar: bar_spans.len() as u32,
+                            x,
+                            w,
+                            top,
+                            bottom,
+                        });
+                        bar_spans.push(b.span.clone());
                         open.pieces.extend(pieces);
                         open.x = x + w;
                         e.pauses.push((e.notes.len() as u32, PauseKind::Bar(b.kind)));
@@ -1027,7 +1063,7 @@ impl Score {
                 if let Some(r) = &nucleus
                     && let Some(c) = chars.get(r.start)
                 {
-                    for n in e.notes.iter_mut().filter(|n| n.syllable == si) {
+                    for n in &mut e.notes[notes_from..] {
                         n.vowel = Some(*c);
                     }
                 }
@@ -1074,22 +1110,24 @@ impl Score {
             let last = self.syllables.len().saturating_sub(1) as u32;
             e.close(Open::new(), last, true, true, 0.0);
         }
-        if let Some(brk) = pending_break
-            && let Some(last) = e.segments.last_mut()
-        {
-            let _ = brk;
-            last.after = Break::Allowed;
-            e.sink
-                .info(0..0, "engrave::final-break", "a line break at the end of the score is dropped");
-        }
+        // A break pending here would have come from a syllable of its own at the end; but
+        // that syllable's empty segment takes it (and is dropped), so none is left.
+        debug_assert!(pending_break.is_none());
 
         let lowest = e.notes.iter().map(|n| n.position).min().unwrap_or(0);
+        let mut next_note = vec![None; e.segments.len()];
+        for k in (0..e.segments.len().saturating_sub(1)).rev() {
+            next_note[k] = e.segments[k + 1].first_note.or(next_note[k + 1]);
+        }
         Engraving {
+            next_note,
             segments: e.segments,
             initial,
             clef: e.initial_clef.unwrap_or(DEFAULT_CLEF),
             notes: e.notes,
             syllable_text,
+            syllable_spans,
+            bar_spans,
             syllable_word,
             lyric_size: size,
             hyphen,
@@ -1150,6 +1188,17 @@ mod tests {
         for p in &pieces {
             assert_eq!(p.y_extent(), (-3.0, 3.0));
         }
+    }
+
+    #[test]
+    fn next_note_looks_past_segments_without_notes() {
+        let src = "(c4) A(g) b() c() (,) d(hi) e(j) (::) f() g()";
+        let eng = crate::parse(src).score.engrave(&crate::ApproxMeasure, &StyleOptions::default());
+        for k in 0..eng.segments.len() {
+            let scanned = eng.segments[k + 1..].iter().find_map(|s| s.first_note);
+            assert_eq!(eng.next_note[k], scanned, "segment {k}");
+        }
+        assert!(eng.next_note.iter().any(Option::is_some) && eng.next_note.last() == Some(&None));
     }
 
     #[test]

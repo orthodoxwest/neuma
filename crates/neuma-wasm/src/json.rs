@@ -4,11 +4,19 @@
 use std::fmt::Write as _;
 
 use neuma::score::{BarKind, NoteShape};
-use neuma::{Diagnostic, LineBox, NoteMap, OfficePart, PauseKind, Severity, Summary};
+use std::ops::Range;
+
+use neuma::{Diagnostic, Element, ElementKind, LineBox, NoteMap, OfficePart, PauseKind, Severity, Summary, Utf16Index};
 
 /// A JSON string literal for `s`.
 pub fn string(out: &mut String, s: &str) {
     out.push('"');
+    // Most strings need no escapes: copy them whole.
+    if !s.bytes().any(|b| b < 0x20 || b == b'"' || b == b'\\') {
+        out.push_str(s);
+        out.push('"');
+        return;
+    }
     for c in s.chars() {
         match c {
             '"' => out.push_str("\\\""),
@@ -31,9 +39,20 @@ pub fn number(out: &mut String, v: f32) {
         out.push('0');
         return;
     }
-    let s = format!("{:.3}", v);
-    let s = s.trim_end_matches('0').trim_end_matches('.');
-    out.push_str(if s == "-0" { "0" } else { s });
+    let start = out.len();
+    neuma::decimal::push_fixed(out, v, 3);
+    let trimmed = out[start..].trim_end_matches('0').trim_end_matches('.').len();
+    out.truncate(start + trimmed);
+    if &out[start..] == "-0" {
+        out.replace_range(start.., "0");
+    }
+}
+
+pub fn integer(out: &mut String, v: i64) {
+    if v < 0 {
+        out.push('-');
+    }
+    neuma::decimal::push_u64(out, v.unsigned_abs());
 }
 
 fn field(out: &mut String, first: &mut bool, name: &str) {
@@ -47,7 +66,7 @@ fn field(out: &mut String, first: &mut bool, name: &str) {
 
 /// A psalm setting: `{ gabc, notes: [{ verse, number, part, role, start, end }], diagnostics }`.
 /// `notes[i]` describes note `i` of the engraved score.
-pub fn setting(out: &mut String, s: &neuma_tones::Setting) {
+pub fn setting(out: &mut String, s: &neuma_tones::Setting, text: Option<&Utf16Index>) {
     out.push_str("{\"gabc\":");
     string(out, &s.gabc);
     out.push_str(",\"notes\":[");
@@ -77,7 +96,7 @@ pub fn setting(out: &mut String, s: &neuma_tones::Setting) {
         );
     }
     out.push_str("],\"diagnostics\":");
-    diagnostics(out, &s.diagnostics);
+    diagnostics(out, &s.diagnostics, text);
     out.push('}');
 }
 
@@ -90,7 +109,7 @@ fn part_name(k: neuma_tones::PartKind) -> &'static str {
 }
 
 /// A pointing: `{ text, halves: [{ verse, part, confidence, kept }], diagnostics }`.
-pub fn pointing(out: &mut String, p: &neuma_tones::Pointing) {
+pub fn pointing(out: &mut String, p: &neuma_tones::Pointing, text: Option<&Utf16Index>) {
     out.push_str("{\"text\":");
     string(out, &p.text());
     out.push_str(",\"halves\":[");
@@ -103,11 +122,24 @@ pub fn pointing(out: &mut String, p: &neuma_tones::Pointing) {
         let _ = write!(out, r#","kept":{}}}"#, h.kept);
     }
     out.push_str("],\"diagnostics\":");
-    diagnostics(out, &p.pointed.diagnostics);
+    diagnostics(out, &p.pointed.diagnostics, text);
     out.push('}');
 }
 
-pub fn diagnostics(out: &mut String, diags: &[Diagnostic]) {
+/// `"start":…,"end":…` in UTF-8 bytes, then `"from":…,"to":…` in UTF-16 units when the
+/// source's index is at hand.
+fn span(out: &mut String, span: &Range<usize>, utf16: Option<&Utf16Index>) {
+    let _ = write!(out, r#""start":{},"end":{}"#, span.start, span.end);
+    if let Some(idx) = utf16 {
+        let r = idx.range_to_utf16(span);
+        let _ = write!(out, r#","from":{},"to":{}"#, r.start, r.end);
+    }
+}
+
+/// Diagnostics: `[{ severity, start, end, from, to, code, message, fix }]`, where `fix` is
+/// `null` or `{ start, end, from, to, insert, title }`. `from` and `to` (UTF-16 units) are
+/// there only with `utf16`.
+pub fn diagnostics(out: &mut String, diags: &[Diagnostic], utf16: Option<&Utf16Index>) {
     out.push('[');
     for (i, d) in diags.iter().enumerate() {
         if i > 0 {
@@ -118,17 +150,48 @@ pub fn diagnostics(out: &mut String, diags: &[Diagnostic]) {
             Severity::Warning => "warning",
             Severity::Error => "error",
         };
-        let _ = write!(
-            out,
-            r#"{{"severity":"{severity}","start":{},"end":{},"code":"#,
-            d.span.start, d.span.end
-        );
+        let _ = write!(out, r#"{{"severity":"{severity}","#);
+        span(out, &d.span, utf16);
+        out.push_str(",\"code\":");
         string(out, d.code);
         out.push_str(",\"message\":");
         string(out, &d.message);
+        out.push_str(",\"fix\":");
+        match &d.fix {
+            Some(f) => {
+                out.push('{');
+                span(out, &f.span, utf16);
+                out.push_str(",\"insert\":");
+                string(out, &f.replacement);
+                out.push_str(",\"title\":");
+                string(out, &f.title);
+                out.push('}');
+            }
+            None => out.push_str("null"),
+        }
         out.push('}');
     }
     out.push(']');
+}
+
+/// A source map element: `{ kind, index, start, end, from, to, line, x, y, w, h }`.
+pub fn element(out: &mut String, e: &Element, utf16: &Utf16Index) {
+    let kind = match e.kind {
+        ElementKind::Note => "note",
+        ElementKind::Bar => "bar",
+        ElementKind::Syllable => "syllable",
+    };
+    let _ = write!(out, r#"{{"kind":"{kind}","index":{},"#, e.index);
+    span(out, &e.span, Some(utf16));
+    let _ = write!(out, r#","line":{},"x":"#, e.line);
+    number(out, e.x);
+    out.push_str(",\"y\":");
+    number(out, e.y);
+    out.push_str(",\"w\":");
+    number(out, e.w);
+    out.push_str(",\"h\":");
+    number(out, e.h);
+    out.push('}');
 }
 
 fn bar_name(b: BarKind) -> &'static str {
@@ -187,7 +250,7 @@ pub fn note_map(out: &mut String, map: &NoteMap) {
         let mut first = true;
         out.push('{');
         field(out, &mut first, "id");
-        let _ = write!(out, "{}", n.id);
+        integer(out, n.id as i64);
         for (name, v) in [
             ("x", n.x),
             ("y", n.y),
@@ -212,7 +275,7 @@ pub fn note_map(out: &mut String, map: &NoteMap) {
             ("spanEnd", n.span.end as i64),
         ] {
             field(out, &mut first, name);
-            let _ = write!(out, "{v}");
+            integer(out, v);
         }
         field(out, &mut first, "syllableText");
         string(out, &n.syllable_text);

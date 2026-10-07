@@ -1,12 +1,19 @@
 //! Syllable text: style tags, special characters, centering braces and escapes.
 
-use super::LyricState;
-use crate::diag::Sink;
+use super::{LyricState, TextMap, VERBATIM};
+use std::ops::Range;
+
+use crate::diag::{Fix, Sink};
 use crate::score::{Lyric, LyricRun, TextStyle};
 
-/// Parses one syllable's text. `offset` is the text's byte offset in the source, for spans.
-pub(super) fn parse(text: &str, offset: usize, state: &mut LyricState, sink: &mut Sink) -> Lyric {
+/// Parses one syllable's text. `map` gives where its bytes are in the source, for spans.
+pub(super) fn parse(text: &str, map: &TextMap, state: &mut LyricState, sink: &mut Sink) -> Lyric {
     let mut out = Builder::default();
+    // Where text runs on to the syllable's end (an unended translation, `<` or verbatim tag),
+    // so a closer appended there would be taken into it; and a style closer left without its
+    // `>` at the end, as `</i`.
+    let mut swallow: Option<usize> = None;
+    let mut half_closer: Option<&str> = None;
     let mut i = 0;
     let b = text.as_bytes();
     while i < b.len() {
@@ -31,33 +38,66 @@ pub(super) fn parse(text: &str, offset: usize, state: &mut LyricState, sink: &mu
             }
             '[' => {
                 // Translation text (E2): skipped for now.
-                let end = text[i..].find(']').map_or(text.len(), |n| i + n + 1);
+                let end = text[i..].find(']').map_or_else(
+                    || {
+                        swallow.get_or_insert(i);
+                        text.len()
+                    },
+                    |n| i + n + 1,
+                );
                 if &text[i..end] != "[/]" {
-                    sink.info(
-                        offset + i..offset + end,
-                        "gabc::translation-ignored",
-                        "translation text isn't drawn yet",
-                    );
+                    sink.info(map.span(i, end), "gabc::translation-ignored", "translation text isn't drawn yet");
                 }
                 i = end;
             }
             '~' => {
-                sink.info(
-                    offset + i..offset + i + 1,
-                    "gabc::lyric-tie",
-                    "lyric ties are drawn as a space for now",
-                );
+                sink.info(map.span(i, i + 1), "gabc::lyric-tie", "lyric ties are drawn as a space for now");
                 out.push(' ', style(state), false);
                 i += 1;
             }
             '<' => {
                 let Some(close) = text[i..].find('>') else {
+                    swallow.get_or_insert(i);
+                    half_closer = text[i + 1..]
+                        .strip_prefix('/')
+                        .and_then(|name| STYLE_TAGS.into_iter().find(|t| *t == name));
                     out.push('<', style(state), state.elision > 0);
                     i += 1;
                     continue;
                 };
                 let tag = &text[i + 1..i + close];
                 let after = i + close + 1;
+                track_style(state, tag, map.span(i, after), map.end(text.len()));
+                // `<sp>`, `<v>` and `<alt>` run to their closer, or to the end of the syllable.
+                let verbatim = ["sp", "v", "alt"].into_iter().find(|t| *t == tag);
+                if let Some(t) = verbatim
+                    && !text[after..].contains(&format!("</{t}>"))
+                {
+                    sink.warn(
+                        map.span(i, after),
+                        "gabc::unclosed-tag",
+                        format!("`<{t}>` has no `</{t}>` in its syllable, so it runs to the syllable's end"),
+                    );
+                    let end = map.end(text.len());
+                    let half = format!("</{t}");
+                    let k = VERBATIM.iter().position(|v| *v == t);
+                    if k.is_some_and(|k| state.verbatim_first[k] == Some(map.at(i))) {
+                        // A closer left without its `>` (`<sp>ae</sp`) is completed; another
+                        // would only be taken into the text.
+                        match text[after..].find(&half) {
+                            Some(k) => {
+                                let at = after + k + half.len();
+                                sink.fix(Fix::new(map.span(at, at), ">", format!("Complete `</{t}>`")));
+                            }
+                            None => sink.fix(Fix::new(
+                                end..end,
+                                format!("</{t}>"),
+                                format!("Close `<{t}>` at the end of its syllable"),
+                            )),
+                        }
+                    }
+                    swallow.get_or_insert(i);
+                }
                 i = match tag {
                     "i" => bump(&mut state.italic, after),
                     "/i" => drop(&mut state.italic, after),
@@ -72,11 +112,7 @@ pub(super) fn parse(text: &str, offset: usize, state: &mut LyricState, sink: &mu
                     "e" => bump(&mut state.elision, after),
                     "/e" => drop(&mut state.elision, after),
                     "tt" | "/tt" => {
-                        sink.info(
-                            offset + i..offset + after,
-                            "gabc::teletype",
-                            "teletype text is set in the lyric face",
-                        );
+                        sink.info(map.span(i, after), "gabc::teletype", "teletype text is set in the lyric face");
                         after
                     }
                     "eu" => {
@@ -99,7 +135,10 @@ pub(super) fn parse(text: &str, offset: usize, state: &mut LyricState, sink: &mu
                     t if t == "pr" || t == "pr/" || t.starts_with("pr:") => after,
                     "sp" => {
                         let end = text[after..].find("</sp>").map_or(text.len(), |n| after + n);
+                        // Without its closer, as `<sp>ae</sp`, the text runs to the syllable's
+                        // end; a closer missing only its `>` isn't part of the name.
                         let inner = &text[after..end];
+                        let inner = inner.find("</sp").map_or(inner, |k| &inner[..k]);
                         match special(inner) {
                             Some(s) => {
                                 let mut st = style(state);
@@ -111,7 +150,7 @@ pub(super) fn parse(text: &str, offset: usize, state: &mut LyricState, sink: &mu
                                 }
                             }
                             None => sink.warn(
-                                offset + after..offset + end,
+                                map.span(after, after + inner.len()),
                                 "gabc::unknown-special",
                                 format!("special character `<sp>{inner}</sp>` isn't defined"),
                             ),
@@ -146,22 +185,18 @@ pub(super) fn parse(text: &str, offset: usize, state: &mut LyricState, sink: &mu
                                 out.push(' ', style(state), state.elision > 0);
                             }
                         } else if inner.chars().any(char::is_alphanumeric) {
-                            sink.warn(offset + i..offset + end, "gabc::verbatim-dropped", "verbatim TeX is dropped");
+                            sink.warn(map.span(i, end), "gabc::verbatim-dropped", "verbatim TeX is dropped");
                         }
                         (end + "</v>".len()).min(text.len())
                     }
                     "alt" => {
                         let end = text[after..].find("</alt>").map_or(text.len(), |n| after + n);
-                        sink.info(
-                            offset + i..offset + end,
-                            "gabc::above-lines-text",
-                            "above-lines text isn't drawn yet",
-                        );
+                        sink.info(map.span(i, end), "gabc::above-lines-text", "above-lines text isn't drawn yet");
                         (end + "</alt>".len()).min(text.len())
                     }
                     _ => {
                         sink.warn(
-                            offset + i..offset + after,
+                            map.span(i, after),
                             "gabc::unknown-tag",
                             format!("unknown tag `<{tag}>` is set as text"),
                         );
@@ -178,7 +213,65 @@ pub(super) fn parse(text: &str, offset: usize, state: &mut LyricState, sink: &mu
             }
         }
     }
+    settle_fixes(state, text, map, swallow, half_closer);
     out.finish()
+}
+
+/// A style tag not yet closed, and how to close it in its syllable, if that can be done.
+#[derive(Debug)]
+pub(crate) struct OpenTag {
+    pub name: &'static str,
+    pub span: Range<usize>,
+    syllable_end: usize,
+    pub fix: Option<Fix>,
+}
+
+/// Points the fixes of tags opened in a syllable past which text runs to its end at where that
+/// text starts, or completes a closer missing its `>`, or drops the fix when neither will do.
+fn settle_fixes(state: &mut LyricState, text: &str, map: &TextMap, swallow: Option<usize>, half_closer: Option<&str>) {
+    let end = map.end(text.len());
+    for tag in state.open.iter_mut().filter(|t| t.syllable_end == end) {
+        tag.fix = if half_closer == Some(tag.name) {
+            Some(Fix::new(end..end, ">", format!("Complete `</{}>`", tag.name)))
+        } else {
+            match swallow {
+                None => continue,
+                Some(at) if map.at(at) >= tag.span.end => {
+                    let c = text[at..].chars().next().unwrap_or('[');
+                    Some(Fix::new(
+                        map.span(at, at),
+                        format!("</{}>", tag.name),
+                        format!("Close `<{}>` before `{c}`", tag.name),
+                    ))
+                }
+                Some(_) => None,
+            }
+        };
+    }
+}
+
+/// The style tags, which stay open across syllables until closed.
+const STYLE_TAGS: [&str; 6] = ["i", "b", "sc", "ul", "c", "e"];
+
+/// Keeps `state.open` in step with a style tag opening or closing.
+fn track_style(state: &mut LyricState, tag: &str, span: Range<usize>, syllable_end: usize) {
+    if let Some(name) = STYLE_TAGS.into_iter().find(|t| *t == tag) {
+        let fix = Fix::new(
+            syllable_end..syllable_end,
+            format!("</{name}>"),
+            format!("Close `<{name}>` at the end of its syllable"),
+        );
+        state.open.push(OpenTag {
+            name,
+            span,
+            syllable_end,
+            fix: Some(fix),
+        });
+    } else if let Some(name) = tag.strip_prefix('/')
+        && let Some(k) = state.open.iter().rposition(|o| o.name == name)
+    {
+        state.open.remove(k);
+    }
 }
 
 fn bump(n: &mut u8, after: usize) -> usize {

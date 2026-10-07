@@ -187,3 +187,42 @@ fn points_psalms() {
         Err(ToneError::Unknown { .. })
     ));
 }
+
+#[test]
+fn diagnostics_carry_utf16_offsets_and_fixes() {
+    let src = "(c4) Dó-(g)mi(h)nus(h)";
+    let d = chant(src).diagnostics();
+    let h = d.iter().find(|d| d.code == "gabc::hyphen-in-syllable").unwrap();
+    assert_eq!(&src[h.start as usize..h.end as usize], "-");
+    assert_eq!(h.utf16_start, h.start - 1);
+    let fix = h.fix.as_ref().unwrap();
+    assert_eq!(
+        (fix.utf16_start, fix.utf16_end, fix.replacement.as_str()),
+        (h.utf16_start, h.utf16_end, "")
+    );
+    assert!(chant("(c4) a(g)").diagnostics().iter().all(|d| d.fix.is_none()));
+}
+
+#[test]
+fn source_and_score_link_both_ways() {
+    let src = "(c4) Kŷ(g)ri(hi) (,) e(h) (::)";
+    let c = chant(src);
+    assert!(c.source_at(0.0, 0.0).is_none() && c.elements_at(0, OffsetUnit::Utf8).is_empty());
+    let page = c.layout(500.0, options());
+    for n in &page.notes {
+        let hit = c.source_at(n.x, n.y).unwrap();
+        assert_eq!((hit.kind, hit.index), (ElementKind::Note, n.id));
+    }
+    let hi = src.find("hi").unwrap();
+    let at = c.elements_at(hi as u64 + 1, OffsetUnit::Utf8);
+    assert_eq!(
+        at.iter().map(|e| e.kind).collect::<Vec<_>>(),
+        [ElementKind::Note, ElementKind::Syllable]
+    );
+    assert_eq!(&src[at[0].start as usize..at[0].end as usize], "i");
+    // `ŷ` is two bytes but one UTF-16 unit.
+    assert_eq!(c.elements_at(hi as u64, OffsetUnit::Utf16), at);
+    assert_eq!(at[0].utf16_start, at[0].start - 1);
+    let bar = c.elements_at(src.find(',').unwrap() as u64, OffsetUnit::Utf8);
+    assert_eq!(bar[0].kind, ElementKind::Bar);
+}

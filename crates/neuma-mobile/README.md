@@ -116,3 +116,17 @@ built-in tone from `toneNames()`, and `psalmWithTone` to a tone block of your ow
 `PsalmSetting` holds GABC for `Chant` and each note's verse, half and role in the tone.
 Half-verses with no pointing marks are pointed automatically; `point(text, tone)` returns
 the pointed text with the pointer's confidence for each half-verse.
+
+### Editors
+
+- **Diagnostics** carry `start`/`end` in UTF-8 bytes and `utf16Start`/`utf16End` in UTF-16
+  code units (Kotlin string indices, `NSRange`). Codes are stable; docs/diagnostics.md lists
+  them. `fix` is null or the one edit that fixes the problem: replace its range with
+  `replacement`; `title` labels it in a menu.
+- **`chant.sourceAt(x, y)`** returns the note, bar or syllable under a tap in the last layout,
+  as a `SourceElement` with its source range (both units), line and box.
+- **`chant.elementsAt(offset, unit)`** returns what to highlight for a caret, most specific
+  first: the notes and bar whose source holds it, then a box per line for its syllable. Pass
+  `OffsetUnit.UTF16` for a text view's caret, `OffsetUnit.UTF8` for a byte offset.
+
+A `Chant` is immutable: on each edit, make a new one and lay it out.

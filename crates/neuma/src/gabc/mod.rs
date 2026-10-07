@@ -5,8 +5,10 @@ mod lyric;
 mod notes;
 mod write;
 
-use crate::diag::{Diagnostic, Sink};
-use crate::score::{Header, Score, Syllable};
+use std::ops::Range;
+
+use crate::diag::{Diagnostic, Fix, Sink};
+use crate::score::{Figure, Header, Score, Syllable};
 
 pub use write::to_gabc;
 
@@ -19,6 +21,41 @@ pub struct Parsed {
 
 /// Parses GABC source. Never fails.
 pub fn parse(src: &str) -> Parsed {
+    let mut parsed = parse_unchecked(src);
+    // A closer put in for a verbatim tag can be taken by another opener, Gregorio's way, and
+    // make text of notes. Each such fix (at most one per tag, as only the first unclosed
+    // opener of each gets one) is tried, and kept only if it clears its diagnostic and keeps
+    // every note. A style tag's closer can't make text of notes, so those aren't tried.
+    let notes = |score: &Score| {
+        score
+            .syllables
+            .iter()
+            .flat_map(|s| &s.notation)
+            .filter(|f| matches!(f, Figure::Note(_)))
+            .count()
+    };
+    let before = notes(&parsed.score);
+    for d in &mut parsed.diagnostics {
+        let verbatim = VERBATIM.iter().any(|t| src.get(d.span.clone()) == Some(&format!("<{t}>")[..]));
+        if d.code != "gabc::unclosed-tag" || d.fix.is_none() || !verbatim {
+            continue;
+        }
+        #[cfg(test)]
+        tests::RECHECKS.with(|n| n.set(n.get() + 1));
+        let Some(fixed) = d.fix.as_ref().and_then(|f| f.apply(src)) else {
+            d.fix = None;
+            continue;
+        };
+        let after = parse_unchecked(&fixed);
+        let cleared = !after.diagnostics.iter().any(|a| a.code == d.code && a.span == d.span);
+        if !cleared || notes(&after.score) < before {
+            d.fix = None;
+        }
+    }
+    parsed
+}
+
+fn parse_unchecked(src: &str) -> Parsed {
     let mut sink = Sink::default();
     let (header, mut body_start) = parse_header(src, &mut sink);
     // A byte-order mark isn't text; spans still count it, so they index `src`.
@@ -26,6 +63,9 @@ pub fn parse(src: &str) -> Parsed {
         body_start += '\u{feff}'.len_utf8();
     }
     let syllables = parse_body(src, body_start, &mut sink);
+    // Without a `%%`, header lines read as text; a clef put before them wouldn't help.
+    let headers_unseparated = find_separator(src).is_none() && header_lines(src).is_some();
+    lint_clef(&syllables, !headers_unseparated, &mut sink);
     // An NABC score has NABC in nearly every syllable, and a score that uses zero-width notes
     // often uses them in many places; one diagnostic says each, with how often it applies.
     for (code, all) in [
@@ -73,40 +113,59 @@ fn strip_comment(line: &str) -> &str {
 
 fn parse_header(src: &str, sink: &mut Sink) -> (Header, usize) {
     let Some((sep, body_start)) = find_separator(src) else {
-        // No header: Gregorio requires one, but a bare body is common in snippets.
-        if !src.trim().is_empty() && !src.trim_start().starts_with('(') && looks_like_header(src) {
-            sink.warn(0..0, "gabc::no-separator", "no `%%` line separates the header from the notes");
+        // No header: Gregorio requires one, but a bare body is common in snippets. Lines at
+        // the top that read as headers want a `%%` after them.
+        if let Some((end, sure)) = header_lines(src) {
+            sink.warn(
+                0..src[..end].trim_end().len(),
+                "gabc::no-separator",
+                "no `%%` line separates the header from the notes",
+            );
+            if sure {
+                let insert = if src[..end].ends_with('\n') { "%%\n" } else { "\n%%\n" };
+                sink.fix(Fix::new(end..end, insert, "Insert the `%%` line after the header"));
+            }
         }
         return (Header::default(), 0);
     };
     let mut header = Header::default();
     let text = &src[..sep];
     let mut offset = 0;
-    let mut pending: Option<(String, String, usize)> = None;
+    // A field still open: its name, value, start, and where its value's text ends so far.
+    let mut pending: Option<(String, String, usize, usize)> = None;
     for raw in text.split_inclusive('\n') {
         let line_start = offset;
         offset += raw.len();
         let line = strip_comment(raw.trim_end_matches(['\r', '\n']));
-        if let Some((name, mut value, start)) = pending.take() {
+        if let Some((name, mut value, start, value_end)) = pending.take() {
             // Continuing a multi-line value, which ends with `;;`, or like Gregorio, at a `;` that
             // ends a line.
             if is_header_line(line) {
                 // A forgotten `;`: the next field starts here, not more of this value.
                 sink.warn(
-                    start..line_start,
+                    start..value_end,
                     "gabc::unterminated-header",
                     format!("header `{name}` has no closing `;` or `;;`"),
                 );
-                header.fields.push((name, value.trim().to_string()));
+                sink.fix(Fix::new(value_end..value_end, ";", "Insert `;`"));
+                push(&mut header, name, &value, start..value_end);
             } else {
-                let end = line.find(";;").or_else(|| line.trim_end().strip_suffix(';').map(str::len));
+                let end = line
+                    .find(";;")
+                    .map(|e| (e, e + 2))
+                    .or_else(|| line.trim_end().strip_suffix(';').map(|v| (v.len(), v.len() + 1)));
                 value.push('\n');
-                if let Some(end) = end {
+                if let Some((end, close)) = end {
                     value.push_str(&line[..end]);
-                    header.fields.push((name, value.trim().to_string()));
+                    push(&mut header, name, &value, start..line_start + close);
                 } else {
                     value.push_str(line);
-                    pending = Some((name, value, start));
+                    let value_end = if line.trim().is_empty() {
+                        value_end
+                    } else {
+                        line_start + line.trim_end().len()
+                    };
+                    pending = Some((name, value, start, value_end));
                 }
                 continue;
             }
@@ -124,49 +183,58 @@ fn parse_header(src: &str, sink: &mut Sink) -> (Header, usize) {
         };
         // A byte-order mark before the first header isn't part of its name.
         let name = line[..colon].trim().trim_start_matches('\u{feff}').trim().to_string();
+        let start = line_start + (line.len() - line.trim_start_matches(|c: char| c.is_whitespace() || c == '\u{feff}').len());
         let rest = &line[colon + 1..];
         if let Some(value) = rest.trim_end().strip_suffix(";;") {
             // A one-line value that itself contains `;`, as `to_gabc` writes it.
-            header.fields.push((name, value.trim().to_string()));
+            push(&mut header, name, value, start..line_start + colon + 1 + rest.trim_end().len());
         } else if let Some(end) = rest.find(';') {
-            header.fields.push((name, rest[..end].trim().to_string()));
+            push(&mut header, name, &rest[..end], start..line_start + colon + 1 + end + 1);
         } else {
-            pending = Some((name, rest.trim().to_string(), line_start));
+            let value_end = line_start + line.trim_end().len();
+            pending = Some((name, rest.trim().to_string(), start, value_end));
         }
     }
-    if let Some((name, value, start)) = pending {
+    if let Some((name, value, start, value_end)) = pending {
         sink.warn(
-            start..sep,
+            start..value_end,
             "gabc::unterminated-header",
             format!("header `{name}` has no closing `;` or `;;`"),
         );
-        header.fields.push((name, value.trim().to_string()));
+        sink.fix(Fix::new(value_end..value_end, ";", "Insert `;`"));
+        push(&mut header, name, &value, start..value_end);
     }
-    for (name, value) in &header.fields {
+    for ((name, value), span) in header.fields.iter().zip(&header.spans) {
         let lower = name.to_ascii_lowercase();
+        let span = span.clone();
         if lower.starts_with("def-m") {
             sink.info(
-                0..0,
+                span,
                 "gabc::macro-ignored",
                 format!("`{name}` defines TeX, which neuma doesn't run"),
             );
         } else if lower == "oriscus-orientation" && value == "legacy" {
             sink.warn(
-                0..0,
+                span,
                 "gabc::legacy-oriscus",
                 "legacy oriscus orientation isn't supported; using the default rules",
             );
         } else if lower == "staff-lines" && value.trim() != "4" {
             sink.warn(
-                0..0,
+                span,
                 "gabc::staff-lines",
                 format!("only four-line staves are supported; `staff-lines: {value}` is drawn on four lines"),
             );
         } else if lower == "nabc-lines" {
-            sink.warn(0..0, "gabc::nabc", "NABC notation isn't supported and is skipped");
+            sink.warn(span, "gabc::nabc", "NABC notation isn't supported and is skipped");
         }
     }
     (header, body_start)
+}
+
+fn push(header: &mut Header, name: String, value: &str, span: Range<usize>) {
+    header.fields.push((name, value.trim().to_string()));
+    header.spans.push(span);
 }
 
 /// A `name:` line, named as Gregorio names header fields.
@@ -180,12 +248,110 @@ fn is_header_line(line: &str) -> bool {
     })
 }
 
-fn looks_like_header(src: &str) -> bool {
-    src.lines().next().is_some_and(|l| {
-        let l = l.trim();
-        l.contains(':') && l.ends_with(';') && !l.contains('(')
-    })
+/// How a line at the top of a source with no `%%` reads.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum TopLine {
+    /// Blank, or only a comment.
+    Empty,
+    /// A header field, `name: value;`, with nothing like notes in it.
+    Field,
+    /// A header field that might be notes: `dixit: a(g) b(h);`, or `name: a (b);`.
+    MaybeField,
+    Other,
 }
+
+fn top_line(line: &str) -> TopLine {
+    let l = strip_comment(line).trim_start_matches('\u{feff}').trim();
+    if l.is_empty() {
+        TopLine::Empty
+    } else if !is_header_line(l) {
+        TopLine::Other
+    } else if !l.contains('(') {
+        TopLine::Field
+    } else if l.ends_with(';') {
+        TopLine::MaybeField
+    } else {
+        TopLine::Other
+    }
+}
+
+/// Whether a line holds a `(`…`)` group, as notes do.
+fn has_group(line: &str) -> bool {
+    line.find('(').is_some_and(|i| line[i..].contains(')'))
+}
+
+/// For a source with no `%%`: if its first line reads as a header field, where the run of
+/// such lines at its top ends, and whether a `%%` there surely separates them from the notes:
+/// the last of them is surely a field, and nothing after them looks like one before the notes
+/// start (as `mode: 8; (c4) a(g)`, or fields after a line that breaks the run).
+fn header_lines(src: &str) -> Option<(usize, bool)> {
+    let first = src.lines().map(top_line).find(|t| *t != TopLine::Empty)?;
+    if first == TopLine::Other {
+        return None;
+    }
+    let mut end = 0;
+    let mut last = (0, TopLine::Empty);
+    // A line in the run that might be notes, under a name that isn't a header field's.
+    let mut doubtful = false;
+    let mut lines = src.split_inclusive('\n');
+    for line in lines.by_ref() {
+        match top_line(line) {
+            TopLine::Empty => {}
+            TopLine::Other => {
+                // Unsure if this line, or any up to the notes, looks like a header field.
+                let rest = std::iter::once(line).chain(lines);
+                let mut before_notes = rest.scan(false, |notes, l| {
+                    let was = *notes;
+                    *notes = *notes || has_group(strip_comment(l));
+                    (!was).then_some(l)
+                });
+                let fields_after = before_notes.any(|l| is_header_line(strip_comment(l).trim()));
+                return Some((last.0, last.1 == TopLine::Field && !fields_after && !doubtful));
+            }
+            t => {
+                if t == TopLine::MaybeField {
+                    let l = strip_comment(line).trim_start_matches('\u{feff}');
+                    let name = l.split_once(':').map_or("", |(n, _)| n.trim());
+                    doubtful |= has_group(l) && !KNOWN_FIELDS.contains(&name.to_ascii_lowercase().as_str());
+                }
+                last = (end + line.len(), t);
+            }
+        }
+        end += line.len();
+    }
+    Some((last.0, last.1 == TopLine::Field && !doubtful))
+}
+
+/// Header fields Gregorio and the scores in use know, whose values may hold parentheses
+/// (`name: Kyrie II. (Rex Magne);`) without being notes.
+const KNOWN_FIELDS: &[&str] = &[
+    "name",
+    "title",
+    "annotation",
+    "author",
+    "arranger",
+    "book",
+    "commentary",
+    "date",
+    "gabc-copyright",
+    "score-copyright",
+    "manuscript",
+    "manuscript-reference",
+    "manuscript-storage-place",
+    "mode",
+    "mode-modifier",
+    "mode-differentia",
+    "occasion",
+    "office-part",
+    "meter",
+    "transcriber",
+    "transcription-date",
+    "user-notes",
+    "def-macro",
+    "language",
+    "gregoriotex-font",
+    "font",
+];
 
 /// Lyric styling that stays open across syllables until its closing tag.
 #[derive(Debug, Default)]
@@ -198,6 +364,13 @@ pub(crate) struct LyricState {
     pub elision: u8,
     pub nlba: bool,
     pub euouae: bool,
+    /// Style tags not yet closed: the tag, its span, and where its syllable's text ends.
+    pub open: Vec<lyric::OpenTag>,
+    /// Where the first opener of each verbatim tag (`v`, `alt`, `sp`) with no closer after it
+    /// is in the source. A closer put in for a later one would close that one instead, as
+    /// Gregorio reads an opener to the next closer, taking all between as text: only that
+    /// opener gets a fix, and none does when it is hidden (in a translation, say).
+    pub verbatim_first: [Option<usize>; 3],
 }
 
 fn parse_body(src: &str, start: usize, sink: &mut Sink) -> Vec<Syllable> {
@@ -209,6 +382,9 @@ fn parse_body(src: &str, start: usize, sink: &mut Sink) -> Vec<Syllable> {
     let mut saw_space = true;
     let mut text_start = 0;
     let mut text = String::new();
+    // Where each byte of `text` came from in the source: comments are left out of the text and
+    // whitespace is read as one space, so text offsets aren't source offsets.
+    let mut from: Vec<(usize, usize)> = Vec::new();
     // Tags found to have no closer ahead, so each is searched for once rather than per opener.
     let mut unclosed = [false; 3];
     while i < bytes.len() {
@@ -224,40 +400,39 @@ fn parse_body(src: &str, start: usize, sink: &mut Sink) -> Vec<Syllable> {
                     text_start = i;
                 }
                 let next = body[i + 1..].chars().next();
-                text.push('$');
-                if let Some(n) = next {
-                    text.push(n);
-                    i += 1 + n.len_utf8();
-                } else {
-                    i += 1;
-                }
+                let len = 1 + next.map_or(0, char::len_utf8);
+                text.push_str(&body[i..i + len]);
+                copied(&mut from, start + i, len);
+                i += len;
             }
-            '<' if let Some(end) = verbatim_end(&body[i..], &mut unclosed) => {
+            '<' if let Some(end) = verbatim_end(&body[i..], start + i, &mut unclosed, &mut state.verbatim_first) => {
                 // Gregorio reads `<v>`, `<alt>` and `<sp>` to their closing tag, so a `(` inside
                 // is text, not notes: `<v>(</v>` prints a parenthesis.
                 if text.is_empty() {
                     text_start = i;
                 }
                 text.push_str(&body[i..i + end]);
+                copied(&mut from, start + i, end);
                 i += end;
             }
             '(' => {
                 let close = find_close(body, i + 1);
                 let notes_src = &body[i + 1..close];
                 let syl_start = start + if text.trim().is_empty() { i } else { text_start };
-                let trimmed = text.trim_start().to_string();
-                let text_offset = start + text_start + (text.len() - trimmed.len());
-                let trimmed = trimmed.trim_end().to_string();
-                lint_hyphens(&trimmed, text_offset, sink);
+                let lead = text.len() - text.trim_start().len();
+                let trimmed = text.trim().to_string();
+                let map = TextMap {
+                    from: &from[lead..lead + trimmed.len()],
+                    base: start + text_start + lead,
+                };
+                lint_hyphens(&trimmed, &map, sink);
                 let nlba_before = state.nlba;
-                let lyric = lyric::parse(&trimmed, text_offset, &mut state, sink);
+                let lyric = lyric::parse(&trimmed, &map, &mut state, sink);
                 let notation = notes::parse(notes_src, start + i + 1, sink);
                 if close >= body.len() {
-                    sink.error(
-                        start + i..start + body.len(),
-                        "gabc::unclosed-notes",
-                        "notes opened with `(` never close",
-                    );
+                    let end = start + body.trim_end().len();
+                    sink.error(start + i..end, "gabc::unclosed-notes", "notes opened with `(` never close");
+                    sink.fix(Fix::new(end..end, ")", "Insert `)`"));
                 }
                 let word_start = saw_space || syllables.is_empty();
                 syllables.push(Syllable {
@@ -270,6 +445,7 @@ fn parse_body(src: &str, start: usize, sink: &mut Sink) -> Vec<Syllable> {
                     euouae: state.euouae,
                 });
                 text.clear();
+                from.clear();
                 i = (close + 1).min(body.len());
                 text_start = i;
                 saw_space = false;
@@ -278,9 +454,11 @@ fn parse_body(src: &str, start: usize, sink: &mut Sink) -> Vec<Syllable> {
                 if text.trim().is_empty() {
                     saw_space = true;
                     text.clear();
+                    from.clear();
                     text_start = i + c.len_utf8();
                 } else {
                     text.push(' ');
+                    from.push((start + i, start + i + c.len_utf8()));
                 }
                 i += c.len_utf8();
             }
@@ -289,8 +467,19 @@ fn parse_body(src: &str, start: usize, sink: &mut Sink) -> Vec<Syllable> {
                     text_start = i;
                 }
                 text.push(c);
+                copied(&mut from, start + i, c.len_utf8());
                 i += c.len_utf8();
             }
+        }
+    }
+    for tag in std::mem::take(&mut state.open) {
+        sink.warn(
+            tag.span,
+            "gabc::unclosed-tag",
+            format!("`<{}>` is never closed, so it styles the rest of the score", tag.name),
+        );
+        if let Some(fix) = tag.fix {
+            sink.fix(fix);
         }
     }
     if !text.trim().is_empty() {
@@ -303,10 +492,14 @@ fn parse_body(src: &str, start: usize, sink: &mut Sink) -> Vec<Syllable> {
     syllables
 }
 
+/// The verbatim tags, in the order `verbatim_end` and `LyricState::verbatim_first` index them.
+pub(crate) const VERBATIM: [&str; 3] = ["v", "alt", "sp"];
+
 /// For text starting with `<v>`, `<alt>` or `<sp>`, the length through its closing tag. `None`
-/// for other text, or when the tag never closes, which `unclosed` remembers per tag.
-fn verbatim_end(text: &str, unclosed: &mut [bool; 3]) -> Option<usize> {
-    let k = ["v", "alt", "sp"].into_iter().position(|t| {
+/// for other text, or when the tag never closes, which `unclosed` remembers per tag, and
+/// `first` where that opener (at `at` in the source) is.
+fn verbatim_end(text: &str, at: usize, unclosed: &mut [bool; 3], first: &mut [Option<usize>; 3]) -> Option<usize> {
+    let k = VERBATIM.into_iter().position(|t| {
         text.strip_prefix('<')
             .and_then(|r| r.strip_prefix(t))
             .is_some_and(|r| r.starts_with('>'))
@@ -317,6 +510,9 @@ fn verbatim_end(text: &str, unclosed: &mut [bool; 3]) -> Option<usize> {
     let close = ["</v>", "</alt>", "</sp>"][k];
     let end = text.find(close).map(|n| n + close.len());
     unclosed[k] = end.is_none();
+    if end.is_none() {
+        first[k] = Some(at);
+    }
     end
 }
 
@@ -325,22 +521,87 @@ fn find_close(body: &str, from: usize) -> usize {
     body[from..].find(')').map_or(body.len(), |n| from + n)
 }
 
-fn lint_hyphens(text: &str, offset: usize, sink: &mut Sink) {
+/// Notes before any clef are read in `c4`, as a missing clef is usually forgotten. `fix`
+/// offers to insert one.
+fn lint_clef(syllables: &[Syllable], fix: bool, sink: &mut Sink) {
+    for f in syllables.iter().flat_map(|s| &s.notation) {
+        match f {
+            Figure::Clef(_) => return,
+            Figure::Note(n) => {
+                sink.warn(
+                    n.span.clone(),
+                    "gabc::no-clef",
+                    "no clef before the first note; the notes are read in a do clef on the fourth line (`c4`)",
+                );
+                if fix {
+                    let at = syllables[0].span.start;
+                    sink.fix(Fix::new(at..at, "(c4) ", "Insert a `c4` clef"));
+                }
+                return;
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Notes that `len` bytes of text were copied from the source at `at`.
+fn copied(from: &mut Vec<(usize, usize)>, at: usize, len: usize) {
+    from.extend((at..at + len).map(|b| (b, b + 1)));
+}
+
+/// Where a syllable's text came from in the source: for each byte of the text, the source
+/// bytes it stands for.
+pub(crate) struct TextMap<'a> {
+    from: &'a [(usize, usize)],
+    /// Where the text starts, for an empty one.
+    base: usize,
+}
+
+impl TextMap<'_> {
+    /// The source offset of the text's byte `k`, or the text's end for `k` past it.
+    pub fn at(&self, k: usize) -> usize {
+        self.from.get(k).map_or_else(|| self.end(self.from.len()), |f| f.0)
+    }
+
+    /// The source offset where the text's first `k` bytes end.
+    pub fn end(&self, k: usize) -> usize {
+        match k.min(self.from.len()) {
+            0 => self.from.first().map_or(self.base, |f| f.0),
+            k => self.from[k - 1].1,
+        }
+    }
+
+    /// The source of the text's bytes `a..b`; for an empty range, where text inserted at `a`
+    /// goes (after the text when `a` is its end).
+    pub fn span(&self, a: usize, b: usize) -> Range<usize> {
+        if b > a {
+            self.at(a)..self.end(b)
+        } else if a >= self.from.len() {
+            self.end(a)..self.end(a)
+        } else {
+            self.at(a)..self.at(a)
+        }
+    }
+}
+
+fn lint_hyphens(text: &str, map: &TextMap, sink: &mut Sink) {
+    let n = text.len();
     // `<sp>-</sp>` is Gregorio's zero-width hyphen and is fine.
     if text.starts_with('-') {
         sink.warn(
-            offset..offset + 1,
+            map.span(0, 1),
             "gabc::hyphen-in-syllable",
             "a hyphen at the start of a syllable prints in addition to the hyphen the engine draws; remove it",
         );
+        sink.fix(Fix::new(map.span(0, 1), "", "Remove the hyphen"));
     }
     if text.ends_with('-') && !text.ends_with("<sp>-</sp>") && !text.ends_with("$-") {
-        let end = offset + text.len();
         sink.warn(
-            end - 1..end,
+            map.span(n - 1, n),
             "gabc::hyphen-in-syllable",
             "a hyphen at the end of a syllable prints in addition to the hyphen the engine draws; remove it",
         );
+        sink.fix(Fix::new(map.span(n - 1, n), "", "Remove the hyphen"));
     }
 }
 

@@ -214,6 +214,7 @@ pub fn blocks(book: &Book, fonts: &Fonts) -> (Vec<Block>, Vec<Problem>) {
                 span: 0..0,
                 code: "book::overflow",
                 message: format!("runs {:.1}pt past the right margin", right - m.width),
+                fix: None,
             });
         }
         problems.extend(diags.into_iter().map(|diagnostic| Problem { piece: i, diagnostic }));
@@ -409,6 +410,7 @@ fn error(diags: &mut Vec<Diagnostic>, message: String) {
         span: 0..0,
         code: "book::psalm",
         message,
+        fix: None,
     });
 }
 
@@ -594,8 +596,10 @@ fn psalm_blocks(ps: &Psalm, s: &Settings, fonts: &Fonts, m: &Metrics, diags: &mu
             let i = starts.iter().rposition(|st| *st <= d.span.start).unwrap_or(0);
             let vi = chant_verses + i;
             let shift = offset_of(&text, verses[vi]) as isize - starts[i] as isize;
+            let moved = |r: &std::ops::Range<usize>| (r.start as isize + shift).max(0) as usize..(r.end as isize + shift).max(0) as usize;
             let d = Diagnostic {
-                span: (d.span.start as isize + shift).max(0) as usize..(d.span.end as isize + shift).max(0) as usize,
+                span: moved(&d.span),
+                fix: d.fix.map(|f| neuma::Fix { span: moved(&f.span), ..f }),
                 ..d
             };
             place(d, 0, &labels[vi], source_len)
@@ -616,6 +620,7 @@ fn psalm_blocks(ps: &Psalm, s: &Settings, fonts: &Fonts, m: &Metrics, diags: &mu
                     "pointed automatically, but only {:.0}% sure: check where the accents fall",
                     h.confidence * 100.0
                 ),
+                fix: None,
             }));
         }
         let nsize = size * 0.9;
@@ -675,8 +680,14 @@ fn offset_of(text: &str, part: &str) -> usize {
 /// emptied for the Gloria, which isn't in it) and the verse named in its message.
 fn place(d: Diagnostic, shift: usize, label: &str, source_len: usize) -> Diagnostic {
     let span = d.span.start + shift..d.span.end + shift;
+    // A fix moves with its diagnostic, and goes when the text it edits isn't in the source.
+    let fix = d.fix.map(|f| neuma::Fix {
+        span: f.span.start + shift..f.span.end + shift,
+        ..f
+    });
     Diagnostic {
-        span: if span.start >= source_len { 0..0 } else { span },
+        span: if span.start >= source_len { 0..0 } else { span.clone() },
+        fix: fix.filter(|f| span.start < source_len && f.span.end <= source_len),
         message: format!("{label}: {}", d.message),
         ..d
     }

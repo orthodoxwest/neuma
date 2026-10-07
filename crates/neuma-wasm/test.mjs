@@ -110,6 +110,62 @@ assert.ok(pt.text.includes("·") && /[áéíóú]/.test(pt.text));
 assert.equal(psalm(plain, "8.G").gabc, psalm(pt.text, "8.G").gabc);
 assert.ok(psalm(plain, "8.G", { pointing: "manual" }).diagnostics.some((d) => d.code === "apply::no-accent"));
 
+// Editors: offsets in UTF-16 alongside bytes, fixes, updates, and both ways between source
+// and score.
+const src = "(c4) Ký-(g)ri(hi) (,) é(h) (::)";
+const ed = new Chant(src, { initial: 0 });
+const hyphen = ed.diagnostics.find((d) => d.code === "gabc::hyphen-in-syllable");
+assert.equal(src.slice(hyphen.from, hyphen.to), "-");
+assert.ok(hyphen.end - hyphen.start === 1 && hyphen.start === hyphen.from + 1, "bytes count the é");
+assert.equal(hyphen.fix.insert, "");
+const fixed = src.slice(0, hyphen.fix.from) + hyphen.fix.insert + src.slice(hyphen.fix.to);
+ed.update(fixed);
+assert.deepEqual(ed.diagnostics, []);
+assert.equal(new Chant("Ky(g)", { initial: 0 }).diagnostics[0].fix.insert, "(c4) ");
+
+const quick = ed.layout(500, { timeline: false });
+assert.equal(quick.timeline, undefined);
+assert.ok(quick.svg.startsWith("<svg"));
+const page = ed.layout(500);
+for (const n of page.timeline.notes) {
+  const hit = ed.sourceAt(n.x, n.y);
+  assert.equal(hit.kind, "note");
+  assert.equal(hit.index, n.id);
+}
+const hi = fixed.indexOf("hi");
+const at = ed.elementsAt(hi + 1);
+assert.deepEqual(at.map((e) => e.kind), ["note", "syllable"]);
+assert.equal(fixed.slice(at[0].from, at[0].to), "i");
+assert.equal(fixed.slice(at[1].from, at[1].to), "ri(hi)");
+const bar = ed.elementsAt(fixed.indexOf(","));
+assert.equal(bar[0].kind, "bar");
+assert.equal(ed.sourceAt(bar[0].x + bar[0].w / 2, bar[0].y + 1).kind, "bar");
+// The same caret as a byte offset.
+const bytes = new TextEncoder().encode(fixed.slice(0, hi + 1)).length;
+assert.deepEqual(ed.elementsAt(bytes, { units: "utf8" }), at);
+assert.equal(ed.sourceAt(-100, -100), null);
+// Carets past either end are at it, however far: none wraps around to the start.
+const atEnd = ed.elementsAt(fixed.length);
+for (const far of [fixed.length + 1, 2 ** 32, 2 ** 32 + 5, 2 ** 53, Infinity]) {
+  assert.deepEqual(ed.elementsAt(far), atEnd, String(far));
+  if (far > 2 ** 31) assert.deepEqual(ed.elementsAt(far, { units: "utf8" }), atEnd, String(far));
+}
+for (const before of [-1, -(2 ** 32), -Infinity, NaN]) {
+  assert.deepEqual(ed.elementsAt(before), ed.elementsAt(0), String(before));
+}
+
+// The SVG a line at a time, without ids, draws what the whole SVG draws.
+const parts = ed.layout(500, { svg: "lines", ids: false, timeline: false }).svgParts;
+assert.ok(parts.head.startsWith("<svg") && parts.defs.startsWith("<path"));
+assert.equal(parts.lines.length, page.timeline.lines.length);
+const count = (text, tag) => text.split(tag).length - 1;
+const lineSvg = parts.lines.map((l) => l.svg).join("");
+assert.equal(count(lineSvg, "<use ") + count(parts.rest, "<use "), count(page.svg, "<use "));
+assert.ok(!lineSvg.includes("data-note"));
+assert.ok(parts.lines.every((l, i) => i === 0 || l.top > parts.lines[i - 1].top));
+ed.free();
+assert.throws(() => ed.update(src), /freed/);
+assert.throws(() => ed.sourceAt(0, 0), /freed/);
 
 // A RangeError from the caller's own arguments, before the engine runs, is rethrown and
 // leaves the engine and its Chants alive.
