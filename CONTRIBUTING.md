@@ -19,6 +19,21 @@ node crates/neuma-wasm/build.mjs
 node crates/neuma-wasm/test.mjs
 ```
 
+## Golden snapshots
+
+`cargo test` compares the engraving of about 30 reference scores, at two widths, with text
+snapshots of their display lists in
+[crates/neuma/tests/golden/snapshots](crates/neuma/tests/golden/README.md). When a change
+to the engraving is intended, rewrite them and check the diff before you commit it:
+
+```sh
+UPDATE_SNAPSHOTS=1 cargo test -p neuma --test golden
+git diff crates/neuma/tests/golden/snapshots
+```
+
+Add a reference score by putting its `.gabc` file in `crates/neuma/tests/golden` and
+running the same command. Only add scores whose source you know is free to share.
+
 ## Fuzzing
 
 `fuzz/` holds [cargo-fuzz](https://github.com/rust-fuzz/cargo-fuzz) targets. It is its own
