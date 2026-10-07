@@ -110,6 +110,18 @@ fn special_source(c: char) -> Option<&'static str> {
 
 /// Whether `text` is made only of characters that `<sp>` produces: a bare `A` counts only
 /// as part of `A\u{0336}`, and an acute only after `œ`.
+/// Whether some and whether all of `text` is specials that are red by themselves.
+fn red_specials(text: &str) -> (bool, bool) {
+    let (mut some, mut all) = (false, !text.is_empty());
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        let red = matches!(c, '℣' | '℟' | '*' | '†') || (c == 'A' && chars.next_if_eq(&'\u{0336}').is_some());
+        some |= red;
+        all &= red;
+    }
+    (some, all)
+}
+
 fn all_special(text: &str) -> bool {
     let mut chars = text.chars().peekable();
     while let Some(c) = chars.next() {
@@ -130,9 +142,12 @@ fn write_lyric(out: &mut String, lyric: &Lyric, style: &mut TextStyle) {
     let mut index = 0;
     for run in &lyric.runs {
         // Special characters were parsed as rubric consonant runs; write them back as `<sp>`.
+        // `<sp>V/</sp>`, `R/`, `A/`, `*` and `+` are red without `<c>`, so an elided `*` that
+        // isn't red is written as text, not as `<sp>*</sp>`.
         let mut run_style = run.style;
-        let is_special = run.consonant && all_special(&run.text);
-        if is_special && matches!(run.text.as_str(), "℣" | "℟" | "*" | "†" | "A\u{0336}") {
+        let (some_red, all_red) = red_specials(&run.text);
+        let is_special = run.consonant && all_special(&run.text) && (run.style.rubric || !some_red);
+        if is_special && all_red {
             run_style.rubric = false;
         }
         if run.consonant && !is_special {

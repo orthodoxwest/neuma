@@ -490,6 +490,9 @@ fn writer_is_stable_on_fuzz_finds() {
         "(c4) a\u{feff}b(g) \u{feff}(h)",
         // A line break inside an unknown tag, which is set as text.
         "<$\n>(",
+        // Elided text that spells red specials without being red.
+        "<e>**(",
+        "(c4) <e>*<sp>ae</sp></e>(g) <c><sp>*</sp><sp>*</sp></c>(h) <sp>V/</sp><sp>R/</sp>(g)",
     ];
     for src in cases {
         let once = parse(src).score.to_gabc();
