@@ -223,8 +223,13 @@ fn check(name: &str, src: &str, seed: u64, edits: usize) {
         }
         let opts = LayoutOptions::default().with_last_line(if rng.below(5) == 0 { LastLine::Justified } else { LastLine::Ragged });
         let what = || format!("{name}, seed {seed}, edit {step}, width {width}:\n{src}");
-        let eng = parse(&src).score.engrave(&ApproxMeasure, &style);
+        let parsed = parse(&src);
+        let eng = parsed.score.engrave(&ApproxMeasure, &style);
         chant.update(&src);
+        // Parsed again around the edit, as a fresh parse reads it.
+        assert!(chant.score() == &parsed.score, "{}", what());
+        let found: Vec<_> = parsed.diagnostics.iter().chain(&eng.diagnostics).cloned().collect();
+        assert_eq!(chant.diagnostics(), &found[..], "{}", what());
         assert!(chant.engraving() == &*eng, "{}", what());
         let cached = chant.layout_with(width, &opts);
         let fresh = eng.layout_with(width, &opts);
@@ -305,15 +310,18 @@ fn edits_whose_effects_reach_past_them() {
         ("(c4) a*(g) b(h) c(g)", "(c4) a(g) b(h) c(g)"),
     ];
     let styles = [Initial::Lines(1), Initial::None, Initial::Lines(2)];
-    for (before, after) in cases {
+    // Each with a header too, which is what lets a chant parse only around the edit.
+    for (header, (before, after)) in ["", "name: x;\n%%\n"].into_iter().flat_map(|h| cases.iter().map(move |c| (h, c))) {
         for initial in styles {
             let style = StyleOptions::default().with_initial(initial);
-            let (before, after) = (format!("{before}{tail}"), format!("{after}{tail}"));
+            let (before, after) = (format!("{header}{before}{tail}"), format!("{header}{after}{tail}"));
             let mut chant = chant(&style);
             let mut shown: Option<SvgParts> = None;
             for src in [&before, &after, &before] {
-                let fresh = parse(src).score.engrave(&ApproxMeasure, &style);
+                let parsed = parse(src);
+                let fresh = parsed.score.engrave(&ApproxMeasure, &style);
                 chant.update(src);
+                assert!(chant.score() == &parsed.score, "{initial:?}: {before:?} to {src:?}");
                 assert!(chant.engraving() == &*fresh, "{initial:?}: {before:?} to {src:?}");
                 let opts = LayoutOptions::default();
                 let svg = SvgOptions::default();

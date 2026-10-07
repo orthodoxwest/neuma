@@ -11,6 +11,7 @@
 
 use super::{Engraving, Pass, Resume, Segment, StyleOptions};
 use crate::diag::Diagnostic;
+use crate::gabc::Diff;
 use crate::score::{Clef, Figure, Lyric, Score, Syllable};
 use crate::text::TextMeasure;
 use std::ops::Range;
@@ -47,6 +48,12 @@ impl EngraveCache {
         self.last.as_ref().map(|k| &k.score)
     }
 
+    /// The last score, for [`crate::gabc::reparse`] to take the syllables an edit left alone
+    /// from: engrave next with the [`Diff`] it gives.
+    pub(crate) fn score_mut(&mut self) -> Option<&mut Score> {
+        self.last.as_mut().map(|k| &mut k.score)
+    }
+
     /// Takes the last score back, forgetting its engraving.
     pub(crate) fn take_score(&mut self) -> Option<Score> {
         self.last.take().map(|k| k.score)
@@ -57,8 +64,10 @@ impl EngraveCache {
     }
 
     /// Engraves `score` as [`Score::engrave`] does, reusing the last engraving where the score
-    /// is unchanged, and keeps both for next time.
-    pub(crate) fn engrave(&mut self, score: Score, measure: &dyn TextMeasure, style: &StyleOptions) -> &Arc<Engraving> {
+    /// is unchanged, and keeps both for next time. `diff`, when given, says which syllables
+    /// are unchanged (and the last score's may have been taken, see [`Self::score_mut`]);
+    /// otherwise the scores are compared.
+    pub(crate) fn engrave(&mut self, score: Score, measure: &dyn TextMeasure, style: &StyleOptions, diff: Option<Diff>) -> &Arc<Engraving> {
         let mut pass = score.pass(measure, style, true);
         let metrics = [pass.hyphen, pass.word_space, pass.ascent, pass.descent].map(f32::to_bits);
         let first_lyric = pass.first_lyric.clone();
@@ -71,7 +80,7 @@ impl EngraveCache {
                 && k.engraving.initial == pass.initial
         });
         match old {
-            Some(old) => resume(&mut pass, &score, old),
+            Some(old) => resume(&mut pass, &score, old, diff),
             None => {
                 for (si, syl) in score.syllables.iter().enumerate() {
                     pass.syllable(&score, si, syl);
@@ -164,30 +173,40 @@ fn has_note(s: &Syllable) -> bool {
 
 /// Engraves `score` in `pass` from where it first differs from the old one, taking the rest
 /// from the old engraving once the two meet again.
-fn resume(pass: &mut Pass, score: &Score, old: Kept) {
+fn resume(pass: &mut Pass, score: &Score, old: Kept, diff: Option<Diff>) {
     let Kept {
         score: old_score,
         engraving: old_eng,
         marks: mut old_marks,
         ..
     } = old;
-    // A layout still alive shares the engraving; copy it then, else take it.
+    // A layout still alive shares the engraving; copy it then, else take it. The copy shares
+    // each segment's ink.
     let old_eng = Arc::try_unwrap(old_eng).unwrap_or_else(|shared| (*shared).clone());
-    let (new, prev) = (&score.syllables, &old_score.syllables);
-    let (n, m) = (new.len(), prev.len());
+    let new = &score.syllables;
+    let n = new.len();
     // The syllables the edit left alone at the start, and at the end, where they have moved.
-    let head = new.iter().zip(prev).take_while(|(a, b)| a == b).count();
-    let by = match (new.last(), prev.last()) {
-        (Some(a), Some(b)) => a.span.start as isize - b.span.start as isize,
-        _ => 0,
+    let (head, tail, m, by) = match diff {
+        Some(d) => (d.head, d.tail, d.old_len, d.by),
+        None => {
+            let prev = &old_score.syllables;
+            let m = prev.len();
+            let head = new.iter().zip(prev).take_while(|(a, b)| a == b).count();
+            let by = match (new.last(), prev.last()) {
+                (Some(a), Some(b)) => a.span.start as isize - b.span.start as isize,
+                _ => 0,
+            };
+            let tail = new
+                .iter()
+                .rev()
+                .zip(prev.iter().rev())
+                .take(n.min(m) - head)
+                .take_while(|(a, b)| same_moved(b, a, by))
+                .count();
+            (head, tail, m, by)
+        }
     };
-    let tail = new
-        .iter()
-        .rev()
-        .zip(prev.iter().rev())
-        .take(n.min(m) - head)
-        .take_while(|(a, b)| same_moved(b, a, by))
-        .count();
+    drop(old_score);
     // A syllable reads the next one's word start and `<nlba>`, and its last notes, and any
     // custos without a pitch after them, the next note's pitch: start from the syllable before
     // the first changed one, or from the last one with notes before it.
@@ -244,7 +263,11 @@ fn resume(pass: &mut Pass, score: &Score, old: Kept) {
 
     // Offsets from the unchanged end on move; an empty span at 0, which stands for none,
     // can't be told from one there, so an end starting at 0 is engraved again.
-    let cut = if tail > 0 { prev[m - tail].span.start } else { 0 };
+    let cut = if tail > 0 {
+        new[n - tail].span.start.wrapping_add_signed(-by)
+    } else {
+        0
+    };
     let tail = if cut > 0 { tail } else { 0 };
     let shift = Shift { cut, by };
     for i in start..=n {
@@ -373,25 +396,15 @@ fn moved_mark(r: &Resume, now: &Resume, was: &Resume, shift: Shift) -> Resume {
 }
 
 /// An old segment for the new engraving: its syllable, notes and bars renumbered and its
-/// clef's source moved.
+/// clef's source moved. Its body, numbered from the segment's own, is shared as it is.
 fn moved_segment(mut s: Segment, d_syl: isize, d_note: isize, d_bar: isize, shift: Shift) -> Segment {
     s.syllable = add(s.syllable, d_syl);
-    if d_note != 0 {
-        for p in &mut s.pieces {
-            p.note = p.note.map(|v| add(v, d_note));
-            p.through = p.through.map(|v| add(v, d_note));
-        }
-        for h in &mut s.heads {
-            h.note = add(h.note, d_note);
-        }
+    // A segment without notes or bars keeps a base of 0, as a fresh one has.
+    if d_note != 0 && s.has_notes() {
+        s.note_base = add(s.note_base, d_note);
     }
-    if d_bar != 0 {
-        for b in &mut s.bars {
-            b.bar = add(b.bar, d_bar);
-        }
-    }
-    if let Some(t) = &mut s.lyric {
-        t.syllable = add(t.syllable, d_syl);
+    if d_bar != 0 && !s.bars.is_empty() {
+        s.bar_base = add(s.bar_base, d_bar);
     }
     s.clef = shift.clef(&s.clef);
     s

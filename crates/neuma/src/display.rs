@@ -91,7 +91,10 @@ pub struct DisplayList {
     pub alt_text: String,
 }
 
-fn push(items: &mut Vec<Item>, p: &Piece, dx: f32, dy: f32, s: f32) {
+/// Pushes `p`, whose note numbers count from `base`, moved by (`dx`, `dy`) and scaled by `s`.
+fn push(items: &mut Vec<Item>, p: &Piece, dx: f32, dy: f32, s: f32, base: u32) {
+    let note = p.note.map(|n| n + base);
+    let through = p.through.map(|n| n + base);
     match p.mark {
         Mark::Glyph { glyph, x, y } => items.push(Item::Glyph {
             glyph: glyph.id(),
@@ -99,8 +102,8 @@ fn push(items: &mut Vec<Item>, p: &Piece, dx: f32, dy: f32, s: f32) {
             y: (y + dy) * s,
             scale: s / UNITS_PER_SPACE,
             role: p.role,
-            note: p.note,
-            through: p.through,
+            note,
+            through,
         }),
         Mark::Rect { x, y, w, h } => items.push(Item::Rect {
             x: (x + dx) * s,
@@ -108,8 +111,8 @@ fn push(items: &mut Vec<Item>, p: &Piece, dx: f32, dy: f32, s: f32) {
             w: w * s,
             h: h * s,
             role: p.role,
-            note: p.note,
-            through: p.through,
+            note,
+            through,
         }),
     }
 }
@@ -203,13 +206,13 @@ impl Layout {
         if let Some(clef) = &line.clef {
             let (pieces, _) = clef_pieces(clef, 0.0);
             for p in &pieces {
-                push(items, p, line.indent, staff, s);
+                push(items, p, line.indent, staff, s, 0);
             }
         }
         for (i, seg) in eng.segments[line.first..=line.last].iter().enumerate() {
             let x = line.xs[i];
             for p in &seg.pieces {
-                push(items, p, x, staff, s);
+                push(items, p, x, staff, s, seg.note_base);
             }
             if let Some(t) = &seg.lyric
                 && t.lead_hyphen
@@ -234,7 +237,7 @@ impl Layout {
                     size,
                     runs: runs(&t.runs),
                     role,
-                    syllable: Some(t.syllable),
+                    syllable: Some(seg.syllable),
                 });
             }
         }
@@ -267,7 +270,7 @@ impl Layout {
         }
         if let Some((p, x)) = line.custos {
             let (piece, _) = custos_piece(p, x);
-            push(items, &piece, 0.0, staff, s);
+            push(items, &piece, 0.0, staff, s, 0);
         }
         for &(y, l, r) in &line.bridges {
             items.push(Item::Rect {

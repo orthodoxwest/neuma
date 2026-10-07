@@ -236,10 +236,11 @@ impl Layout {
             for (i, seg) in eng.segments[line.first..=line.last].iter().enumerate() {
                 let x0 = line.xs[i];
                 for h in &seg.heads {
-                    let Some(info) = eng.notes.get(h.note as usize) else { continue };
+                    let note = seg.note(h.note);
+                    let Some(info) = eng.notes.get(note as usize) else { continue };
                     map.notes.push(Element {
                         kind: ElementKind::Note,
-                        index: h.note,
+                        index: note,
                         span: info.span.clone(),
                         line: li,
                         x: (x0 + h.hit[0]) * s,
@@ -250,10 +251,11 @@ impl Layout {
                     });
                 }
                 for b in &seg.bars {
-                    let Some(span) = eng.bar_spans.get(b.bar as usize) else { continue };
+                    let bar = seg.bar(b.bar);
+                    let Some(span) = eng.bar_spans.get(bar as usize) else { continue };
                     map.bars.push(Element {
                         kind: ElementKind::Bar,
-                        index: b.bar,
+                        index: bar,
                         span: span.clone(),
                         line: li,
                         x: (x0 + b.x) * s,

@@ -8,6 +8,7 @@ use crate::diag::Diagnostic;
 use crate::engrave::{AlterationScope, CustosPolicy, EngraveCache, Engraving, Initial, StyleOptions};
 #[cfg(feature = "fonts")]
 use crate::fonts::LyricFont;
+use crate::gabc::{Diff, ParseMarks};
 use crate::layout::{Layout, LayoutCache, LayoutOptions, usable_width};
 use crate::score::Score;
 use crate::source::Utf16Index;
@@ -190,6 +191,9 @@ pub struct Chant {
     engraved: EngraveCache,
     /// What reading the score found (parse or psalm-setting diagnostics).
     read: Vec<Diagnostic>,
+    /// What parsing the source kept, to parse the next edit of it around the edit; none for a
+    /// score built some other way.
+    parsed: Option<ParseMarks>,
     /// `read`, then the engraving's.
     diagnostics: Vec<Diagnostic>,
     caches: Caches,
@@ -275,6 +279,7 @@ impl Chant {
             utf16: Arc::default(),
             engraved: EngraveCache::default(),
             read: Vec::new(),
+            parsed: None,
             diagnostics: Vec::new(),
             caches: Caches::default(),
             version: next_version(),
@@ -299,8 +304,21 @@ impl Chant {
         if self.engraved.score().is_some() && gabc == self.source {
             return false;
         }
-        let parsed = crate::parse(gabc);
-        self.update_score(parsed.score, gabc, parsed.diagnostics)
+        // An edit of the GABC the chant was parsed from is read again only around the edit.
+        if let (Some(marks), Some(old)) = (self.parsed.as_mut(), self.engraved.score_mut())
+            && let Some((parsed, diff)) = crate::gabc::reparse(&self.source, old, marks, gabc)
+        {
+            self.read = parsed.diagnostics;
+            self.set_source(gabc);
+            self.engrave(parsed.score, Some(diff));
+            self.version = next_version();
+            return true;
+        }
+        let mut marks = ParseMarks::default();
+        let parsed = crate::gabc::parse_keeping(gabc, &mut marks);
+        let changed = self.update_score(parsed.score, gabc, parsed.diagnostics);
+        self.parsed = Some(marks);
+        changed
     }
 
     /// [`update`](Self::update) with a score built some other way (see
@@ -310,13 +328,18 @@ impl Chant {
         if self.engraved.score().is_some_and(|s| *s == score) && source == self.source && diagnostics == self.read {
             return false;
         }
+        self.parsed = None;
         self.read = diagnostics;
+        self.set_source(source);
+        self.engrave(score, None);
+        self.version = next_version();
+        true
+    }
+
+    fn set_source(&mut self, source: &str) {
         self.source.clear();
         self.source.push_str(source);
         self.utf16 = Arc::new(Utf16Index::new(source));
-        self.engrave(score);
-        self.version = next_version();
-        true
     }
 
     /// Engraves the score with new options, as when the reader changes the lyric font or
@@ -332,7 +355,7 @@ impl Chant {
             return false;
         }
         if let Some(score) = self.engraved.take_score() {
-            self.engrave(score);
+            self.engrave(score, None);
         }
         self.version = next_version();
         true
@@ -350,12 +373,12 @@ impl Chant {
         self.version
     }
 
-    fn engrave(&mut self, score: Score) {
+    fn engrave(&mut self, score: Score, diff: Option<Diff>) {
         // Layouts in the memo share the old engraving; dropping them lets the cache take it
         // back without a copy.
         lock(&self.caches.recent).clear();
         let style = self.options.sanitized_style();
-        let engraving = self.engraved.engrave(score, self.options.measure(), &style);
+        let engraving = self.engraved.engrave(score, self.options.measure(), &style, diff);
         self.diagnostics.clear();
         self.diagnostics.extend(self.read.iter().cloned());
         self.diagnostics.extend(engraving.diagnostics.iter().cloned());

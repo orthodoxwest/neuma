@@ -3,8 +3,11 @@
 
 mod lyric;
 mod notes;
+mod reparse;
 mod tex;
 mod write;
+
+pub(crate) use reparse::{Diff, reparse};
 
 use std::ops::Range;
 
@@ -23,10 +26,23 @@ pub struct Parsed {
 /// Parses GABC source. Never fails.
 pub fn parse(src: &str) -> Parsed {
     let mut parsed = parse_unchecked(src);
-    // A closer put in for a verbatim tag can be taken by another opener, Gregorio's way, and
-    // make text of notes. Each such fix (at most one per tag, as only the first unclosed
-    // opener of each gets one) is tried, and kept only if it clears its diagnostic and keeps
-    // every note. A style tag's closer can't make text of notes, so those aren't tried.
+    check_fixes(src, &mut parsed);
+    parsed
+}
+
+/// Parses `src` as [`parse`] does, and keeps in `marks` what [`reparse`] needs to parse an
+/// edit of it again.
+pub(crate) fn parse_keeping(src: &str, marks: &mut ParseMarks) -> Parsed {
+    let mut parsed = parse_marked(src, Some(marks));
+    check_fixes(src, &mut parsed);
+    parsed
+}
+
+/// A closer put in for a verbatim tag can be taken by another opener, Gregorio's way, and
+/// make text of notes. Each such fix (at most one per tag, as only the first unclosed opener
+/// of each gets one) is tried, and kept only if it clears its diagnostic and keeps every
+/// note. A style tag's closer can't make text of notes, so those aren't tried.
+fn check_fixes(src: &str, parsed: &mut Parsed) {
     let notes = |score: &Score| {
         score
             .syllables
@@ -35,7 +51,7 @@ pub fn parse(src: &str) -> Parsed {
             .filter(|f| matches!(f, Figure::Note(_)))
             .count()
     };
-    let before = notes(&parsed.score);
+    let mut before = None;
     for d in &mut parsed.diagnostics {
         let verbatim = VERBATIM.iter().any(|t| src.get(d.span.clone()) == Some(&format!("<{t}>")[..]));
         if d.code != "gabc::unclosed-tag" || d.fix.is_none() || !verbatim {
@@ -49,21 +65,54 @@ pub fn parse(src: &str) -> Parsed {
         };
         let after = parse_unchecked(&fixed);
         let cleared = !after.diagnostics.iter().any(|a| a.code == d.code && a.span == d.span);
+        let before = *before.get_or_insert_with(|| notes(&parsed.score));
         if !cleared || notes(&after.score) < before {
             d.fix = None;
         }
     }
-    parsed
 }
 
 fn parse_unchecked(src: &str) -> Parsed {
+    parse_marked(src, None)
+}
+
+fn parse_marked(src: &str, keep: Option<&mut ParseMarks>) -> Parsed {
     let mut sink = Sink::default();
     let (header, mut body_start) = parse_header(src, &mut sink);
     // A byte-order mark isn't text; spans still count it, so they index `src`.
     if src[body_start..].starts_with('\u{feff}') {
         body_start += '\u{feff}'.len_utf8();
     }
-    let syllables = parse_body(src, body_start, &mut sink);
+    let mut syllables = Vec::new();
+    let mut state = BodyState::default();
+    let mut marks = keep.is_some().then(Vec::new);
+    let rest = read_body(
+        src,
+        body_start,
+        0,
+        &mut state,
+        &mut syllables,
+        &mut sink,
+        marks.as_mut(),
+        &mut |_, _| false,
+    );
+    let found = sink.items.len();
+    if let Some(rest) = rest {
+        end_body(src, body_start, state, rest, &mut sink);
+    }
+    if let (Some(keep), Some(marks)) = (keep, marks) {
+        *keep = ParseMarks {
+            body_start,
+            marks,
+            found: sink.items[..found].to_vec(),
+            end: sink.items[found..].to_vec(),
+        };
+    }
+    finish(src, header, syllables, sink)
+}
+
+/// The score-wide checks, once the syllables are read.
+fn finish(src: &str, header: Header, syllables: Vec<Syllable>, mut sink: Sink) -> Parsed {
     // Without a `%%`, header lines read as text; a clef put before them wouldn't help.
     let headers_unseparated = find_separator(src).is_none() && header_lines(src).is_some();
     lint_clef(&syllables, !headers_unseparated, &mut sink);
@@ -355,7 +404,7 @@ const KNOWN_FIELDS: &[&str] = &[
 ];
 
 /// Lyric styling that stays open across syllables until its closing tag.
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct LyricState {
     pub italic: u8,
     pub bold: u8,
@@ -374,20 +423,72 @@ pub(crate) struct LyricState {
     pub verbatim_first: [Option<usize>; 3],
 }
 
-fn parse_body(src: &str, start: usize, sink: &mut Sink) -> Vec<Syllable> {
+/// What reading the body carries from one syllable to the next.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(crate) struct BodyState {
+    pub lyric: LyricState,
+    /// Verbatim tags found to have no closer ahead, so each is searched for once rather than
+    /// per opener.
+    pub unclosed: [bool; 3],
+}
+
+/// Where the body's reading stood after a syllable.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct BodyMark {
+    /// Where the syllable ends: the next one's text is read from here.
+    pub end: usize,
+    /// How far reading this syllable and those before it looked: an edit from here on leaves
+    /// them as they were. Past the source's end when they read to its end.
+    pub read: usize,
+    /// How many diagnostics there were.
+    pub diagnostics: usize,
+    pub state: BodyState,
+}
+
+/// What a parse keeps to parse its source again after an edit (see [`reparse`]).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(crate) struct ParseMarks {
+    pub body_start: usize,
+    /// One per syllable.
+    pub marks: Vec<BodyMark>,
+    /// The header's diagnostics and the body's, as read, before those at the body's end and
+    /// the score-wide ones.
+    pub found: Vec<Diagnostic>,
+    /// Those at the body's end: tags never closed, and text after the last notes.
+    pub end: Vec<Diagnostic>,
+}
+
+/// The text after the last syllable read: where it starts in the body, and the text.
+pub(crate) struct Rest {
+    text_start: usize,
+    text: String,
+}
+
+/// Reads the body of `src`, which starts at `start`, from its byte `i` on (0, or where a
+/// syllable ends), with `state` carried from the syllables before, onto `syllables`. After
+/// each syllable, `meet` is told where it ended and the state then; when it returns true
+/// reading stops there, and `None` is returned. Otherwise reading goes to the end, and
+/// returns the text after the last syllable.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn read_body(
+    src: &str,
+    start: usize,
+    mut i: usize,
+    st: &mut BodyState,
+    syllables: &mut Vec<Syllable>,
+    sink: &mut Sink,
+    mut marks: Option<&mut Vec<BodyMark>>,
+    meet: &mut dyn FnMut(usize, &BodyState) -> bool,
+) -> Option<Rest> {
     let body = &src[start..];
     let bytes = body.as_bytes();
-    let mut syllables = Vec::new();
-    let mut state = LyricState::default();
-    let mut i = 0;
-    let mut saw_space = true;
-    let mut text_start = 0;
+    let mut saw_space = i == 0;
+    let mut text_start = i;
     let mut text = String::new();
     // Where each byte of `text` came from in the source: comments are left out of the text and
     // whitespace is read as one space, so text offsets aren't source offsets.
     let mut from: Vec<(usize, usize)> = Vec::new();
-    // Tags found to have no closer ahead, so each is searched for once rather than per opener.
-    let mut unclosed = [false; 3];
+    let mut read = marks.as_ref().and_then(|m| m.last()).map_or(0, |m| m.read);
     while i < bytes.len() {
         let c = body[i..].chars().next().unwrap_or('\0');
         match c {
@@ -406,7 +507,7 @@ fn parse_body(src: &str, start: usize, sink: &mut Sink) -> Vec<Syllable> {
                 copied(&mut from, start + i, len);
                 i += len;
             }
-            '<' if let Some(end) = verbatim_end(&body[i..], start + i, &mut unclosed, &mut state.verbatim_first) => {
+            '<' if let Some(end) = verbatim_end(&body[i..], start + i, &mut st.unclosed, &mut st.lyric.verbatim_first) => {
                 // Gregorio reads `<v>`, `<alt>` and `<sp>` to their closing tag, so a `(` inside
                 // is text, not notes: `<v>(</v>` prints a parenthesis.
                 if text.is_empty() {
@@ -416,8 +517,26 @@ fn parse_body(src: &str, start: usize, sink: &mut Sink) -> Vec<Syllable> {
                 copied(&mut from, start + i, end);
                 i += end;
             }
+            '<' if st.unclosed.iter().any(|u| *u)
+                || body[i..].starts_with("<v>")
+                || body[i..].starts_with("<alt>")
+                || body[i..].starts_with("<sp>") =>
+            {
+                // A verbatim opener with no closer ahead: whether it has one depends on the
+                // rest of the body, to its end.
+                read = src.len() + 1;
+                if text.is_empty() {
+                    text_start = i;
+                }
+                text.push('<');
+                copied(&mut from, start + i, 1);
+                i += 1;
+            }
             '(' => {
                 let mut close = find_close(body, i + 1);
+                // How far this syllable's reading looks: through the `)`, or past the end (as
+                // text added there would change it).
+                read = read.max(if close >= body.len() { src.len() + 1 } else { start + close + 1 });
                 // Another `(` before the `)`: this group was never closed, and text went on
                 // after it (`A(fg men(f)`). It ends where that text starts, at its first space.
                 let unclosed = body[i + 1..close].contains('(');
@@ -436,8 +555,8 @@ fn parse_body(src: &str, start: usize, sink: &mut Sink) -> Vec<Syllable> {
                     base: start + text_start + lead,
                 };
                 lint_hyphens(&trimmed, &map, sink);
-                let nlba_before = state.nlba;
-                let lyric = lyric::parse(&trimmed, &map, &mut state, sink);
+                let nlba_before = st.lyric.nlba;
+                let lyric = lyric::parse(&trimmed, &map, &mut st.lyric, sink);
                 let notation = notes::parse(notes_src, start + i + 1, sink);
                 if unclosed {
                     let end = start + close;
@@ -453,20 +572,32 @@ fn parse_body(src: &str, start: usize, sink: &mut Sink) -> Vec<Syllable> {
                     sink.fix(Fix::new(end..end, ")", "Insert `)`"));
                 }
                 let word_start = saw_space || syllables.is_empty();
+                let end = if unclosed { close } else { (close + 1).min(body.len()) };
                 syllables.push(Syllable {
                     text: lyric,
                     word_start,
                     notation,
-                    span: syl_start..start + if unclosed { close } else { (close + 1).min(body.len()) },
-                    no_break_before: nlba_before && state.nlba,
-                    no_break_within: state.nlba,
-                    euouae: state.euouae,
+                    span: syl_start..start + end,
+                    no_break_before: nlba_before && st.lyric.nlba,
+                    no_break_within: st.lyric.nlba,
+                    euouae: st.lyric.euouae,
                 });
                 text.clear();
                 from.clear();
-                i = if unclosed { close } else { (close + 1).min(body.len()) };
+                i = end;
                 text_start = i;
                 saw_space = false;
+                if let Some(marks) = marks.as_deref_mut() {
+                    marks.push(BodyMark {
+                        end: start + i,
+                        read,
+                        diagnostics: sink.items.len(),
+                        state: st.clone(),
+                    });
+                }
+                if meet(start + i, st) {
+                    return None;
+                }
             }
             c if c.is_whitespace() => {
                 if text.trim().is_empty() {
@@ -490,7 +621,14 @@ fn parse_body(src: &str, start: usize, sink: &mut Sink) -> Vec<Syllable> {
             }
         }
     }
-    for tag in std::mem::take(&mut state.open) {
+    Some(Rest { text_start, text })
+}
+
+/// What the end of the body adds: a warning for each tag never closed, and for text after the
+/// last notes.
+fn end_body(src: &str, start: usize, mut st: BodyState, rest: Rest, sink: &mut Sink) {
+    let body = &src[start..];
+    for tag in std::mem::take(&mut st.lyric.open) {
         sink.warn(
             tag.span,
             "gabc::unclosed-tag",
@@ -500,14 +638,13 @@ fn parse_body(src: &str, start: usize, sink: &mut Sink) -> Vec<Syllable> {
             sink.fix(fix);
         }
     }
-    if !text.trim().is_empty() {
+    if !rest.text.trim().is_empty() {
         sink.warn(
-            start + text_start..start + body.len(),
+            start + rest.text_start..start + body.len(),
             "gabc::trailing-text",
-            format!("text `{}` has no notes after it and is dropped", text.trim()),
+            format!("text `{}` has no notes after it and is dropped", rest.text.trim()),
         );
     }
-    syllables
 }
 
 /// The verbatim tags, in the order `verbatim_end` and `LyricState::verbatim_first` index them.

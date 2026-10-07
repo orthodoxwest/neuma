@@ -1661,7 +1661,7 @@ mod tests {
             for j in 0..8 {
                 let mut eng = (*base).clone();
                 // A gap just under or at the threshold, in steps finer than f32's rounding.
-                eng.segments[k].lyric.as_mut().unwrap().left += HYPHEN_MIN_GAP * (1.0 - j as f32 * 1.0e-4) - gap;
+                eng.segments[k].body_mut().lyric.as_mut().unwrap().left += HYPHEN_MIN_GAP * (1.0 - j as f32 * 1.0e-4) - gap;
                 let eng = Arc::new(eng);
                 for width in (60..400).step_by(5) {
                     let layout = eng.layout_with(width as f32, &opts);

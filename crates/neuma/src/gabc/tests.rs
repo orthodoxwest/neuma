@@ -568,3 +568,58 @@ fn soft_hyphens_are_not_lyric_text() {
     let syl: Vec<String> = p.score.syllables.iter().map(|s| s.text.plain()).collect();
     assert_eq!(syl, ["", "ve", "ní", "te,"]);
 }
+
+/// Every edit of a few kinds at every place in a score, parsed again around the edit, reads
+/// as a fresh parse: the same score, diagnostics and marks for the next edit.
+#[test]
+fn reparsing_an_edit_reads_as_parsing_it() {
+    let bases = [
+        "name: x;\n%%\n(c4) Al(f)le(gf)lú(gh)ia.(g.) <i>ve</i>(g) *(;) <sp>V/</sp>.(h) a<v>(</v>b(g) %c(\n e(h) \
+         $a(g) <b>x(h) y(g)</b> {a}(g) z(h) (z) (::) w(g)",
+        // Notes never closed at the end, and a verbatim tag never closed.
+        "name: x;\n%%\n(c4) a(g) b(h) c(g) (:",
+        "name: x;\n%%\n(c4) a(g) b(h) <v>c(g) d(h) e(g) (::)",
+    ];
+    let typed = [
+        "a", "é", "(", ")", "()", "(g)", "<i>", "</i>", "<v>", "</v>", "%", "\n", " ", "$", "<", "{", "<sp>", "-", "z)",
+    ];
+    let mut tried = 0;
+    let mut reread = 0;
+    for base in bases {
+        let bounds: Vec<usize> = base.char_indices().map(|(i, _)| i).chain([base.len()]).collect();
+        let mut keep = ParseMarks::default();
+        let old = parse_keeping(base, &mut keep);
+        for (k, &at) in bounds.iter().enumerate() {
+            let mut edits: Vec<String> = typed.iter().map(|t| format!("{}{t}{}", &base[..at], &base[at..])).collect();
+            for d in 1..=3 {
+                if let Some(&to) = bounds.get(k + d) {
+                    edits.push(format!("{}{}", &base[..at], &base[to..]));
+                }
+            }
+            for src in edits {
+                let mut score = old.score.clone();
+                let mut marks = keep.clone();
+                tried += 1;
+                let Some((got, diff)) = reparse(base, &mut score, &mut marks, &src) else {
+                    continue;
+                };
+                reread += 1;
+                let mut fresh_marks = ParseMarks::default();
+                let want = parse_keeping(&src, &mut fresh_marks);
+                assert_eq!(got.score, want.score, "{src:?}");
+                assert_eq!(got.diagnostics, want.diagnostics, "{src:?}");
+                assert_eq!(marks, fresh_marks, "{src:?}");
+                // The syllables it says the edit left alone are.
+                let (new, prev) = (&want.score.syllables, &old.score.syllables);
+                assert_eq!(diff.old_len, prev.len());
+                assert!(diff.head + diff.tail <= new.len().min(prev.len()), "{src:?}");
+                assert_eq!(new[..diff.head], prev[..diff.head], "{src:?}");
+                for (a, b) in new[new.len() - diff.tail..].iter().zip(&prev[prev.len() - diff.tail..]) {
+                    assert_eq!(a.span.start, b.span.start.wrapping_add_signed(diff.by), "{src:?}");
+                    assert_eq!((&a.text, &a.notation.len()), (&b.text, &b.notation.len()), "{src:?}");
+                }
+            }
+        }
+    }
+    assert!(reread > tried / 2, "{reread} of {tried}");
+}
