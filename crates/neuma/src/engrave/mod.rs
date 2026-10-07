@@ -181,6 +181,11 @@ pub(crate) struct LyricBox {
     /// Left edge relative to the segment origin, and width, in staff spaces.
     pub left: f32,
     pub width: f32,
+    /// How far the text's ink runs past its advance on the left and on the right (the hook
+    /// of an `f`): syllables of a word may touch by their advances, but a hyphen, a word
+    /// space or the line's end keeps clear of the ink.
+    pub lead: f32,
+    pub tail: f32,
     /// The syllable ends its word, so no hyphen follows it.
     pub word_end: bool,
     /// The text ends with a hyphen of its own (`Giê-(f)su(g)`), so none is added after it.
@@ -192,6 +197,18 @@ pub(crate) struct LyricBox {
     /// How high the letters reach: `(left, right, top)` in staff spaces, from the text's left
     /// edge and above its baseline (see `lyric_top::profile`).
     pub tops: Vec<(f32, f32, f32)>,
+}
+
+impl LyricBox {
+    /// The left edge of the text's ink.
+    pub fn ink_left(&self) -> f32 {
+        self.left - self.lead
+    }
+
+    /// The right edge of the text's ink.
+    pub fn ink_right(&self) -> f32 {
+        self.left + self.width + self.tail
+    }
 }
 
 /// A notehead in a segment, for the note map.
@@ -249,7 +266,7 @@ impl Segment {
     pub(crate) fn right(&self) -> f32 {
         let r = self.ink.map_or(0.0, |(_, r)| r);
         match &self.lyric {
-            Some(t) => r.max(t.left + t.width),
+            Some(t) => r.max(t.ink_right()),
             None => r,
         }
     }
@@ -1197,9 +1214,14 @@ impl Pass<'_> {
             }
             let next_word = score.syllables.get(si as usize + 1).is_none_or(|s| s.word_start);
             let tops = lyric_top::profile(&runs, self.measure, self.size);
+            // The box holds the text's ink, which a letter at either end (the hook of an `f`)
+            // can carry past its advance.
+            let (lead, tail) = lyric_top::overhang(&runs, self.size);
             self.e.segments[k].lyric = Some(LyricBox {
                 tops,
                 runs,
+                lead,
+                tail,
                 left: anchor - center,
                 width,
                 word_end: next_word,
@@ -1232,6 +1254,8 @@ impl Pass<'_> {
                 hyphenated: true,
                 lead_hyphen: true,
                 syllable: si,
+                lead: 0.0,
+                tail: 0.0,
                 tops: vec![(0.0, width, lyric_top::HYPHEN_TOP * self.size)],
             });
         }

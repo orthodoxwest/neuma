@@ -48,6 +48,74 @@ fn char_top(c: char, small_caps: bool) -> f32 {
     }
 }
 
+/// How far a letter's ink runs past its advance on the left and on the right, in ems: the
+/// hook of an `f`, and most italic capitals. EB Garamond's, where more than a fiftieth of an em.
+fn side_overhang(c: char, italic: bool) -> (f32, f32) {
+    const REGULAR: &[(char, f32, f32)] = &[
+        ('f', 0.0, 0.1),
+        ('J', 0.07, 0.0),
+        ('Q', 0.0, 0.12),
+        ('Y', 0.0, 0.04),
+        ('j', 0.02, 0.0),
+    ];
+    const ITALIC: &[(char, f32, f32)] = &[
+        ('f', 0.19, 0.18),
+        ('j', 0.2, 0.04),
+        ('p', 0.12, 0.0),
+        ('g', 0.1, 0.03),
+        ('y', 0.1, 0.0),
+        ('s', 0.03, 0.0),
+        ('i', 0.0, 0.03),
+        ('r', 0.0, 0.04),
+        ('t', 0.0, 0.04),
+        ('c', 0.0, 0.02),
+        ('é', 0.0, 0.07),
+        ('í', 0.0, 0.07),
+        ('ó', 0.0, 0.05),
+        ('A', 0.06, 0.0),
+        ('B', 0.02, 0.0),
+        ('C', 0.0, 0.08),
+        ('E', 0.03, 0.05),
+        ('F', 0.0, 0.12),
+        ('G', 0.0, 0.03),
+        ('H', 0.02, 0.09),
+        ('I', 0.02, 0.09),
+        ('J', 0.18, 0.12),
+        ('K', 0.02, 0.09),
+        ('M', 0.05, 0.06),
+        ('N', 0.0, 0.12),
+        ('P', 0.0, 0.05),
+        ('S', 0.0, 0.06),
+        ('T', 0.0, 0.12),
+        ('U', 0.0, 0.13),
+        ('V', 0.0, 0.13),
+        ('W', 0.0, 0.13),
+        ('X', 0.06, 0.1),
+        ('Y', 0.0, 0.16),
+        ('Z', 0.02, 0.04),
+        ('0', 0.0, 0.03),
+        ('5', 0.0, 0.03),
+        ('6', 0.0, 0.09),
+        ('7', 0.0, 0.11),
+        ('9', 0.0, 0.04),
+    ];
+    let table = if italic { ITALIC } else { REGULAR };
+    table.iter().find(|e| e.0 == c).map_or((0.0, 0.0), |e| (e.1, e.2))
+}
+
+/// How far a lyric's ink runs past its advance at its start and at its end, in staff spaces.
+pub(crate) fn overhang(runs: &[LyricRun], size: f32) -> (f32, f32) {
+    let mut chars = runs.iter().flat_map(|r| r.text.chars().map(move |c| (c, r.style.italic)));
+    let first = chars.next();
+    let last = runs
+        .iter()
+        .rev()
+        .find_map(|r| r.text.chars().next_back().map(|c| (c, r.style.italic)));
+    let lead = first.map_or(0.0, |(c, i)| side_overhang(c, i).0);
+    let tail = last.map_or(0.0, |(c, i)| side_overhang(c, i).1);
+    (lead * size, tail * size)
+}
+
 /// The tops of a lyric's letters, as `(left, right, top)` in staff spaces: left and right from
 /// the text's start, the top above its baseline. Neighbouring letters of one height share an
 /// entry.
@@ -70,8 +138,8 @@ pub(crate) fn profile(runs: &[LyricRun], measure: &dyn TextMeasure, size: f32) -
                 continue;
             }
             let top = char_top(c, r.style.small_caps) * size;
-            // The hook of an `f` runs past its advance.
-            let right = if c == 'f' { right + 0.1 * size } else { right };
+            let (lead, tail) = side_overhang(c, r.style.italic);
+            let (left, right) = (left - lead * size, right + tail * size);
             match out.last_mut() {
                 Some(last) if last.2 == top && (last.1 - left).abs() < 1e-4 => last.1 = right,
                 _ => out.push((left, right, top)),

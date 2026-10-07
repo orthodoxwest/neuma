@@ -175,6 +175,8 @@ impl Layout<'_> {
 struct Cursor {
     ink_right: Option<f32>,
     lyric_right: Option<f32>,
+    /// How far the last text's ink runs past `lyric_right`.
+    lyric_tail: f32,
     word_continues: bool,
     /// The last text ends with a hyphen of its own.
     own_hyphen: bool,
@@ -230,16 +232,17 @@ fn place(cur: &Cursor, seg: &Segment, hyphen: f32, word_space: f32, line_start: 
             }
             Some(r) if word_continues => {
                 // Within a word the texts may touch. If the notes hold them apart, a hyphen
-                // follows the first text, and the second must clear it.
+                // follows the first text's ink, and the second's ink must clear it.
                 x = x.max(r - t.left);
                 if x + t.left - r > HYPHEN_MIN_GAP {
-                    x = x.max(r + hyphen - t.left);
+                    x = x.max(r + cur.lyric_tail + hyphen - t.ink_left());
                 } else {
                     touching = true;
                 }
             }
-            Some(r) => x = x.max(r + word_space - t.left),
-            None => x = x.max(-t.left),
+            // A word space, and the two words' inks apart.
+            Some(r) => x = x.max(r + word_space - t.left).max(r + cur.lyric_tail - t.ink_left()),
+            None => x = x.max(-t.ink_left()),
         }
     }
     let weight = if !seg.first {
@@ -274,6 +277,7 @@ fn advance(cur: &Cursor, seg: &Segment, x: f32) -> Cursor {
     }
     if let Some(t) = &seg.lyric {
         next.lyric_right = Some(x + t.left + t.width);
+        next.lyric_tail = t.tail;
         next.word_continues = !t.word_end;
         next.own_hyphen = t.hyphenated;
     }
@@ -314,7 +318,7 @@ struct Fit {
     ink: Option<(f32, f32)>,
     /// The text's left edge and width, whether it ends its word, and whether it ends with a
     /// hyphen of its own.
-    lyric: Option<(f32, f32, bool, bool)>,
+    lyric: Option<(f32, f32, f32, f32, bool, bool)>,
     after: Break,
     space_before: f32,
     right: f32,
@@ -332,7 +336,8 @@ impl PartialEq for Fit {
             && self.is_bar == o.is_bar
             && self.end_of_score == o.end_of_score
             && pair(self.ink) == pair(o.ink)
-            && self.lyric.map(|(l, w, e, h)| (b(l), b(w), e, h)) == o.lyric.map(|(l, w, e, h)| (b(l), b(w), e, h))
+            && self.lyric.map(|(il, l, w, ir, e, h)| (b(il), b(l), b(w), b(ir), e, h))
+                == o.lyric.map(|(il, l, w, ir, e, h)| (b(il), b(l), b(w), b(ir), e, h))
             && self.after == o.after
             && b(self.space_before) == b(o.space_before)
             && b(self.right) == b(o.right)
@@ -529,6 +534,7 @@ impl Engraving {
         let mut cur = Cursor {
             ink_right: None,
             lyric_right: None,
+            lyric_tail: 0.0,
             word_continues: false,
             own_hyphen: false,
             after_bar: false,
@@ -587,6 +593,7 @@ impl Engraving {
         let mut cur = Cursor {
             ink_right: None,
             lyric_right: None,
+            lyric_tail: 0.0,
             word_continues: false,
             own_hyphen: false,
             after_bar: false,
@@ -621,7 +628,7 @@ impl Engraving {
             && close.word_goes_on
             && let Some(r) = cur.lyric_right
         {
-            right = right.max(r + self.hyphen);
+            right = right.max(r + cur.lyric_tail + self.hyphen);
         }
         if let Some(w) = close.custos {
             right = right.max(ink_end + CUSTOS_GAP + w);
@@ -659,7 +666,10 @@ impl Engraving {
                 is_bar: seg.is_bar(),
                 end_of_score: k + 1 == n,
                 ink: seg.ink,
-                lyric: seg.lyric.as_ref().map(|t| (t.left, t.width, t.word_end, t.hyphenated)),
+                lyric: seg
+                    .lyric
+                    .as_ref()
+                    .map(|t| (t.ink_left(), t.left, t.width, t.ink_right(), t.word_end, t.hyphenated)),
                 after: seg.after,
                 space_before: seg.space_before,
                 right: seg.right(),
@@ -750,6 +760,7 @@ impl Engraving {
         let mut cur = Cursor {
             ink_right: None,
             lyric_right: None,
+            lyric_tail: 0.0,
             word_continues: false,
             own_hyphen: false,
             after_bar: false,
@@ -1016,18 +1027,18 @@ impl Engraving {
             let mut prev_lyric: Option<(f32, bool)> = None;
             for (i, s) in self.segments[first..=last].iter().enumerate() {
                 if let Some(t) = &s.lyric {
-                    let l = xs[i] + t.left;
                     // Wherever a word's syllables are apart, right after the first text, as
                     // GregorioTeX sets it. Placing them decided that, unless an even spread
-                    // parted touching ones, which leaves room for it; the final positions'
-                    // floats aren't tested again.
+                    // parted touching ones, which leaves room for it between their advances
+                    // (so it keeps off the next text's ink); the final positions' floats
+                    // aren't tested again.
                     if let Some((r, true)) = prev_lyric
                         && !s.word_start
                         && (!trial.touching[i] || spread)
                     {
-                        hyphens.push(r + self.hyphen / 2.0);
+                        hyphens.push((r + self.hyphen / 2.0).min(xs[i] + t.ink_left() - self.hyphen / 2.0));
                     }
-                    prev_lyric = Some((l + t.width, !t.word_end && !t.hyphenated));
+                    prev_lyric = Some((xs[i] + t.ink_right(), !t.word_end && !t.hyphenated));
                 }
             }
             let hyphen = match prev_lyric {
@@ -1145,6 +1156,12 @@ impl Engraving {
                 (baseline + self.descent * size).max(staff + ink_bottom + 0.5)
             } else {
                 baseline + 0.5
+            };
+            // Shrinking to the column can land a rounding error past it; that is the column.
+            let natural = if natural > target && natural < target + 1e-3 {
+                target
+            } else {
+                natural
             };
             let right = line_indent + if ragged { natural } else { target.max(natural) };
             rights.push(right);
