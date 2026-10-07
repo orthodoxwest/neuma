@@ -531,7 +531,7 @@ mod tests {
         let fresh = |chant: &Chant| chant.layout(90.0).svg_parts_with(&opts);
         // A page that moved the lines' strings out of the parts, and one that changed them.
         let mut drained = fresh(&chant);
-        let taken: Vec<_> = drained.lines.drain(..).collect();
+        let taken = std::mem::take(&mut drained.lines);
         assert!(taken.len() > 2);
         let mut edited = fresh(&chant);
         for l in &mut edited.lines {
