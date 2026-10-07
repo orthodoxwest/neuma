@@ -1,0 +1,6 @@
+name: Text styles and specials;
+language: la;
+%%
+(c4) <i>I</i>ta(g)<b>li</b>c(h) <sc>Small</sc>(g) <c>Ru</c>bric(f) <ul>un</ul>der(g) <e>e</e>li(h)sion(g)
+cen{te}red(h) <v>\textit{v}</v>er(g)ba(h) al<alt>alt text</alt>(g)so(f) tran[trans]sla(g)tion(f) (;)
+<sp>R/</sp>. re(g)spon(h)se(g) <sp>V/</sp>. ver(h)se(g) cross(g) <sp>+</sp>(,) star(g) <sp>*</sp>(;) dag(f)ger(g) †(,) fí(h)nis.(g.) (::)

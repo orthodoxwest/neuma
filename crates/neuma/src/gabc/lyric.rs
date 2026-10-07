@@ -342,6 +342,14 @@ struct Builder {
 
 impl Builder {
     fn push(&mut self, c: char, style: TextStyle, consonant: bool) {
+        // A byte-order mark past the start of the file is invisible and isn't lyric text; kept,
+        // it would read back as the body's own byte-order mark and vanish.
+        if c == '\u{feff}' {
+            return;
+        }
+        // A line break or tab, escaped or inside an unknown tag, is a space, as it would be
+        // anywhere else: the writer can't keep it, and a lyric has no use for it.
+        let c = if c.is_whitespace() { ' ' } else { c };
         match self.runs.last_mut() {
             Some(last) if last.style == style && last.consonant == consonant => last.text.push(c),
             _ => self.runs.push(LyricRun {

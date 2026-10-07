@@ -28,9 +28,11 @@ pub struct Element {
     /// parenthesis.
     pub span: Range<usize>,
     pub line: u32,
-    /// The box's left, top, width and height, in output units. A note's is its notehead, a
-    /// bar's its ink, and a syllable's runs from the line's top to its bottom across the
-    /// syllable's notation and lyric (or across the initial, for the syllable it starts).
+    /// The box's left, top, width and height, in output units. A note's is its notehead,
+    /// less a porrectus end's overlap with its neighbours (the box
+    /// [`crate::NoteMap::note_at`] tests); a bar's its ink; and a syllable's runs from the
+    /// line's top to its bottom across the syllable's notation and lyric (or across the
+    /// initial, for the syllable it starts).
     pub x: f32,
     pub y: f32,
     pub w: f32,
@@ -160,10 +162,11 @@ impl Layout<'_> {
                         index: h.note,
                         span: info.span.clone(),
                         line: li,
-                        x: (x0 + h.x - h.w / 2.0) * s,
-                        y: (line.staff + h.y - h.h / 2.0) * s,
-                        w: h.w * s,
-                        h: h.h * s,
+                        // The box `NoteMap::note_at` tests, so both find the same note.
+                        x: (x0 + h.hit[0]) * s,
+                        y: (line.staff + h.hit[1]) * s,
+                        w: (h.hit[2] - h.hit[0]) * s,
+                        h: (h.hit[3] - h.hit[1]) * s,
                     });
                 }
                 for b in &seg.bars {
@@ -335,6 +338,32 @@ mod tests {
         for e in m.notes.iter().chain(&m.bars).chain(&m.syllables) {
             assert!(e.w > 0.0 && e.h > 0.0, "{e:?}");
         }
+    }
+
+    #[test]
+    fn notes_are_found_where_note_at_finds_them() {
+        // Porrectus ends stacked on other notes, whose boxes are trimmed off them.
+        let src = "(c4) a(hgh) b(ihi) c(jhj) d(gfgh) e(hghi) (::)";
+        let style = StyleOptions {
+            initial: crate::Initial::None,
+            ..StyleOptions::default()
+        };
+        let eng = parse(src).score.engrave(&ApproxMeasure, &style);
+        let layout = eng.layout(600.0, &LayoutOptions::default());
+        let (m, notes) = (layout.source_map(), layout.notes(&crate::Weights::SOLESMES));
+        let (w, h) = layout.size();
+        let mut checked = 0;
+        for i in 0..400 {
+            for j in 0..200 {
+                let (x, y) = (w * i as f32 / 400.0, h * j as f32 / 200.0);
+                let Some(e) = m.notes.iter().find(|n| n.contains(x, y, 0.0)) else {
+                    continue;
+                };
+                assert_eq!(notes.note_at(x, y), Some(e.index), "at ({x}, {y})");
+                checked += 1;
+            }
+        }
+        assert!(checked > 100);
     }
 
     #[test]

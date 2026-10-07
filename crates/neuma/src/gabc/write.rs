@@ -2,21 +2,22 @@
 
 use std::fmt::Write as _;
 
+use crate::diag::Sink;
+
 use crate::score::{
     AlterationKind, BarKind, ClefKind, CustosRule, Figure, Liquescent, Lyric, NoteShape, Placement, Score, Space, TextStyle,
     position_letter,
 };
 
 /// GABC for `score`. Parsing the result gives back an equal score, apart from source spans.
-/// GABC can't express a `%` in a header value (it starts a comment), so one is lost.
+/// GABC can't express a `%` in a header value (it starts a comment), so one is lost, nor a
+/// value whose lines would end it early, which is written on one line. Nor can it express an
+/// augmented liquescent followed by notes that spell `nlba>`, which read back as the tag, or
+/// two spaces or bars in a row that read back as one (`/` then `/0`, `:` then `:`).
 pub fn to_gabc(score: &Score) -> String {
     let mut out = String::new();
     for (name, value) in &score.header.fields {
-        if value.contains('\n') || value.contains(';') {
-            let _ = writeln!(out, "{name}: {value};;");
-        } else {
-            let _ = writeln!(out, "{name}: {value};");
-        }
+        out.push_str(&header_field(name, value));
     }
     out.push_str("%%\n");
     let mut style = TextStyle::REGULAR;
@@ -25,12 +26,14 @@ pub fn to_gabc(score: &Score) -> String {
     for (i, syl) in score.syllables.iter().enumerate() {
         // `<nlba>` spans the syllables that may not break apart, so it opens before the
         // syllable ahead of the first forbidden break and closes once the run ends.
+        // The space between words goes before `</nlba>`: after it, the space would be part
+        // of the syllable's text and the words would run together.
+        if i > 0 && syl.word_start {
+            out.push(' ');
+        }
         if nlba && !syl.no_break_before && !syl.no_break_within {
             out.push_str("</nlba>");
             nlba = false;
-        }
-        if i > 0 && syl.word_start {
-            out.push(' ');
         }
         if !nlba && (syl.no_break_within || score.syllables.get(i + 1).is_some_and(|n| n.no_break_before)) {
             out.push_str("<nlba>");
@@ -105,6 +108,18 @@ fn special_source(c: char) -> Option<&'static str> {
     })
 }
 
+/// Whether some and whether all of `text` is specials that are red by themselves.
+fn red_specials(text: &str) -> (bool, bool) {
+    let (mut some, mut all) = (false, !text.is_empty());
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        let red = matches!(c, '℣' | '℟' | '*' | '†') || (c == 'A' && chars.next_if_eq(&'\u{0336}').is_some());
+        some |= red;
+        all &= red;
+    }
+    (some, all)
+}
+
 /// Whether `text` is made only of characters that `<sp>` produces: a bare `A` counts only
 /// as part of `A\u{0336}`, and an acute only after `œ`.
 fn all_special(text: &str) -> bool {
@@ -127,9 +142,12 @@ fn write_lyric(out: &mut String, lyric: &Lyric, style: &mut TextStyle) {
     let mut index = 0;
     for run in &lyric.runs {
         // Special characters were parsed as rubric consonant runs; write them back as `<sp>`.
+        // `<sp>V/</sp>`, `R/`, `A/`, `*` and `+` are red without `<c>`, so an elided `*` that
+        // isn't red is written as text, not as `<sp>*</sp>`.
         let mut run_style = run.style;
-        let is_special = run.consonant && all_special(&run.text);
-        if is_special && matches!(run.text.as_str(), "℣" | "℟" | "*" | "†" | "A\u{0336}") {
+        let (some_red, all_red) = red_specials(&run.text);
+        let is_special = run.consonant && all_special(&run.text) && (run.style.rubric || !some_red);
+        if is_special && all_red {
             run_style.rubric = false;
         }
         if run.consonant && !is_special {
@@ -145,16 +163,19 @@ fn write_lyric(out: &mut String, lyric: &Lyric, style: &mut TextStyle) {
                 out.push('{');
             }
             if is_special {
-                if c == 'A' && chars.peek() == Some(&'\u{0336}') {
+                // Two characters from one `<sp>`: a centering brace closes after both.
+                let pair = match (c, chars.peek()) {
+                    ('A', Some('\u{0336}')) => Some("<sp>A/</sp>"),
+                    ('œ', Some('\u{0301}')) => Some("<sp>'oe</sp>"),
+                    _ => None,
+                };
+                if let Some(sp) = pair {
                     chars.next();
-                    out.push_str("<sp>A/</sp>");
+                    out.push_str(sp);
                     index += 2;
-                    continue;
-                }
-                if c == 'œ' && chars.peek() == Some(&'\u{0301}') {
-                    chars.next();
-                    out.push_str("<sp>'oe</sp>");
-                    index += 2;
+                    if lyric.center.as_ref().is_some_and(|r| r.end == index || r.end == index - 1) {
+                        out.push('}');
+                    }
                     continue;
                 }
                 if c == '*' {
@@ -180,6 +201,27 @@ fn write_lyric(out: &mut String, lyric: &Lyric, style: &mut TextStyle) {
             out.push_str("</e>");
         }
     }
+}
+
+/// One header field as GABC. A value with a `;` or a line break ends with `;;`; when its lines
+/// would read back differently (a line that ends in `;` or looks like the next field), its
+/// line breaks become spaces.
+fn header_field(name: &str, value: &str) -> String {
+    let reads_back = |text: &str| {
+        let (header, _) = super::parse_header(&format!("{text}%%\n"), &mut Sink::default());
+        header.fields.len() == 1 && header.fields[0].0 == name && header.fields[0].1 == value
+    };
+    if !value.contains(['\n', ';']) {
+        return format!("{name}: {value};\n");
+    }
+    let text = format!("{name}: {value};;\n");
+    if reads_back(&text) {
+        return text;
+    }
+    // As the value reads back, so that writing it again gives the same text.
+    let flat = value.replace(['\r', '\n'], " ");
+    let end = if flat.contains(';') { ";;" } else { ";" };
+    format!("{name}: {flat}{end}\n")
 }
 
 fn placement_digit(p: Placement) -> &'static str {
