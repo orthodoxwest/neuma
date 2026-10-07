@@ -14,6 +14,7 @@ use crate::diag::Diagnostic;
 use crate::gabc::Diff;
 use crate::score::{Clef, Figure, Lyric, Score, Syllable};
 use crate::text::TextMeasure;
+use crate::vowel::VowelRules;
 use std::ops::Range;
 use std::sync::Arc;
 
@@ -38,7 +39,7 @@ struct Kept {
     style: StyleOptions,
     /// The measure's hyphen, word space, ascent and descent: a check that it is the same one.
     metrics: [u32; 4],
-    header_spans: Vec<Range<usize>>,
+    rules: VowelRules,
     first_lyric: Option<(usize, Lyric)>,
 }
 
@@ -71,13 +72,18 @@ impl EngraveCache {
         let mut pass = score.pass(measure, style, true);
         let metrics = [pass.hyphen, pass.word_space, pass.ascent, pass.descent].map(f32::to_bits);
         let first_lyric = pass.first_lyric.clone();
+        let rules = pass.e.rules.clone();
+        // The header reaches the syllables only through the vowel rules, and the initial only
+        // through its own syllable; the rest of either is put together afresh at the end.
         let old = self.last.take().filter(|k| {
             k.style == *style
                 && k.metrics == metrics
-                && k.score.header == score.header
-                && k.header_spans == score.header.spans
-                && k.first_lyric == first_lyric
-                && k.engraving.initial == pass.initial
+                && k.rules == pass.e.rules
+                && k.first_lyric.as_ref().map(|f| f.0) == first_lyric.as_ref().map(|f| f.0)
+                && k.engraving.initial.as_ref().map(|i| i.syllable) == pass.initial.as_ref().map(|i| i.syllable)
+                && k.marks
+                    .first()
+                    .is_some_and(|m| k.engraving.diagnostics.get(..m.diagnostics) == Some(&pass.e.sink.items[..]))
         });
         match old {
             Some(old) => resume(&mut pass, &score, old, diff),
@@ -88,14 +94,13 @@ impl EngraveCache {
             }
         }
         let (engraving, marks) = pass.finish(&score);
-        let header_spans = score.header.spans.clone();
         let kept = self.last.insert(Kept {
             score,
             engraving: Arc::new(engraving),
             marks: marks.unwrap_or_default(),
             style: style.clone(),
             metrics,
-            header_spans,
+            rules,
             first_lyric,
         });
         &kept.engraving

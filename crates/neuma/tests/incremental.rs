@@ -311,6 +311,20 @@ fn edits_whose_effects_reach_past_them() {
         ("(c4) Al(g)le(h) c(g)", "(c4) Bl(g)le(h) c(g)"),
         ("(c4) A(g) b(h) c(g)", "x(c4) A(g) b(h) c(g)"),
         ("name: a;\n%%\n(c4) a(g) b(h)", "name: ab;\n%%\n(c4) a(g) b(h)"),
+        // The header, which reaches the engraving through the vowel rules and the
+        // annotations over the initial, and the initial itself.
+        ("mode: 1;\n%%\n(c4) Al(g)le(h) c(g)", "mode: 2;\n%%\n(c4) Al(g)le(h) c(g)"),
+        ("mode: 1;\n%%\n(c4) Al(g)le(h) c(g)", "mode: 12;\n%%\n(c4) Al(g)le(h) c(g)"),
+        (
+            "annotation: Ant.;\n%%\n(c4) Al(g)le(h)",
+            "annotation: Antiphona;\n%%\n(c4) Al(g)le(h)",
+        ),
+        ("language: la;\n%%\n(c4) quae(g) yes(h)", "language: en;\n%%\n(c4) quae(g) yes(h)"),
+        ("language: xx;\n%%\n(c4) a(g) b(h)", "name: n;\nlanguage: xx;\n%%\n(c4) a(g) b(h)"),
+        ("language: xx;\n%%\n(c4) a(g) b(h)", "language: la;\n%%\n(c4) a(g) b(h)"),
+        ("(c4) Al(g)le(h) c(g)", "(c4) Ál(g)le(h) c(g)"),
+        ("(c4) Al(g)le(h) c(g)", "(c4) Alle(g)le(h) c(g)"),
+        ("(c4) Al(g)le(h) c(g)", "(c4) W(g)le(h) c(g)"),
         ("(c4) a(g) <i>b(h) c(g)", "(c4) a(g) b(h) c(g)"),
         ("(c4) a*(g) b(h) c(g)", "(c4) a(g) b(h) c(g)"),
     ];

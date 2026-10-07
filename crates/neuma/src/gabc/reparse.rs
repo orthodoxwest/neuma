@@ -13,7 +13,7 @@
 
 use std::ops::Range;
 
-use super::{BodyMark, BodyState, ParseMarks, Parsed, check_fixes, end_body, find_separator, finish, read_body};
+use super::{BodyMark, BodyState, ParseMarks, Parsed, check_fixes, end_body, find_separator, finish, parse_header, read_body};
 use crate::diag::{Diagnostic, Sink};
 use crate::score::{Figure, Score, Syllable};
 
@@ -118,7 +118,7 @@ pub(crate) fn common_suffix(a: &[u8], b: &[u8], most: usize) -> usize {
 /// only around the edit. The syllables it keeps are moved out of `old`, and `keep` becomes
 /// the new parse's. Returns the parse, as [`parse`](super::parse) gives it, and which
 /// syllables the edit left alone; `None`, leaving `old` and `keep` as they were, when the
-/// edit isn't in the body (or is in its first syllable), or the source has no `%%`.
+/// edit reaches from the header into the body, or the source has no `%%`.
 pub(crate) fn reparse(old_src: &str, old: &mut Score, keep: &mut ParseMarks, src: &str) -> Option<(Parsed, Diff)> {
     let body_start = keep.body_start;
     let (a, b) = (old_src.as_bytes(), src.as_bytes());
@@ -130,32 +130,35 @@ pub(crate) fn reparse(old_src: &str, old: &mut Score, keep: &mut ParseMarks, src
     } else {
         after
     };
-    if body_start == 0 || after != body_start || prefix < body_start || !src[..body_start].ends_with('\n') {
-        return None;
-    }
-    if keep.marks.len() != old.syllables.len() {
+    if body_start == 0 || keep.marks.len() != old.syllables.len() {
         return None;
     }
     let suffix = common_suffix(a, b, a.len().min(b.len()) - prefix);
     let (cut_old, cut_new) = (a.len() - suffix, b.len() - suffix);
     let by = b.len() as isize - a.len() as isize;
     let shift = Shift { cut: cut_old, by };
-    // The syllables read before the edit stay; reading starts after the last of them.
-    let head = keep.marks.partition_point(|m| m.read <= prefix);
-    if head == 0 {
+    if prefix < body_start {
+        // An edit of the header alone: the body reads as it did, moved.
+        return (cut_old <= body_start && after == body_start.wrapping_add_signed(by) && src[..after].ends_with('\n'))
+            .then(|| header_edited(src, old, keep, shift));
+    }
+    if after != body_start || !src[..body_start].ends_with('\n') {
         return None;
     }
+    // The syllables read before the edit stay; reading starts after the last of them, or at
+    // the body's start.
+    let head = keep.marks.partition_point(|m| m.read <= prefix);
     // The old syllables and marks stay where they are, those the edit replaced spliced out.
     let mut marks = std::mem::take(&mut keep.marks);
     let mut syllables = std::mem::take(&mut old.syllables);
     let m = syllables.len();
-    let restart = &marks[head - 1];
-    let mut st = restart.state.clone();
-    let before = restart.read;
-    let mut sink = Sink {
-        items: keep.found[..restart.diagnostics].to_vec(),
+    let (mut st, before, diagnostics, from) = match head.checked_sub(1).map(|h| &marks[h]) {
+        Some(r) => (r.state.clone(), Some(r.read), r.diagnostics, r.end - body_start),
+        None => (BodyState::default(), None, keep.header, 0),
     };
-    let from = restart.end - body_start;
+    let mut sink = Sink {
+        items: keep.found[..diagnostics].to_vec(),
+    };
     let mut fresh: Vec<Syllable> = Vec::new();
     let mut fresh_marks: Vec<BodyMark> = Vec::new();
     // Past the edit, where a syllable ends as an old one did, in the same state.
@@ -183,7 +186,7 @@ pub(crate) fn reparse(old_src: &str, old: &mut Score, keep: &mut ParseMarks, src
         &mut fresh,
         &mut sink,
         Some(&mut fresh_marks),
-        Some(before),
+        before,
         &mut meet,
     );
     // The old syllables from `old_from` on hold, moved; the diagnostics before `found` are
@@ -195,7 +198,7 @@ pub(crate) fn reparse(old_src: &str, old: &mut Score, keep: &mut ParseMarks, src
             let d_diag = sink.items.len() as isize - base_diagnostics as isize;
             sink.items
                 .extend(keep.found[base_diagnostics..].iter().cloned().map(|d| shift.diagnostic(d)));
-            let mut read = fresh_marks.last().map_or(before, |m| m.read);
+            let mut read = fresh_marks.last().map_or(before.unwrap_or(0), |m| m.read);
             for o in &mut marks[k + 1..] {
                 read = read.max(shift.at(o.read));
                 o.end = shift.at(o.end);
@@ -245,6 +248,7 @@ pub(crate) fn reparse(old_src: &str, old: &mut Score, keep: &mut ParseMarks, src
     marks.splice(head..old_from, fresh_marks);
     *keep = ParseMarks {
         body_start,
+        header: keep.header,
         marks,
         found: sink.items[..found].to_vec(),
         end: sink.items[found..].to_vec(),
@@ -252,4 +256,45 @@ pub(crate) fn reparse(old_src: &str, old: &mut Score, keep: &mut ParseMarks, src
     let mut parsed = finish(src, old.header.clone(), syllables, sink);
     check_fixes(src, &mut parsed);
     Some((parsed, diff))
+}
+
+/// [`reparse`] for an edit of the header alone, which `shift` moves the body by: the header
+/// is read again, and the old syllables, their marks and diagnostics are moved.
+fn header_edited(src: &str, old: &mut Score, keep: &mut ParseMarks, shift: Shift) -> (Parsed, Diff) {
+    let mut sink = Sink::default();
+    let (header, _) = parse_header(src, &mut sink);
+    let header_diagnostics = sink.items.len();
+    let d_diag = header_diagnostics as isize - keep.header as isize;
+    sink.items
+        .extend(keep.found[keep.header..].iter().cloned().map(|d| shift.diagnostic(d)));
+    let found = sink.items.len();
+    sink.items.extend(keep.end.iter().cloned().map(|d| shift.diagnostic(d)));
+    let mut marks = std::mem::take(&mut keep.marks);
+    for o in &mut marks {
+        o.end = shift.at(o.end);
+        o.read = shift.at(o.read);
+        o.diagnostics = o.diagnostics.wrapping_add_signed(d_diag);
+        shift.move_state(&mut o.state);
+    }
+    let mut syllables = std::mem::take(&mut old.syllables);
+    for s in &mut syllables {
+        shift.syllable(s);
+    }
+    let m = syllables.len();
+    *keep = ParseMarks {
+        body_start: shift.at(keep.body_start),
+        header: header_diagnostics,
+        marks,
+        found: sink.items[..found].to_vec(),
+        end: sink.items[found..].to_vec(),
+    };
+    let mut parsed = finish(src, header, syllables, sink);
+    check_fixes(src, &mut parsed);
+    let diff = Diff {
+        head: 0,
+        tail: m,
+        old_len: m,
+        by: shift.by,
+    };
+    (parsed, diff)
 }

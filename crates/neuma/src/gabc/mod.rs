@@ -83,6 +83,7 @@ fn parse_marked(src: &str, keep: Option<&mut ParseMarks>) -> Parsed {
     if src[body_start..].starts_with('\u{feff}') {
         body_start += '\u{feff}'.len_utf8();
     }
+    let header_diagnostics = sink.items.len();
     // A syllable to each `(`, near enough, so the list is allocated once.
     let groups = src.as_bytes()[body_start..].iter().filter(|&&b| b == b'(').count();
     let mut syllables = Vec::with_capacity(groups);
@@ -106,6 +107,7 @@ fn parse_marked(src: &str, keep: Option<&mut ParseMarks>) -> Parsed {
     if let (Some(keep), Some(marks)) = (keep, marks) {
         *keep = ParseMarks {
             body_start,
+            header: header_diagnostics,
             marks,
             found: sink.items[..found].to_vec(),
             end: sink.items[found..].to_vec(),
@@ -452,6 +454,8 @@ pub(crate) struct BodyMark {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct ParseMarks {
     pub body_start: usize,
+    /// How many of the diagnostics are the header's.
+    pub header: usize,
     /// One per syllable.
     pub marks: Vec<BodyMark>,
     /// The header's diagnostics and the body's, as read, before those at the body's end and
