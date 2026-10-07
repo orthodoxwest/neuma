@@ -291,6 +291,10 @@ pub(crate) struct LyricState {
     pub euouae: bool,
     /// Style tags not yet closed: the tag, its span, and where its syllable's text ends.
     pub open: Vec<lyric::OpenTag>,
+    /// The verbatim tags (`v`, `alt`, `sp`) found unclosed so far. A closer put in for a later
+    /// one of these would close the first instead, as Gregorio reads an opener to the next
+    /// closer, taking all between as text: only the first gets a fix.
+    pub verbatim_unclosed: Vec<&'static str>,
 }
 
 fn parse_body(src: &str, start: usize, sink: &mut Sink) -> Vec<Syllable> {

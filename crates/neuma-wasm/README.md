@@ -96,9 +96,11 @@ textarea.addEventListener("input", () => {
 });
 host.addEventListener("click", (e) => {
   // Layout coordinates from the score's top left: `offsetX`/`offsetY` would be relative to
-  // whichever line's <svg> was clicked.
+  // whichever line's <svg> was clicked. If `host` scrolls or has a border, count them too.
   const box = host.getBoundingClientRect();
-  const hit = chant.sourceAt(e.clientX - box.left, e.clientY - box.top); // { kind, index, from, to, x, y, w, h, … }
+  const x = e.clientX - box.left - host.clientLeft + host.scrollLeft;
+  const y = e.clientY - box.top - host.clientTop + host.scrollTop;
+  const hit = chant.sourceAt(x, y); // { kind, index, from, to, x, y, w, h, … }
   if (hit) textarea.setSelectionRange(hit.from, hit.to);
 });
 const lit = chant.elementsAt(textarea.selectionStart); // what to highlight for the caret
