@@ -207,8 +207,13 @@ assert.ok(!/[áéíóú]/.test(Chant.fromPsalm(verses, "8.G", { accents: "none" 
 assert.equal(psalm(verses, "8.G", { accents: "none" }).notes.length, psalm(verses, "8.G").notes.length);
 // A spelling hyphen is printed, and each piece has its own source.
 const spelled = psalmDisplay("Deliver me from blood\\-guiltiness, O God * thou that art the God of my health.", "8.G");
-// A spelling hyphen is U+2011, so a line never breaks at it.
-assert.ok(spelled.verses[0].runs.map((r) => r.text).join("").startsWith("Deliver me from blood\u2011guiltiness,"));
+// A spelling hyphen is "-" and a word joiner, so a line never breaks at it, as is each held "–".
+assert.ok(spelled.verses[0].runs.map((r) => r.text).join("").startsWith("Deliver me from blood-\u2060guiltiness,"));
+assert.ok(psalmDisplay("Lord, remember · Dávid, – – * and all his trouble.", "8.G").verses[0].runs.some((r) => r.kind === "held" && r.text === "–\u2060"));
+// Misspelled options throw rather than fall back.
+assert.throws(() => psalmDisplay(plain, "8.G", { accents: "outside-flex" }), /accents must be/);
+assert.throws(() => psalm(plain, "8.G", { intone: "always" }), /intone must be/);
+assert.throws(() => Chant.fromPsalm(plain, "8.G", { accents: "None" }), /accents must be/);
 // A line copied from the display sets as the text it came from.
 const copied = shown.verses.map((v) => `${v.number} ` + v.runs.map((r) => r.text).join("").replace("Sit.", "[Sit.]")).join("\n");
 assert.equal(psalm(copied, "8.G").gabc, psalm(verses, "8.G").gabc);

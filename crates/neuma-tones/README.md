@@ -102,9 +102,9 @@ or a highlight that follows the singing; in a flex, `flex_drop` marks the syllab
 drops on, which a psalter prints in italic. `update(text)` points new text for the same tone.
 The verse as printed is the pointed text as `point` writes it, without the verse number and
 the rubrics' brackets. The space between a `·` and its syllable, and before a `*`, `†` or
-held `–`, is U+00A0, and a spelling hyphen is U+2011, so a line never breaks between a mark
-and the syllable it belongs to, nor after "pre-". To search the text, read them as a space and
-a hyphen; pointed text reads them back, so a line copied from the display sets as its source.
+held `–`, is U+00A0, and U+2060 (word joiner) follows each `–` and spelling hyphen, so a line
+never breaks between a mark and the syllable it belongs to, nor after "pre-". To search the
+text, read U+00A0 as a space and drop U+2060; pointed text reads both back. To sing the text again, keep `point`'s text rather than a copy of the display: the display leaves out the verse numbers and rubric brackets, and with `OutsideFlex` the acutes of a flex.
 
 ## Pointed text
 

@@ -52,9 +52,10 @@ timelines, PDFs). Some behavior did change:
   own).
 - Rubrics written before a half-verse's leading dashes ("* [Sit.] – · – and") stay before
   them in `point`'s text and a book's verses; they moved after them.
-- Pointed text reads any Unicode space between words, U+00A0 among them, and U+2011 as a
-  spelling hyphen: a line copied from a psalm display reads as the text it came from. A
-  no-break space used to be read as part of a word, so held dashes were sung as words.
+- Pointed text reads any Unicode space between words, U+00A0 among them, drops U+2060
+  (word joiner), and reads `-` and U+2060, or U+2011, as a spelling hyphen: a line copied from
+  a psalm display reads as the text it came from. A no-break space used to be read as part of
+  a word, so held dashes were sung as words.
 
 ### The 0.1 API (breaking)
 
@@ -286,7 +287,8 @@ timelines, PDFs). Some behavior did change:
   page, `crates/neuma-wasm/examples/psalm.html`; on mobile, `psalmDisplay(text, tone,
   PsalmOptions)` returning records (a run's kind a sealed class in Kotlin and an enum with an
   associated value in Swift) and `Chant.fromTone(tone, ChantOptions)`. A line's runs use
-  U+00A0 between a mark and its syllable and U+2011 at a spelling hyphen, so it never breaks
-  there; pointed text reads both back, so a line copied from the display sets as its source.
+  U+00A0 between a mark and its syllable, and U+2060 after each `–` and spelling hyphen, so
+  it never breaks there; pointed text reads both back, so a line copied from the display sets
+  as its source. The browser's psalm options throw on an unknown value.
   `Tone::label()` names a tone as a psalter prints it ("Tone 8 G", "Tonus peregrinus";
   `toneLabel(tone)` and `toneLabel` on the display in the browser and on mobile).

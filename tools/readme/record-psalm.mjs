@@ -6,7 +6,8 @@
 //   node crates/neuma-wasm/build.mjs
 //   node tools/readme/record-psalm.mjs [OUT.png]
 //
-// PLAYWRIGHT and FONTS_DIR are as for record-editor.mjs.
+// PLAYWRIGHT and FONTS_DIR are as for record-editor.mjs. A FONTS_DIR should hold Google's own
+// stylesheet and font files, which are subsets: the image then shows what a browser gets.
 
 import { createServer } from "node:http";
 import { readFileSync, existsSync } from "node:fs";

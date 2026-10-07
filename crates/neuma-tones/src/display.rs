@@ -71,10 +71,11 @@ pub struct PsalmRun {
 #[non_exhaustive]
 pub enum PsalmRunKind {
     /// Spaces, and the hyphen of a word the pointing split ("judg-ed") or that is spelled
-    /// with one ("blood‑guiltiness"). A spelling hyphen is U+2011, so a line never breaks at
-    /// it and [`psalm`](crate::psalm()) reads it back as spelling. A space that must not break
-    /// a line, between a `·` and its syllable or before a `*`, `†` or held `–`, is U+00A0: to
-    /// search the text, read those as a space and a hyphen.
+    /// with one ("blood-guiltiness"). A space that must not break a line, between a `·` and
+    /// its syllable or before a `*`, `†` or held `–`, is U+00A0, and a spelling hyphen is
+    /// followed by U+2060 (word joiner), as is each `–` ([`Held`](Self::Held)): to search the
+    /// text, read U+00A0 as a space and drop U+2060. [`psalm`](crate::psalm()) reads both back,
+    /// a `-` and U+2060 as a spelling hyphen.
     Text,
     /// A sung syllable, as printed: accents kept, punctuation attached.
     Syllable(PsalmSyllable),
@@ -168,9 +169,10 @@ impl PsalmDisplay {
 }
 
 /// The verses' runs, written as [`Pointed::to_text`] writes the marks. The space between a
-/// `·` and its syllable, and before a `*`, `†` or held `–`, is U+00A0, so a line never breaks
-/// between a mark and the syllable it belongs to, and a spelling hyphen is U+2011. Pointed
-/// text reads both, so a line copied from the display sets as its source does.
+/// `·` and its syllable, and before a `*`, `†` or held `–`, is U+00A0, and a word joiner
+/// (U+2060) follows each `–` and spelling hyphen, so a line never breaks between a mark and
+/// the syllable it belongs to: an en dash allows a break after it even before U+00A0 (UAX #14,
+/// LB12a). Pointed text reads both, so a line copied from the display sets as its source.
 fn verses(sung: &SungPsalm, options: &PsalmOptions) -> Vec<PsalmVerse> {
     let mut out = Vec::with_capacity(sung.text.verses.len());
     for (verse, neumes) in sung.text.verses.iter().zip(&sung.neumes) {
@@ -192,7 +194,7 @@ fn verses(sung: &SungPsalm, options: &PsalmOptions) -> Vec<PsalmVerse> {
                     runs.push("·", PsalmRunKind::Point);
                     runs.nbsp();
                 }
-                runs.push("–", PsalmRunKind::Held);
+                runs.push(HELD, PsalmRunKind::Held);
             }
             for (i, (s, notes)) in part.syllables.iter().zip(neumes).enumerate() {
                 match s.joint {
@@ -208,7 +210,7 @@ fn verses(sung: &SungPsalm, options: &PsalmOptions) -> Vec<PsalmVerse> {
                         }
                         if s.held {
                             runs.nbsp();
-                            runs.push("–", PsalmRunKind::Held);
+                            runs.push(HELD, PsalmRunKind::Held);
                             runs.space();
                         }
                         if s.cadence && !(i == 0 && after > 0) {
@@ -218,7 +220,7 @@ fn verses(sung: &SungPsalm, options: &PsalmOptions) -> Vec<PsalmVerse> {
                     }
                     Joint::Hyphen => runs.push("-", PsalmRunKind::Text),
                     Joint::Spelling => {
-                        runs.push("\u{2011}", PsalmRunKind::Text);
+                        runs.push(SPELLING, PsalmRunKind::Text);
                         if s.cadence {
                             runs.push("·", PsalmRunKind::Point);
                         }
@@ -241,7 +243,7 @@ fn verses(sung: &SungPsalm, options: &PsalmOptions) -> Vec<PsalmVerse> {
             }
             for _ in 0..part.held_end {
                 runs.nbsp();
-                runs.push("–", PsalmRunKind::Held);
+                runs.push(HELD, PsalmRunKind::Held);
             }
             match part.kind {
                 VersePart::Flex => {
@@ -273,6 +275,10 @@ fn verses(sung: &SungPsalm, options: &PsalmOptions) -> Vec<PsalmVerse> {
 struct Runs(Vec<PsalmRun>);
 
 const NBSP: char = '\u{a0}';
+/// A held `–`, with a word joiner so the line can't break after it.
+const HELD: &str = "–\u{2060}";
+/// A spelling hyphen: a plain `-`, which every font has, and a word joiner.
+const SPELLING: &str = "-\u{2060}";
 
 impl Runs {
     fn push(&mut self, text: &str, kind: PsalmRunKind) {
@@ -322,7 +328,12 @@ mod tests {
 
     /// The verse's line, with its non-breaking spaces as plain ones.
     fn line(v: &PsalmVerse) -> String {
-        v.runs.iter().map(|r| r.text.as_str()).collect::<String>().replace(NBSP, " ")
+        v.runs
+            .iter()
+            .map(|r| r.text.as_str())
+            .collect::<String>()
+            .replace(NBSP, " ")
+            .replace('\u{2060}', "")
     }
 
     fn syllables(v: &PsalmVerse) -> Vec<&PsalmSyllable> {
@@ -366,6 +377,7 @@ mod tests {
                 .filter(|r| !matches!(r.kind, PsalmRunKind::Text | PsalmRunKind::Syllable(_)))
                 .map(|r| r.text.as_str())
                 .collect::<String>()
+                .replace('\u{2060}', "")
         };
         assert_eq!(kinds(&d.verses()[0]), "·*Sit.·");
         assert_eq!(kinds(&d.verses()[1]), "†·*·");
@@ -420,8 +432,8 @@ mod tests {
 
     #[test]
     fn reads_its_own_lines_back() {
-        // A line copied from the display, U+00A0 and U+2011 and all, sets and points as the
-        // text it came from.
+        // A line copied from the display, U+00A0 and U+2060 and all, sets and points as the
+        // text it came from; so does one with U+2011 for its spelling hyphens.
         let text = "1 Deliver me from blood\\-guiltiness, O God, thou that art the God of my · héalth; * and my tongue shall sing of thy · ríghteousness.\n\
             2 For thou desirest no sacrifice, † else would I give it thee * but thou delightest not in burnt-offerings.\n\
             3 My soul thirsteth for thée, † my flesh also longeth after · thée * in a barren and dry land · where no wáter is.\n\
@@ -440,13 +452,16 @@ mod tests {
                     format!("{} {line}\n", v.number.unwrap())
                 })
                 .collect();
-            assert!(copied.contains('\u{a0}') && copied.contains('\u{2011}'));
-            assert_eq!(
-                crate::psalm(&copied, tone, &options).gabc,
-                crate::psalm(text, tone, &options).gabc,
-                "{name}"
-            );
-            assert_eq!(point(&copied, tone).text, point(text, tone).text, "{name}");
+            assert!(copied.contains('\u{a0}') && copied.contains("-\u{2060}") && copied.contains("–\u{2060}"));
+            let nb_hyphen = copied.replace("-\u{2060}", "\u{2011}");
+            for copy in [&copied, &nb_hyphen] {
+                assert_eq!(
+                    crate::psalm(copy, tone, &options).gabc,
+                    crate::psalm(text, tone, &options).gabc,
+                    "{name}"
+                );
+                assert_eq!(point(copy, tone).text, point(text, tone).text, "{name}");
+            }
         }
     }
 
@@ -456,12 +471,13 @@ mod tests {
         let text = "Deliver me from blood\\-guiltiness, O God, thou that art the God of my · héalth; * and my tongue shall sing of thy · ríghteousness.\n\
             For thou art my · hópe * thou hast the pre\\-·eminence.";
         let d = PsalmDisplay::new(text, tone, &PsalmOptions::default());
-        // A spelling hyphen is U+2011: the line never breaks after "pre-".
-        assert!(line(&d.verses()[0]).starts_with("Deliver me from blood\u{2011}guiltiness, O God"));
+        // A word joiner after a spelling hyphen: the line never breaks after "pre-".
+        let raw = |v: &PsalmVerse| v.runs.iter().map(|r| r.text.as_str()).collect::<String>();
+        assert!(raw(&d.verses()[0]).starts_with("Deliver me from blood-\u{2060}guiltiness, O God"));
         assert!(
-            line(&d.verses()[1]).ends_with("thou hast the pre\u{2011}·eminence."),
+            raw(&d.verses()[1]).ends_with("thou hast the pre-\u{2060}·eminence."),
             "{}",
-            line(&d.verses()[1])
+            raw(&d.verses()[1])
         );
         // Each piece is its own syllable, with its own span.
         let pieces: Vec<&str> = syllables(&d.verses()[0])
@@ -499,7 +515,7 @@ mod tests {
         let raw: String = d.verses()[1].runs.iter().map(|r| r.text.as_str()).collect();
         assert_eq!(
             raw,
-            "Lord, remember ·\u{a0}Dávid,\u{a0}–\u{a0}–\u{a0}* –\u{a0}·\u{a0}–\u{a0}–\u{a0}práise the Lord."
+            "Lord, remember ·\u{a0}Dávid,\u{a0}–\u{2060}\u{a0}–\u{2060}\u{a0}* –\u{2060}\u{a0}·\u{a0}–\u{2060}\u{a0}–\u{2060}\u{a0}práise the Lord."
         );
         // A held syllable in a flex drops on its second note.
         let flex: Vec<_> = syllables(&d.verses()[0])

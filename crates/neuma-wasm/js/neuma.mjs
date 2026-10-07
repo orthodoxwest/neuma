@@ -234,9 +234,18 @@ export function psalmDisplay(text, tone, { intone = "first", autoPoint = true, a
 // A tone block always has `key: value` lines; a tone name never has a colon.
 const isBlock = (tone) => (String(tone).includes(":") ? 1 : 0);
 
-// `intone` and `accents` as the module takes them, in one number: bits 0–1 and 2–3.
-const psalmFlags = (intone, accents) =>
-  (intone === "every" ? 1 : intone === "never" ? 2 : 0) | ((accents === "none" ? 1 : accents === "outsideFlex" ? 2 : 0) << 2);
+const INTONE = ["first", "every", "never"];
+const ACCENTS = ["all", "none", "outsideFlex"];
+
+// `intone` and `accents` as the module takes them, in one number: bits 0–1 and 2–3. A value
+// that isn't one of the documented ones throws rather than falling back to the default.
+function psalmFlags(intone, accents) {
+  const i = INTONE.indexOf(intone);
+  if (i < 0) throw new TypeError(`intone must be ${INTONE.map((v) => `"${v}"`).join(", ")}; got ${JSON.stringify(intone)}`);
+  const a = ACCENTS.indexOf(accents);
+  if (a < 0) throw new TypeError(`accents must be ${ACCENTS.map((v) => `"${v}"`).join(", ")}; got ${JSON.stringify(accents)}`);
+  return i | (a << 2);
+}
 
 /**
  * A tone's name as a psalter prints it beside the tone: "Tone 8 G" for "8.G", "Tonus
@@ -364,13 +373,13 @@ export class Chant {
    *   and the constructor's.
    */
   static fromPsalm(text, tone, { intone = "first", autoPoint = true, accents = "all", ...options } = {}) {
-    const chant = new Chant(PSALM);
     const psalm = {
       tone: String(tone),
       custom: isBlock(tone),
       psalmFlags: psalmFlags(intone, accents),
       autoPoint: autoPoint ? 1 : 0,
     };
+    const chant = new Chant(PSALM);
     chant.#engrave({ source: String(text), args: chantArgs(options), psalm });
     return chant;
   }

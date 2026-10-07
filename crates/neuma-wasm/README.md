@@ -429,9 +429,11 @@ for (const v of verses) {
 A verse's runs, their `text` joined, are its line after the number: the pointed text as
 `point` writes it, without the rubrics' brackets. The space between a `·` and its syllable,
 and before a `*`, `†` or held `–`, is U+00A0, so a line never breaks between a mark and its
-syllable. Run text holds U+00A0 (no-break space) and U+2011 (no-break hyphen at a spelling hyphen): to
-search it, read them as a space and a hyphen. `psalm` and `point` read them back, so a line
-copied from the display sets as the text it came from. `toneLabel(tone)` names a tone without any text. A syllable's run also has `part`, `role`
+syllable. Run text holds U+00A0 (no-break space) and U+2060 (word joiner, after each `–` and
+spelling hyphen, since a line may break after an en dash even before U+00A0): to search it,
+read U+00A0 as a space and drop U+2060 (`text.replace(/⁠/g, "").replace(/ /g, " ")`).
+`psalm` and `point` read both back. To sing the text again, keep `point`'s text rather than a copy of the display: the display leaves out the verse numbers and rubric brackets, and with `OutsideFlex` the acutes of a flex. `toneLabel(tone)` names a tone without
+any text. Unknown option values (`accents: "outside-flex"`) throw. A syllable's run also has `part`, `role`
 (its first note's place in the tone, as `psalm`'s notes name it), `accent`, `flexDrop`,
 `wordStart` and its source in `text` (`sourceStart` … `sourceUtf16End`), for a tap or a
 highlight that follows the singing. Unmarked half-verses are pointed for the tone, and the

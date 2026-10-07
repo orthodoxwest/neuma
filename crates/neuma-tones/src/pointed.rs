@@ -7,11 +7,11 @@
 //! | `·` | The cadence starts at the next syllable. Inside a word it also splits it ("e·ver"). |
 //! | acute (`á`) | An accented syllable, which takes an accent of the tone's cadence. |
 //! | `–` (en dash) | A note of the cadence with no syllable of its own: the syllable before it is held ("thou · árt – mý God", "Dávid, – – *"). Before a half's first syllable it leaves a note out instead ("* – · – – práise the Lord"). |
-//! | `-` inside a word | A sung syllable split ("judg-ed"). Write `\-` (or U+2011) for a hyphen that is only spelling ("blood\-guiltiness"). A hyphen with the `·` after it is spelling too ("pre-·eminence"), the `·` before it a dotted split ("hon·-our"). |
+//! | `-` inside a word | A sung syllable split ("judg-ed"). Write `\-` (or `-` and U+2060, or U+2011) for a hyphen that is only spelling ("blood\-guiltiness"). A hyphen with the `·` after it is spelling too ("pre-·eminence"), the `·` before it a dotted split ("hon·-our"). |
 //! | `[…]` | A rubric, such as a posture cue: kept, never sung. |
 //! | `12` at the start of a line | The verse number, after any rubrics that open the line ("[Stand.] 5 For I …"). |
 //!
-//! Any Unicode space separates words, U+00A0 among them. A line starting with `#` is a comment. [`Pointed::to_text`] writes the canonical form back,
+//! Any Unicode space separates words, U+00A0 among them, and U+2060 (word joiner) is dropped. A line starting with `#` is a comment. [`Pointed::to_text`] writes the canonical form back,
 //! and parsing that form and writing it again gives the same text.
 
 use std::fmt::Write as _;
@@ -139,9 +139,13 @@ pub(crate) fn parse(src: &str) -> Pointed {
     out
 }
 
+/// U+2060 WORD JOINER, which a [`PsalmDisplay`](crate::PsalmDisplay) writes after a `–` and a
+/// spelling hyphen so a line never breaks there. It is not text: pointed text drops it.
+pub(crate) const WJ: char = '\u{2060}';
+
 /// Byte ranges of whitespace-separated tokens, with `[…]` rubrics kept whole. Any Unicode
-/// space separates them, U+00A0 among them, so a line copied from a [`PsalmDisplay`]
-/// (crate::PsalmDisplay) reads as it was written.
+/// space separates them, U+00A0 among them, and word joiners at a token's ends are left out,
+/// so a line copied from a [`PsalmDisplay`](crate::PsalmDisplay) reads as it was written.
 fn tokens(line: &str) -> Vec<Range<usize>> {
     let mut out = Vec::new();
     let mut chars = line.char_indices().peekable();
@@ -182,7 +186,14 @@ fn tokens(line: &str) -> Vec<Range<usize>> {
             out.push(from..end);
         }
     }
-    out
+    out.into_iter()
+        .filter_map(|r| {
+            let t = &line[r.clone()];
+            let start = r.start + (t.len() - t.trim_start_matches(WJ).len());
+            let end = r.end - (t.len() - t.trim_end_matches(WJ).len());
+            (start < end).then_some(start..end)
+        })
+        .collect()
 }
 
 fn diag(diags: &mut Vec<Diagnostic>, severity: Severity, span: Range<usize>, code: &'static str, message: &str) {
@@ -308,6 +319,7 @@ fn parse_verse(line: &str, base: usize, diags: &mut Vec<Diagnostic>) -> Option<V
                     );
                 }
                 let text = tok.trim_start_matches('[').trim_end_matches(']');
+                let text = text.replace(WJ, "");
                 rubrics.push(text.split(char::is_whitespace).collect::<Vec<_>>().join(" "));
             }
             _ => {
@@ -429,11 +441,18 @@ fn word(
     };
     while i < body.len() {
         let rest = &body[i..];
-        // A spelling hyphen inside the word joins two pieces: `\-`, U+2011 (as a
-        // [`PsalmDisplay`](crate::PsalmDisplay) prints one), or a plain `-` with the cadence
-        // mark after it ("pre-·eminence"). At either end of a word it is only text.
+        // A word joiner is not text.
+        if rest.starts_with(WJ) {
+            i += WJ.len_utf8();
+            continue;
+        }
+        // A spelling hyphen inside the word joins two pieces: `\-`, a `-` and a word joiner
+        // (as a [`PsalmDisplay`](crate::PsalmDisplay) prints one), U+2011, or a plain `-` with
+        // the cadence mark after it ("pre-·eminence"). At either end of a word it is only text.
         let hyphen = if rest.starts_with("\\-") {
             Some(2)
+        } else if rest.starts_with("-\u{2060}") {
+            Some(1 + WJ.len_utf8())
         } else if rest.starts_with('\u{2011}') || (rest.starts_with("-·") && !text.is_empty()) {
             Some(rest.chars().next().map_or(1, char::len_utf8))
         } else {
