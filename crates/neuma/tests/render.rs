@@ -1186,3 +1186,33 @@ fn svg_lines_keep_their_strings_when_lines_above_change() {
     assert_eq!(a[1].svg, b[1].svg);
     assert_eq!(a[2].svg, b[2].svg);
 }
+
+#[test]
+fn glyph_ids_differ_by_scale() {
+    // Two scores at different sizes on one page: an id names one drawing of a glyph, so a
+    // `<use>` in either finds its own size.
+    let eng = parse("(c4) a(gh) b(ixg) c(e.) (::)").score.engrave(&ApproxMeasure, &NO_INITIAL);
+    let ids = |scale: f32| {
+        let svg = eng
+            .layout(
+                400.0,
+                &LayoutOptions {
+                    scale,
+                    ..LayoutOptions::default()
+                },
+            )
+            .svg(&SvgOptions::default());
+        let defs: std::collections::BTreeSet<String> = svg
+            .split("<path id=\"")
+            .skip(1)
+            .map(|s| s[..s.find('"').unwrap()].to_string())
+            .collect();
+        for href in svg.split("<use href=\"#").skip(1).map(|s| &s[..s.find('"').unwrap()]) {
+            assert!(defs.contains(href), "{href} has no definition");
+        }
+        defs
+    };
+    let (small, large) = (ids(4.0), ids(8.0));
+    assert!(!small.is_empty() && small.is_disjoint(&large), "{small:?} {large:?}");
+    assert_eq!(ids(4.0), small);
+}

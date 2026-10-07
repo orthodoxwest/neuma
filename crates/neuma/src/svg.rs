@@ -336,7 +336,8 @@ fn write_defs(out: &mut String, used: &BTreeSet<u16>, scale: f32, p: &str) {
         if let Some(g) = GlyphId::from_id(*id) {
             let _ = write!(
                 out,
-                r#"<path id="{p}-g{id}" transform="scale({})" d="{}"/>"#,
+                r#"<path id="{p}-s{}-g{id}" transform="scale({})" d="{}"/>"#,
+                scale_tag(scale),
                 format_scale(scale),
                 g.path()
             );
@@ -366,19 +367,27 @@ impl DisplayList {
 /// Writes the elements for `items`; `ids` adds the `data-note` and `data-syllable`
 /// attributes.
 fn write_items(out: &mut String, items: &[Item], p: &str, ids: bool) {
+    // The scale's part of the glyph ids, for the last scale seen (a layout has one).
+    let mut tag: Option<(f32, String)> = None;
     for item in items {
         match item {
             Item::Glyph {
                 glyph,
                 x,
                 y,
+                scale,
                 role,
                 note,
                 through,
-                ..
             } => {
+                let t = match &tag {
+                    Some((s, t)) if s == scale => t,
+                    _ => &tag.insert((*scale, scale_tag(*scale))).1,
+                };
                 out.push_str("<use href=\"#");
                 out.push_str(p);
+                out.push_str("-s");
+                out.push_str(t);
                 out.push_str("-g");
                 crate::decimal::push_u64(out, *glyph as u64);
                 out.push_str("\" x=\"");
@@ -486,6 +495,12 @@ fn write_items(out: &mut String, items: &[Item], p: &str, ids: bool) {
             }
         }
     }
+}
+
+/// The scale as glyph ids carry it: the definition's scale with `_` for the point, so two
+/// scores on one page share a glyph's id only when they draw it alike.
+fn scale_tag(s: f32) -> String {
+    format_scale(s).replace('.', "_")
 }
 
 /// The glyph scale needs more precision than coordinates: four significant decimals.
