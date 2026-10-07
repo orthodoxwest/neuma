@@ -49,6 +49,12 @@ fun main() {
     check(unknown?.message == "no built-in tone 9.z", "unknown tone: ${unknown?.message}")
     val pt = point("O come, let us sing unto the Lord * let us heartily rejoice in the strength of our salvation.", "8.G")
     check(pt.halves.size == 2 && pt.text.contains("·"), "point")
+    // A pointed psalter's display: the tone once, and verses as styled runs.
+    val shown = psalmDisplay("1 Wash me thoróughly · from my wíckedness, † and cleanse me from my sín. * [Sit.] For I ac·knowledge my fáults.", "8.G", PsalmOptions())
+    val runs = shown.verses[0].runs
+    check(runs.joinToString("") { it.text }.startsWith("Wash me thoróughly · from"), "psalm display")
+    check(runs.count { it.syllable?.flexDrop == true } == 2 && runs.any { it.kind == PsalmRunKind.FLEX }, "flex")
+    Chant.fromTone("8.G", ChantOptions()).layout(400f, LayoutOptions()).use { check(it.timeline(Weights()).notes.size == 12, "tone") }
     val src = "(c4) Kŷ-(g)ri(hi) (,) e(h) (::)"
     val ed = Chant(src, ChantOptions(font = LyricFont.GARAMOND12))
     val hyphen = ed.diagnostics().first { it.code == "gabc::hyphen-in-syllable" }

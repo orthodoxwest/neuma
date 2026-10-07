@@ -295,6 +295,50 @@ fn points_psalms() {
 }
 
 #[test]
+fn displays_a_pointed_psalm() {
+    let text = "1 Wash me thoróughly · from my wíckedness, † and cleanse me from my sín. * [Sit.] For I ac·knowledge my fáults.";
+    let d = psalm_display(text.to_string(), "8.G".to_string(), PsalmOptions::default()).unwrap();
+    let v = &d.verses[0];
+    assert_eq!(v.number, Some(1));
+    let line: String = v.runs.iter().map(|r| r.text.as_str()).collect();
+    assert_eq!(
+        line,
+        "Wash me thoróughly · from my wíckedness, † and cleanse me from my sín. * Sit. For I ac·knowledge my fáults."
+    );
+    let marks: Vec<PsalmRunKind> = v
+        .runs
+        .iter()
+        .map(|r| r.kind)
+        .filter(|k| !matches!(k, PsalmRunKind::Text | PsalmRunKind::Syllable))
+        .collect();
+    use PsalmRunKind::*;
+    assert_eq!(marks, [Point, Flex, Mediant, Rubric, Point]);
+    // Syllables carry their place in the text, in both units, and in the tone.
+    let utf16: Vec<u16> = text.encode_utf16().collect();
+    for r in v.runs.iter().filter(|r| r.kind == Syllable) {
+        let s = r.syllable.as_ref().unwrap();
+        assert_eq!(&text[s.source_start as usize..s.source_end as usize], r.text);
+        assert_eq!(
+            String::from_utf16_lossy(&utf16[s.source_utf16_start as usize..s.source_utf16_end as usize]),
+            r.text
+        );
+    }
+    let drops: Vec<&str> = v
+        .runs
+        .iter()
+        .filter(|r| r.syllable.as_ref().is_some_and(|s| s.flex_drop))
+        .map(|r| r.text.as_str())
+        .collect();
+    assert_eq!(drops, ["ed", "ness,"]);
+    assert!(v.runs.iter().all(|r| (r.kind == Syllable) == r.syllable.is_some()));
+    // The tone, drawn once above it, as a chant of its own.
+    let tone = Chant::from_tone("8.G".to_string(), ChantOptions::default()).unwrap();
+    assert_eq!(tone.layout(400.0, options()).timeline(Weights::default()).notes.len(), 12);
+    assert!(Chant::from_tone("9.z".to_string(), ChantOptions::default()).is_err());
+    assert!(psalm_display(text.to_string(), "name: x".to_string(), PsalmOptions::default()).is_err());
+}
+
+#[test]
 fn diagnostics_carry_utf16_offsets_and_fixes() {
     let src = "(c4) Dó-(g)mi(h)nus(h)";
     let d = chant(src).diagnostics();

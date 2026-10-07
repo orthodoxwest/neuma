@@ -188,6 +188,66 @@ block. `chant.psalm()` gives the setting as `psalm` returns it (`gabc`, `notes` 
 note's place in the tone, and `diagnostics`), and `chant.update(text)` sets new text to the
 same tone and updates it. It is null for a chant made from GABC.
 
+### A pointed psalter
+
+Most often a psalm is shown as a pointed psalter prints it: the tone once, as a line of notes
+with no words, and the verses beneath as text with their pointing marks.
+`Chant.fromTone(tone, ChantOptions())` is the tone's line (lay it out with
+`LayoutOptions(lastLine = LastLine.JUSTIFIED)` at about its natural width), and
+`psalmDisplay(text, tone, PsalmOptions())` the verses: each `PsalmVerse` has its `number` and
+its line as `runs`, each a `text` and a `kind` that says how to style it, which fits a styled
+`Text` directly. In Compose:
+
+```kotlin
+val red = Color(0xFFA3211C)
+val display = remember(text) { psalmDisplay(text, "8.G", PsalmOptions()) }
+for (verse in display.verses) {
+    Text(buildAnnotatedString {
+        verse.number?.let { withStyle(SpanStyle(color = red)) { append("$it ") } }
+        for (run in verse.runs) {
+            val style = when (run.kind) {
+                PsalmRunKind.POINT, PsalmRunKind.HELD -> SpanStyle(color = red, fontWeight = FontWeight.Bold)
+                PsalmRunKind.MEDIANT, PsalmRunKind.FLEX -> SpanStyle(color = red)
+                PsalmRunKind.RUBRIC -> SpanStyle(color = red, fontStyle = FontStyle.Italic)
+                PsalmRunKind.SYLLABLE ->
+                    if (run.syllable!!.flexDrop) SpanStyle(fontStyle = FontStyle.Italic) else SpanStyle()
+                PsalmRunKind.TEXT -> SpanStyle()
+            }
+            withStyle(style) { append(run.text) }
+        }
+    })
+}
+```
+
+In SwiftUI:
+
+```swift
+func line(_ verse: PsalmVerse) -> AttributedString {
+    var out = AttributedString(verse.number.map { "\($0) " } ?? "")
+    out.foregroundColor = .red
+    for run in verse.runs {
+        var piece = AttributedString(run.text)
+        switch run.kind {
+        case .point, .held: piece.foregroundColor = .red; piece.inlinePresentationIntent = .stronglyEmphasized
+        case .mediant, .flex: piece.foregroundColor = .red
+        case .rubric: piece.foregroundColor = .red; piece.inlinePresentationIntent = .emphasized
+        case .syllable: if run.syllable?.flexDrop == true { piece.inlinePresentationIntent = .emphasized }
+        case .text: break
+        }
+        out += piece
+    }
+    return out
+}
+// ForEach(display.verses, id: \.sourceStart) { Text(line($0)) }
+```
+
+`·` and `–` are bold red, `*` and `†` red, rubrics red italic, and in a flex the syllables the
+voice drops on (`syllable.flexDrop`) italic. A syllable run's `syllable` also gives its
+`part`, `role` in the tone, `accent`, `wordStart` and its range in the text in both units,
+for a tap or a highlight that follows the singing. Unmarked half-verses are pointed for the
+tone, and the `diagnostics` are `psalm`'s, `point::unsure` among them. `tone` is a built-in
+name or a tone block.
+
 ### Editors
 
 - **Diagnostics** carry `start`/`end` in UTF-8 bytes and `utf16Start`/`utf16End` in UTF-16

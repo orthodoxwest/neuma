@@ -68,6 +68,11 @@ do {
 }
 let pt = try! point(text: "O come, let us sing unto the Lord * let us heartily rejoice in the strength of our salvation.", tone: "8.G")
 check(pt.halves.count == 2 && pt.text.contains("·"), "point")
+let shown = try! psalmDisplay(text: "1 Wash me thoróughly · from my wíckedness, † and cleanse me from my sín. * [Sit.] For I ac·knowledge my fáults.", tone: "8.G", options: PsalmOptions())
+let runs = shown.verses[0].runs
+check(runs.map(\.text).joined().hasPrefix("Wash me thoróughly · from"), "psalm display")
+check(runs.filter { $0.syllable?.flexDrop == true }.count == 2 && runs.contains { $0.kind == .flex }, "flex")
+check(try! Chant.fromTone(tone: "8.G", options: ChantOptions()).layout(width: 400, options: LayoutOptions()).timeline(weights: Weights()).notes.count == 12, "tone")
 let src = "(c4) Kŷ-(g)ri(hi) (,) e(h) (::)"
 let ed = Chant(gabc: src, options: ChantOptions(font: .garamond12))
 let hyphen = ed.diagnostics().first { $0.code == "gabc::hyphen-in-syllable" }!

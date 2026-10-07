@@ -309,6 +309,64 @@ pub fn pointing_json(out: &mut String, p: &neuma_tones::Pointing, text: &Utf16In
     out.push('}');
 }
 
+/// A psalm display: `{ verses: [{ number, sourceStart, sourceEnd, sourceUtf16Start,
+/// sourceUtf16End, runs: [{ text, kind }] }], diagnostics }`. A run's `kind` is `text`,
+/// `syllable`, `point`, `held`, `mediant`, `flex` or `rubric`; a syllable's run also has
+/// `part`, `role`, `accent`, `flexDrop`, `wordStart` and its source in the text.
+pub fn display_json(out: &mut String, d: &neuma_tones::PsalmDisplay, text: &Utf16Index) {
+    use neuma_tones::PsalmRunKind as K;
+    out.push_str("{\"verses\":[");
+    for (i, v) in d.verses().iter().enumerate() {
+        if i > 0 {
+            out.push(',');
+        }
+        out.push_str("{\"number\":");
+        match v.number {
+            Some(n) => {
+                let _ = write!(out, "{n}");
+            }
+            None => out.push_str("null"),
+        }
+        out.push(',');
+        json::source_span(out, &v.span, Some(text));
+        out.push_str(",\"runs\":[");
+        for (j, r) in v.runs.iter().enumerate() {
+            if j > 0 {
+                out.push(',');
+            }
+            out.push_str("{\"text\":");
+            json::string(out, &r.text);
+            let kind = match &r.kind {
+                K::Syllable(s) => {
+                    let _ = write!(
+                        out,
+                        r#","kind":"syllable","part":"{}","role":"{}","accent":{},"flexDrop":{},"wordStart":{},"#,
+                        part_name(s.part),
+                        role_name(s.role),
+                        s.accent,
+                        s.flex_drop,
+                        s.word_start
+                    );
+                    json::source_span(out, &s.span, Some(text));
+                    out.push('}');
+                    continue;
+                }
+                K::Point => "point",
+                K::Held => "held",
+                K::Mediant => "mediant",
+                K::Flex => "flex",
+                K::Rubric => "rubric",
+                _ => "text",
+            };
+            let _ = write!(out, r#","kind":"{kind}"}}"#);
+        }
+        out.push_str("]}");
+    }
+    out.push_str("],\"diagnostics\":");
+    json::diagnostics(out, d.diagnostics(), Some(text));
+    out.push('}');
+}
+
 #[cfg(target_arch = "wasm32")]
 mod ffi;
 #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
@@ -408,6 +466,40 @@ mod tests {
         assert_eq!(elements_at_json(layout, usize::MAX, false), elements_at_json(layout, 16, true));
         assert_eq!(source_at_json(layout, -5.0, -5.0), "null");
         assert!(c.summary_json().contains("\"notes\":2"));
+    }
+
+    #[test]
+    fn a_psalm_display_counts_the_text_in_both_units() {
+        let text = "1 Bléssed is he * that · cómeth. [Stand.]";
+        let tone = neuma_tones::Tone::named("8.G").unwrap();
+        let d = neuma_tones::PsalmDisplay::new(text, tone, &neuma_tones::PsalmOptions::default());
+        let mut out = String::new();
+        display_json(&mut out, &d, &Utf16Index::new(text));
+        assert!(out.starts_with(r#"{"verses":[{"number":1,"sourceStart":0,"sourceEnd":44,"sourceUtf16Start":0,"sourceUtf16End":41,"runs":[{"text":"Bléssed","kind":"syllable","part":"mediant","role":"accent","accent":true,"flexDrop":false,"wordStart":true,"sourceStart":2,"sourceEnd":10,"sourceUtf16Start":2,"sourceUtf16End":9}"#), "{out}");
+        assert!(out.contains(r#"{"text":" ","kind":"text"},{"text":"*","kind":"mediant"}"#), "{out}");
+        assert!(
+            out.contains(r#"{"text":"·","kind":"point"}"#) && out.contains(r#"{"text":"Stand.","kind":"rubric"}"#),
+            "{out}"
+        );
+        assert!(out.contains(r#"}]}],"diagnostics":[{"severity":"info""#), "{out}");
+        serde_check(&out);
+    }
+
+    /// The JSON is well formed: brackets balance outside strings.
+    fn serde_check(json: &str) {
+        let (mut depth, mut in_str, mut esc) = (0i32, false, false);
+        for c in json.chars() {
+            match (in_str, esc, c) {
+                (true, true, _) => esc = false,
+                (true, false, '\\') => esc = true,
+                (true, false, '"') | (false, _, '"') => in_str = !in_str,
+                (false, _, '{' | '[') => depth += 1,
+                (false, _, '}' | ']') => depth -= 1,
+                _ => {}
+            }
+            assert!(depth >= 0);
+        }
+        assert_eq!((depth, in_str), (0, false));
     }
 
     #[test]

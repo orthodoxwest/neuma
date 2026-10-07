@@ -1,4 +1,6 @@
-//! Psalm tones for neuma: pointed English psalm text plus a psalm tone, set as chant.
+//! Psalm tones for neuma: pointed English psalm text plus a psalm tone, set as chant
+//! ([`psalm`], [`PsalmChant`]), or shown as a pointed psalter prints it, the tone once as a
+//! line of notes ([`Tone::gabc`]) over the pointed verses ([`PsalmDisplay`]).
 //!
 //! ```
 //! use neuma_tones::{PsalmChant, PsalmOptions, Tone, psalm};
@@ -17,6 +19,7 @@
 
 mod apply;
 mod chant;
+mod display;
 mod point;
 mod pointed;
 mod syllable;
@@ -24,6 +27,7 @@ mod tone;
 
 pub use apply::{Intone, PsalmNote, PsalmOptions, PsalmSetting, ToneRole, UNSURE, psalm};
 pub use chant::{AnyChant, PsalmChant};
+pub use display::{PsalmDisplay, PsalmRun, PsalmRunKind, PsalmSyllable, PsalmVerse};
 pub use point::{HalfPointing, Pointing, point};
 pub use pointed::VersePart;
 pub use tone::{Cadence, Slot, Tone, ToneError};

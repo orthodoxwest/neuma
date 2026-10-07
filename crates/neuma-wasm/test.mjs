@@ -1,7 +1,7 @@
 // Smoke test for dist/neuma.mjs under Node: `node crates/neuma-wasm/test.mjs`.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { init, Chant, DEFAULT_WEIGHTS, Page, engineStats, noteAtTime, point, psalm, setLayoutBudget, summarize, toneNames } from "./dist/neuma.mjs";
+import { init, Chant, DEFAULT_WEIGHTS, Page, engineStats, noteAtTime, point, psalm, psalmDisplay, setLayoutBudget, summarize, toneNames } from "./dist/neuma.mjs";
 
 await init();
 const gabc = readFileSync(new URL("../neuma/tests/corpus/psalm-134.gabc", import.meta.url), "utf8");
@@ -170,6 +170,28 @@ assert.ok(pt.halves.every((h) => !h.kept && h.confidence > 0 && h.confidence <= 
 assert.ok(pt.text.includes("·") && /[áéíóú]/.test(pt.text));
 assert.equal(psalm(plain, "8.G").gabc, psalm(pt.text, "8.G").gabc);
 assert.ok(psalm(plain, "8.G", { autoPoint: false }).diagnostics.some((d) => d.code === "apply::no-accent"));
+
+// A pointed psalter's display: the tone once, as a line of notes, and the verses as styled
+// runs of text, with each syllable's place in the text (both units) and in the tone.
+const tone = Chant.fromTone("8.G");
+assert.equal(tone.source, "(c4) (g) (h) (j) (k) (j) (j) *(:) (j) (i) (j) (h) (g) (g) (::)");
+assert.equal(tone.layout(400).timeline().notes.length, 12);
+assert.throws(() => Chant.fromTone("9.z"), /no built-in tone/);
+assert.ok(Chant.fromTone("name: mine\nclef: c4\nmediant: f g hr 'g hr h\ntermination: hr g f 'g hr h").source.startsWith("(c4) (f) (g) (h)"));
+const verses = "1 Wash me thoróughly · from my wíckedness, † and cleanse me from my sín. * [Sit.] For I ac·knowledge my fáults.\n2 " + plain;
+const shown = psalmDisplay(verses, "8.G");
+assert.deepEqual(shown.verses.map((v) => v.number), [1, 2]);
+assert.equal(shown.verses[0].runs.map((r) => r.text).join(""), "Wash me thoróughly · from my wíckedness, † and cleanse me from my sín. * Sit. For I ac·knowledge my fáults.");
+assert.deepEqual(shown.verses[0].runs.filter((r) => r.kind !== "text" && r.kind !== "syllable").map((r) => r.kind), ["point", "flex", "mediant", "rubric", "point"]);
+const syls = shown.verses[0].runs.filter((r) => r.kind === "syllable");
+for (const r of syls) assert.equal(verses.slice(r.sourceUtf16Start, r.sourceUtf16End), r.text);
+assert.deepEqual(syls.filter((r) => r.flexDrop).map((r) => r.text), ["ed", "ness,"]);
+assert.ok(syls.find((r) => r.text === "fáults.").accent);
+assert.equal(syls[0].role, "intonation");
+assert.deepEqual(psalmDisplay(plain, "8.G").diagnostics, psalm(plain, "8.G").diagnostics);
+assert.ok(psalmDisplay(plain, "8.G").verses[0].runs.some((r) => r.kind === "point"));
+assert.ok(!psalmDisplay(plain, "8.G", { autoPoint: false }).verses[0].runs.some((r) => r.kind === "point"));
+assert.throws(() => psalmDisplay(plain, "9.z"), /no built-in tone/);
 
 // Editors: offsets in UTF-16 alongside bytes, fixes, updates, and both ways between source
 // and score.

@@ -432,6 +432,39 @@ pub extern "C" fn neuma_point(custom: u32) {
     output(&out);
 }
 
+/// Points psalm text for a tone, verse by verse, for display (see [`tone_and_text`] and
+/// [`neuma_psalm`] for the arguments), leaving the display JSON, or `{"error": …}`, in the
+/// output buffer.
+#[allow(unsafe_code)]
+#[unsafe(no_mangle)]
+pub extern "C" fn neuma_psalm_display(custom: u32, intone: u32, auto_point: u32) {
+    let mut out = String::new();
+    match tone_and_text(custom) {
+        Ok((tone, text)) => {
+            let index = neuma::Utf16Index::new(&text);
+            let d = neuma_tones::PsalmDisplay::new(&text, &tone, &psalm_options(intone, auto_point));
+            crate::display_json(&mut out, &d, &index);
+        }
+        Err(e) => error(&mut out, &e),
+    }
+    output(&out);
+}
+
+/// The tone in the input buffer (a name when `custom` is 0, else a tone block) as one line
+/// of notes with no words (`Tone::gabc`), or `{"error": …}`.
+#[allow(unsafe_code)]
+#[unsafe(no_mangle)]
+pub extern "C" fn neuma_tone_gabc(custom: u32) {
+    match tone_and_text(custom) {
+        Ok((tone, _)) => output(&tone.gabc()),
+        Err(e) => {
+            let mut out = String::new();
+            error(&mut out, &e);
+            output(&out);
+        }
+    }
+}
+
 /// Leaves the built-in tone names, one per line, in the output buffer.
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]

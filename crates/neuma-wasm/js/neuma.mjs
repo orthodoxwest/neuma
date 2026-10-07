@@ -198,6 +198,33 @@ export function point(text, tone) {
   });
 }
 
+/**
+ * Points psalm text for a tone, verse by verse, as a pointed psalter prints it under the tone
+ * (draw the tone itself with `Chant.fromTone`). Half-verses with no marks are pointed
+ * automatically, unless `autoPoint: false`; diagnostics are those `psalm` gives.
+ * @param {string} text a verse per line, the mediant marked `*`
+ * @param {string} tone as for `psalm`
+ * @param {{ intone?: "first"|"every"|"never", autoPoint?: boolean }} [options]
+ * @returns {{ verses: Array<{ number: number|null, sourceStart: number, sourceEnd: number,
+ *   sourceUtf16Start: number, sourceUtf16End: number, runs: Array<object> }>,
+ *   diagnostics: Array<object> }}
+ *   Each verse's `runs`, their `text` joined, is its line after the number. A run's `kind`
+ *   says how to style it: "text" (spaces, a split word's hyphen), "syllable", "point" (`·`,
+ *   bold red), "held" (`–`, bold red), "mediant" (`*`, red), "flex" (`†`, red) or "rubric"
+ *   (red italic). A syllable's run also has `part`, `role` (its place in the tone, as
+ *   `psalm`'s notes name it), `accent`, `flexDrop` (in a flex, where the voice drops:
+ *   italic), `wordStart`, and its source in `text`.
+ */
+export function psalmDisplay(text, tone, { intone = "first", autoPoint = true } = {}) {
+  return guarded((w) => {
+    putInput(String(tone) + "\0" + String(text));
+    w.neuma_psalm_display(isBlock(tone), intone === "every" ? 1 : intone === "never" ? 2 : 0, autoPoint ? 1 : 0);
+    const out = JSON.parse(takeOutput());
+    if (out.error) throw new Error(out.error);
+    return out;
+  });
+}
+
 // A tone block always has `key: value` lines; a tone name never has a colon.
 const isBlock = (tone) => (String(tone).includes(":") ? 1 : 0);
 
@@ -319,6 +346,22 @@ export class Chant {
     };
     chant.#engrave({ source: String(text), args: chantArgs(options), psalm });
     return chant;
+  }
+
+  /**
+   * A psalm tone as one line of notes with no words (the intonation, the mediant's cadence,
+   * a bar, the termination's), as a pointed psalter prints it above the psalm.
+   * @param {string} tone as for `psalm`
+   * @param {object} [options] as the constructor takes (an initial has no words to drop).
+   */
+  static fromTone(tone, options = {}) {
+    const gabc = guarded((w) => {
+      putInput(String(tone));
+      w.neuma_tone_gabc(isBlock(tone));
+      return takeOutput();
+    });
+    if (gabc.startsWith("{")) throw new Error(JSON.parse(gabc).error);
+    return new Chant(gabc, options);
   }
 
   /**

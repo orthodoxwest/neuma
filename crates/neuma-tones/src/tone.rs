@@ -252,6 +252,38 @@ impl Tone {
         };
         format!("{k}{}", self.clef_line)
     }
+
+    /// The tone as one line of notes with no words, as a pointed psalter prints it above the
+    /// psalm: the intonation, the tenor and the mediant's cadence, a bar at the mediant `*`,
+    /// then the tenor and the termination's cadence. Each slot of a formula is one note (or
+    /// neume), an open slot sung once. `neuma::Chant::new(&tone.gabc())` engraves it.
+    ///
+    /// ```
+    /// let tone = neuma_tones::Tone::named("8.G")?;
+    /// assert_eq!(tone.gabc(), "(c4) (g) (h) (j) (k) (j) (j) *(:) (j) (i) (j) (h) (g) (g) (::)");
+    /// # Ok::<(), neuma_tones::ToneError>(())
+    /// ```
+    #[must_use]
+    pub fn gabc(&self) -> String {
+        let mut g = format!("({}) ", self.clef_gabc());
+        let half = |c: &Cadence, intone: bool, g: &mut String| {
+            if intone {
+                for n in &c.lead {
+                    g.push_str(&format!("({n}) "));
+                }
+            }
+            g.push_str(&format!("({}) ", c.tenor));
+            for s in &c.slots {
+                let (Slot::Fixed(n) | Slot::Open(n) | Slot::Accent(n)) = s;
+                g.push_str(&format!("({n}) "));
+            }
+        };
+        half(&self.mediant, true, &mut g);
+        g.push_str("*(:) ");
+        half(&self.termination, false, &mut g);
+        g.push_str("(::)");
+        g
+    }
 }
 
 fn parse_clef(s: &str) -> Result<(ClefKind, u8), ToneError> {
@@ -346,6 +378,26 @@ mod tests {
         assert_eq!(Tone::named("per").unwrap().termination.tenor, "g");
         assert_eq!(Tone::named("9.a"), Err(ToneError::Unknown { name: "9.a".into() }));
         assert_eq!(Tone::named("9.a").unwrap_err().to_string(), "no built-in tone 9.a");
+    }
+
+    #[test]
+    fn tone_as_a_line_of_notes() {
+        let parsed = neuma::parse(&Tone::named("8.G").unwrap().gabc());
+        assert!(parsed.diagnostics.iter().all(|d| d.severity != neuma::Severity::Error));
+        // Every built-in tone reads as GABC with no errors, and has no words.
+        for t in Tone::builtin() {
+            let parsed = neuma::parse(&t.gabc());
+            assert!(
+                parsed.diagnostics.iter().all(|d| d.severity != neuma::Severity::Error),
+                "{}",
+                t.name
+            );
+            assert!(
+                parsed.score.syllables.iter().all(|s| matches!(s.text.plain().trim(), "" | "*")),
+                "{}",
+                t.name
+            );
+        }
     }
 
     #[test]

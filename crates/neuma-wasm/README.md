@@ -391,3 +391,44 @@ instead, with sources in the GABC.
 `point(text, tone)` returns the pointed text itself, `{ text, halves, diagnostics }`, with the
 pointer's confidence (0 to 1) for each half-verse it marked, and each half's source in
 `text`, for an editor to show.
+
+### A pointed psalter
+
+<p align="center">
+  <img src="../../docs/images/pointed-psalm.png" width="600" alt="An antiphon in chant, then Psalm 4 as a pointed psalter prints it: tone 8.G once as a line of notes, and the verses as text with a drop cap, red verse numbers, red pointing marks and an italic syllable before the flex">
+</p>
+
+Most often a psalm is shown as a pointed psalter prints it: the tone once, as a line of
+notes with no words, and the verses beneath as text with their pointing marks.
+`Chant.fromTone(tone, options)` is the tone's line, and `psalmDisplay(text, tone, { intone,
+autoPoint })` the verses, as runs of text to style:
+
+```js
+const tone = Chant.fromTone("8.G");
+// Its own prefix: SVGs at different scales on one page need ids of their own.
+toneHost.innerHTML = tone.layout(300, { scale: 4.5, lastLine: "justified", prefix: "tone" }).svg;
+
+const { verses, diagnostics } = psalmDisplay(text, "8.G");
+const span = (cls, text) => Object.assign(document.createElement("span"), { className: cls, textContent: text });
+for (const v of verses) {
+  const p = document.createElement("p");
+  if (v.number !== null) p.append(span("number", String(v.number)));
+  for (const r of v.runs) {
+    // "point" (·) and "held" (–) bold red, "mediant" (*) and "flex" (†) red, "rubric" red
+    // italic, and in a flex the syllables the voice drops on italic.
+    const s = p.appendChild(span(r.kind, r.text));
+    if (r.flexDrop) s.classList.add("drop");
+  }
+  host.append(p);
+}
+```
+
+A verse's runs, their `text` joined, are its line after the number: the pointed text as
+`point` writes it, without the rubrics' brackets. A syllable's run also has `part`, `role`
+(its first note's place in the tone, as `psalm`'s notes name it), `accent`, `flexDrop`,
+`wordStart` and its source in `text` (`sourceStart` … `sourceUtf16End`), for a tap or a
+highlight that follows the singing. Unmarked half-verses are pointed for the tone, and the
+`diagnostics` are `psalm`'s, `point::unsure` among them.
+[`examples/psalm.html`](examples/psalm.html) draws an antiphon, a psalm's tone and its
+verses this way as you edit the text, and underlines the half-verses the pointer is unsure
+of.

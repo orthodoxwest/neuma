@@ -15,6 +15,9 @@ sh tools/readme/booklet.sh
 cargo build -p neuma-wasm --target wasm32-unknown-unknown --profile wasm
 node crates/neuma-wasm/build.mjs
 node tools/readme/record-editor.mjs
+
+# pointed-psalm.png: the pointed psalm example, drawn in headless Chromium (build as above)
+node tools/readme/record-psalm.mjs
 ```
 
 What each needs:
@@ -30,13 +33,16 @@ What each needs:
   `ffmpeg`. `PLAYWRIGHT` names the module to import if it isn't installed where Node finds it,
   and `FONTS_DIR` serves the Google Fonts stylesheet and files from a local directory (see the
   script's header). It hides the editor's timing readout, which depends on the machine.
+  **`record-psalm.mjs`** needs Playwright with Chromium, and takes the same `PLAYWRIGHT` and
+  `FONTS_DIR`.
 
 The scores: [scores/puer-natus.gabc](scores/puer-natus.gabc) (the example editor's sample,
 with the annotation added) for the hero, the golden test scores
 `salve-regina-simple.gabc` and `regina-caeli-simple.gabc` from
 [crates/neuma/tests/golden](../../crates/neuma/tests/golden) for the reflow and timeline, and
 Psalm 117 from the Book of Common Prayer psalter, [scores/psalm-117.txt](scores/psalm-117.txt), for the
-psalm tone. All are settings of public-domain texts and melodies.
+psalm tone. The pointed psalm is Psalm 4 from the same psalter, partly hand-pointed, with the
+antiphon of examples/compline, both in the example page. All are settings of public-domain texts and melodies.
 
 The crate's library target has no code of its own: it includes the README so that
 `cargo test -p readme-images --doc` compiles and runs the README's Rust snippets.

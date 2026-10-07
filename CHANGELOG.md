@@ -248,3 +248,12 @@ timelines, PDFs). Some behavior did change:
   UTF-16 offsets and fixes on diagnostics; an example editor in
   `crates/neuma-wasm/examples/editor.html`.
 - Mobile bindings: hit tests for editors, UTF-16 offsets and fixes.
+- A pointed psalter's display, for apps that show a psalm as text under its tone rather
+  than in chant over every verse: `Tone::gabc()` (the tone as one line of notes with no
+  words, moved from `neuma-book`, whose output is unchanged), and `PsalmDisplay` in
+  `neuma-tones`, the text pointed verse by verse as styled runs (syllables with their place
+  in the text and the tone, the `·`, `–`, `*` and `†` marks, rubrics), with automatic
+  pointing and `point::unsure` diagnostics as `psalm` gives them. In the browser,
+  `psalmDisplay(text, tone, options)` and `Chant.fromTone(tone, options)`, with an example
+  page, `crates/neuma-wasm/examples/psalm.html`; on mobile, `psalmDisplay(text, tone,
+  PsalmOptions)` returning records and `Chant.fromTone(tone, ChantOptions)`.
