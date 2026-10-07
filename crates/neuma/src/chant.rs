@@ -309,7 +309,7 @@ impl Chant {
             && let Some((parsed, diff)) = crate::gabc::reparse(&self.source, old, marks, gabc)
         {
             self.read = parsed.diagnostics;
-            self.set_source(gabc);
+            self.edit_source(gabc);
             self.engrave(parsed.score, Some(diff));
             self.version = next_version();
             return true;
@@ -340,6 +340,13 @@ impl Chant {
         self.source.clear();
         self.source.push_str(source);
         self.utf16 = Arc::new(Utf16Index::new(source));
+    }
+
+    /// [`set_source`](Self::set_source) for an edit of the current source.
+    fn edit_source(&mut self, source: &str) {
+        self.utf16 = Arc::new(self.utf16.edited(&self.source, source));
+        self.source.clear();
+        self.source.push_str(source);
     }
 
     /// Engraves the score with new options, as when the reader changes the lyric font or

@@ -180,9 +180,6 @@ fn resume(pass: &mut Pass, score: &Score, old: Kept, diff: Option<Diff>) {
         marks: mut old_marks,
         ..
     } = old;
-    // A layout still alive shares the engraving; copy it then, else take it. The copy shares
-    // each segment's ink.
-    let old_eng = Arc::try_unwrap(old_eng).unwrap_or_else(|shared| (*shared).clone());
     let new = &score.syllables;
     let n = new.len();
     // The syllables the edit left alone at the start, and at the end, where they have moved.
@@ -215,36 +212,71 @@ fn resume(pass: &mut Pass, score: &Score, old: Kept, diff: Option<Diff>) {
         None => 0,
     };
 
-    // Roll back to the state before syllable `start`.
+    // Roll back to the state before syllable `start`. A layout still alive shares the
+    // engraving: then its start is copied, and its end read from it; else it is taken apart.
     let at = old_marks[start].clone();
-    let Engraving {
+    let unique = Arc::try_unwrap(old_eng);
+    let (old_eng, shared) = match unique {
+        Ok(e) => (Some(e), None),
+        Err(shared) => (None, Some(shared)),
+    };
+    let (
         mut segments,
-        mut notes,
-        mut syllable_text,
-        mut syllable_spans,
-        mut bar_spans,
-        mut syllable_word,
-        mut alt_text,
-        mut pauses,
-        mut pause_segments,
-        mut diagnostics,
-        ..
-    } = old_eng;
-    let mut old_segments = segments.split_off(at.segments);
+        mut old_segments,
+        notes,
+        mut old_notes,
+        pauses,
+        mut old_pauses,
+        pause_segments,
+        mut old_pause_segments,
+        bar_spans,
+        mut old_bars,
+        diagnostics,
+        mut old_diagnostics,
+        alt_text,
+        old_alt,
+        syllable_text,
+        mut old_text,
+        syllable_spans,
+        mut old_spans,
+        syllable_word,
+        mut old_words,
+    );
+    match (old_eng, &shared) {
+        (Some(e), _) => {
+            (segments, old_segments) = Tail::split(e.segments, at.segments);
+            (notes, old_notes) = Tail::split(e.notes, at.notes);
+            (pauses, old_pauses) = Tail::split(e.pauses, at.pauses);
+            (pause_segments, old_pause_segments) = Tail::split(e.pause_segments, at.pauses);
+            (bar_spans, old_bars) = Tail::split(e.bar_spans, at.bars);
+            (diagnostics, old_diagnostics) = Tail::split(e.diagnostics, at.diagnostics);
+            let mut text = e.alt_text;
+            old_alt = std::borrow::Cow::Owned(text.split_off(at.alt_text));
+            alt_text = text;
+            (syllable_text, old_text) = Tail::split(e.syllable_text, start);
+            (syllable_spans, old_spans) = Tail::split(e.syllable_spans, start);
+            (syllable_word, old_words) = Tail::split(e.syllable_word, start);
+        }
+        (None, Some(e)) => {
+            (segments, old_segments) = Tail::copy(&e.segments, at.segments);
+            (notes, old_notes) = Tail::copy(&e.notes, at.notes);
+            (pauses, old_pauses) = Tail::copy(&e.pauses, at.pauses);
+            (pause_segments, old_pause_segments) = Tail::copy(&e.pause_segments, at.pauses);
+            (bar_spans, old_bars) = Tail::copy(&e.bar_spans, at.bars);
+            (diagnostics, old_diagnostics) = Tail::copy(&e.diagnostics, at.diagnostics);
+            alt_text = e.alt_text[..at.alt_text].to_string();
+            old_alt = std::borrow::Cow::Borrowed(&e.alt_text[at.alt_text..]);
+            (syllable_text, old_text) = Tail::copy(&e.syllable_text, start);
+            (syllable_spans, old_spans) = Tail::copy(&e.syllable_spans, start);
+            (syllable_word, old_words) = Tail::copy(&e.syllable_word, start);
+        }
+        (None, None) => unreachable!("the engraving is either taken or shared"),
+    }
     // The last segment before `start` as it stood then; `start` has notes, so changes it
     // the same way again.
     if let (Some(s), Some(a)) = (segments.last_mut(), at.last_after) {
         s.after = a;
     }
-    let mut old_notes = notes.split_off(at.notes);
-    let mut old_pauses = pauses.split_off(at.pauses);
-    let mut old_pause_segments = pause_segments.split_off(at.pauses);
-    let mut old_bars = bar_spans.split_off(at.bars);
-    let mut old_diagnostics = diagnostics.split_off(at.diagnostics);
-    let old_alt = alt_text.split_off(at.alt_text);
-    let mut old_text = syllable_text.split_off(start);
-    let mut old_spans = syllable_spans.split_off(start);
-    let mut old_words = syllable_word.split_off(start);
     let old_tail_marks = old_marks.split_off(start);
 
     let p = &mut *pass;
@@ -294,12 +326,12 @@ fn resume(pass: &mut Pass, score: &Score, old: Kept, diff: Option<Diff>) {
                 let take = |v: usize, from: usize| v - from;
                 p.e.segments.extend(
                     old_segments
-                        .drain(take(was.segments, base.segments)..take(fin.segments, base.segments))
+                        .take(take(was.segments, base.segments)..take(fin.segments, base.segments))
                         .map(|s| moved_segment(s, d_syl, d_note, d_bar, shift)),
                 );
                 p.e.notes.extend(
                     old_notes
-                        .drain(take(was.notes, base.notes)..take(fin.notes, base.notes))
+                        .take(take(was.notes, base.notes)..take(fin.notes, base.notes))
                         .map(|mut info| {
                             info.syllable = add(info.syllable, d_syl);
                             info.span = shift.span(&info.span);
@@ -309,29 +341,30 @@ fn resume(pass: &mut Pass, score: &Score, old: Kept, diff: Option<Diff>) {
                 );
                 p.e.pauses.extend(
                     old_pauses
-                        .drain(take(was.pauses, base.pauses)..take(fin.pauses, base.pauses))
+                        .take(take(was.pauses, base.pauses)..take(fin.pauses, base.pauses))
                         .map(|(note, kind)| (add(note, d_note), kind)),
                 );
                 p.e.pause_segments.extend(
                     old_pause_segments
-                        .drain(take(was.pauses, base.pauses)..take(fin.pauses, base.pauses))
+                        .take(take(was.pauses, base.pauses)..take(fin.pauses, base.pauses))
                         .map(|s| if s == usize::MAX { s } else { s.wrapping_add_signed(d_seg) }),
                 );
                 p.bar_spans.extend(
                     old_bars
-                        .drain(take(was.bars, base.bars)..take(fin.bars, base.bars))
+                        .take(take(was.bars, base.bars)..take(fin.bars, base.bars))
                         .map(|r| shift.span(&r)),
                 );
                 p.e.sink.items.extend(
                     old_diagnostics
-                        .drain(take(was.diagnostics, base.diagnostics)..take(fin.diagnostics, base.diagnostics))
+                        .take(take(was.diagnostics, base.diagnostics)..take(fin.diagnostics, base.diagnostics))
                         .map(|d| shift.diagnostic(d)),
                 );
                 p.alt_text
                     .push_str(&old_alt[take(was.alt_text, base.alt_text)..take(fin.alt_text, base.alt_text)]);
-                p.syllable_text.extend(old_text.drain(io - start..));
-                p.syllable_spans.extend(old_spans.drain(io - start..).map(|r| shift.span(&r)));
-                p.syllable_word.extend(old_words.drain(io - start..).map(|w| add(w, d_word)));
+                let rest = io - start..m - start;
+                p.syllable_text.extend(old_text.take(rest.clone()));
+                p.syllable_spans.extend(old_spans.take(rest.clone()).map(|r| shift.span(&r)));
+                p.syllable_word.extend(old_words.take(rest).map(|w| add(w, d_word)));
                 let marks = p.marks.as_mut().unwrap();
                 for r in &old_tail_marks[io - start..m - start] {
                     marks.push(moved_mark(r, &now, was, shift));
@@ -342,6 +375,44 @@ fn resume(pass: &mut Pass, score: &Score, old: Kept, diff: Option<Diff>) {
         }
         if let Some(syl) = new.get(i) {
             p.syllable(score, i, syl);
+        }
+    }
+}
+
+/// The end of one of the old engraving's lists, from where engraving starts again: taken
+/// from it, or read from it while a layout shares it.
+enum Tail<'a, T> {
+    Taken(Vec<T>),
+    Shared(&'a [T]),
+}
+
+impl<'a, T: Clone> Tail<'a, T> {
+    /// `v`'s first `at`, and the rest.
+    fn split(mut v: Vec<T>, at: usize) -> (Vec<T>, Tail<'a, T>) {
+        let rest = v.split_off(at);
+        (v, Tail::Taken(rest))
+    }
+
+    /// A copy of `v`'s first `at`, and the rest, shared.
+    fn copy(v: &'a [T], at: usize) -> (Vec<T>, Tail<'a, T>) {
+        let (head, rest) = v.split_at(at);
+        let mut start = Vec::with_capacity(v.len() + 16);
+        start.extend_from_slice(head);
+        (start, Tail::Shared(rest))
+    }
+
+    fn get(&self, k: usize) -> Option<&T> {
+        match self {
+            Tail::Taken(v) => v.get(k),
+            Tail::Shared(v) => v.get(k),
+        }
+    }
+
+    /// The items in `r`, taken once.
+    fn take(&mut self, r: Range<usize>) -> Box<dyn Iterator<Item = T> + '_> {
+        match self {
+            Tail::Taken(v) => Box::new(v.drain(r)),
+            Tail::Shared(v) => Box::new(v[r].iter().cloned()),
         }
     }
 }

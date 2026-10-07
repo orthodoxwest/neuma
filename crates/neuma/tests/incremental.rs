@@ -5,7 +5,7 @@
 //! some rarer notation. `NEUMA_CORPUS=<dir>` runs every `.gabc` in a directory as well (the
 //! GregoBase corpus takes a few minutes in release); `NEUMA_EDITS=<n>` sets the edits per score.
 
-use neuma::{ApproxMeasure, Chant, ChantOptions, Initial, LastLine, LayoutOptions, StyleOptions, SvgOptions, SvgParts, parse};
+use neuma::{ApproxMeasure, Chant, ChantOptions, Initial, LastLine, LayoutOptions, StyleOptions, SvgOptions, SvgParts, Utf16Index, parse};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -215,6 +215,7 @@ fn check(name: &str, src: &str, seed: u64, edits: usize) {
     let style = StyleOptions::default().with_initial(initial);
     let mut chant = chant(&style);
     let mut shown: Option<SvgParts> = None;
+    let mut _held = None;
     let mut width = WIDTHS[rng.below(WIDTHS.len())];
     for step in 0..edits {
         // Now and then the column changes too, as when a window is resized.
@@ -246,6 +247,10 @@ fn check(name: &str, src: &str, seed: u64, edits: usize) {
         shown = Some(cached_parts);
         assert_eq!(cached.timeline(), fresh.timeline(), "{}", what());
         assert_eq!(cached.source_map(), fresh.source_map(), "{}", what());
+        assert_eq!(cached.utf16(), Some(&Utf16Index::new(&src)), "{}", what());
+        // A page still showing the layout shares its engraving, which the next edit then
+        // reads rather than takes.
+        _held = (rng.below(2) == 0).then_some(cached);
         src = edit(&src, &mut rng);
     }
 }

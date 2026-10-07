@@ -426,22 +426,22 @@ struct Spot {
 #[inline(always)]
 fn place(cur: &Cursor, seg: &Space, hyphen: f32, word_space: f32, line_start: f32) -> Spot {
     let mut x = cur.x;
-    match (cur.ink_right, seg.ink) {
+    match (cur.ink_right, seg.ink()) {
         (Some(r), Some((l, _))) => {
             // Notes are spaced by their heads, their ledger lines left to reach toward each
             // other. A bar, a clef or a custos is spaced from the notes beside it as from
             // ledger lines that reach [`LEDGER_NEAR`] past them, so a longer one may come nearer
             // it than the gap, but stay clear of it.
-            let (r, l) = match (cur.spacing_right, seg.spacing) {
+            let (r, l) = match (cur.spacing_right, seg.spacing()) {
                 (Some(r), Some((l, _))) => (r, l),
                 (Some(sr), None) => (r.min(sr + LEDGER_NEAR), l),
                 (None, Some((sl, _))) => (r, l.max(sl - LEDGER_NEAR)),
                 (None, None) => (r, l),
             };
-            let gap = if seg.first {
-                if seg.is_bar || cur.after_bar {
+            let gap = if seg.first() {
+                if seg.is_bar() || cur.after_bar {
                     BAR_GAP
-                } else if seg.word_start {
+                } else if seg.word_start() {
                     NOTES_WORD_GAP
                 } else {
                     NOTES_SYLLABLE_GAP
@@ -454,7 +454,7 @@ fn place(cur: &Cursor, seg: &Space, hyphen: f32, word_space: f32, line_start: f3
         // The notes that start a line after a clef keep the same distance from it, whether
         // they have ledger lines or not; with no clef, their ledger lines start the line.
         (None, Some((l, _))) => {
-            let l = match seg.spacing {
+            let l = match seg.spacing() {
                 Some((sl, _)) if line_start > 0.0 => l.max(sl - LEDGER_NEAR),
                 _ => l,
             };
@@ -463,10 +463,10 @@ fn place(cur: &Cursor, seg: &Space, hyphen: f32, word_space: f32, line_start: f3
         _ => {}
     }
     let mut touching = false;
-    if let Some(t) = &seg.lyric {
+    if let Some(t) = &seg.lyric() {
         // A word ending in a syllable with no text (`quam(e)(/) *()`) leaves the text before
         // it unended; the next word's text still keeps a word space from it.
-        let word_continues = cur.word_continues && !seg.word_start;
+        let word_continues = cur.word_continues && !seg.word_start();
         match cur.lyric_right {
             // A text with its own hyphen may touch the next one, and needs no other.
             Some(r) if word_continues && cur.own_hyphen => {
@@ -488,7 +488,7 @@ fn place(cur: &Cursor, seg: &Space, hyphen: f32, word_space: f32, line_start: f3
             None => x = x.max(-t.ink_left()),
         }
     }
-    let weight = if !seg.first {
+    let weight = if !seg.first() {
         STRETCH_IN_SYLLABLE
     } else if touching {
         0.0
@@ -496,7 +496,7 @@ fn place(cur: &Cursor, seg: &Space, hyphen: f32, word_space: f32, line_start: f3
         1.0
     };
     // Nothing shrinks before a line's first text, which may sit right at the line's start.
-    let shrink = if seg.first && seg.word_start && !seg.is_bar && !cur.after_bar && cur.lyric_right.is_some() {
+    let shrink = if seg.first() && seg.word_start() && !seg.is_bar() && !cur.after_bar && cur.lyric_right.is_some() {
         SHRINK.min(word_space * SHRINK_OF_WORD_SPACE)
     } else {
         0.0
@@ -512,14 +512,14 @@ fn place(cur: &Cursor, seg: &Space, hyphen: f32, word_space: f32, line_start: f3
 fn advance(cur: &Cursor, seg: &Space, x: f32) -> Cursor {
     let mut next = *cur;
     next.x = x;
-    if seg.ink.is_some() {
-        next.after_bar = seg.is_bar;
+    if seg.ink().is_some() {
+        next.after_bar = seg.is_bar();
     }
-    if let Some((_, r)) = seg.ink {
+    if let Some((_, r)) = seg.ink() {
         next.ink_right = Some(x + r);
-        next.spacing_right = seg.spacing.map(|(_, r)| x + r);
+        next.spacing_right = seg.spacing().map(|(_, r)| x + r);
     }
-    if let Some(t) = &seg.lyric {
+    if let Some(t) = &seg.lyric() {
         next.lyric_right = Some(x + t.left + t.width);
         next.lyric_tail = t.tail;
         next.word_continues = !t.word_end;
@@ -552,17 +552,16 @@ struct Closing {
 }
 
 /// What spacing reads of a segment, gathered so the breaker's inner loop needn't reach into
-/// the segment for it.
+/// the segment for it, packed: what is absent reads as zero, and flags say what is present.
 #[derive(Clone, Copy, Debug)]
 struct Space {
-    first: bool,
-    word_start: bool,
-    is_bar: bool,
-    ink: Option<(f32, f32)>,
-    spacing: Option<(f32, f32)>,
+    ink: [f32; 2],
+    spacing: [f32; 2],
     space_before: f32,
-    lyric: Option<Text>,
     right: f32,
+    /// The text's left, width, lead and tail (see [`Text`]).
+    text: [f32; 4],
+    flags: u8,
 }
 
 /// What spacing reads of a segment's text (see [`LyricBox`](crate::engrave::LyricBox)).
@@ -582,47 +581,96 @@ impl Text {
     }
 }
 
+const FIRST: u8 = 1;
+const WORD_START: u8 = 2;
+const IS_BAR: u8 = 4;
+const HAS_INK: u8 = 8;
+const HAS_SPACING: u8 = 16;
+const HAS_TEXT: u8 = 32;
+const WORD_END: u8 = 64;
+const HYPHENATED: u8 = 128;
+
 impl Space {
+    #[inline(always)]
+    fn has(&self, flag: u8) -> bool {
+        self.flags & flag != 0
+    }
+
+    #[inline(always)]
+    fn first(&self) -> bool {
+        self.has(FIRST)
+    }
+
+    #[inline(always)]
+    fn word_start(&self) -> bool {
+        self.has(WORD_START)
+    }
+
+    #[inline(always)]
+    fn is_bar(&self) -> bool {
+        self.has(IS_BAR)
+    }
+
+    #[inline(always)]
+    fn ink(&self) -> Option<(f32, f32)> {
+        self.has(HAS_INK).then_some((self.ink[0], self.ink[1]))
+    }
+
+    #[inline(always)]
+    fn spacing(&self) -> Option<(f32, f32)> {
+        self.has(HAS_SPACING).then_some((self.spacing[0], self.spacing[1]))
+    }
+
+    #[inline(always)]
+    fn lyric(&self) -> Option<Text> {
+        self.has(HAS_TEXT).then_some(Text {
+            left: self.text[0],
+            width: self.text[1],
+            lead: self.text[2],
+            tail: self.text[3],
+            word_end: self.has(WORD_END),
+            hyphenated: self.has(HYPHENATED),
+        })
+    }
+
     /// Where a custos after it is spaced from: the right end of its ink, its ledger lines
     /// counted only [`LEDGER_NEAR`] past its notes.
     fn wall_right(&self) -> Option<f32> {
-        let (_, r) = self.ink?;
-        Some(self.spacing.map_or(r, |(_, s)| r.min(s + LEDGER_NEAR)))
+        let (_, r) = self.ink()?;
+        Some(self.spacing().map_or(r, |(_, s)| r.min(s + LEDGER_NEAR)))
     }
 
     fn of(seg: &Segment) -> Space {
+        let flag = |on: bool, f: u8| if on { f } else { 0 };
+        let pair = |p: Option<(f32, f32)>| p.map_or([0.0; 2], |(a, b)| [a, b]);
+        let t = seg.lyric.as_ref();
         Space {
-            first: seg.first,
-            word_start: seg.word_start,
-            is_bar: seg.is_bar(),
-            ink: seg.ink,
-            spacing: seg.spacing,
+            ink: pair(seg.ink),
+            spacing: pair(seg.spacing),
             space_before: seg.space_before,
-            lyric: seg.lyric.as_ref().map(|t| Text {
-                left: t.left,
-                width: t.width,
-                lead: t.lead,
-                tail: t.tail,
-                word_end: t.word_end,
-                hyphenated: t.hyphenated,
-            }),
             right: seg.right(),
+            text: t.map_or([0.0; 4], |t| [t.left, t.width, t.lead, t.tail]),
+            flags: flag(seg.first, FIRST)
+                | flag(seg.word_start, WORD_START)
+                | flag(seg.is_bar(), IS_BAR)
+                | flag(seg.ink.is_some(), HAS_INK)
+                | flag(seg.spacing.is_some(), HAS_SPACING)
+                | flag(t.is_some(), HAS_TEXT)
+                | flag(t.is_some_and(|t| t.word_end), WORD_END)
+                | flag(t.is_some_and(|t| t.hyphenated), HYPHENATED),
         }
     }
 }
 
 impl PartialEq for Space {
+    /// Floats compare by their bits; what is absent is zero in both.
     fn eq(&self, o: &Space) -> bool {
         let b = f32::to_bits;
-        let pair = |p: Option<(f32, f32)>| p.map(|(x, y)| (b(x), b(y)));
-        let text = |t: Option<Text>| t.map(|t| (b(t.left), b(t.width), b(t.lead), b(t.tail), t.word_end, t.hyphenated));
-        self.first == o.first
-            && self.word_start == o.word_start
-            && self.is_bar == o.is_bar
-            && pair(self.ink) == pair(o.ink)
-            && pair(self.spacing) == pair(o.spacing)
+        self.flags == o.flags
+            && self.ink.map(b) == o.ink.map(b)
+            && self.spacing.map(b) == o.spacing.map(b)
             && b(self.space_before) == b(o.space_before)
-            && text(self.lyric) == text(o.lyric)
+            && self.text.map(b) == o.text.map(b)
             && b(self.right) == b(o.right)
     }
 }
@@ -632,28 +680,51 @@ impl PartialEq for Space {
 #[derive(Clone, Copy, Debug)]
 struct Fit {
     space: Space,
-    end_of_score: bool,
     after: Break,
     /// Where a line starting here starts, after its clef.
     start: f32,
-    closing: Closing,
-    /// The extra demerits for a break after the segment, which hang on the next one too.
-    cost: f64,
-    /// The segment starts the initial's syllable.
-    initial: bool,
+    /// The custos's width, for a line ending here, or 0 if it has none.
+    custos: f32,
+    /// The extra demerits for a break after the segment, which hang on the next one too
+    /// (each a whole number, so as exact in an f32 as in the f64 they are added in).
+    cost: f32,
+    flags: u8,
+}
+
+const END_OF_SCORE: u8 = 1;
+/// The segment starts the initial's syllable.
+const INITIAL: u8 = 2;
+const HAS_CUSTOS: u8 = 4;
+/// A line ending here ends inside a word that goes on.
+const WORD_GOES_ON: u8 = 8;
+
+impl Fit {
+    fn closing(&self) -> Closing {
+        Closing {
+            custos: (self.flags & HAS_CUSTOS != 0).then_some(self.custos),
+            word_goes_on: self.flags & WORD_GOES_ON != 0,
+        }
+    }
+
+    fn initial(&self) -> bool {
+        self.flags & INITIAL != 0
+    }
+
+    #[cfg(test)]
+    fn cost(&self) -> f64 {
+        f64::from(self.cost)
+    }
 }
 
 impl PartialEq for Fit {
     fn eq(&self, o: &Fit) -> bool {
         let b = f32::to_bits;
         self.space == o.space
-            && self.end_of_score == o.end_of_score
             && self.after == o.after
             && b(self.start) == b(o.start)
-            && self.closing.custos.map(b) == o.closing.custos.map(b)
-            && self.closing.word_goes_on == o.closing.word_goes_on
-            && self.cost.to_bits() == o.cost.to_bits()
-            && self.initial == o.initial
+            && b(self.custos) == b(o.custos)
+            && b(self.cost) == b(o.cost)
+            && self.flags == o.flags
     }
 }
 
@@ -674,7 +745,7 @@ struct Candidate {
     /// an edit before it keeps its candidates as they are.
     end: u32,
     demerits: f64,
-    break_cost: f64,
+    break_cost: f32,
 }
 
 /// One line start's candidates in `BreakTable::cands`, and the last segment they read.
@@ -883,7 +954,7 @@ impl Engraving {
         self.next_note.get(last).copied().flatten()
     }
 
-    fn trial(&self, first: usize, last: usize, start: f32) -> Trial {
+    fn trial(&self, fits: &[Fit], first: usize, last: usize, start: f32) -> Trial {
         let mut cur = Cursor {
             ink_right: None,
             spacing_right: None,
@@ -907,8 +978,8 @@ impl Engraving {
         let mut cur_shrunk = cur;
         let mut right_shrunk = 0.0f32;
         let mut ink_end_shrunk = start;
-        for seg in &self.segments[first..=last] {
-            let seg = &Space::of(seg);
+        for fit in &fits[first..=last] {
+            let seg = &fit.space;
             let spot = place(&cur, seg, self.hyphen, self.word_space, start);
             let x = spot.x;
             xs.push(x);
@@ -919,7 +990,7 @@ impl Engraving {
                 }
             }
             weights.push(if xs.len() == 1 { 0.0 } else { spot.weight });
-            if seg.lyric.is_some() {
+            if seg.lyric().is_some() {
                 last_lyric = xs.len() - 1;
             }
             shrinks.push(if xs.len() == 1 { 0.0 } else { spot.shrink });
@@ -938,13 +1009,13 @@ impl Engraving {
             weights,
             touching,
             shrinks,
-            natural: self.natural(&cur, right, ink_end, self.closing(last)),
-            shrunk: self.natural(&cur_shrunk, right_shrunk, ink_end_shrunk, self.closing(last)),
+            natural: self.natural(&cur, right, ink_end, fits[last].closing()),
+            shrunk: self.natural(&cur_shrunk, right_shrunk, ink_end_shrunk, fits[last].closing()),
         }
     }
 
     /// The width of the line `first..=last` set at `xs`, and its ink's right end.
-    fn extent(&self, first: usize, last: usize, xs: &[f32], start: f32) -> (f32, f32) {
+    fn extent(&self, fits: &[Fit], first: usize, last: usize, xs: &[f32], start: f32) -> (f32, f32) {
         let mut cur = Cursor {
             ink_right: None,
             spacing_right: None,
@@ -957,15 +1028,15 @@ impl Engraving {
         };
         let mut right = 0.0f32;
         let mut ink_end = start;
-        for (seg, &x) in self.segments[first..=last].iter().zip(xs) {
-            let seg = &Space::of(seg);
+        for (fit, &x) in fits[first..=last].iter().zip(xs) {
+            let seg = &fit.space;
             cur = advance(&cur, seg, x);
             right = right.max(x + seg.right);
             if let Some(r) = seg.wall_right() {
                 ink_end = ink_end.max(x + r);
             }
         }
-        (self.natural(&cur, right, ink_end, self.closing(last)), ink_end)
+        (self.natural(&cur, right, ink_end, fits[last].closing()), ink_end)
     }
 
     /// Whether the next text after segment `last` is in the same word, so a line ending there
@@ -993,7 +1064,9 @@ impl Engraving {
         right
     }
 
-    /// How a line ending after segment `last` closes, for its width.
+    /// How a line ending after segment `last` closes, for its width: what
+    /// [`closings`](Self::closings) works out for every segment at once.
+    #[cfg(test)]
     fn closing(&self, last: usize) -> Closing {
         Closing {
             custos: self.custos_width(last),
@@ -1017,14 +1090,24 @@ impl Engraving {
             .into_iter()
             .zip(&self.segments)
             .enumerate()
-            .map(|(k, (closing, seg))| Fit {
-                space: Space::of(seg),
-                end_of_score: k + 1 == n,
-                after: seg.after,
-                start: self.start_x(k),
-                closing,
-                cost: self.break_cost(k),
-                initial: self.initial.as_ref().is_some_and(|i| i.syllable == seg.syllable && seg.first),
+            .map(|(k, (closing, seg))| {
+                let cost = self.break_cost(k);
+                debug_assert_eq!(f64::from(cost as f32), cost);
+                let flag = |on: bool, f: u8| if on { f } else { 0 };
+                Fit {
+                    space: Space::of(seg),
+                    after: seg.after,
+                    start: self.start_x(k),
+                    custos: closing.custos.unwrap_or(0.0),
+                    cost: cost as f32,
+                    flags: flag(k + 1 == n, END_OF_SCORE)
+                        | flag(
+                            self.initial.as_ref().is_some_and(|i| i.syllable == seg.syllable && seg.first),
+                            INITIAL,
+                        )
+                        | flag(closing.custos.is_some(), HAS_CUSTOS)
+                        | flag(closing.word_goes_on, WORD_GOES_ON),
+                }
             })
             .collect()
     }
@@ -1228,7 +1311,7 @@ impl Engraving {
                 since_text += spot.weight;
                 gone += spot.shrink;
             }
-            if seg.lyric.is_some() {
+            if seg.lyric().is_some() {
                 since_text = 0.0;
             }
             cur = advance(&cur, seg, x);
@@ -1239,7 +1322,7 @@ impl Engraving {
                 ink_end = ink_end.max(x + r);
                 ink_end_shrunk = ink_end_shrunk.max(x - gone + r);
             }
-            let close = fit.closing;
+            let close = fit.closing();
             let natural = self.natural(&cur, right, ink_end, close);
             let shrink = natural - self.natural(&cur_shrunk, right_shrunk, ink_end_shrunk, close);
             // A line may be a little wider than the column: its word gaps shrink, as
@@ -1254,7 +1337,7 @@ impl Engraving {
             if breakable || stuck {
                 // The initial's syllable keeps to the first line even when too wide for it:
                 // ending before it would part it from the bar or clef written before it.
-                let end = if stuck && last > first && !fit.initial { last - 1 } else { last };
+                let end = if stuck && last > first && !fit.initial() { last - 1 } else { last };
                 let gaps = (last - first) as f32;
                 // A stuck line ends before this segment, so the break it takes is `end`'s.
                 let (ragged, break_cost) = (self.ragged(end, opts), fits[end].cost);
@@ -1332,7 +1415,7 @@ impl Engraving {
     }
 
     /// Sets the line `set` describes across the page.
-    fn shape(&self, set: &LineSet) -> LineShape {
+    fn shape(&self, fits: &[Fit], set: &LineSet) -> LineShape {
         let LineSet {
             first,
             last,
@@ -1342,7 +1425,7 @@ impl Engraving {
             start,
             ..
         } = *set;
-        let trial = self.trial(first, last, start);
+        let trial = self.trial(fits, first, last, start);
         let mut xs = trial.xs.clone();
         let gaps = last - first;
         let mut stretch = 0.0;
@@ -1378,7 +1461,7 @@ impl Engraving {
             }
         }
         // The line's extent as set.
-        let (natural, ink_end) = self.extent(first, last, &xs, start);
+        let (natural, ink_end) = self.extent(fits, first, last, &xs, start);
         let custos = set.custos.map(|p| (p, ink_end + CUSTOS_GAP));
         // Hyphens.
         let mut hyphens = Vec::new();
@@ -1554,7 +1637,7 @@ impl Engraving {
                     continue;
                 }
                 for c in &table.cands[sp.from as usize..sp.to as usize] {
-                    let total = base + c.demerits + c.break_cost;
+                    let total = base + c.demerits + f64::from(c.break_cost);
                     let end = first + c.end as usize;
                     if end + 1 < same {
                         continue;
@@ -1583,7 +1666,6 @@ impl Engraving {
         ranges.reverse();
         table.best = best;
         table.width = w;
-        cache.put(table);
 
         let size = self.lyric_size;
         let mut lines: Vec<PlacedLine> = Vec::new();
@@ -1620,7 +1702,7 @@ impl Engraving {
             let key = self.shape_key(&set);
             let shape = match old_shapes.get(&key) {
                 Some(shape) => Arc::clone(shape),
-                None => Arc::new(self.shape(&set)),
+                None => Arc::new(self.shape(&table.fits, &set)),
             };
             shapes.insert(key, Arc::clone(&shape));
             let has_lyrics = shape.has_lyrics;
@@ -1769,7 +1851,7 @@ impl Engraving {
         // out of a preview count too, so its staves are drawn as in the whole score.
         for &(first, last) in ranges.iter().skip(placed) {
             let start = self.start_x(first);
-            let trial = self.trial(first, last, start);
+            let trial = self.trial(&table.fits, first, last, start);
             let natural = if trial.natural > target {
                 target.max(trial.shrunk)
             } else {
@@ -1778,6 +1860,7 @@ impl Engraving {
             let ragged = self.ragged(last, opts);
             rights.push(if ragged { natural } else { target.max(natural) });
         }
+        cache.put(table);
         let max_width = rights.iter().fold(0.0f32, |a, &b| a.max(b));
         Layout::new(Arc::clone(self), lines, initial, target.max(max_width), height, scale)
     }
@@ -1807,7 +1890,7 @@ mod tests {
         let (_, clef_right) = clef_pieces(&clef.unwrap(), 0.0);
         assert!((start - clef_right - 1.5).abs() < 1e-6);
         // The first note's ink starts there.
-        let x = eng.trial(0, 0, start).xs[0];
+        let x = eng.trial(&eng.fits(), 0, 0, start).xs[0];
         let (left, _) = eng.segments[0].ink.unwrap();
         assert!((x + left - start).abs() < 1e-6);
     }
@@ -1824,7 +1907,7 @@ mod tests {
         ] {
             let eng = parse(src).score.engrave(&ApproxMeasure, &style);
             assert_eq!(eng.segments.len(), 3, "{src}");
-            let t = eng.trial(0, 2, 0.0);
+            let t = eng.trial(&eng.fits(), 0, 2, 0.0);
             let ink = |i: usize| {
                 let (l, r) = eng.segments[i].ink.unwrap();
                 (t.xs[i] + l, t.xs[i] + r)
@@ -1845,7 +1928,7 @@ mod tests {
         let src = format!("(c4) {} (::)", ["Mag(ghg)da(g) le(g)na(h)"; 8].join(" "));
         let base = parse(&src).score.engrave(&ApproxMeasure, &style);
         let n = base.segments.len();
-        let natural = base.trial(0, n - 1, 0.0);
+        let natural = base.trial(&base.fits(), 0, n - 1, 0.0);
         let opts = LayoutOptions::default().with_last_line(LastLine::Justified);
         let mut steps = 0;
         for k in 1..n {
@@ -1979,7 +2062,7 @@ mod tests {
         let (apart, joined) = (fits("(c4) a(g) (hg) (fg) c(g) (::)"), fits("(c4) a(g) (hg)(fg) c(g) (::)"));
         assert_eq!(apart.len(), joined.len());
         let k = 1;
-        assert_eq!((apart[k].cost, joined[k].cost), (WORD_END_DEMERITS, 0.0));
+        assert_eq!((apart[k].cost(), joined[k].cost()), (WORD_END_DEMERITS, 0.0));
         assert!(apart[k] != joined[k]);
         // The cost is all that tells them apart.
         let same_cost = Fit {

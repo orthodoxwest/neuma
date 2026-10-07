@@ -7,7 +7,7 @@ mod reparse;
 mod tex;
 mod write;
 
-pub(crate) use reparse::{Diff, reparse};
+pub(crate) use reparse::{Diff, common_prefix, common_suffix, reparse};
 
 use std::ops::Range;
 

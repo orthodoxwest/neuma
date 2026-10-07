@@ -13,7 +13,7 @@
 
 use std::ops::Range;
 
-use super::{BodyMark, BodyState, LyricState, ParseMarks, Parsed, check_fixes, end_body, find_separator, finish, read_body};
+use super::{BodyMark, BodyState, ParseMarks, Parsed, check_fixes, end_body, find_separator, finish, read_body};
 use crate::diag::{Diagnostic, Sink};
 use crate::score::{Figure, Score, Syllable};
 
@@ -51,21 +51,18 @@ impl Shift {
         d
     }
 
-    fn lyric(self, s: &LyricState) -> LyricState {
+    fn state(self, s: &BodyState) -> BodyState {
         let mut s = s.clone();
-        for t in &mut s.open {
-            t.moved(|p| self.at(p));
-        }
-        for v in s.verbatim_first.iter_mut().flatten() {
-            *v = self.at(*v);
-        }
+        self.move_state(&mut s);
         s
     }
 
-    fn state(self, s: &BodyState) -> BodyState {
-        BodyState {
-            lyric: self.lyric(&s.lyric),
-            unclosed: s.unclosed,
+    fn move_state(self, s: &mut BodyState) {
+        for t in &mut s.lyric.open {
+            t.moved(|p| self.at(p));
+        }
+        for v in s.lyric.verbatim_first.iter_mut().flatten() {
+            *v = self.at(*v);
         }
     }
 
@@ -92,7 +89,7 @@ fn same_moved(old: &Syllable, new: &Syllable, shift: Shift) -> bool {
     old == *new
 }
 
-fn common_prefix(a: &[u8], b: &[u8]) -> usize {
+pub(crate) fn common_prefix(a: &[u8], b: &[u8]) -> usize {
     let n = a.len().min(b.len());
     let mut k = 0;
     // Eight bytes at a time, then byte by byte.
@@ -105,7 +102,7 @@ fn common_prefix(a: &[u8], b: &[u8]) -> usize {
     k
 }
 
-fn common_suffix(a: &[u8], b: &[u8], most: usize) -> usize {
+pub(crate) fn common_suffix(a: &[u8], b: &[u8], most: usize) -> usize {
     let (n, m) = (a.len(), b.len());
     let mut k = 0;
     while k + 8 <= most && a[n - k - 8..n - k] == b[m - k - 8..m - k] {
@@ -201,12 +198,10 @@ pub(crate) fn reparse(old_src: &str, old: &mut Score, keep: &mut ParseMarks, src
             let mut read = fresh_marks.last().map_or(before, |m| m.read);
             for o in &mut marks[k + 1..] {
                 read = read.max(shift.at(o.read));
-                *o = BodyMark {
-                    end: shift.at(o.end),
-                    read,
-                    diagnostics: o.diagnostics.wrapping_add_signed(d_diag),
-                    state: shift.state(&o.state),
-                };
+                o.end = shift.at(o.end);
+                o.read = read;
+                o.diagnostics = o.diagnostics.wrapping_add_signed(d_diag);
+                shift.move_state(&mut o.state);
             }
             let found = sink.items.len();
             sink.items.extend(keep.end.iter().cloned().map(|d| shift.diagnostic(d)));
