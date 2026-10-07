@@ -26,19 +26,19 @@ pub mod vowel;
 
 pub use diag::{Diagnostic, Fix, Severity};
 pub use display::{DisplayList, Item, LineBox, NoteRef, TextRole, TextRun};
-pub use engrave::{AlterationScope, CustosPolicy, Engraving, Initial, Ink, StyleOptions};
+pub use engrave::{AlterationScope, CustosPolicy, EngraveCache, Engraving, Initial, Ink, StyleOptions};
 #[cfg(feature = "fonts")]
 pub use fonts::Font;
 pub use gabc::{Parsed, parse, to_gabc};
 pub use glyphs::{GlyphOutline, glyph_outline};
-pub use layout::{LastLine, Layout, LayoutOptions};
+pub use layout::{LastLine, Layout, LayoutCache, LayoutOptions};
 pub use metrics::MetricsTable;
 pub use notes::{MappedNote, NoteMap, Pause, PauseKind, Weights};
 pub use score::{Score, ScoreBuilder};
 pub use source::{Element, ElementKind, SourceMap, Utf16Index};
 pub use summary::{Mode, OfficePart, Summary, summarize};
 #[cfg(feature = "svg")]
-pub use svg::{SvgLine, SvgOptions, SvgParts};
+pub use svg::{SvgCache, SvgLine, SvgOptions, SvgParts};
 pub use text::{ApproxMeasure, TextMeasure};
 pub use vowel::VowelRules;
 

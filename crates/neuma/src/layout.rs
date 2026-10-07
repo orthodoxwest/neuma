@@ -292,6 +292,195 @@ struct Closing {
     word_goes_on: bool,
 }
 
+/// What the line breaker reads of a segment, so a line whose segments all read the same
+/// breaks the same way. Floats compare by their bits.
+#[derive(Clone, Copy, Debug)]
+struct Fit {
+    first: bool,
+    word_start: bool,
+    is_bar: bool,
+    end_of_score: bool,
+    ink: Option<(f32, f32)>,
+    /// The text's left edge and width, whether it ends its word, and whether it ends with a
+    /// hyphen of its own.
+    lyric: Option<(f32, f32, bool, bool)>,
+    after: Break,
+    space_before: f32,
+    right: f32,
+    /// Where a line starting here starts, after its clef.
+    start: f32,
+    closing: Closing,
+}
+
+impl PartialEq for Fit {
+    fn eq(&self, o: &Fit) -> bool {
+        let b = f32::to_bits;
+        let pair = |p: Option<(f32, f32)>| p.map(|(x, y)| (b(x), b(y)));
+        self.first == o.first
+            && self.word_start == o.word_start
+            && self.is_bar == o.is_bar
+            && self.end_of_score == o.end_of_score
+            && pair(self.ink) == pair(o.ink)
+            && self.lyric.map(|(l, w, e, h)| (b(l), b(w), e, h)) == o.lyric.map(|(l, w, e, h)| (b(l), b(w), e, h))
+            && self.after == o.after
+            && b(self.space_before) == b(o.space_before)
+            && b(self.right) == b(o.right)
+            && b(self.start) == b(o.start)
+            && self.closing.custos.map(b) == o.closing.custos.map(b)
+            && self.closing.word_goes_on == o.closing.word_goes_on
+    }
+}
+
+/// What every line's candidates depend on beyond their own segments.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct BreakKey {
+    target: u32,
+    indent: u32,
+    hyphen: u32,
+    word_space: u32,
+    last_line: LastLine,
+}
+
+/// A break a line may take (see `Engraving::line_candidates`).
+#[derive(Clone, Copy, Debug)]
+struct Candidate {
+    /// The segment the line ends after, counted from the line's first, so a line moved by
+    /// an edit before it keeps its candidates as they are.
+    end: u32,
+    demerits: f64,
+    break_cost: f64,
+}
+
+/// One line start's candidates in `BreakTable::cands`, and the last segment they read.
+#[derive(Clone, Copy, Debug)]
+struct Span {
+    from: u32,
+    to: u32,
+    reach: u32,
+}
+
+/// The candidates of every line start the breaker has needed, for one column and indent,
+/// with the fits they were worked out from.
+#[derive(Clone, Debug)]
+struct BreakTable {
+    key: Option<BreakKey>,
+    fits: Vec<Fit>,
+    /// By line start, then whether the line is indented for the initial.
+    lines: Vec<[Option<Span>; 2]>,
+    cands: Vec<Candidate>,
+    /// The previous layout's table, while this one takes what it can from it.
+    old: Option<Box<BreakTable>>,
+    /// How many leading fits the old table shares, and how many trailing ones.
+    same_head: usize,
+    same_tail: usize,
+}
+
+impl BreakTable {
+    fn empty() -> BreakTable {
+        BreakTable {
+            key: None,
+            fits: Vec::new(),
+            lines: Vec::new(),
+            cands: Vec::new(),
+            old: None,
+            same_head: 0,
+            same_tail: 0,
+        }
+    }
+
+    /// Starts a table for `eng`, keeping this one as the old table to reuse from when it was
+    /// made for the same key.
+    fn refit(&mut self, eng: &Engraving, key: BreakKey) {
+        let fits = eng.fits();
+        let mut old = std::mem::replace(self, BreakTable::empty());
+        old.old = None;
+        let n = fits.len();
+        self.lines = vec![[None, None]; n];
+        if old.key == Some(key) {
+            let m = old.fits.len();
+            let same_head = fits.iter().zip(&old.fits).take_while(|(a, b)| a == b).count();
+            let same_tail = fits.iter().rev().zip(old.fits.iter().rev()).take_while(|(a, b)| a == b).count();
+            self.same_head = same_head;
+            self.same_tail = same_tail.min(n).min(m);
+            self.cands.reserve(old.cands.len());
+            self.old = Some(Box::new(old));
+        }
+        self.key = Some(key);
+        self.fits = fits;
+    }
+
+    /// The candidates of a line starting at `first`, from the old table if its segments are
+    /// unchanged there, else worked out now.
+    fn candidates(&mut self, eng: &Engraving, first: usize, indented: bool, target: f32, opts: &LayoutOptions) -> (usize, usize) {
+        let c = usize::from(indented);
+        if let Some(sp) = self.lines[first][c] {
+            return (sp.from as usize, sp.to as usize);
+        }
+        let n = self.fits.len();
+        let from = self.cands.len();
+        let mut reach = None;
+        if let Some(old) = &self.old {
+            let m = old.fits.len();
+            // Unchanged before the edit: the same segments at the same place.
+            let head = (first < m)
+                .then(|| old.lines[first][c])
+                .flatten()
+                .filter(|sp| (sp.reach as usize) < self.same_head)
+                .map(|sp| (sp, 0isize));
+            // Unchanged after it: the same segments, moved by what the edit added or removed.
+            let tail = || {
+                let moved = first + self.same_tail >= n && first + m >= n;
+                moved
+                    .then(|| old.lines[first + m - n][c])
+                    .flatten()
+                    .map(|sp| (sp, n as isize - m as isize))
+            };
+            if let Some((sp, shift)) = head.or_else(tail) {
+                self.cands.extend_from_slice(&old.cands[sp.from as usize..sp.to as usize]);
+                reach = Some((sp.reach as isize + shift) as usize);
+            }
+        }
+        let reach = match reach {
+            Some(r) => r,
+            None => eng.line_candidates(first, target, opts, &self.fits, &mut self.cands),
+        };
+        let to = self.cands.len();
+        self.lines[first][c] = Some(Span {
+            from: from as u32,
+            to: to as u32,
+            reach: reach as u32,
+        });
+        (from, to)
+    }
+}
+
+/// What [`Engraving::layout_cached`] keeps between layouts: the line breaker's work, so a
+/// layout after a small edit redoes only the lines the edit touched.
+#[derive(Clone, Debug, Default)]
+pub struct LayoutCache {
+    /// Most recent last; one per column and indent the breaker has run with lately.
+    tables: Vec<BreakTable>,
+}
+
+impl LayoutCache {
+    /// Takes the table for `key`, or the most recent one to start over in.
+    fn take(&mut self, key: &BreakKey) -> BreakTable {
+        match self.tables.iter().rposition(|t| t.key.as_ref() == Some(key)) {
+            Some(i) => self.tables.remove(i),
+            None => BreakTable::empty(),
+        }
+    }
+
+    fn put(&mut self, mut table: BreakTable) {
+        table.old = None;
+        // A layout with a wide initial breaks up to three times, at different indents.
+        if self.tables.len() >= 3 {
+            self.tables.remove(0);
+        }
+        self.tables.push(table);
+    }
+}
+
 impl Engraving {
     fn clef_before(&self, first: usize) -> Clef {
         if first == 0 {
@@ -446,6 +635,29 @@ impl Engraving {
         }
     }
 
+    /// The breaker's view of every segment.
+    fn fits(&self) -> Vec<Fit> {
+        let n = self.segments.len();
+        self.closings()
+            .into_iter()
+            .zip(&self.segments)
+            .enumerate()
+            .map(|(k, (closing, seg))| Fit {
+                first: seg.first,
+                word_start: seg.word_start,
+                is_bar: seg.is_bar(),
+                end_of_score: k + 1 == n,
+                ink: seg.ink,
+                lyric: seg.lyric.as_ref().map(|t| (t.left, t.width, t.word_end, t.hyphenated)),
+                after: seg.after,
+                space_before: seg.space_before,
+                right: seg.right(),
+                start: self.line_start(k).1,
+                closing,
+            })
+            .collect()
+    }
+
     /// `closing` for every segment at once, in one pass from the end, so the line breaker
     /// neither measures a custos nor scans ahead for the next text at each step.
     fn closings(&self) -> Vec<Closing> {
@@ -480,16 +692,136 @@ impl Engraving {
         (ragged, cost)
     }
 
+    /// The breaks a line starting at segment `first` may take in a column `target` wide: for
+    /// each, the segment it ends after, the line's demerits and the break's own, in the order
+    /// the breaker tries them. Pushed onto `out`; returns the last segment it looked at.
+    fn line_candidates(&self, first: usize, target: f32, opts: &LayoutOptions, fits: &[Fit], out: &mut Vec<Candidate>) -> usize {
+        let n = self.segments.len();
+        let start = fits[first].start;
+        // Packs the line one segment at a time, as `trial` does, so each candidate costs
+        // one step instead of a repack.
+        let mut cur = Cursor {
+            ink_right: None,
+            lyric_right: None,
+            word_continues: false,
+            own_hyphen: false,
+            after_bar: false,
+            x: start,
+        };
+        let mut right = 0.0f32;
+        let mut ink_end = start;
+        // How far the line's gaps stretch together, relative to a gap between words.
+        let mut stretch_weight = 0.0f32;
+        // The part of it since the last text, which a touching text takes back.
+        let mut since_text = 0.0f32;
+        // How far its word gaps may shrink together, and the line as packed with them
+        // all shrunk (see `Trial::shrunk`).
+        let mut gone = 0.0f32;
+        let mut cur_shrunk = cur;
+        let mut right_shrunk = 0.0f32;
+        let mut ink_end_shrunk = start;
+        // Whether this line has passed a boundary where it may end.
+        let mut breakable_seen = false;
+        for (last, (seg, fit)) in self.segments.iter().zip(fits).enumerate().skip(first) {
+            let end_of_score = last + 1 == n;
+            let forced = matches!(seg.after, Break::Forced { .. });
+            let breakable = end_of_score || forced || matches!(seg.after, Break::Allowed | Break::InMelisma);
+            let spot = place(&cur, seg, self.hyphen, self.word_space, start);
+            let x = spot.x;
+            if spot.touching {
+                stretch_weight -= since_text;
+                since_text = 0.0;
+            }
+            if last > first {
+                stretch_weight += spot.weight;
+                since_text += spot.weight;
+                gone += spot.shrink;
+            }
+            if seg.lyric.is_some() {
+                since_text = 0.0;
+            }
+            cur = advance(&cur, seg, x);
+            cur_shrunk = advance(&cur_shrunk, seg, x - gone);
+            right = right.max(x + seg.right());
+            right_shrunk = right_shrunk.max(x - gone + seg.right());
+            if let Some((_, r)) = seg.ink {
+                ink_end = ink_end.max(x + r);
+                ink_end_shrunk = ink_end_shrunk.max(x - gone + r);
+            }
+            let close = fit.closing;
+            let natural = self.natural(&cur, right, ink_end, close);
+            let shrink = natural - self.natural(&cur_shrunk, right_shrunk, ink_end_shrunk, close);
+            // A line may be a little wider than the column: its word gaps shrink, as
+            // GregorioTeX's glue does.
+            let over = natural > target + shrink;
+            let squeezed = natural > target && !over;
+            // Past the width with only forbidden breaks behind it, as in an unclosed
+            // `<nlba>`: the line ends at the last of them, or after this segment when it
+            // alone is too wide, rather than nowhere, which left the walk back to set every
+            // segment on a line of its own.
+            let stuck = over && !breakable_seen;
+            if breakable || stuck {
+                let end = if stuck && last > first { last - 1 } else { last };
+                let gaps = (last - first) as f32;
+                // A stuck line ends before this segment, so the break it takes is `end`'s.
+                let (ragged, break_cost) = self.line_end(end, opts);
+                let badness = if over {
+                    if last == first || stuck { 10000.0 } else { f32::INFINITY }
+                } else if squeezed {
+                    let r = (natural - target) / shrink;
+                    (100.0 * r * r * r).min(10000.0)
+                } else if ragged {
+                    0.0
+                } else if gaps == 0.0 {
+                    // As bad as the loosest line with gaps, so splitting a loose line
+                    // into one-segment lines never looks cheaper.
+                    if target - natural > 0.5 { 10000.0 } else { 0.0 }
+                } else {
+                    // A line of one word whose syllables touch can only stretch evenly, if at all.
+                    let capacity = if stretch_weight > 0.0 { stretch_weight } else { gaps };
+                    let r = (target - natural) / (capacity * STRETCH);
+                    (100.0 * r * r * r).min(10000.0)
+                };
+                if badness.is_finite() {
+                    // As GregorioTeX (looseness -1, tolerance 9000): as few lines as can be
+                    // set no looser than it allows, the best of those by demerits.
+                    // In f64: a long score's sum of line penalties would swamp f32.
+                    let b = f64::from(badness);
+                    let d = (10.0 + b) * (10.0 + b) + LINE_PENALTY + TOO_LOOSE * (b - f64::from(TOLERANCE)).max(0.0);
+                    // A syllable's end is a better break than a cut inside its melisma.
+                    out.push(Candidate {
+                        end: (end - first) as u32,
+                        demerits: d,
+                        break_cost,
+                    });
+                }
+            }
+            if forced || over {
+                return last;
+            }
+            breakable_seen |= breakable;
+        }
+        n - 1
+    }
+
     /// Lays the engraving out at `width` output units.
     pub fn layout(&self, width: f32, opts: &LayoutOptions) -> Layout<'_> {
-        let mut layout = self.layout_with(width, opts, None);
+        self.layout_cached(width, opts, &mut LayoutCache::default())
+    }
+
+    /// Lays the engraving out as [`layout`](Self::layout) does, reusing the line breaker's
+    /// work from the last layout made with `cache` wherever the engraving is unchanged. The
+    /// layout is the same as without the cache; a small edit costs a few lines' breaking
+    /// rather than the score's.
+    pub fn layout_cached(&self, width: f32, opts: &LayoutOptions, cache: &mut LayoutCache) -> Layout<'_> {
+        let mut layout = self.layout_with(width, opts, None, cache);
         // A capital spanning staves farther apart than the nominal pitch is wider than the
         // column the breaker left for it; break again with room for it. A new break can
         // change the span, so allow one more try before narrowing the capital to fit.
         for _ in 0..2 {
             match layout.initial {
                 Some(placed) if placed.natural_width > placed.column + 0.01 => {
-                    layout = self.layout_with(width, opts, Some(placed.natural_width));
+                    layout = self.layout_with(width, opts, Some(placed.natural_width), cache);
                 }
                 _ => break,
             }
@@ -497,7 +829,7 @@ impl Engraving {
         layout
     }
 
-    fn layout_with(&self, width: f32, opts: &LayoutOptions, column: Option<f32>) -> Layout<'_> {
+    fn layout_with(&self, width: f32, opts: &LayoutOptions, column: Option<f32>, cache: &mut LayoutCache) -> Layout<'_> {
         let scale = if opts.scale > 0.0 && opts.scale.is_finite() {
             opts.scale
         } else {
@@ -526,121 +858,36 @@ impl Engraving {
         // best[k][j]: least demerits for lines ending just before segment k, with j lines so
         // far (capped at `indented`), and where the last line started and its own j.
         let mut best: Vec<Vec<Option<(f64, usize, usize)>>> = vec![vec![None; indented + 1]; n + 1];
-        // How each candidate line closes, worked out once rather than at every step.
-        let closings = self.closings();
+        // Each line's candidate breaks depend only on its own segments, so they come from the
+        // cache when those are unchanged (see `BreakTable`).
+        let key = BreakKey {
+            target: target.to_bits(),
+            indent: indent.to_bits(),
+            hyphen: self.hyphen.to_bits(),
+            word_space: self.word_space.to_bits(),
+            last_line: opts.last_line,
+        };
+        let mut table = cache.take(&key);
+        table.refit(self, key);
         best[0][0] = Some((0.0, 0, 0));
         for first in 0..n {
             for j in 0..=indented {
                 let Some((base, _, _)) = best[first][j] else { continue };
                 let next = (j + 1).min(indented);
-                let target = if j < indented { target - indent } else { target };
-                let (_, start) = self.line_start(first);
-                // Packs the line one segment at a time, as `trial` does, so each candidate costs
-                // one step instead of a repack.
-                let mut cur = Cursor {
-                    ink_right: None,
-                    lyric_right: None,
-                    word_continues: false,
-                    own_hyphen: false,
-                    after_bar: false,
-                    x: start,
-                };
-                let mut right = 0.0f32;
-                let mut ink_end = start;
-                // How far the line's gaps stretch together, relative to a gap between words.
-                let mut stretch_weight = 0.0f32;
-                // The part of it since the last text, which a touching text takes back.
-                let mut since_text = 0.0f32;
-                // How far its word gaps may shrink together, and the line as packed with them
-                // all shrunk (see `Trial::shrunk`).
-                let mut gone = 0.0f32;
-                let mut cur_shrunk = cur;
-                let mut right_shrunk = 0.0f32;
-                let mut ink_end_shrunk = start;
-                // Whether this line has passed a boundary where it may end.
-                let mut breakable_seen = false;
-                for last in first..n {
-                    let seg = &self.segments[last];
-                    let end_of_score = last + 1 == n;
-                    let forced = matches!(seg.after, Break::Forced { .. });
-                    let breakable = end_of_score || forced || matches!(seg.after, Break::Allowed | Break::InMelisma);
-                    let spot = place(&cur, seg, self.hyphen, self.word_space, start);
-                    let x = spot.x;
-                    if spot.touching {
-                        stretch_weight -= since_text;
-                        since_text = 0.0;
+                let indented_line = j < indented;
+                let line_target = if indented_line { target - indent } else { target };
+                let (from, to) = table.candidates(self, first, indented_line, line_target, opts);
+                for c in &table.cands[from..to] {
+                    let total = base + c.demerits + c.break_cost;
+                    let end = first + c.end as usize;
+                    let better = best[end + 1][next].is_none_or(|(b, _, _)| total < b);
+                    if better {
+                        best[end + 1][next] = Some((total, first, j));
                     }
-                    if last > first {
-                        stretch_weight += spot.weight;
-                        since_text += spot.weight;
-                        gone += spot.shrink;
-                    }
-                    if seg.lyric.is_some() {
-                        since_text = 0.0;
-                    }
-                    cur = advance(&cur, seg, x);
-                    cur_shrunk = advance(&cur_shrunk, seg, x - gone);
-                    right = right.max(x + seg.right());
-                    right_shrunk = right_shrunk.max(x - gone + seg.right());
-                    if let Some((_, r)) = seg.ink {
-                        ink_end = ink_end.max(x + r);
-                        ink_end_shrunk = ink_end_shrunk.max(x - gone + r);
-                    }
-                    let close = closings.get(last).copied().unwrap_or_default();
-                    let natural = self.natural(&cur, right, ink_end, close);
-                    let shrink = natural - self.natural(&cur_shrunk, right_shrunk, ink_end_shrunk, close);
-                    // A line may be a little wider than the column: its word gaps shrink, as
-                    // GregorioTeX's glue does.
-                    let over = natural > target + shrink;
-                    let squeezed = natural > target && !over;
-                    // Past the width with only forbidden breaks behind it, as in an unclosed
-                    // `<nlba>`: the line ends at the last of them, or after this segment when it
-                    // alone is too wide, rather than nowhere, which left the walk back to set every
-                    // segment on a line of its own.
-                    let stuck = over && !breakable_seen;
-                    if breakable || stuck {
-                        let end = if stuck && last > first { last - 1 } else { last };
-                        let gaps = (last - first) as f32;
-                        // A stuck line ends before this segment, so the break it takes is `end`'s.
-                        let (ragged, break_cost) = self.line_end(end, opts);
-                        let badness = if over {
-                            if last == first || stuck { 10000.0 } else { f32::INFINITY }
-                        } else if squeezed {
-                            let r = (natural - target) / shrink;
-                            (100.0 * r * r * r).min(10000.0)
-                        } else if ragged {
-                            0.0
-                        } else if gaps == 0.0 {
-                            // As bad as the loosest line with gaps, so splitting a loose line
-                            // into one-segment lines never looks cheaper.
-                            if target - natural > 0.5 { 10000.0 } else { 0.0 }
-                        } else {
-                            // A line of one word whose syllables touch can only stretch evenly, if at all.
-                            let capacity = if stretch_weight > 0.0 { stretch_weight } else { gaps };
-                            let r = (target - natural) / (capacity * STRETCH);
-                            (100.0 * r * r * r).min(10000.0)
-                        };
-                        if badness.is_finite() {
-                            // As GregorioTeX (looseness -1, tolerance 9000): as few lines as can be
-                            // set no looser than it allows, the best of those by demerits.
-                            // In f64: a long score's sum of line penalties would swamp f32.
-                            let b = f64::from(badness);
-                            let d = (10.0 + b) * (10.0 + b) + LINE_PENALTY + TOO_LOOSE * (b - f64::from(TOLERANCE)).max(0.0);
-                            // A syllable's end is a better break than a cut inside its melisma.
-                            let total = base + d + break_cost;
-                            let better = best[end + 1][next].is_none_or(|(b, _, _)| total < b);
-                            if better {
-                                best[end + 1][next] = Some((total, first, j));
-                            }
-                        }
-                    }
-                    if forced || over {
-                        break;
-                    }
-                    breakable_seen |= breakable;
                 }
             }
         }
+        cache.put(table);
         // Walk back from the end, from the cheapest final state.
         let mut ranges = Vec::new();
         let mut k = n;

@@ -95,7 +95,8 @@ pub extern "C" fn chant_free(handle: u32) {
 /// Lays out at `width`, keeping at most `max_lines` lines (0 for all), with the weights as
 /// ten numbers (NaN keeps a default) and the SVG class prefix in the input buffer. `flags`:
 /// 1 leaves out the timeline, 2 makes the SVG in parts (see `Chant::layout_with`), 4 leaves
-/// out `data-note` and `data-syllable`. Leaves the layout JSON in the output buffer;
+/// out `data-note` and `data-syllable`, 8 (with 2) gives a line the last layout in parts
+/// also had by its index there (`SvgOutput::ChangedLines`). Leaves the layout JSON in the output buffer;
 /// returns 0 for an unknown handle.
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
@@ -132,7 +133,11 @@ pub extern "C" fn chant_layout(
     };
     let outputs = Outputs {
         timeline: flags & 1 == 0,
-        svg: if flags & 2 != 0 { SvgOutput::Lines } else { SvgOutput::Whole },
+        svg: match flags & 10 {
+            10 => SvgOutput::ChangedLines,
+            2 => SvgOutput::Lines,
+            _ => SvgOutput::Whole,
+        },
     };
     with_chant(handle, |c| {
         c.layout_with(width, &opts, &weights, &svg, outputs);

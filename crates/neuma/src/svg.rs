@@ -78,7 +78,29 @@ impl Layout<'_> {
     /// down keeps the same string. With `opts.ids` off, a line also keeps its string when
     /// notes are added or removed before it.
     pub fn svg_parts(&self, opts: &SvgOptions) -> SvgParts {
+        self.svg_parts_cached(opts, &mut SvgCache::default())
+    }
+
+    /// As [`Layout::svg_parts`], taking each line's SVG from `cache` when the line draws the
+    /// same as one the cache saw last time (and keeping this layout's lines there for the
+    /// next). After a small edit most lines draw as before, so only the lines it touched
+    /// are written again; the result is the same as `svg_parts`.
+    pub fn svg_parts_cached(&self, opts: &SvgOptions, cache: &mut SvgCache) -> SvgParts {
         let p = prefix(opts);
+        if cache.prefix != p || cache.ids != opts.ids {
+            *cache = SvgCache {
+                prefix: p.clone(),
+                ids: opts.ids,
+                ..SvgCache::default()
+            };
+        }
+        let mut old: Vec<Option<CachedLine>> = std::mem::take(&mut cache.lines).into_iter().map(Some).collect();
+        let mut by_hash: std::collections::HashMap<u64, Vec<usize>> = std::collections::HashMap::with_capacity(old.len());
+        for (k, l) in old.iter().enumerate() {
+            if let Some(l) = l {
+                by_hash.entry(l.hash).or_default().push(k);
+            }
+        }
         let s = self.scale;
         let one = |line: crate::layout::PlacedLine, initial| Layout {
             eng: self.eng,
@@ -91,18 +113,38 @@ impl Layout<'_> {
         let mut used = BTreeSet::new();
         let mut glyph_scale = None;
         let mut lines = Vec::with_capacity(self.lines.len());
+        cache.reused.clear();
         for line in &self.lines {
             let top = line.top;
-            let mut shifted = line.clone();
-            shifted.top = 0.0;
-            shifted.staff -= top;
-            shifted.baseline -= top;
-            shifted.bottom -= top;
-            let items = one(shifted, None).display().items;
+            let mut items = Vec::new();
+            self.push_line(&mut items, line, top);
             note_glyphs(&items, &mut used, &mut glyph_scale);
-            let mut svg = String::with_capacity(items.len() * 96);
-            write_items(&mut svg, &items, &p, opts.ids);
-            lines.push(SvgLine { top: top * s, svg });
+            if !opts.ids {
+                // Without ids, a line draws the same whatever its notes' and syllables'
+                // numbers, which an edit before it changes.
+                strip_ids(&mut items);
+            }
+            let hash = hash_items(&items);
+            let seen = by_hash
+                .get(&hash)
+                .and_then(|ks| ks.iter().copied().find(|&k| old[k].as_ref().is_some_and(|l| l.items == items)));
+            let svg = match seen.and_then(|k| old[k].take()) {
+                Some(l) => {
+                    cache.reused.push(seen);
+                    l.svg
+                }
+                None => {
+                    cache.reused.push(None);
+                    let mut svg = String::with_capacity(items.len() * 96);
+                    write_items(&mut svg, &items, &p, opts.ids);
+                    svg
+                }
+            };
+            lines.push(SvgLine {
+                top: top * s,
+                svg: svg.clone(),
+            });
+            cache.lines.push(CachedLine { hash, items, svg });
         }
         // The initial and annotations, which hang beside the first lines.
         let mut rest = String::new();
@@ -129,6 +171,73 @@ impl Layout<'_> {
             rest,
         }
     }
+}
+
+/// What [`Layout::svg_parts_cached`] keeps between layouts: each line's drawing and SVG.
+#[derive(Clone, Debug, Default)]
+pub struct SvgCache {
+    prefix: String,
+    ids: bool,
+    lines: Vec<CachedLine>,
+    reused: Vec<Option<usize>>,
+}
+
+impl SvgCache {
+    /// For each line of the last [`Layout::svg_parts_cached`], the line of the call before
+    /// it whose SVG it took, if it took one: a page that kept those lines' SVG need not read
+    /// it again.
+    pub fn reused(&self) -> &[Option<usize>] {
+        &self.reused
+    }
+}
+
+#[derive(Clone, Debug)]
+struct CachedLine {
+    hash: u64,
+    items: Vec<Item>,
+    svg: String,
+}
+
+/// Clears the note and syllable numbers, which only ids write.
+fn strip_ids(items: &mut [Item]) {
+    for i in items {
+        match i {
+            Item::Glyph { note, through, .. } | Item::Rect { note, through, .. } => {
+                *note = None;
+                *through = None;
+            }
+            Item::Text { syllable, .. } => *syllable = None,
+        }
+    }
+}
+
+/// A hash of `items` that agrees with their equality (numbers equal as floats hash alike),
+/// quick rather than strong: a match is confirmed by comparing the items.
+fn hash_items(items: &[Item]) -> u64 {
+    let mut h = items.len() as u64;
+    let mut mix = |v: u64| h = (h.rotate_left(5) ^ v).wrapping_mul(0x517c_c1b7_2722_0a95);
+    let f = |v: f32| if v == 0.0 { 0 } else { v.to_bits() as u64 };
+    for i in items {
+        match i {
+            Item::Glyph { glyph, x, y, .. } => {
+                mix(*glyph as u64);
+                mix(f(*x) << 32 | f(*y));
+            }
+            Item::Rect { x, y, w, h, .. } => {
+                mix(f(*x) << 32 | f(*y));
+                mix(f(*w) << 32 | f(*h));
+            }
+            Item::Text { x, baseline, runs, .. } => {
+                mix(f(*x) << 32 | f(*baseline));
+                for r in runs {
+                    for b in r.text.bytes() {
+                        mix(b as u64);
+                    }
+                }
+            }
+        }
+    }
+    h
 }
 
 /// A layout's SVG in parts (see [`Layout::svg_parts`]).
