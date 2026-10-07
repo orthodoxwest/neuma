@@ -108,8 +108,6 @@ fn special_source(c: char) -> Option<&'static str> {
     })
 }
 
-/// Whether `text` is made only of characters that `<sp>` produces: a bare `A` counts only
-/// as part of `A\u{0336}`, and an acute only after `œ`.
 /// Whether some and whether all of `text` is specials that are red by themselves.
 fn red_specials(text: &str) -> (bool, bool) {
     let (mut some, mut all) = (false, !text.is_empty());
@@ -122,6 +120,8 @@ fn red_specials(text: &str) -> (bool, bool) {
     (some, all)
 }
 
+/// Whether `text` is made only of characters that `<sp>` produces: a bare `A` counts only
+/// as part of `A\u{0336}`, and an acute only after `œ`.
 fn all_special(text: &str) -> bool {
     let mut chars = text.chars().peekable();
     while let Some(c) = chars.next() {
