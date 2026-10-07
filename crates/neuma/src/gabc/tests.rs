@@ -509,3 +509,17 @@ fn writer_is_stable_on_fuzz_finds() {
     assert_eq!(p.score.header.get("commentary"), Some("one\ntwo"));
     assert!(p.score.to_gabc().starts_with("commentary: one\ntwo;;\n"));
 }
+
+/// A second clef cut off at the end of the notes (`(c5@c`) used to give a diagnostic past the
+/// end of the source. Found by the parse fuzz target.
+#[test]
+fn unfinished_double_clef() {
+    for src in ["(c5@c", "(c4@cb", "(c4@f", "(c4@c3)", "(c4@cb3 g)"] {
+        let p = parse(src);
+        for d in &p.diagnostics {
+            assert!(d.span.end <= src.len(), "{src:?}: {d}");
+        }
+    }
+    let p = parse("(c4@c3)");
+    assert!(p.diagnostics.iter().any(|d| d.code == "gabc::double-clef"));
+}
