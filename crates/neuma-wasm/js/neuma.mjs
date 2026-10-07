@@ -55,13 +55,23 @@ function ready() {
   return wasm;
 }
 
-/** Runs `f` against the engine. A trap leaves the instance unusable, so it is dropped. */
+/**
+ * Whether `e`, thrown while the engine ran, may have stopped it partway through: a trap
+ * (`unreachable`, out-of-bounds memory) or a stack overflow, which engines report as a
+ * `RangeError` ("Maximum call stack size exceeded") rather than a trap.
+ */
+const isCrash = (e) => e instanceof WebAssembly.RuntimeError || e instanceof RangeError;
+
+/**
+ * Runs `f` against the engine. A trap or stack overflow can leave the instance's memory
+ * half-updated, so the instance is dropped and `init()` must start a fresh one.
+ */
 function guarded(f) {
   const w = ready();
   try {
     return f(w);
   } catch (e) {
-    if (e instanceof WebAssembly.RuntimeError) {
+    if (isCrash(e)) {
       wasm = null;
       crashed = e;
     }

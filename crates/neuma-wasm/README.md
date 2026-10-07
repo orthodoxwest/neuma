@@ -72,9 +72,9 @@ on that line, or `null`. `chant.free()` releases the score; using a freed `Chant
 Weights default to `DEFAULT_WEIGHTS`: one pulse per note, two for a dotted note, and pauses
 that grow with the bar. Any key you pass with a number overrides its default.
 
-If the engine ever stops on an internal error, that call throws and so does every later one
-until you call `init()` again, which starts a fresh engine. Make the `Chant`s again after
-that.
+If the engine ever stops on an internal error (a WebAssembly trap, or a `RangeError` for a
+stack overflow), that call throws and so does every later one until you call `init()` again,
+which starts a fresh engine. Make the `Chant`s again after that.
 
 ## Library entries
 
