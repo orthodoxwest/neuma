@@ -137,9 +137,31 @@ pub(crate) fn profile(runs: &[LyricRun], measure: &dyn TextMeasure, size: f32) -
     let mut out: Vec<(f32, f32, f32)> = Vec::new();
     let mut x = 0.0;
     for r in runs {
+        if r.text.is_empty() {
+            continue;
+        }
+        // Where the text up to byte `k` ends. Measured only where an entry starts or ends:
+        // letters of one height in a row make one entry, with nothing to measure between them.
+        // The last one measured is kept, as an entry's end is often the next one's start.
+        let last_at = std::cell::Cell::new((0, x));
+        let at = |k: usize| {
+            let (j, v) = last_at.get();
+            if j == k {
+                return v;
+            }
+            let v = x + measure.advance(&r.text[..k], r.style) * size;
+            last_at.set((k, v));
+            v
+        };
+        // The last entry's last letter, while that entry is open in this run: the byte it ends
+        // at, and how far its ink runs past it. Its right edge is measured once it closes.
+        let mut open: Option<(usize, f32)> = None;
+        let close = |out: &mut Vec<(f32, f32, f32)>, open: &mut Option<(usize, f32)>| {
+            if let (Some((end, tail)), Some(last)) = (open.take(), out.last_mut()) {
+                last.1 = at(end) + tail * size;
+            }
+        };
         for (k, c) in r.text.char_indices() {
-            let left = x + measure.advance(&r.text[..k], r.style) * size;
-            let right = x + measure.advance(&r.text[..k + c.len_utf8()], r.style) * size;
             if ('\u{300}'..='\u{36f}').contains(&c) {
                 // A combining accent raises the letter before it.
                 if let Some(last) = out.last_mut() {
@@ -153,13 +175,27 @@ pub(crate) fn profile(runs: &[LyricRun], measure: &dyn TextMeasure, size: f32) -
             }
             let top = char_top(c, r.style.small_caps) * size;
             let (lead, tail) = side_overhang(c, r.style.italic);
-            let (left, right) = (left - lead * size, right + tail * size);
-            match out.last_mut() {
-                Some(last) if last.2 == top && (last.1 - left).abs() < 1e-4 => last.1 = right,
-                _ => out.push((left, right, top)),
+            let end = k + c.len_utf8();
+            let joins = match (out.last(), open) {
+                // Right after the entry's last letter, of its height, neither overhanging the
+                // other: both edges are where the text up to here ends.
+                (Some(last), Some((e, t))) if last.2 == top && e == k && t == 0.0 && lead == 0.0 => true,
+                (Some(last), _) if last.2 == top => {
+                    close(&mut out, &mut open);
+                    let left = at(k) - lead * size;
+                    out.last().is_some_and(|last| (last.1 - left).abs() < 1e-4)
+                }
+                _ => false,
+            };
+            if !joins {
+                close(&mut out, &mut open);
+                let left = at(k) - lead * size;
+                out.push((left, left, top));
             }
+            open = Some((end, tail));
         }
-        x += measure.advance(&r.text, r.style) * size;
+        close(&mut out, &mut open);
+        x = at(r.text.len());
     }
     out.retain(|e| e.2 > 0.0);
     out
