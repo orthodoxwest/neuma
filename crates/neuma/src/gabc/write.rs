@@ -24,12 +24,14 @@ pub fn to_gabc(score: &Score) -> String {
     for (i, syl) in score.syllables.iter().enumerate() {
         // `<nlba>` spans the syllables that may not break apart, so it opens before the
         // syllable ahead of the first forbidden break and closes once the run ends.
+        // The space between words goes before `</nlba>`: after it, the space would be part
+        // of the syllable's text and the words would run together.
+        if i > 0 && syl.word_start {
+            out.push(' ');
+        }
         if nlba && !syl.no_break_before && !syl.no_break_within {
             out.push_str("</nlba>");
             nlba = false;
-        }
-        if i > 0 && syl.word_start {
-            out.push(' ');
         }
         if !nlba && (syl.no_break_within || score.syllables.get(i + 1).is_some_and(|n| n.no_break_before)) {
             out.push_str("<nlba>");
