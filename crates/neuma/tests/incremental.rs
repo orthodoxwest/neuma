@@ -214,6 +214,7 @@ fn check(name: &str, src: &str, seed: u64, edits: usize) {
     let initial = [Initial::Lines(1), Initial::None, Initial::Lines(2)][rng.below(3)];
     let style = StyleOptions::default().with_initial(initial);
     let mut chant = chant(&style);
+    let mut shown: Option<SvgParts> = None;
     let mut width = WIDTHS[rng.below(WIDTHS.len())];
     for step in 0..edits {
         // Now and then the column changes too, as when a window is resized.
@@ -232,8 +233,12 @@ fn check(name: &str, src: &str, seed: u64, edits: usize) {
         assert_eq!(cached.svg_parts_with(&svg), fresh.svg_parts_with(&svg), "{}", what());
         // An editor's lines, mostly without ids; now and then with them.
         let parts = SvgOptions::default().with_ids(rng.below(8) == 0);
-        let (cached_parts, fresh_parts) = (chant.svg_parts(&cached, &parts), fresh.svg_parts_with(&parts));
-        assert_eq!(drawn(&cached_parts), drawn(&fresh_parts), "{}", what());
+        let cached_parts = match &shown {
+            Some(shown) => cached.svg_parts_reusing(shown, &parts),
+            None => cached.svg_parts_with(&parts),
+        };
+        assert_eq!(drawn(&cached_parts), drawn(&fresh.svg_parts_with(&parts)), "{}", what());
+        shown = Some(cached_parts);
         assert_eq!(cached.timeline(), fresh.timeline(), "{}", what());
         assert_eq!(cached.source_map(), fresh.source_map(), "{}", what());
         src = edit(&src, &mut rng);
@@ -298,6 +303,7 @@ fn edits_whose_effects_reach_past_them() {
             let style = StyleOptions::default().with_initial(initial);
             let (before, after) = (format!("{before}{tail}"), format!("{after}{tail}"));
             let mut chant = chant(&style);
+            let mut shown: Option<SvgParts> = None;
             for src in [&before, &after, &before] {
                 let fresh = parse(src).score.engrave(&ApproxMeasure, &style);
                 chant.update(src);
@@ -309,8 +315,16 @@ fn edits_whose_effects_reach_past_them() {
                     let fresh = fresh.layout_with(width, &opts);
                     assert_eq!(cached.svg_with(&svg), fresh.svg_with(&svg), "{initial:?}: {before:?} to {src:?}");
                     let parts = svg.clone().with_ids(false);
-                    let (cached, fresh) = (chant.svg_parts(&cached, &parts), fresh.svg_parts_with(&parts));
-                    assert_eq!(drawn(&cached), drawn(&fresh), "{initial:?}: {before:?} to {src:?}");
+                    let cached = match &shown {
+                        Some(shown) => cached.svg_parts_reusing(shown, &parts),
+                        None => cached.svg_parts_with(&parts),
+                    };
+                    assert_eq!(
+                        drawn(&cached),
+                        drawn(&fresh.svg_parts_with(&parts)),
+                        "{initial:?}: {before:?} to {src:?}"
+                    );
+                    shown = Some(cached);
                 }
             }
         }

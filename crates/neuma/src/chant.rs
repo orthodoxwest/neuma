@@ -7,12 +7,11 @@ use crate::diag::Diagnostic;
 use crate::engrave::{AlterationScope, CustosPolicy, EngraveCache, Engraving, Initial, StyleOptions};
 #[cfg(feature = "fonts")]
 use crate::fonts::LyricFont;
+use crate::gabc::Parsed;
 use crate::layout::{Layout, LayoutCache, LayoutOptions, usable_width};
 use crate::score::Score;
 use crate::source::Utf16Index;
 use crate::summary::Summary;
-#[cfg(feature = "svg")]
-use crate::svg::{SvgCache, SvgOptions, SvgParts};
 use crate::text::TextMeasure;
 use crate::vowel::VowelRules;
 
@@ -178,10 +177,9 @@ impl fmt::Debug for ChantOptions {
 /// // An edit engraves and lays out again only around what changed; the old layout lives on.
 /// chant.update("(c4) Ky(f)ri(gh)e(gf) (::)");
 /// let after = chant.layout(600.0);
-/// let parts = chant.svg_parts(&after, &SvgOptions::default());
+/// let parts = after.svg_parts_reusing(&layout.svg_parts(), &SvgOptions::default());
 /// assert_eq!(parts.lines.len(), 1);
-/// let caret = chant.utf16().to_utf8(18); // a caret in a UTF-16 text field
-/// assert_eq!(after.elements_at(caret).len(), 2); // the note and its syllable
+/// assert_eq!(after.elements_at_utf16(18).len(), 2); // a caret in a text field: the note and its syllable
 /// assert_eq!(layout.note_at(x, y), Some(0));
 /// ```
 pub struct Chant {
@@ -194,11 +192,16 @@ pub struct Chant {
     read: Vec<Diagnostic>,
     /// `read`, then the engraving's.
     diagnostics: Vec<Diagnostic>,
+    /// How `update` reads a source; `None` parses GABC.
+    reader: Option<Arc<Reader>>,
     caches: Caches,
 }
 
+/// What [`Chant::set_reader`] takes.
+type Reader = dyn Fn(&str) -> Parsed + Send + Sync;
+
 /// What lays the chant out again cheaply. Each is behind its own lock, taken only for a
-/// moment (`recent`) or tried and done without when busy (the others), so concurrent layouts
+/// moment (`recent`) or tried and done without when busy (`layouts`), so concurrent layouts
 /// never wait on one another for long.
 #[derive(Default)]
 struct Caches {
@@ -207,9 +210,6 @@ struct Caches {
     recent: Mutex<Vec<(Asked, Layout)>>,
     /// The line breaker's work, reused by the next layout after an edit.
     layouts: Mutex<LayoutCache>,
-    /// Each line's SVG from the last `svg_parts`, to reuse for lines an edit left alone.
-    #[cfg(feature = "svg")]
-    svg: Mutex<SvgCache>,
 }
 
 type Asked = (u32, LayoutOptions);
@@ -256,7 +256,8 @@ impl Chant {
     /// (`neuma_tones::PsalmSetting::into_chant`), whose spans count bytes of `source`: hit
     /// tests and [`utf16`](Self::utf16) then answer in `source`. `diagnostics` are what
     /// building the score found; the chant's [`diagnostics`](Self::diagnostics) start with
-    /// them.
+    /// them. [`update`](Self::update) reads GABC unless given a
+    /// [`reader`](Self::set_reader) for `source`'s format.
     #[must_use]
     pub fn from_score(score: Score, source: &str, diagnostics: Vec<Diagnostic>, options: ChantOptions) -> Chant {
         let mut chant = Chant::empty(options);
@@ -272,38 +273,80 @@ impl Chant {
             engraved: EngraveCache::default(),
             read: Vec::new(),
             diagnostics: Vec::new(),
+            reader: None,
             caches: Caches::default(),
         }
     }
 
-    /// Replaces the score with `gabc`, keeping the options, as an editor does on each change.
-    /// Only the syllables around the edit are engraved again, and the next layout breaks
-    /// again only the lines they are on. Layouts made before keep showing the old score.
-    pub fn update(&mut self, gabc: &str) {
-        let parsed = crate::parse(gabc);
-        self.update_score(parsed.score, gabc, parsed.diagnostics);
+    /// Replaces the source, keeping the options, as an editor does on each change. The
+    /// source is read as GABC, or by the chant's [`reader`](Self::set_reader) (a psalm chant
+    /// sets the new text to its tone). Only the syllables around the edit are engraved
+    /// again, and the next layout breaks again only the lines they are on. Layouts made
+    /// before keep showing the old score.
+    ///
+    /// Returns whether anything changed: `false` when `source` is the current source, and
+    /// the chant, its layouts and its memo stay as they were.
+    pub fn update(&mut self, source: &str) -> bool {
+        if self.engraved.score().is_some() && source == self.source {
+            return false;
+        }
+        let read = match &self.reader {
+            Some(reader) => reader(source),
+            None => crate::parse(source),
+        };
+        self.update_score(read.score, source, read.diagnostics)
     }
 
     /// [`update`](Self::update) with a score built some other way (see
-    /// [`from_score`](Self::from_score)).
-    pub fn update_score(&mut self, score: Score, source: &str, diagnostics: Vec<Diagnostic>) {
+    /// [`from_score`](Self::from_score)). Returns whether anything changed: `false` when the
+    /// source, the score and the diagnostics are the current ones.
+    pub fn update_score(&mut self, score: Score, source: &str, diagnostics: Vec<Diagnostic>) -> bool {
+        if self.engraved.score().is_some_and(|s| *s == score) && source == self.source && diagnostics == self.read {
+            return false;
+        }
         self.read = diagnostics;
         self.source.clear();
         self.source.push_str(source);
         self.utf16 = Arc::new(Utf16Index::new(source));
         self.engrave(score);
+        true
+    }
+
+    /// Sets how [`update`](Self::update) reads a source into a score, for a chant whose
+    /// source isn't GABC: `neuma_tones::PsalmSetting::into_chant` gives one that sets psalm
+    /// text to its tone. The current score stays until the next update.
+    ///
+    /// ```
+    /// use neuma::{Chant, ChantOptions, Parsed};
+    ///
+    /// // A source in another notation, here GABC without its clef.
+    /// let read = |src: &str| -> Parsed { neuma::parse(&format!("(c4) {src}")) };
+    /// let first = read("A(g)");
+    /// let mut chant = Chant::from_score(first.score, "A(g)", first.diagnostics, ChantOptions::default());
+    /// chant.set_reader(read);
+    /// chant.update("A(g) B(h)");
+    /// assert_eq!(chant.score().syllables.len(), 3);
+    /// ```
+    pub fn set_reader(&mut self, reader: impl Fn(&str) -> Parsed + Send + Sync + 'static) {
+        self.reader = Some(Arc::new(reader));
     }
 
     /// Engraves the score with new options, as when the reader changes the lyric font or
     /// size (Dynamic Type, say) or the initial. Options that engrave the same as the current
-    /// ones change nothing; others engrave the score again, and the next layout and SVG
-    /// reuse whatever lines still come out the same.
-    pub fn set_options(&mut self, options: ChantOptions) {
+    /// ones change nothing; others engrave the score again, and the next layout reuses
+    /// whatever lines still come out the same.
+    ///
+    /// Returns whether it engraved again, which is when layouts made before are out of date.
+    pub fn set_options(&mut self, options: ChantOptions) -> bool {
         let same = self.options.engraves_like(&options);
         self.options = options;
-        if !same && let Some(score) = self.engraved.take_score() {
+        if same {
+            return false;
+        }
+        if let Some(score) = self.engraved.take_score() {
             self.engrave(score);
         }
+        true
     }
 
     fn engrave(&mut self, score: Score) {
@@ -400,19 +443,6 @@ impl Chant {
         recent.push((asked, layout.clone()));
         layout
     }
-
-    /// `layout`'s SVG in parts (see [`Layout::svg_parts_with`]), each line's string taken from
-    /// the parts this chant made last time when the line is drawn the same; its
-    /// [`reused_from`](crate::SvgLine::reused_from) says which. An editor that keeps one page
-    /// patches only the lines whose `reused_from` is `None`.
-    #[cfg(feature = "svg")]
-    #[must_use]
-    pub fn svg_parts(&self, layout: &Layout, options: &SvgOptions) -> SvgParts {
-        with_cache(&self.caches.svg, |cache| match cache {
-            Some(cache) => layout.svg_parts_cached(options, cache),
-            None => layout.svg_parts_with(options),
-        })
-    }
 }
 
 impl fmt::Debug for Chant {
@@ -422,6 +452,7 @@ impl fmt::Debug for Chant {
             .field("syllables", &self.score().syllables.len())
             .field("diagnostics", &self.diagnostics.len())
             .field("options", &self.options)
+            .field("reader", &self.reader.as_ref().map(|_| "custom"))
             .finish_non_exhaustive()
     }
 }
@@ -429,6 +460,7 @@ impl fmt::Debug for Chant {
 #[cfg(all(test, feature = "svg", feature = "fonts"))]
 mod tests {
     use super::*;
+    use crate::svg::{SvgOptions, SvgParts};
     use crate::{ApproxMeasure, ElementKind};
 
     fn assert_send_sync<T: Send + Sync>() {}
@@ -504,16 +536,34 @@ mod tests {
     fn svg_parts_say_what_they_reused() {
         let mut chant = Chant::new("(c4) a(g) b(h) (;) c(i) d(h) (:) e(g) f(h) (::)");
         let opts = SvgOptions::default();
-        let first = chant.svg_parts(&chant.layout(90.0), &opts);
+        let first = chant.layout(90.0).svg_parts_with(&opts);
         assert!(first.lines.len() > 2, "{}", first.lines.len());
         assert!(first.lines.iter().all(|l| l.reused_from.is_none()));
         chant.update("(c4) a(g) b(h) (;) c(i) d(h) (:) e(g) f(hg) (::)");
-        let second = chant.svg_parts(&chant.layout(90.0), &opts);
+        let second = chant.layout(90.0).svg_parts_reusing(&first, &opts);
         assert_eq!(second.lines[0].reused_from, Some(0));
         assert_eq!(second.lines.last().unwrap().reused_from, None);
         let fresh = chant.layout(90.0).svg_parts_with(&opts);
         let strip = |p: &SvgParts| p.lines.iter().map(|l| (l.top, l.svg.clone())).collect::<Vec<_>>();
         assert_eq!(strip(&second), strip(&fresh));
+        // Parts with another prefix share no lines.
+        let other = chant.layout(90.0).svg_parts_reusing(&first, &opts.clone().with_prefix("x"));
+        assert!(other.lines.iter().all(|l| l.reused_from.is_none()));
+    }
+
+    #[test]
+    fn says_whether_it_changed() {
+        let mut chant = Chant::new("(c4) a(g)");
+        let before = chant.layout(300.0);
+        assert!(!chant.update("(c4) a(g)"));
+        assert!(std::ptr::eq(chant.layout(300.0).source_map(), before.source_map()));
+        assert!(!chant.set_options(ChantOptions::default()));
+        assert!(std::ptr::eq(chant.layout(300.0).source_map(), before.source_map()));
+        assert!(chant.update("(c4) a(h)"));
+        assert!(chant.set_options(ChantOptions::default().with_lyric_size(3.0)));
+        let score = chant.score().clone();
+        let source = chant.source().to_owned();
+        assert!(!chant.update_score(score, &source, Vec::new()));
     }
 
     #[test]
@@ -521,7 +571,7 @@ mod tests {
         let src = "(c4) Al(f)le(gf)lú(gh)ia.(g.) (::)";
         let mut chant = Chant::new(src);
         let small = chant.layout(600.0);
-        chant.set_options(ChantOptions::default().with_lyric_size(f32::NAN));
+        assert!(!chant.set_options(ChantOptions::default().with_lyric_size(f32::NAN)));
         assert!(std::ptr::eq(chant.layout(600.0).source_map(), small.source_map()));
         chant.set_options(ChantOptions::default().with_lyric_size(4.0));
         let style = StyleOptions::default().with_lyric_size(4.0);

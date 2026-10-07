@@ -10,7 +10,7 @@ fn chant(src: &str) -> Arc<Chant> {
     Chant::new(src.to_string(), ChantOptions::default())
 }
 
-fn timeline(l: &Layout) -> Timeline {
+fn timeline(l: &ChantLayout) -> ChantTimeline {
     l.timeline(Weights::default())
 }
 
@@ -22,7 +22,7 @@ fn lays_out_with_stable_ids() {
     let narrow = c.layout(120.0, options());
     let wide = wide_layout.page();
     assert!(narrow.page().lines.len() > wide.lines.len());
-    let ids = |l: &Layout| timeline(l).notes.iter().map(|n| n.id).collect::<Vec<_>>();
+    let ids = |l: &ChantLayout| timeline(l).notes.iter().map(|n| n.id).collect::<Vec<_>>();
     assert_eq!(ids(&wide_layout), ids(&narrow));
     assert_eq!(wide.staff_space, 6.0);
     // Every note has ink, and the initial and lyrics are text.
@@ -228,14 +228,16 @@ fn sets_psalms() {
         ChantOptions::default(),
     )
     .unwrap();
-    assert_eq!(c.psalm_notes(), s.notes);
+    assert_eq!(c.psalm(), Some(s.clone()));
     let from_text = c.layout(600.0, options());
     let sung = &timeline(&from_text).notes[accent];
     assert_eq!(slice16(sung.source_utf16_start, sung.source_utf16_end), "pá");
     let hit = from_text.source_at(sung.cx, sung.cy).unwrap();
     assert_eq!(slice16(hit.utf16_start, hit.utf16_end), "pá");
     c.update(text.replace("glorious", "great"));
-    assert_eq!(c.psalm_notes().len(), s.notes.len() - 2);
+    assert_eq!(c.psalm().unwrap().notes.len(), s.notes.len() - 2);
+    assert!(c.psalm().unwrap().gabc.contains("great"));
+    assert!(chant("(c4) a(g)").psalm().is_none());
     assert!(
         Chant::from_psalm(
             "Lord ! * God ?".into(),
@@ -339,6 +341,7 @@ fn updates_in_place() {
     let c = chant("(c4) a-(g)");
     assert!(c.diagnostics().iter().any(|d| d.code == "gabc::hyphen-in-syllable"));
     let before = c.layout(400.0, options());
+    c.update("(c4) a-(g)".to_string());
     c.update("(c4) a(g) b(h)".to_string());
     assert!(c.diagnostics().is_empty());
     // The layout from before still shows the old score.
@@ -347,7 +350,9 @@ fn updates_in_place() {
     let fresh = chant("(c4) a(g) b(h)").layout(400.0, options()).page();
     assert_eq!(page, fresh);
     assert_eq!(c.summary().notes, 2);
-    // A larger lyric size engraves again.
+    // The same options change nothing; a larger lyric size engraves again.
+    c.set_options(ChantOptions::default());
+    assert_eq!(c.layout(400.0, options()).page(), page);
     c.set_options(ChantOptions {
         lyric_size: 4.0,
         ..ChantOptions::default()

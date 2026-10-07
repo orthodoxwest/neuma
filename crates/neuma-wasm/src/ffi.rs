@@ -4,7 +4,7 @@
 
 use std::cell::RefCell;
 
-use neuma::{LastLine, LayoutOptions, SvgOptions, Weights};
+use neuma::{LastLine, Layout, LayoutOptions, SvgOptions, Weights};
 
 use crate::{Chant, ChantOptions, Initial, LyricFont, SvgOutput};
 
@@ -136,16 +136,26 @@ pub extern "C" fn chant_from_psalm(
     }
 }
 
-/// Engraves the chant again with new options, leaving the diagnostics JSON in the output
-/// buffer as [`chant_update`] does; returns 0 for an unknown handle.
+/// What [`chant_update`] and [`chant_set_options`] return: 0 for an unknown handle, 1 when
+/// nothing changed, 2 when the chant changed and its diagnostics (and psalm) are in the
+/// output buffer.
+fn changed(handle: u32, f: impl FnOnce(&mut Chant) -> bool) -> u32 {
+    with_chant(handle, |c| {
+        if f(c) {
+            diagnostics_and_psalm(c);
+            2
+        } else {
+            1
+        }
+    })
+    .unwrap_or(0)
+}
+
+/// Engraves the chant again with new options; returns as [`changed`] says.
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
 pub extern "C" fn chant_set_options(handle: u32, initial: i32, annotation: u32, lyric_size: f32, font: u32) -> u32 {
-    with_chant(handle, |c| {
-        c.set_options(chant_options(initial, annotation, lyric_size, font));
-        diagnostics_and_psalm(c);
-    })
-    .map_or(0, |_| 1)
+    changed(handle, |c| c.set_options(chant_options(initial, annotation, lyric_size, font)))
 }
 
 #[allow(unsafe_code)]
@@ -161,8 +171,8 @@ pub extern "C" fn chant_free(handle: u32) {
 /// Lays out at `width` with the SVG class prefix in the input buffer. `flags`: 2 makes the
 /// SVG in parts (see `SvgOutput`), 4 leaves out `data-note` and `data-syllable`, 8 (with 2)
 /// gives a line the last layout in parts also had by its index there
-/// (`SvgOutput::ChangedLines`). Leaves `{ width, height }`, a NUL and the SVG in the output
-/// buffer; returns 0 for an unknown handle.
+/// (`SvgOutput::ChangedLines`). Leaves `{ width, height, version }`, a NUL and the SVG in the
+/// output buffer; returns 0 for an unknown handle.
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
 pub extern "C" fn chant_layout(handle: u32, width: f32, scale: f32, last: u32, max_lines: u32, flags: u32) -> u32 {
@@ -180,14 +190,32 @@ pub extern "C" fn chant_layout(handle: u32, width: f32, scale: f32, last: u32, m
     with_chant(handle, |c| output(&c.layout(width, &opts, &svg, mode))).map_or(0, |_| 1)
 }
 
-/// Leaves the timeline JSON of the layout at `width` (as [`chant_layout`] takes it), timed
-/// with the weights as ten numbers (NaN keeps a default), in the output buffer; returns 0 for
-/// an unknown handle.
+/// Runs `f` on the page laid out at `version` with `width` and the options (as
+/// [`chant_layout`] takes them), leaving what it gives in the output buffer. Returns 1, or 0
+/// for an unknown handle or a stale page.
+fn on_page(handle: u32, version: u32, width: f32, opts: &LayoutOptions, f: impl FnOnce(&Layout) -> String) -> u32 {
+    with_chant(handle, |c| c.page(version, width, opts)).flatten().map_or(0, |layout| {
+        output(&f(&layout));
+        1
+    })
+}
+
+/// Whether the page laid out at `version` with `width` and the options can still answer.
+#[allow(unsafe_code)]
+#[unsafe(no_mangle)]
+pub extern "C" fn chant_has_page(handle: u32, version: u32, width: f32, scale: f32, last: u32, max_lines: u32) -> u32 {
+    let opts = layout_options(scale, last, max_lines);
+    with_chant(handle, |c| c.page(version, width, &opts)).flatten().map_or(0, |_| 1)
+}
+
+/// Leaves the timeline JSON of a page (see [`on_page`]), timed with the weights as ten numbers
+/// (NaN keeps a default), in the output buffer.
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
 #[allow(clippy::too_many_arguments)]
 pub extern "C" fn chant_timeline(
     handle: u32,
+    version: u32,
     width: f32,
     scale: f32,
     last: u32,
@@ -216,7 +244,7 @@ pub extern "C" fn chant_timeline(
         .with_mediant(mediant)
         .with_flex(flex);
     let opts = layout_options(scale, last, max_lines);
-    with_chant(handle, |c| output(&c.timeline_json(width, &opts, &weights))).map_or(0, |_| 1)
+    on_page(handle, version, width, &opts, |l| crate::timeline_json(l, &weights))
 }
 
 /// Leaves the score's library entry JSON in the output buffer.
@@ -227,48 +255,57 @@ pub extern "C" fn chant_summary(handle: u32) -> u32 {
 }
 
 /// Replaces the score with the source in the input buffer (GABC, or psalm text for a chant
-/// set from a psalm), keeping the options, and leaves the diagnostics JSON (and for a psalm a
-/// NUL and its `{ gabc, notes }`) in the output buffer; returns 0 for an unknown handle.
+/// set from a psalm), keeping the options; returns as [`changed`] says, the output buffer
+/// then holding the diagnostics JSON (and for a psalm a NUL and its setting).
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
 pub extern "C" fn chant_update(handle: u32) -> u32 {
     let src = input();
-    with_chant(handle, |c| {
-        c.update(&src);
-        diagnostics_and_psalm(c);
-    })
-    .map_or(0, |_| 1)
+    changed(handle, |c| c.update(&src))
 }
 
-/// The note at (`x`, `y`) in the layout at `width` (as [`chant_layout`] takes it), or -1.
-#[allow(unsafe_code)]
-#[unsafe(no_mangle)]
-pub extern "C" fn chant_note_at(handle: u32, width: f32, scale: f32, last: u32, max_lines: u32, x: f32, y: f32) -> i32 {
-    let opts = layout_options(scale, last, max_lines);
-    with_chant(handle, |c| c.note_at(width, &opts, x, y))
-        .flatten()
-        .map_or(-1, |n| n as i32)
-}
-
-/// Leaves the element under (`x`, `y`) in the layout at `width` as JSON (or `null`) in the
-/// output buffer; returns 0 for an unknown handle.
+/// The note at (`x`, `y`) of a page (see [`on_page`]), -1 for none, or -2 for an unknown
+/// handle or a stale page.
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
 #[allow(clippy::too_many_arguments)]
-pub extern "C" fn chant_source_at(handle: u32, width: f32, scale: f32, last: u32, max_lines: u32, x: f32, y: f32) -> u32 {
+pub extern "C" fn chant_note_at(handle: u32, version: u32, width: f32, scale: f32, last: u32, max_lines: u32, x: f32, y: f32) -> i32 {
     let opts = layout_options(scale, last, max_lines);
-    with_chant(handle, |c| output(&c.source_at_json(width, &opts, x, y))).map_or(0, |_| 1)
+    match with_chant(handle, |c| c.page(version, width, &opts)).flatten() {
+        Some(layout) => layout.note_at(x, y).map_or(-1, |n| n as i32),
+        None => -2,
+    }
+}
+
+/// Leaves the element under (`x`, `y`) of a page as JSON (or `null`) in the output buffer;
+/// returns as [`on_page`] says.
+#[allow(unsafe_code)]
+#[unsafe(no_mangle)]
+#[allow(clippy::too_many_arguments)]
+pub extern "C" fn chant_source_at(handle: u32, version: u32, width: f32, scale: f32, last: u32, max_lines: u32, x: f32, y: f32) -> u32 {
+    let opts = layout_options(scale, last, max_lines);
+    on_page(handle, version, width, &opts, |l| crate::source_at_json(l, x, y))
 }
 
 /// Leaves what to highlight for a caret at `offset` (UTF-16 units if `utf16` is 1, else UTF-8
-/// bytes) in the layout at `width` as a JSON array in the output buffer; returns 0 for an
-/// unknown handle.
+/// bytes) of a page as a JSON array in the output buffer; returns as [`on_page`] says.
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
 #[allow(clippy::too_many_arguments)]
-pub extern "C" fn chant_elements_at(handle: u32, width: f32, scale: f32, last: u32, max_lines: u32, offset: u32, utf16: u32) -> u32 {
+pub extern "C" fn chant_elements_at(
+    handle: u32,
+    version: u32,
+    width: f32,
+    scale: f32,
+    last: u32,
+    max_lines: u32,
+    offset: u32,
+    utf16: u32,
+) -> u32 {
     let opts = layout_options(scale, last, max_lines);
-    with_chant(handle, |c| output(&c.elements_at_json(width, &opts, offset as usize, utf16 == 1))).map_or(0, |_| 1)
+    on_page(handle, version, width, &opts, |l| {
+        crate::elements_at_json(l, offset as usize, utf16 == 1)
+    })
 }
 
 /// Summarizes the GABC in the input buffer without engraving it for display, leaving the

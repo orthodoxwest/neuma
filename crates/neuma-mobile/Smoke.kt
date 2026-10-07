@@ -43,8 +43,8 @@ fun main() {
     val accent = ps.notes.first { it.role == ToneRole.ACCENT }
     check(text.substring(accent.sourceUtf16Start, accent.sourceUtf16End) == "pá", "psalm note text")
     val sung = Chant.fromPsalm(text, "8.G", PsalmOptions(), ChantOptions())
-    check(sung.psalmNotes() == ps.notes, "psalm notes")
-    check(sung.layout(500f, LayoutOptions()).timeline(Weights()).notes.size == ps.notes.size, "psalm timeline")
+    check(sung.psalm() == ps && chant.psalm() == null, "psalm setting")
+    sung.layout(500f, LayoutOptions()).use { check(it.timeline(Weights()).notes.size == ps.notes.size, "psalm timeline") }
     val unknown = try { psalm("a * b", "9.z", PsalmOptions(intone = Intone.NEVER)); null } catch (e: ToneException.Unknown) { e }
     check(unknown?.message == "no built-in tone 9.z", "unknown tone: ${unknown?.message}")
     val pt = point("O come, let us sing unto the Lord * let us heartily rejoice in the strength of our salvation.", "8.G")
@@ -61,7 +61,7 @@ fun main() {
     check(src.substring(at[1].utf16Start, at[1].utf16End) == "ri(hi)", "syllable span")
     ed.update(src.replace("-(g)", "(g)"))
     check(ed.diagnostics().none { it.code == "gabc::hyphen-in-syllable" }, "update")
-    ed.setOptions(ChantOptions(lyricSize = 4f))
+    ed.setOptions(ChantOptions(lyricSize = 4f, font = LyricFont.GARAMOND12))
     check(ed.layout(500f, LayoutOptions()).page().height > layout.page().height, "set options")
     layout.close()
     ed.close()

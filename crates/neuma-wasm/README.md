@@ -41,10 +41,14 @@ user units) from the layout's top left, with y down. A box is `x`, `y`, `w`, `h`
 top-left corner; a point that is a center is named `cx`, `cy`. Laying out again with the same
 arguments and no change between returns the same page.
 
-A page answers for itself, whatever the chant has laid out since: a thumbnail made with
-`maxLines: 1` leaves the main page's hit tests alone. After `chant.update` or
-`chant.setOptions`, a page made before throws on its next question (a timeline it has
-already made stays readable); lay out again.
+A page answers for the score it shows, whatever the chant has laid out since: a thumbnail
+made with `maxLines: 1` leaves the main page's hit tests alone, and after `chant.update` or
+`chant.setOptions` a page made before still answers for the score it shows, so a click or a
+caret move between an edit and the next frame finds what is on screen. After a second change
+the page is `stale` (`page.stale` is true): its hit tests find nothing (`null`, `[]`), its
+timeline is `null` unless it had made it, and none of them throws; lay out again. `update`
+and `setOptions` return whether anything changed: the same source or options leave the
+chant, and its pages, as they were.
 
 - **`timeline.notes`**: one entry per note, in singing order, with these fields:
   - `id`: stable across layouts of one `Chant`. Each SVG element lists the notes it draws
@@ -89,8 +93,8 @@ Each diagnostic has a `code` that stays stable across versions (see
 
 `page.noteAt(x, y)` returns the note under a point, or the nearest note on that line, or
 `null`. `chant.setOptions({ lyricSize: 3 })` engraves again with new options (those the
-constructor takes). `chant.free()` releases the score; using a freed `Chant`, or a page of
-one, throws.
+constructor takes). `chant.free()` releases the score; using a freed `Chant` throws, and its
+pages are stale.
 
 Weights default to `DEFAULT_WEIGHTS`: one pulse per note, two for a dotted note, and pauses
 that grow with the bar. Any key you pass with a number overrides its default, except a negative one; no weight
@@ -125,7 +129,8 @@ host.addEventListener("click", (e) => {
 const lit = page.elementsAt(textarea.selectionStart); // what to highlight for the caret
 ```
 
-- **`chant.update(gabc)`** replaces the score, keeping the options. Lay it out again to see it.
+- **`chant.update(gabc)`** replaces the score, keeping the options, and returns whether it
+  changed. Lay it out again to see it.
 - **`page.timeline`** is made only when read, so an editor that never reads it skips what on
   a long score is most of the layout's cost.
 - **`layout(width, { svg: "lines" })`** returns `page.svgParts` instead of `page.svg`:
@@ -158,35 +163,57 @@ building `dist/neuma.mjs`.
 
 ### CodeMirror 6
 
-The same calls fit CodeMirror's lint extension, which draws the underlines, shows each
-message on hover and offers the fixes as actions; positions are already UTF-16:
+The same calls fit CodeMirror. An update listener keeps the chant and the preview in step
+with the document and highlights the caret's note, bar and syllable; CodeMirror's lint
+extension draws the diagnostics' underlines, shows each message on hover and offers the
+fixes as actions. Positions are already UTF-16:
 
 ```js
 import { linter } from "@codemirror/lint";
 import { EditorView } from "@codemirror/view";
 
-const gabcLint = linter((view) => {
-  chant.update(view.state.doc.toString());
-  return chant.diagnostics.map((d) => ({
-    from: d.utf16Start,
-    to: d.utf16End,
-    severity: d.severity,          // "error" | "warning" | "info"
-    message: d.message,
-    source: d.code,
-    actions: d.fix ? [{
-      name: d.fix.title,
-      apply: (v) => v.dispatch({ changes: { from: d.fix.utf16Start, to: d.fix.utf16End, insert: d.fix.replacement } }),
-    }] : [],
-  }));
-}, { delay: 0 });
+const chant = new Chant(gabc, { initial: 1 });
+let page = null;                   // the page shown, which answers the caret and clicks
 
-// Highlight the caret's note, bar and syllable in the preview.
-const follow = EditorView.updateListener.of((u) => {
-  if (u.selectionSet || u.docChanged) highlight(page.elementsAt(u.state.selection.main.head));
+// Keep the chant and the preview in step with the document.
+function show(doc) {
+  chant.update(doc);
+  page = chant.layout(host.clientWidth, { svg: "lines", ids: false });
+  draw(page);                      // patch the preview from page.svgParts, as below
+}
+const preview = EditorView.updateListener.of((u) => {
+  if (u.docChanged) show(u.state.doc.toString());
+  if (u.docChanged || u.selectionSet) highlight(page.elementsAt(u.state.selection.main.head));
+});
+
+// The linter reads the diagnostics the listener's update left on the chant.
+const gabcLint = linter(() => chant.diagnostics.map((d) => ({
+  from: d.utf16Start,
+  to: d.utf16End,
+  severity: d.severity,            // "error" | "warning" | "info"
+  message: d.message,
+  source: d.code,
+  actions: d.fix ? [{
+    name: d.fix.title,
+    apply: (v) => v.dispatch({ changes: { from: d.fix.utf16Start, to: d.fix.utf16End, insert: d.fix.replacement } }),
+  }] : [],
+})), { delay: 0 });
+
+const view = new EditorView({ doc: gabc, extensions: [preview, gabcLint], parent: editorHost });
+show(view.state.doc.toString());
+
+// A click in the preview selects the source of what's under it.
+host.addEventListener("click", (e) => {
+  const box = host.getBoundingClientRect();
+  const hit = page.sourceAt(e.clientX - box.left, e.clientY - box.top);
+  if (hit) view.dispatch({ selection: { anchor: hit.utf16Start, head: hit.utf16End } });
 });
 ```
 
-`highlight` draws the returned boxes over the preview, as the example page does.
+`draw` patches the preview from `page.svgParts` and `highlight` draws the returned boxes
+over it, as the example page does. On a long score, laying out in an animation frame rather
+than on every keystroke saves work; a caret move in between is answered by the page still
+shown, for the score it shows.
 
 ## Library entries
 
@@ -237,8 +264,8 @@ half-verses with no marks are pointed automatically unless `autoPoint: false`, a
 
 `Chant.fromPsalm(text, tone, { intone, autoPoint, ...chantOptions })` sets and engraves it in
 one step, with its sources in `text`: a tap on a note finds its syllable in the psalm text,
-and the diagnostics count the text. `chant.psalm` is the setting's `{ gabc, notes }`, and
-`chant.update(text)` sets new text to the same tone. `new Chant(gabc)` engraves the GABC
+and the diagnostics count the text. `chant.psalm` is the setting as `psalm` returns it,
+`{ gabc, notes, diagnostics }`, and `chant.update(text)` sets new text to the same tone. `new Chant(gabc)` engraves the GABC
 instead, with sources in the GABC.
 
 `point(text, tone)` returns the pointed text itself, `{ text, halves, diagnostics }`, with the

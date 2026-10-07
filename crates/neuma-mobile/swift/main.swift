@@ -56,7 +56,7 @@ let text = "The Lord is King, and hath put on glorious ap·pá-rel; * the Lord h
 let ps = try! psalm(text: text, tone: "8.G", options: PsalmOptions())
 check(ps.diagnostics.isEmpty && ps.notes[0].role == .intonation, "psalm")
 let sung = try! Chant.fromPsalm(text: text, tone: "8.G", psalm: PsalmOptions(), options: ChantOptions())
-check(sung.psalmNotes() == ps.notes, "psalm notes")
+check(sung.psalm() == ps && chant.psalm() == nil, "psalm setting")
 check(sung.layout(width: 500, options: LayoutOptions()).timeline(weights: Weights()).notes.count == ps.notes.count, "psalm timeline")
 do {
     _ = try psalm(text: "a * b", tone: "9.z", options: PsalmOptions(intone: .never))

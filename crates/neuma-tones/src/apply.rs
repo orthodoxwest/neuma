@@ -3,7 +3,7 @@
 use std::ops::Range;
 
 use neuma::score::{Bar, BarKind, Figure, Lyric};
-use neuma::{Chant, ChantOptions, Diagnostic, Score, ScoreBuilder, Severity};
+use neuma::{Chant, ChantOptions, Diagnostic, Parsed, Score, ScoreBuilder, Severity};
 
 use crate::pointed::{self, Part, Pointed, Syllable, VersePart};
 use crate::syllable::fold;
@@ -127,25 +127,48 @@ pub struct PsalmSetting {
     pub notes: Vec<PsalmNote>,
     /// Problems in the text and its pointing, with spans in the text.
     pub diagnostics: Vec<Diagnostic>,
+    /// The tone and options the text was set with, for `into_chant`'s updates.
+    tone: Tone,
+    options: PsalmOptions,
 }
 
 impl PsalmSetting {
     /// Engraves the setting as a [`Chant`] whose source is the psalm text, so hit tests and
     /// the timeline answer there, and whose diagnostics start with the setting's (such as
-    /// `point::unsure`).
+    /// `point::unsure`). The chant's [`update`](Chant::update) takes new psalm text and sets
+    /// it to the same tone with the same options, as an editor of the text needs.
     ///
     /// ```
     /// use neuma_tones::{PsalmOptions, Tone, psalm};
     ///
     /// let text = "O praise the Lord, all ye heathen * praise him, all ye nations.";
-    /// let chant = psalm(text, Tone::named("8.G").unwrap(), &PsalmOptions::default())
+    /// let mut chant = psalm(text, Tone::named("8.G").unwrap(), &PsalmOptions::default())
     ///     .into_chant(neuma::ChantOptions::default());
     /// let first = &chant.layout(600.0).timeline().notes[0];
     /// assert_eq!(&chant.source()[first.span.clone()], "O");
+    /// chant.update("Praise the Lord * all ye nations.");
+    /// let first = &chant.layout(600.0).timeline().notes[0];
+    /// assert_eq!(&chant.source()[first.span.clone()], "Praise");
     /// ```
     #[must_use]
     pub fn into_chant(self, options: ChantOptions) -> Chant {
-        Chant::from_score(self.score, &self.text, self.diagnostics, options)
+        let PsalmSetting {
+            text,
+            score,
+            diagnostics,
+            tone,
+            options: set,
+            ..
+        } = self;
+        let mut chant = Chant::from_score(score, &text, diagnostics, options);
+        chant.set_reader(move |text: &str| {
+            let s = psalm(text, &tone, &set);
+            Parsed {
+                score: s.score,
+                diagnostics: s.diagnostics,
+            }
+        });
+        chant
     }
 }
 
@@ -284,6 +307,8 @@ fn set_pointed(pointed: &Pointed, tone: &Tone, options: &PsalmOptions) -> PsalmS
         score,
         notes,
         diagnostics: diags,
+        tone: tone.clone(),
+        options: options.clone(),
     }
 }
 

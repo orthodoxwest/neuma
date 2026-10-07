@@ -52,10 +52,11 @@ const svg = porrectusPage.svg;
 for (const id of [0, 1, 2]) assert.match(svg, new RegExp(`data-note="[0-9 ]*\\b${id}\\b`));
 assert.match(svg, /data-note="0 1"/);
 
-// A freed Chant throws rather than reaching another score's handle.
+// A freed Chant throws rather than reaching another score's handle; its pages find nothing.
 porrectus.free();
 assert.throws(() => porrectus.layout(400), /freed/);
-assert.throws(() => porrectusPage.noteAt(0, 0), /freed/);
+assert.equal(porrectusPage.noteAt(0, 0), null);
+assert.ok(porrectusPage.stale);
 assert.equal(verse.layout(600, { weights: { note: null } }).timeline.notes[1].duration, 1);
 verse.free();
 
@@ -114,14 +115,25 @@ assert.equal(new TextDecoder().decode(new TextEncoder().encode(text).slice(sung.
 assert.equal(text.slice(sung.sourceUtf16Start, sung.sourceUtf16End), "pá");
 // Engraved from the psalm, the chant's sources are in the text.
 const fromPsalm = Chant.fromPsalm(text, "8.G", { initial: 0 });
-assert.deepEqual(fromPsalm.psalm, { gabc: ps.gabc, notes: ps.notes });
+assert.deepEqual(fromPsalm.psalm, ps);
 const psPage = fromPsalm.layout(500);
 const psNote = psPage.timeline.notes[accent];
 assert.equal(text.slice(psNote.sourceUtf16Start, psNote.sourceUtf16End), "pá");
 assert.equal(text.slice(...(({ utf16Start, utf16End }) => [utf16Start, utf16End])(psPage.sourceAt(psNote.cx, psNote.cy))), "pá");
-fromPsalm.update(text.replace("glorious", "great"));
+// After an edit the page on screen answers for the text it shows; after a second, it is stale.
+assert.equal(fromPsalm.update(text.replace("glorious", "great")), true);
 assert.ok(fromPsalm.psalm.gabc.includes("great"));
-assert.throws(() => psPage.noteAt(0, 0), /laid out before the chant changed/);
+assert.equal(fromPsalm.update(text.replace("glorious", "great")), false);
+assert.equal(psPage.noteAt(psNote.cx, psNote.cy), accent);
+assert.equal(text.slice(psPage.sourceAt(psNote.cx, psNote.cy).utf16Start, psNote.sourceUtf16End), "pá");
+assert.ok(!psPage.stale);
+fromPsalm.update(text.replace("glorious", "grand"));
+assert.ok(psPage.stale);
+assert.equal(psPage.noteAt(psNote.cx, psNote.cy), null);
+assert.equal(psPage.sourceAt(psNote.cx, psNote.cy), null);
+assert.deepEqual(psPage.elementsAt(0), []);
+assert.equal(psPage.timeline.notes[accent].id, accent, "a timeline made before stays");
+assert.ok(!fromPsalm.layout(500).stale);
 assert.ok(Chant.fromPsalm("Lord ! * God ?", "1.D").diagnostics.some((d) => d.code === "point::unsure"));
 assert.throws(() => Chant.fromPsalm(text, "9.z"), /no built-in tone/);
 fromPsalm.free();
@@ -206,15 +218,20 @@ for (let i = 0; i < 12; i++) {
   assert.deepEqual(ed.layout(200, opts), fresh.layout(200, opts), `edit ${i}`);
   fresh.free();
 }
-// A larger lyric engraves again, and the page from before says so.
+// The same options change nothing: the page stays the one laid out.
 const before = ed.layout(500);
-ed.setOptions({ initial: 0, lyricSize: 4 });
+const tap = before.timeline.notes[0];
+assert.equal(ed.setOptions({ initial: 0 }), false);
+assert.equal(ed.layout(500), before);
+// A larger lyric engraves again; the page from before still answers for what it shows.
+assert.equal(ed.setOptions({ initial: 0, lyricSize: 4 }), true);
 assert.ok(ed.layout(500).height > before.height);
-assert.throws(() => before.sourceAt(0, 0), /laid out before the chant changed/);
+assert.equal(before.noteAt(tap.cx, tap.cy), tap.id);
 const after = ed.layout(500);
 ed.free();
 assert.throws(() => ed.update(src), /freed/);
-assert.throws(() => after.sourceAt(0, 0), /freed/);
+assert.equal(after.sourceAt(0, 0), null);
+assert.deepEqual(after.elementsAt(0), []);
 
 // A RangeError from the caller's own arguments, before the engine runs, is rethrown and
 // leaves the engine and its Chants alive.

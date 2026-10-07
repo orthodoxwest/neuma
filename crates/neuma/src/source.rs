@@ -180,11 +180,23 @@ impl Layout {
     /// source holds it, then a box per line for its syllable, most specific first. A caret
     /// just after a note, as after typing it, counts as on it; for a [`Chant`](crate::Chant)'s
     /// layout, one past the end of the source is at its end. For a caret in UTF-16 units,
-    /// convert it first with [`Layout::utf16`]. See [`SourceMap::elements_at`].
+    /// use [`elements_at_utf16`](Self::elements_at_utf16). See [`SourceMap::elements_at`].
     #[must_use]
     pub fn elements_at(&self, offset: usize) -> Vec<&Element> {
         let offset = self.utf16().map_or(offset, |u| offset.min(u.len));
         self.source_map().elements_at(offset)
+    }
+
+    /// [`elements_at`](Self::elements_at) for a caret counted in UTF-16 units, as text fields
+    /// on the web, Android and iOS count it. Only a [`Chant`](crate::Chant)'s layouts know
+    /// their source (see [`utf16`](Self::utf16)); a layout made with
+    /// [`Engraving::layout`](crate::Engraving::layout) finds nothing.
+    #[must_use]
+    pub fn elements_at_utf16(&self, caret: usize) -> Vec<&Element> {
+        match self.utf16() {
+            Some(u) => self.elements_at(u.to_utf8(caret)),
+            None => Vec::new(),
+        }
     }
 
     fn make_source_map(&self) -> SourceMap {

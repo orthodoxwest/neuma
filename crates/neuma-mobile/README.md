@@ -2,19 +2,28 @@
 
 UniFFI bindings for neuma (namespace `neuma`, UniFFI 0.32). A `Chant` engraves a score
 once, and `update(src)` engraves it again after an edit, reusing what didn't change.
-`layout(width, options)` returns a `Layout`: `page()` holds what to draw (glyphs, rectangles
-and text), `timeline(weights)` the playback timeline, and `noteAt`, `sourceAt` and
-`elementsAt` its hit tests. Every call is synchronous, and a `Chant` can be shared across
-threads. Each `Layout` answers for itself, so one `Chant` can serve a thumbnail and the main
-view, and a layout keeps showing the score it was made from after an update.
+`layout(width, options)` returns a `ChantLayout`: `page()` holds what to draw (glyphs,
+rectangles and text), `timeline(weights)` the playback timeline (a `ChantTimeline`), and
+`noteAt`, `sourceAt` and `elementsAt` its hit tests. (The `Chant` prefix keeps them clear of
+SwiftUI's `Layout` and WidgetKit's `Timeline`; Rust calls them `Layout` and `Timeline`.) Every
+call is synchronous, and a `Chant` can be shared across threads. Each `ChantLayout` answers
+for itself, so one `Chant` can serve a thumbnail and the main view, and a layout keeps
+showing the score it was made from after an update.
 
 The bindings are a thin layer over the Rust `neuma::Chant`: the defaults, and what happens
 to a value the engine can't use, are the engine's, the same as in the browser and on the
 command line. Every option record field has a default, so `ChantOptions()`,
-`LayoutOptions()`, `Weights()` and `PsalmOptions()` are the usual options; an enum field
-(`font`, `lastLine`, `intone`) is nullable and defaults to null, which means the default the
-field's documentation names: Google Fonts' EB Garamond, a ragged last line, the intonation
-on the first verse. (UniFFI can't give an enum field any other default.) Ids,
+`LayoutOptions()`, `Weights()` and `PsalmOptions()` are the usual options. An enum field is
+nullable and defaults to null, which means the engine's default (UniFFI can't give an enum
+field any other default):
+
+| Field | null means |
+|---|---|
+| `ChantOptions.font` | `LyricFont.GOOGLE` (`.google`): Google Fonts' EB Garamond |
+| `LayoutOptions.lastLine` | `LastLine.RAGGED` (`.ragged`) |
+| `PsalmOptions.intone` | `Intone.FIRST_VERSE` (`.firstVerse`): the intonation on the first verse only |
+
+Ids,
 indices, counts and offsets are signed `Int`s (`Int32` in Swift).
 
 ## Build
@@ -63,13 +72,30 @@ for item in layout.page().items {
 ```kotlin
 val chant = Chant(source, ChantOptions(initial = 2))
 val layout = chant.layout(width, LayoutOptions(scale = 8f))
-val page = layout.page()
+val page = layout.page()      // keep it: each call copies the display list across
 val timeline = layout.timeline(Weights(mediant = 3f))
 val id = layout.noteAt(x, y)  // the note under a tap, or null
 chant.update(edited)          // after an edit; lay it out again to see it
 chant.setOptions(ChantOptions(initial = 2, lyricSize = 3f)) // a new text size
-layout.close()                // or let the cleaner free them
+layout.close()                // when a new layout replaces it
 chant.close()
+```
+
+**A layout's lifetime.** A `ChantLayout` holds on to the engraving it was made from; after
+an edit that is a copy of the whole old score, and it lives until the layout is freed. Close
+the layout a view has replaced instead of leaving it to the garbage collector: `close()`,
+`layout.use { }`, or in Compose a `DisposableEffect`. In Swift, drop the reference. `page()`
+is made once per layout, but each call copies it across the boundary, so keep the value
+rather than calling it on each recomposition or `body`:
+
+```kotlin
+@Composable
+fun Score(chant: Chant, width: Float, version: Int) {
+    val layout = remember(chant, width, version) { chant.layout(width, LayoutOptions()) }
+    DisposableEffect(layout) { onDispose { layout.close() } }
+    val page = remember(layout) { layout.page() }
+    Canvas(Modifier.fillMaxWidth()) { draw(page) }
+}
 ```
 
 ### Drawing
@@ -147,8 +173,9 @@ pointed text with the pointer's confidence and source range for each half-verse.
 `Chant.fromPsalm(text, tone, PsalmOptions(), ChantOptions())` sets and engraves the psalm in
 one step, with its sources in the text: a tap on a note finds its syllable in the psalm, and
 diagnostics (`point::unsure` among them) count the text. `tone` is a built-in name or a tone
-block. `chant.psalmNotes()` gives each note's place in the tone, and `chant.update(text)`
-sets new text to the same tone.
+block. `chant.psalm()` gives the setting as `psalm` returns it (`gabc`, `notes` with each
+note's place in the tone, and `diagnostics`), and `chant.update(text)` sets new text to the
+same tone and updates it. It is null for a chant made from GABC.
 
 ### Editors
 
@@ -165,4 +192,5 @@ sets new text to the same tone.
 
 On each edit, call `chant.update(src)` and lay it out again: the engraving around the edit
 is redone, and the rest, and the line breaks it can, are reused. A tap waits on no layout
-in progress: hit tests run on the `Layout`, not the `Chant`.
+in progress: hit tests run on the `ChantLayout`, not the `Chant`. The source or options the
+chant already has change nothing.

@@ -1,6 +1,7 @@
 //! neuma for iOS and Android: a `Chant` engraves a score once and lays it out at any
-//! width. Each `Layout` it returns gives the display list to draw natively, the playback
-//! timeline and hit tests, for itself alone.
+//! width. Each `ChantLayout` it returns gives the display list to draw natively, the playback
+//! timeline and hit tests, for itself alone. (The names keep clear of SwiftUI's `Layout` and
+//! WidgetKit's `Timeline`.)
 //!
 //! The bindings are UniFFI (namespace `neuma`). An app builds this crate as its native
 //! library, or depends on it from its own UniFFI crate and generates bindings for both in
@@ -11,12 +12,14 @@
 //! Every option record field has a default, so `ChantOptions()` and `LayoutOptions()` are
 //! the usual options, and the engine's own rules apply to any value it can't use. An
 //! option field of an enum type is nullable and defaults to null, which means the default
-//! its documentation names (UniFFI can't give an enum field another default). Ids,
+//! its documentation names: `ChantOptions.font` null is Google Fonts' EB Garamond,
+//! `LayoutOptions.lastLine` null is ragged and `PsalmOptions.intone` null is the first verse
+//! only (UniFFI can't give an enum field another default). Ids,
 //! indices, counts and offsets are signed `Int`s. Positions are in output units (staff
 //! spaces times `LayoutOptions.scale`) from the page's top left, y down; boxes are `x, y,
 //! w, h` from their top-left corner, and a timeline note's notehead center is `cx, cy`.
 
-use std::sync::{Arc, Mutex, PoisonError, RwLock};
+use std::sync::{Arc, Mutex, OnceLock, PoisonError, RwLock};
 
 uniffi::setup_scaffolding!("neuma");
 
@@ -52,8 +55,8 @@ pub struct ChantOptions {
     /// Lyric size in staff spaces; one that isn't a positive number keeps 2.45.
     #[uniffi(default = 2.45)]
     pub lyric_size: f32,
-    /// The EB Garamond the lyrics are drawn with; null for Google Fonts' (an enum field
-    /// can't have another default in the bindings).
+    /// The EB Garamond the lyrics are drawn with. Null (the default) means `google`, Google
+    /// Fonts' EB Garamond; an enum field can't have another default in the bindings.
     #[uniffi(default)]
     pub font: Option<LyricFont>,
 }
@@ -157,7 +160,8 @@ pub struct LayoutOptions {
     /// keeps 6.
     #[uniffi(default = 6.0)]
     pub scale: f32,
-    /// null for ragged.
+    /// How the last line is set. Null (the default) means `ragged`; an enum field can't
+    /// have another default in the bindings.
     #[uniffi(default)]
     pub last_line: Option<LastLine>,
     /// Keep only the first this many lines, as broken for the whole score, for previews
@@ -434,16 +438,16 @@ pub struct Pause {
     pub duration: f32,
 }
 
-/// When each note sounds, and where it is drawn.
+/// When each note sounds, and where it is drawn (`Timeline` in the Rust and JS APIs).
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]
-pub struct Timeline {
+pub struct ChantTimeline {
     pub notes: Vec<TimelineNote>,
     pub pauses: Vec<Pause>,
     /// The total length, in weight units.
     pub duration: f32,
 }
 
-/// What a layout draws.
+/// What a layout draws: its size and display list.
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]
 pub struct Page {
     pub width: f32,
@@ -473,8 +477,8 @@ pub fn glyph_outline(id: i32) -> Option<GlyphOutline> {
 }
 
 /// One score: engraved once, laid out on demand, and updated in place as it is edited.
-/// Safe to share across threads; layouts run side by side, and each `Layout` answers for
-/// itself, so a thumbnail and the main view never disturb each other's hit tests.
+/// Safe to share across threads; layouts run side by side, and each `ChantLayout` answers
+/// for itself, so a thumbnail and the main view never disturb each other's hit tests.
 #[derive(Debug, uniffi::Object)]
 pub struct Chant {
     inner: RwLock<Inner>,
@@ -492,7 +496,7 @@ struct Inner {
 struct Psalm {
     tone: neuma_tones::Tone,
     options: neuma_tones::PsalmOptions,
-    notes: Vec<PsalmNote>,
+    setting: PsalmSetting,
 }
 
 impl Inner {
@@ -521,9 +525,9 @@ impl Chant {
 
     /// Sets psalm text to a tone, as [`psalm`] does, and engraves it with its spans in the
     /// text: timeline notes' and hit tests' sources, and diagnostics, count the text, and
-    /// `psalm_notes` tells each note's place in the tone. `tone` is a built-in tone's name
-    /// such as `8.G`, or a tone block (`name:`, `clef:`, `mediant:` and `termination:`
-    /// lines). `update` sets new text to the same tone.
+    /// `psalm()` gives the setting, with each note's place in the tone. `tone` is a built-in
+    /// tone's name such as `8.G`, or a tone block (`name:`, `clef:`, `mediant:` and
+    /// `termination:` lines). `update` sets new text to the same tone.
     #[uniffi::constructor]
     pub fn from_psalm(text: String, tone: String, psalm: PsalmOptions, options: ChantOptions) -> Result<Arc<Chant>, ToneError> {
         let tone = if tone.contains(':') {
@@ -533,11 +537,10 @@ impl Chant {
         };
         let options_in = psalm_options(psalm);
         let s = neuma_tones::psalm(&text, &tone, &options_in);
-        let notes = psalm_notes(&s, &neuma::Utf16Index::new(&text));
         let psalm = Psalm {
             tone,
             options: options_in,
-            notes,
+            setting: mobile_setting(&s, &text),
         };
         Ok(Chant::wrap(Inner::new(s.into_chant(options.into()), Some(psalm))))
     }
@@ -545,15 +548,21 @@ impl Chant {
     /// Replaces the score with `src` (GABC, or psalm text for a chant made with
     /// `from_psalm`), keeping the options, as an editor does on each change: only the
     /// syllables around the edit are engraved again, and the next layout reuses the line
-    /// breaks it can. Layouts made before keep showing the old score.
+    /// breaks it can. Layouts made before keep showing the old score. The current source
+    /// changes nothing.
     pub fn update(&self, src: String) {
         let mut inner = self.write();
         let inner = &mut *inner;
+        if src == inner.chant.source() {
+            return;
+        }
         match &mut inner.psalm {
-            None => inner.chant.update(&src),
+            None => {
+                inner.chant.update(&src);
+            }
             Some(p) => {
                 let s = neuma_tones::psalm(&src, &p.tone, &p.options);
-                p.notes = psalm_notes(&s, &neuma::Utf16Index::new(&src));
+                p.setting = mobile_setting(&s, &src);
                 inner.chant.update_score(s.score, &src, s.diagnostics);
             }
         }
@@ -561,11 +570,12 @@ impl Chant {
     }
 
     /// Engraves the score again with new options, as when the reader changes the text size
-    /// (Dynamic Type, say). Options that engrave the same change nothing.
+    /// (Dynamic Type, say). Options that engrave as the current ones change nothing.
     pub fn set_options(&self, options: ChantOptions) {
         let mut inner = self.write();
-        inner.chant.set_options(options.into());
-        inner.refresh();
+        if inner.chant.set_options(options.into()) {
+            inner.refresh();
+        }
     }
 
     /// Problems found while reading the score.
@@ -578,19 +588,26 @@ impl Chant {
         summary(self.read().chant.summary())
     }
 
-    /// For a chant made with `from_psalm`, each note's place in the tone: `psalm_notes()[i]`
-    /// describes note `i`. Empty otherwise.
-    pub fn psalm_notes(&self) -> Vec<PsalmNote> {
-        self.read().psalm.as_ref().map(|p| p.notes.clone()).unwrap_or_default()
+    /// For a chant made with `from_psalm`, the setting as [`psalm`] gives it, following each
+    /// `update`: `psalm()!!.notes[i]` is note `i`'s place in the tone. Null otherwise.
+    pub fn psalm(&self) -> Option<PsalmSetting> {
+        self.read().psalm.as_ref().map(|p| p.setting.clone())
     }
 
     /// Lays the score out `width` output units wide. The chant remembers its last few
     /// layouts, so asking again with the same width and options is cheap.
-    pub fn layout(&self, width: f32, options: LayoutOptions) -> Arc<Layout> {
+    ///
+    /// A layout holds on to the engraving it was made from, which after an edit is a copy of
+    /// the whole old score: close the one a view has replaced rather than leave it to the
+    /// garbage collector. In Kotlin, `layout.close()` (or `.use { }`, or a Compose
+    /// `DisposableEffect(layout) { onDispose { layout.close() } }`); in Swift, drop the
+    /// reference.
+    pub fn layout(&self, width: f32, options: LayoutOptions) -> Arc<ChantLayout> {
         let inner = self.read();
         let layout = inner.chant.layout_with(width, &options.into());
-        Arc::new(Layout {
+        Arc::new(ChantLayout {
             layout,
+            page: OnceLock::new(),
             timeline: Mutex::new(None),
         })
     }
@@ -612,45 +629,33 @@ impl Chant {
     }
 }
 
-/// A layout of a chant at one width: what to draw, when each note sounds, and what is under
-/// a point or a caret. It keeps answering for the score it was made from after the chant is
-/// updated.
+/// A layout of a chant at one width (`Layout` in the Rust API, a `Page` in JS): what to
+/// draw, when each note sounds, and what is under a point or a caret. It keeps answering
+/// for the score it was made from after the chant is updated. Close it when a view replaces
+/// it (see `Chant.layout`).
 #[derive(Debug, uniffi::Object)]
-pub struct Layout {
+pub struct ChantLayout {
     layout: neuma::Layout,
+    /// What `page` gives, made on the first call.
+    page: OnceLock<Page>,
     /// The last timeline made, by the weights (as sanitized) it was timed with.
     timeline: Mutex<Option<(neuma::Weights, Arc<neuma::Timeline>)>>,
 }
 
 #[uniffi::export]
-impl Layout {
-    /// What to draw.
+impl ChantLayout {
+    /// What to draw. It is made on the first call and kept, but each call copies it into a
+    /// new value: keep the one you have (in Compose, `remember(layout) { layout.page() }`)
+    /// rather than asking on each recomposition.
     pub fn page(&self) -> Page {
-        let list = self.layout.display();
-        Page {
-            width: list.width,
-            height: list.height,
-            staff_space: list.staff_space,
-            items: list.items.into_iter().filter_map(item).collect(),
-            lines: list
-                .lines
-                .iter()
-                .map(|l| LineBox {
-                    top: l.top,
-                    bottom: l.bottom,
-                    staff: l.staff,
-                    baseline: l.baseline,
-                })
-                .collect(),
-            alt_text: list.alt_text,
-        }
+        self.page.get_or_init(|| self.make_page()).clone()
     }
 
     /// When each note sounds, timed with `weights`.
-    pub fn timeline(&self, weights: Weights) -> Timeline {
+    pub fn timeline(&self, weights: Weights) -> ChantTimeline {
         let t = self.timed(weights);
         let utf16 = self.utf16();
-        Timeline {
+        ChantTimeline {
             notes: t.notes.iter().map(|n| note(n, utf16)).collect(),
             pauses: t
                 .pauses
@@ -702,7 +707,28 @@ impl Layout {
     }
 }
 
-impl Layout {
+impl ChantLayout {
+    fn make_page(&self) -> Page {
+        let list = self.layout.display();
+        Page {
+            width: list.width,
+            height: list.height,
+            staff_space: list.staff_space,
+            items: list.items.into_iter().filter_map(item).collect(),
+            lines: list
+                .lines
+                .iter()
+                .map(|l| LineBox {
+                    top: l.top,
+                    bottom: l.bottom,
+                    staff: l.staff,
+                    baseline: l.baseline,
+                })
+                .collect(),
+            alt_text: list.alt_text,
+        }
+    }
+
     fn utf16(&self) -> &neuma::Utf16Index {
         self.layout.utf16().expect("a chant's layouts know its source")
     }
@@ -885,7 +911,8 @@ pub enum Intone {
 /// How psalm text is set. Every field has a default, so `PsalmOptions()` is the usual one.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Record)]
 pub struct PsalmOptions {
-    /// null for the first verse only.
+    /// When the intonation is sung. Null (the default) means on the first verse only; an
+    /// enum field can't have another default in the bindings.
     #[uniffi(default)]
     pub intone: Option<Intone>,
     /// Point half-verses that have no marks before setting them; off leaves them
@@ -1122,12 +1149,15 @@ fn psalm_notes(s: &neuma_tones::PsalmSetting, utf16: &neuma::Utf16Index) -> Vec<
 }
 
 fn setting(tone: &neuma_tones::Tone, text: &str, options: PsalmOptions) -> PsalmSetting {
+    mobile_setting(&neuma_tones::psalm(text, tone, &psalm_options(options)), text)
+}
+
+fn mobile_setting(s: &neuma_tones::PsalmSetting, text: &str) -> PsalmSetting {
     let utf16 = neuma::Utf16Index::new(text);
-    let s = neuma_tones::psalm(text, tone, &psalm_options(options));
     PsalmSetting {
-        notes: psalm_notes(&s, &utf16),
+        notes: psalm_notes(s, &utf16),
         diagnostics: s.diagnostics.iter().map(|d| diagnostic(d, &utf16)).collect(),
-        gabc: s.gabc,
+        gabc: s.gabc.clone(),
     }
 }
 

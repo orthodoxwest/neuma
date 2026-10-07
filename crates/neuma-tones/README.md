@@ -15,7 +15,9 @@ let setting = psalm(text, tone, &PsalmOptions::default());
 // setting.gabc:    "(c4) The(g) Lord(h) is(j) King,(j) … ap(j)pá(k)rel;(j) *(:) …"
 // setting.notes[i] describes note i of the engraved score, and its `span` is the sung
 // syllable's bytes in `text`. So are the spans of `setting.score`, and the chant's:
-let chant = setting.into_chant(neuma::ChantOptions::default());
+let mut chant = setting.into_chant(neuma::ChantOptions::default());
+// An edit to the text sets it to the same tone again.
+chant.update("O praise the Lord * all ye nations.");
 ```
 
 `PsalmOptions::default().with_intone(Intone::EveryVerse)` sings the intonation on every

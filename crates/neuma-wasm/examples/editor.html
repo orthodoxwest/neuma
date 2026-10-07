@@ -422,7 +422,7 @@ new ResizeObserver(() => { dirtyLayout = true; schedule(); }).observe(preview);
 schedule();
 
 // For tests and the console.
-window.neumaEditor = { chant, text, render: () => { render(); return last; } };
+window.neumaEditor = { chant, text, get page() { return page; }, render: () => { render(); return last; } };
 </script>
 </body>
 </html>

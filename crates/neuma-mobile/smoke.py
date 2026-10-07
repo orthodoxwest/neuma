@@ -54,7 +54,7 @@ accent = next(n for n in ps.notes if n.role == neuma.ToneRole.ACCENT)
 utf16 = text.encode("utf-16-le")
 assert utf16[2 * accent.source_utf16_start:2 * accent.source_utf16_end].decode("utf-16-le") == "pá"
 sung = neuma.Chant.from_psalm(text, "8.G", neuma.PsalmOptions(), neuma.ChantOptions())
-assert sung.psalm_notes() == ps.notes
+assert sung.psalm() == ps and chant.psalm() is None
 notes = sung.layout(500.0, neuma.LayoutOptions()).timeline(neuma.Weights()).notes
 assert len(notes) == len(ps.notes) and notes[0].source_utf16_start == ps.notes[0].source_utf16_start
 try:

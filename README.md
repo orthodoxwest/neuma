@@ -193,10 +193,10 @@ for width in [800.0, 400.0] {
 ```
 
 For a GABC editor, `chant.update(&source)` engraves again only around the edit, the next
-layout reuses the line breaks it can, and `chant.svg_parts(&layout, &options)` reuses each
-unchanged line's SVG. Each layout links itself and the source both ways:
-`layout.source_at(x, y)`, `layout.note_at(x, y)` and `layout.elements_at(byte)`, with
-`chant.utf16()` to convert a caret counted in UTF-16 units.
+layout reuses the line breaks it can, and `layout.svg_parts_reusing(&shown, &options)` reuses
+each line's SVG that the page already shows. Each layout links itself and the source both
+ways: `layout.source_at(x, y)`, `layout.note_at(x, y)`, and `layout.elements_at(byte)` or
+`layout.elements_at_utf16(caret)` for a caret counted in UTF-16 units.
 
 ### Live editing in the browser
 
@@ -355,9 +355,10 @@ be searched and copied; with no font it uses the standard Times faces every PDF 
 ### iOS and Android
 
 [`neuma-mobile`](crates/neuma-mobile/README.md) wraps the engine with UniFFI. A `Chant` is
-thread-safe; `layout` returns a `Layout`, whose `page()` has the items to draw (each glyph's
-outline is fetched once with `glyphOutline`), whose `timeline(weights)` is the browser's,
-and whose hit tests answer for it alone, so a thumbnail and the main view don't mix.
+thread-safe; `layout` returns a `ChantLayout`, whose `page()` has the items to draw (each
+glyph's outline is fetched once with `glyphOutline`), whose `timeline(weights)` is the
+browser's, and whose hit tests answer for it alone, so a thumbnail and the main view don't
+mix. Close a layout when a new one replaces it: it holds the engraving it was drawn from.
 
 ```swift
 let chant = Chant(gabc: source, options: ChantOptions())

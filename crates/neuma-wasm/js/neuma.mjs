@@ -11,8 +11,9 @@
 // Every note's SVG ink carries its id in `data-note`; select it with `[data-note~="<id>"]`,
 // since a porrectus swash lists both notes it draws. Positions are in SVG user units.
 //
-// Each page answers for itself: its `timeline` (made when first read), and its hit tests,
-// `noteAt`, `sourceAt` and `elementsAt`, whatever was laid out since (a thumbnail, say).
+// Each page answers for the score it shows: its `timeline` (made when first read), and its
+// hit tests, `noteAt`, `sourceAt` and `elementsAt`, whatever was laid out since (a thumbnail,
+// say), and after one change to the chant (a click between an edit and the next frame).
 // For an editor: `chant.update(gabc)` on each change, `layout(w, { svg: "lines" })` to patch
 // only the lines that changed, `page.sourceAt(x, y)` for a click and `page.elementsAt(caret)`
 // for the caret. Offsets named `start`/`end` count UTF-8 bytes; those named
@@ -228,7 +229,7 @@ function chantArgs({ initial = 1, annotation = true, lyricSize = 2.45, font = "g
   return [Math.min(Math.max(Math.trunc(Number(initial)) || 0, 0), 255), annotation ? 1 : 0, lyricSize, font === "eb-garamond-12" ? 1 : 0];
 }
 
-/** The diagnostics, then for a chant set from a psalm its `{ gabc, notes }`. */
+/** The diagnostics, then for a chant set from a psalm its `{ gabc, notes, diagnostics }`. */
 function diagnosticsAndPsalm(out) {
   const nul = out.indexOf("\0");
   return nul < 0 ? [JSON.parse(out), undefined] : [JSON.parse(out.slice(0, nul)), JSON.parse(out.slice(nul + 1))];
@@ -240,8 +241,6 @@ export class Chant {
   #diagnostics;
   #summary;
   #psalm;
-  /** Bumped on each change, so a page laid out before it can tell. */
-  #version = 0;
   /** The last page and the arguments it was laid out with. */
   #last = null;
   /** Each line's SVG from the last layout in parts, which the engine refers to for lines it kept. */
@@ -270,8 +269,8 @@ export class Chant {
   /**
    * Sets psalm text to a tone, as `psalm` does, and engraves it with its spans in `text`:
    * the timeline's and hit tests' sources, and the diagnostics' offsets, are in `text`.
-   * `update(text)` sets the new text to the same tone. `psalm` holds the setting's
-   * `{ gabc, notes }`.
+   * `update(text)` sets the new text to the same tone. `psalm` holds the setting as `psalm`
+   * returns it.
    * @param {string} text
    * @param {string} tone as for `psalm`
    * @param {{ intone?: "first"|"every"|"never", autoPoint?: boolean, initial?: number,
@@ -310,46 +309,51 @@ export class Chant {
     return this.#diagnostics;
   }
 
-  /** For a chant made with `fromPsalm`, the setting's `{ gabc, notes }` (see `psalm`). */
+  /**
+   * For a chant made with `fromPsalm`, the setting as `psalm` returns it:
+   * `{ gabc, notes, diagnostics }`, following each `update`. Undefined otherwise.
+   */
   get psalm() {
     return this.#psalm;
   }
 
-  #changed(out) {
-    [this.#diagnostics, this.#psalm] = diagnosticsAndPsalm(out);
+  /** Takes in a change the engine reported (2), or none (1); returns whether it changed. */
+  #changed(status) {
+    if (status === 0) throw new Error("neuma: this Chant was freed");
+    if (status !== 2) return false;
+    [this.#diagnostics, this.#psalm] = diagnosticsAndPsalm(takeOutput());
     this.#summary = undefined;
-    this.#version += 1;
     this.#last = null;
+    return true;
   }
 
   /**
    * Replaces the score with `src` (GABC, or psalm text for a chant made with `fromPsalm`),
    * keeping this Chant's options, as an editor does on each change. Lay it out again to see
-   * it; `diagnostics`, `summary` and `psalm` follow the new source.
+   * it; `diagnostics`, `summary` and `psalm` follow the new source. Pages laid out before
+   * keep answering for the score they show until the next change. Returns whether anything
+   * changed: not when `src` is the current source.
    * @param {string} src
+   * @returns {boolean}
    */
   update(src) {
     const handle = this.#live();
-    const out = guarded((w) => {
+    return this.#changed(guarded((w) => {
       putInput(String(src));
-      if (!w.chant_update(handle)) throw new Error("neuma: this Chant was freed");
-      return takeOutput();
-    });
-    this.#changed(out);
+      return w.chant_update(handle);
+    }));
   }
 
   /**
    * Engraves the score again with new options (those the constructor takes), as when the
-   * reader changes the lyric size. Options that engrave the same change nothing.
+   * reader changes the lyric size. Options that engrave as the current ones change nothing,
+   * and pages laid out before stay current. Returns whether anything changed.
+   * @returns {boolean}
    */
   setOptions(options = {}) {
     const handle = this.#live();
     const args = chantArgs(options);
-    const out = guarded((w) => {
-      if (!w.chant_set_options(handle, ...args)) throw new Error("neuma: this Chant was freed");
-      return takeOutput();
-    });
-    this.#changed(out);
+    return this.#changed(guarded((w) => w.chant_set_options(handle, ...args)));
   }
 
   /** The score's library entry, as `summarize` returns it. */
@@ -396,8 +400,7 @@ export class Chant {
       return takeOutput();
     });
     const nul = out.indexOf("\0");
-    const { width: w, height: h } = JSON.parse(out.slice(0, nul));
-    const version = this.#version;
+    const { width: w, height: h, version } = JSON.parse(out.slice(0, nul));
     const page = new Page(PAGE, w, h, (op, ...args) => this.#ask(version, at, values, op, ...args));
     if (svg === "lines") {
       const [head, defs, rest, ...tail] = out.slice(nul + 1).split("\0");
@@ -417,26 +420,29 @@ export class Chant {
     return page;
   }
 
-  /** Asks the engine about a page laid out with `at` at `version`. */
+  /**
+   * Asks the engine about a page laid out with `at` at `version`. A page the engine no
+   * longer keeps (two changes old, or of a freed chant) answers as if empty.
+   */
   #ask(version, at, values, op, ...args) {
-    const handle = this.#live();
-    if (version !== this.#version) {
-      throw new Error("neuma: this page was laid out before the chant changed; lay it out again");
-    }
+    const handle = this.#handle;
+    if (handle === undefined || this.#generation !== generation || !wasm) return STALE[op];
     return guarded((w) => {
       switch (op) {
+        case "live":
+          return w.chant_has_page(handle, version, ...at) === 1;
         case "timeline":
-          w.chant_timeline(handle, ...at, ...values);
+          if (!w.chant_timeline(handle, version, ...at, ...values)) return STALE[op];
           return JSON.parse(takeOutput());
         case "noteAt": {
-          const id = w.chant_note_at(handle, ...at, ...args);
+          const id = w.chant_note_at(handle, version, ...at, ...args);
           return id < 0 ? null : id;
         }
         case "sourceAt":
-          w.chant_source_at(handle, ...at, ...args);
+          if (!w.chant_source_at(handle, version, ...at, ...args)) return STALE[op];
           return JSON.parse(takeOutput());
         default:
-          w.chant_elements_at(handle, ...at, ...args);
+          if (!w.chant_elements_at(handle, version, ...at, ...args)) return STALE[op];
           return JSON.parse(takeOutput());
       }
     });
@@ -451,11 +457,15 @@ export class Chant {
 
 const PSALM = Symbol("psalm");
 const PAGE = Symbol("page");
+/** What a stale page answers. */
+const STALE = Object.freeze({ live: false, timeline: null, noteAt: null, sourceAt: null, elementsAt: Object.freeze([]) });
 
 /**
  * A layout of a Chant: `width`, `height`, and `svg` or `svgParts`. Its timeline and hit
- * tests answer for this page, whatever the chant has laid out since; after the chant
- * changes (`update`, `setOptions`) they throw, and the page should be laid out again.
+ * tests answer for the score this page shows, whatever the chant has laid out since, and
+ * after one change to the chant (`update`, `setOptions`), as when a click lands between an
+ * edit and the next frame. After a second change the page is `stale`: it answers as if empty
+ * (`null`, `[]`) and should be laid out again. None of them throws.
  */
 export class Page {
   #ask;
@@ -470,12 +480,21 @@ export class Page {
   }
 
   /**
+   * Whether the chant has changed twice since this page was laid out, so that it can no
+   * longer answer: lay out again.
+   */
+  get stale() {
+    return !this.#ask("live");
+  }
+
+  /**
    * The playback timeline, made when first read: `{ notes, pauses, lines, duration }`, with
    * times in weight units. Each note is `{ id, cx, cy, w, h, start, duration, … }`, `cx`,
-   * `cy` its notehead's center; each pause `{ beforeNote, kind, start, duration }`.
+   * `cy` its notehead's center; each pause `{ beforeNote, kind, start, duration }`. Null for
+   * a stale page that hadn't made it.
    */
   get timeline() {
-    if (this.#timeline === undefined) this.#timeline = this.#ask("timeline");
+    if (this.#timeline == null) this.#timeline = this.#ask("timeline");
     return this.#timeline;
   }
 
