@@ -57,3 +57,35 @@ with real scores. Add `-- -max_total_time=300` to stop after five minutes. A cra
 input in `fuzz/artifacts/<target>/`; shrink it with `cargo +nightly fuzz tmin -O <target>
 <file>`, fix the bug, and add the shrunk input to a regression test next to the code it
 exercises.
+
+## Corpus run
+
+A nightly workflow ([corpus.yml](.github/workflows/corpus.yml)) runs every chant in
+[GregoBase](https://gregobase.selapa.net/), about 18,800 scores, through parse, engrave,
+layout at three widths, the display list, note map, SVG and a GABC round trip. It fails on
+a panic, on a file slower than 5 seconds or still running after 60, and on a round trip
+that doesn't reach a fixed point. Its report (in the run's summary and the `corpus-report`
+artifact) counts diagnostics by code against
+[tools/corpus/gregobase-counts.tsv](tools/corpus/gregobase-counts.tsv). The whole run takes
+under a minute once built.
+
+GregoBase isn't in this repository. Its scores are mostly transcriptions of public-domain
+chant, but the dump has no license of its own and some entries are marked as still under
+copyright, so the workflow fetches the public SQL dump from the
+[GregoBase repository](https://github.com/gregorio-project/GregoBase) at a pinned commit,
+checks its SHA-256, skips the chants GregoBase marks as copyrighted, and keeps the extracted
+scores only in the runner's temporary directory. Nothing from the dump is cached, committed
+or uploaded. To move to a newer dump, update the commit and checksum in the workflow and
+the counts file in the same pull request.
+
+To run it locally:
+
+```sh
+curl -sSfLO https://raw.githubusercontent.com/gregorio-project/GregoBase/2ebcda3f523f9b19933d59fa32bb4215cd8e7675/gregobase_online.sql
+python3 -I tools/corpus/gregobase.py gregobase_online.sql /tmp/gregobase
+cargo run --release -p neuma --example corpus -- /tmp/gregobase \
+    --baseline tools/corpus/gregobase-counts.tsv --counts tools/corpus/gregobase-counts.tsv
+```
+
+`--counts` rewrites the baseline; commit it when a change to the diagnostics is intended.
+The example takes any directory of `.gabc` files.

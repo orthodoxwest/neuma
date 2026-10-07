@@ -1,0 +1,55 @@
+# Nightly robustness run: every chant in GregoBase through parse, engrave, layout at three
+# widths, the display list, note map, SVG and a GABC round trip. It fails on a panic, a
+# file slower than 5 s or still running after 60 s, or an unstable round trip, and reports
+# diagnostic counts against tools/corpus/gregobase-counts.tsv.
+#
+# GregoBase isn't vendored. The job downloads its public SQL dump from the GregoBase
+# repository at a pinned commit, checks its SHA-256, extracts the scores to the runner's
+# temporary directory and skips those GregoBase marks as under copyright. Neither the dump
+# nor the scores are cached, committed or uploaded; only the report is. See CONTRIBUTING.md.
+name: Corpus
+on:
+  schedule:
+    - cron: "23 3 * * *"
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/corpus.yml
+      - tools/corpus/**
+      - crates/neuma/examples/corpus.rs
+permissions:
+  contents: read
+jobs:
+  gregobase:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GREGOBASE_COMMIT: 2ebcda3f523f9b19933d59fa32bb4215cd8e7675
+      GREGOBASE_SHA256: 3759c60b529b57fa13f696bfacf748d40a285a847d859276667749caa76de080
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Fetch the GregoBase dump
+        run: |
+          curl -sSfL --retry 3 -o "$RUNNER_TEMP/gregobase.sql" \
+            "https://raw.githubusercontent.com/gregorio-project/GregoBase/$GREGOBASE_COMMIT/gregobase_online.sql"
+          echo "$GREGOBASE_SHA256  $RUNNER_TEMP/gregobase.sql" | sha256sum -c -
+      - name: Extract the scores
+        run: python3 -I tools/corpus/gregobase.py "$RUNNER_TEMP/gregobase.sql" "$RUNNER_TEMP/gregobase"
+      - run: cargo build --release -p neuma --example corpus
+      - name: Run the corpus
+        run: >
+          target/release/examples/corpus "$RUNNER_TEMP/gregobase"
+          --baseline tools/corpus/gregobase-counts.tsv --counts counts.tsv --markdown report.md
+          --max-ms 5000 --hang-secs 60
+      - name: Summarize
+        if: always()
+        run: if [ -f report.md ]; then cat report.md >> "$GITHUB_STEP_SUMMARY"; fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: corpus-report
+          path: |
+            report.md
+            counts.tsv
+          if-no-files-found: ignore
