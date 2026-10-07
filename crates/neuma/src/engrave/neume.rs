@@ -1046,7 +1046,7 @@ pub(crate) fn build(kind: Kind, notes: &[Note], next_position: Option<i8>, note_
 }
 
 /// Horizontal ink extent of a set of pieces.
-pub(crate) fn extent(pieces: &[Piece]) -> Option<(f32, f32)> {
+pub(crate) fn extent<'a>(pieces: impl IntoIterator<Item = &'a Piece>) -> Option<(f32, f32)> {
     let mut out: Option<(f32, f32)> = None;
     for p in pieces {
         let (l, r) = match p.mark {

@@ -14,61 +14,62 @@ staff rect 34.33 48.51 325.67 0.77
 clef DoClef 34.33 12.89
 note PunctumQuadratum 52.33 30.89 n0
 Lyric 44.78 68.69 14.70 s1 "ta"
-note PunctumQuadratum 68.72 24.89 n1
-Lyric 63.39 68.69 14.70 s2 "li":b "c"
-note PunctumQuadratum 103.80 30.89 n2
-Lyric 84.13 68.69 14.70 s3 "Small":c
-note PunctumQuadratum 141.15 36.89 n3
-Lyric 126.80 68.69 14.70 s4 "Ru":r "bric"
-note PunctumQuadratum 178.39 30.89 n4
-Lyric 174.51 68.69 14.70 s5 "un":u "der"
-note PunctumQuadratum 225.86 24.89 n5
-Lyric 215.52 68.69 14.70 s6 "e":i "li"
-note PunctumQuadratum 244.04 30.89 n6
-Lyric 232.06 68.69 14.70 s7 "sion"
-note PunctumQuadratum 287.22 24.89 n7
-Lyric 262.86 68.69 14.70 s8 "centered"
-note PunctumQuadratum 326.64 30.89 n8
-Lyric 317.75 68.69 14.70 s9 "v":i "er"
-note PunctumQuadratum 344.78 24.89 n9
-Lyric 334.42 68.69 14.70 s10 "ba"
+note PunctumQuadratum 70.96 24.89 n1
+Lyric 65.63 68.69 14.70 s2 "li":b "c"
+note PunctumQuadratum 108.29 30.89 n2
+Lyric 88.63 68.69 14.70 s3 "Small":c
+note PunctumQuadratum 147.90 36.89 n3
+Lyric 133.54 68.69 14.70 s4 "Ru":r "bric"
+note PunctumQuadratum 187.37 30.89 n4
+Lyric 183.50 68.69 14.70 s5 "un":u "der"
+note PunctumQuadratum 237.10 24.89 n5
+Lyric 226.76 68.69 14.70 s6 "e":i "li"
+note PunctumQuadratum 257.53 30.89 n6
+Lyric 245.54 68.69 14.70 s7 "sion"
+note PunctumQuadratum 302.95 24.89 n7
+Lyric 278.59 68.69 14.70 s8 "centered"
+note PunctumQuadratum 344.62 30.89 n8
+Lyric 335.73 68.69 14.70 s9 "v":i "er"
 Hyphen 55.26 68.69 14.70 "-"
-Hyphen 227.66 68.69 14.70 "-"
-custos CustosShort 357.38 30.89
+Hyphen 238.90 68.69 14.70 "-"
+Hyphen 352.40 68.69 14.70 "-"
+custos CustosLong 357.22 24.89
 staff rect 0.00 93.09 360.00 0.77
 staff rect 0.00 105.09 360.00 0.77
 staff rect 0.00 117.09 360.00 0.77
 staff rect 0.00 129.09 360.00 0.77
 clef DoClef 0.00 93.47
-note PunctumQuadratum 18.00 111.47 n10
-Lyric 15.07 149.27 14.70 s11 "al"
-note PunctumQuadratum 39.92 117.47 n11
-Lyric 31.53 149.27 14.70 s12 "so"
-note PunctumQuadratum 66.12 111.47 n12
-Lyric 53.66 149.27 14.70 s13 "transla"
-note PunctumQuadratum 102.81 117.47 n13
-Lyric 90.96 149.27 14.70 s14 "tion"
-bar rect 118.46 99.47 0.77 24.00
-note PunctumQuadratum 150.56 111.47 n14
-Lyric 127.36 149.27 14.70 s16 "℟":r ". re"
-note PunctumQuadratum 169.44 105.47 n15
-Lyric 153.42 149.27 14.70 s17 "spon"
-note PunctumQuadratum 188.45 111.47 n16
-Lyric 180.84 149.27 14.70 s18 "se"
-note PunctumQuadratum 225.13 105.47 n17
-Lyric 201.42 149.27 14.70 s19 "℣":r ". ver"
-note PunctumQuadratum 247.41 111.47 n18
-Lyric 239.79 149.27 14.70 s20 "se"
-note PunctumQuadratum 274.69 111.47 n19
-Lyric 260.38 149.27 14.70 s21 "cross"
-bar rect 300.77 87.47 0.77 12.00
-Rubric 297.92 149.27 14.70 s22 "†":r
-note PunctumQuadratum 326.79 111.47 n20
-Lyric 314.49 149.27 14.70 s23 "star"
+note PunctumQuadratum 18.00 105.47 n9
+Lyric 7.64 149.27 14.70 s10 "ba"
+note PunctumQuadratum 37.13 111.47 n10
+Lyric 34.20 149.27 14.70 s11 "al"
+note PunctumQuadratum 57.14 117.47 n11
+Lyric 48.75 149.27 14.70 s12 "so"
+note PunctumQuadratum 81.43 111.47 n12
+Lyric 68.97 149.27 14.70 s13 "transla"
+note PunctumQuadratum 118.12 117.47 n13
+Lyric 106.26 149.27 14.70 s14 "tion"
+bar rect 131.85 99.47 0.77 24.00
+note PunctumQuadratum 162.04 111.47 n14
+Lyric 138.84 149.27 14.70 s16 "℟":r ". re"
+note PunctumQuadratum 180.92 105.47 n15
+Lyric 164.90 149.27 14.70 s17 "spon"
+note PunctumQuadratum 199.93 111.47 n16
+Lyric 192.32 149.27 14.70 s18 "se"
+note PunctumQuadratum 234.69 105.47 n17
+Lyric 210.99 149.27 14.70 s19 "℣":r ". ver"
+note PunctumQuadratum 255.06 111.47 n18
+Lyric 247.45 149.27 14.70 s20 "se"
+note PunctumQuadratum 280.43 111.47 n19
+Lyric 266.12 149.27 14.70 s21 "cross"
+bar rect 304.60 87.47 0.77 12.00
+Rubric 301.75 149.27 14.70 s22 "†":r
+note PunctumQuadratum 328.70 111.47 n20
+Lyric 316.41 149.27 14.70 s23 "star"
 bar rect 346.85 99.47 0.77 24.00
 Rubric 344.74 149.27 14.70 s24 "*":r
-Hyphen 24.46 149.27 14.70 "-"
-Hyphen 232.72 149.27 14.70 "-"
+Hyphen 43.59 149.27 14.70 "-"
+Hyphen 242.29 149.27 14.70 "-"
 custos CustosLong 357.22 117.47
 staff rect 0.00 173.67 360.00 0.77
 staff rect 0.00 185.67 360.00 0.77

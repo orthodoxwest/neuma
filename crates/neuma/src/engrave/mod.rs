@@ -245,6 +245,10 @@ pub(crate) struct Segment {
     pub bars: Vec<BarBox>,
     /// Horizontal extent of the notation, if there is any.
     pub ink: Option<(f32, f32)>,
+    /// The extent notes are spaced by: the ink without its ledger lines, which may reach
+    /// toward the next notes' as GregorioTeX's do. None for a segment with a bar, a clef or a
+    /// custos, which keeps clear of ledger lines too.
+    pub spacing: Option<(f32, f32)>,
     pub lyric: Option<LyricBox>,
     pub after: Break,
     /// Space written before this segment inside its syllable (for segments after the first).
@@ -643,6 +647,12 @@ impl Engraver<'_> {
             return None;
         }
         let ink = neume::extent(&open.pieces);
+        let walled = open.pieces.iter().any(|p| matches!(p.role, Ink::Bar | Ink::Clef | Ink::Custos));
+        let spacing = if walled {
+            None
+        } else {
+            neume::extent(open.pieces.iter().filter(|p| p.role != Ink::Ledger))
+        };
         self.segments.push(Segment {
             syllable,
             first,
@@ -651,6 +661,7 @@ impl Engraver<'_> {
             heads: open.heads,
             bars: open.bars,
             ink,
+            spacing,
             lyric: None,
             after: Break::Allowed,
             space_before,

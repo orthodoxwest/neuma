@@ -283,6 +283,13 @@ fn edits_whose_effects_reach_past_them() {
         // Words joined and parted, and the first syllable, which the initial takes.
         ("(c4) a(g) b(h) c(g)", "(c4) a(g)b(h) c(g)"),
         ("(c4) a(g)b(h) c(g)", "(c4) a(g) b(h) c(g)"),
+        // A word's end where the syllables on either side have no text, which only the
+        // break's cost reads.
+        ("(c4) a(g) (hg) (fg) c(g)", "(c4) a(g) (hg)(fg) c(g)"),
+        (
+            "(c4) a(g) b(ghgfghgfghgfghgfghgfghgfghgf) (hg) c(h)",
+            "(c4) a(g) b(ghgfghgfghgfghgfghgfghgfghgf)(hg) c(h)",
+        ),
         ("(c4) Al(g)le(h) c(g)", "(c4) Bl(g)le(h) c(g)"),
         ("(c4) A(g) b(h) c(g)", "x(c4) A(g) b(h) c(g)"),
         ("name: a;\n%%\n(c4) a(g) b(h)", "name: ab;\n%%\n(c4) a(g) b(h)"),
