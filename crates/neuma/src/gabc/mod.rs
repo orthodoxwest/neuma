@@ -29,7 +29,7 @@ pub fn parse(src: &str) -> Parsed {
     }
     let syllables = parse_body(src, body_start, &mut sink);
     // Without a `%%`, header lines read as text; a clef put before them wouldn't help.
-    let headers_unseparated = body_start == 0 && header_lines(src).is_some();
+    let headers_unseparated = find_separator(src).is_none() && header_lines(src).is_some();
     lint_clef(&syllables, !headers_unseparated, &mut sink);
     // An NABC score has NABC in nearly every syllable, and a score that uses zero-width notes
     // often uses them in many places; one diagnostic says each, with how often it applies.
@@ -213,36 +213,69 @@ fn is_header_line(line: &str) -> bool {
     })
 }
 
-/// A line that reads as a whole header field: `name:` and a value that ends with `;`, or
-/// holds no `(`, which would start notes (`dixit:(g)`). Comments don't count.
-fn whole_header_line(line: &str) -> bool {
-    let l = strip_comment(line).trim();
-    is_header_line(l) && (l.ends_with(';') || !l.contains('('))
+/// How a line at the top of a source with no `%%` reads.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum TopLine {
+    /// Blank, or only a comment.
+    Empty,
+    /// A header field, `name: value;`, with nothing like notes in it.
+    Field,
+    /// A header field that might be notes: `dixit: a(g) b(h);`, or `name: a (b);`.
+    MaybeField,
+    Other,
+}
+
+fn top_line(line: &str) -> TopLine {
+    let l = strip_comment(line).trim_start_matches('\u{feff}').trim();
+    if l.is_empty() {
+        TopLine::Empty
+    } else if !is_header_line(l) {
+        TopLine::Other
+    } else if !l.contains('(') {
+        TopLine::Field
+    } else if l.ends_with(';') {
+        TopLine::MaybeField
+    } else {
+        TopLine::Other
+    }
+}
+
+/// Whether a line holds a `(`…`)` group, as notes do.
+fn has_group(line: &str) -> bool {
+    line.find('(').is_some_and(|i| line[i..].contains(')'))
 }
 
 /// For a source with no `%%`: if its first line reads as a header field, where the run of
-/// such lines at its top ends, and whether a `%%` there surely separates them from the notes
-/// (the next line isn't a header field run together with notes, as `mode: 8; (c4) a(g)`).
+/// such lines at its top ends, and whether a `%%` there surely separates them from the notes:
+/// the last of them is surely a field, and nothing after them looks like one before the notes
+/// start (as `mode: 8; (c4) a(g)`, or fields after a line that breaks the run).
 fn header_lines(src: &str) -> Option<(usize, bool)> {
-    let first = src.lines().find(|l| !l.trim().is_empty())?;
-    if !whole_header_line(first) {
+    let first = src.lines().map(top_line).find(|t| *t != TopLine::Empty)?;
+    if first == TopLine::Other {
         return None;
     }
     let mut end = 0;
-    let mut last_field = 0;
-    for line in src.split_inclusive('\n') {
-        if line.trim().is_empty() {
-            end += line.len();
-            continue;
-        }
-        if !whole_header_line(line) {
-            let sure = !is_header_line(strip_comment(line).trim());
-            return Some((last_field, sure));
+    let mut last = (0, TopLine::Empty);
+    let mut lines = src.split_inclusive('\n');
+    for line in lines.by_ref() {
+        match top_line(line) {
+            TopLine::Empty => {}
+            TopLine::Other => {
+                // Unsure if this line, or any up to the notes, looks like a header field.
+                let rest = std::iter::once(line).chain(lines);
+                let mut before_notes = rest.scan(false, |notes, l| {
+                    let was = *notes;
+                    *notes = *notes || has_group(strip_comment(l));
+                    (!was).then_some(l)
+                });
+                let fields_after = before_notes.any(|l| is_header_line(strip_comment(l).trim()));
+                return Some((last.0, last.1 == TopLine::Field && !fields_after));
+            }
+            t => last = (end + line.len(), t),
         }
         end += line.len();
-        last_field = end;
     }
-    Some((last_field, true))
+    Some((last.0, last.1 == TopLine::Field))
 }
 
 /// Lyric styling that stays open across syllables until its closing tag.
@@ -269,6 +302,9 @@ fn parse_body(src: &str, start: usize, sink: &mut Sink) -> Vec<Syllable> {
     let mut saw_space = true;
     let mut text_start = 0;
     let mut text = String::new();
+    // Where each byte of `text` came from in the source: comments are left out of the text and
+    // whitespace is read as one space, so text offsets aren't source offsets.
+    let mut from: Vec<(usize, usize)> = Vec::new();
     // Tags found to have no closer ahead, so each is searched for once rather than per opener.
     let mut unclosed = [false; 3];
     while i < bytes.len() {
@@ -284,13 +320,10 @@ fn parse_body(src: &str, start: usize, sink: &mut Sink) -> Vec<Syllable> {
                     text_start = i;
                 }
                 let next = body[i + 1..].chars().next();
-                text.push('$');
-                if let Some(n) = next {
-                    text.push(n);
-                    i += 1 + n.len_utf8();
-                } else {
-                    i += 1;
-                }
+                let len = 1 + next.map_or(0, char::len_utf8);
+                text.push_str(&body[i..i + len]);
+                copied(&mut from, start + i, len);
+                i += len;
             }
             '<' if let Some(end) = verbatim_end(&body[i..], &mut unclosed) => {
                 // Gregorio reads `<v>`, `<alt>` and `<sp>` to their closing tag, so a `(` inside
@@ -299,18 +332,22 @@ fn parse_body(src: &str, start: usize, sink: &mut Sink) -> Vec<Syllable> {
                     text_start = i;
                 }
                 text.push_str(&body[i..i + end]);
+                copied(&mut from, start + i, end);
                 i += end;
             }
             '(' => {
                 let close = find_close(body, i + 1);
                 let notes_src = &body[i + 1..close];
                 let syl_start = start + if text.trim().is_empty() { i } else { text_start };
-                let trimmed = text.trim_start().to_string();
-                let text_offset = start + text_start + (text.len() - trimmed.len());
-                let trimmed = trimmed.trim_end().to_string();
-                lint_hyphens(&trimmed, text_offset, sink);
+                let lead = text.len() - text.trim_start().len();
+                let trimmed = text.trim().to_string();
+                let map = TextMap {
+                    from: &from[lead..lead + trimmed.len()],
+                    base: start + text_start + lead,
+                };
+                lint_hyphens(&trimmed, &map, sink);
                 let nlba_before = state.nlba;
-                let lyric = lyric::parse(&trimmed, text_offset, &mut state, sink);
+                let lyric = lyric::parse(&trimmed, &map, &mut state, sink);
                 let notation = notes::parse(notes_src, start + i + 1, sink);
                 if close >= body.len() {
                     let end = start + body.trim_end().len();
@@ -328,6 +365,7 @@ fn parse_body(src: &str, start: usize, sink: &mut Sink) -> Vec<Syllable> {
                     euouae: state.euouae,
                 });
                 text.clear();
+                from.clear();
                 i = (close + 1).min(body.len());
                 text_start = i;
                 saw_space = false;
@@ -336,9 +374,11 @@ fn parse_body(src: &str, start: usize, sink: &mut Sink) -> Vec<Syllable> {
                 if text.trim().is_empty() {
                     saw_space = true;
                     text.clear();
+                    from.clear();
                     text_start = i + c.len_utf8();
                 } else {
                     text.push(' ');
+                    from.push((start + i, start + i + c.len_utf8()));
                 }
                 i += c.len_utf8();
             }
@@ -347,6 +387,7 @@ fn parse_body(src: &str, start: usize, sink: &mut Sink) -> Vec<Syllable> {
                     text_start = i;
                 }
                 text.push(c);
+                copied(&mut from, start + i, c.len_utf8());
                 i += c.len_utf8();
             }
         }
@@ -416,24 +457,64 @@ fn lint_clef(syllables: &[Syllable], fix: bool, sink: &mut Sink) {
     }
 }
 
-fn lint_hyphens(text: &str, offset: usize, sink: &mut Sink) {
+/// Notes that `len` bytes of text were copied from the source at `at`.
+fn copied(from: &mut Vec<(usize, usize)>, at: usize, len: usize) {
+    from.extend((at..at + len).map(|b| (b, b + 1)));
+}
+
+/// Where a syllable's text came from in the source: for each byte of the text, the source
+/// bytes it stands for.
+pub(crate) struct TextMap<'a> {
+    from: &'a [(usize, usize)],
+    /// Where the text starts, for an empty one.
+    base: usize,
+}
+
+impl TextMap<'_> {
+    /// The source offset of the text's byte `k`, or the text's end for `k` past it.
+    pub fn at(&self, k: usize) -> usize {
+        self.from.get(k).map_or_else(|| self.end(self.from.len()), |f| f.0)
+    }
+
+    /// The source offset where the text's first `k` bytes end.
+    pub fn end(&self, k: usize) -> usize {
+        match k.min(self.from.len()) {
+            0 => self.from.first().map_or(self.base, |f| f.0),
+            k => self.from[k - 1].1,
+        }
+    }
+
+    /// The source of the text's bytes `a..b`; for an empty range, where text inserted at `a`
+    /// goes (after the text when `a` is its end).
+    pub fn span(&self, a: usize, b: usize) -> Range<usize> {
+        if b > a {
+            self.at(a)..self.end(b)
+        } else if a >= self.from.len() {
+            self.end(a)..self.end(a)
+        } else {
+            self.at(a)..self.at(a)
+        }
+    }
+}
+
+fn lint_hyphens(text: &str, map: &TextMap, sink: &mut Sink) {
+    let n = text.len();
     // `<sp>-</sp>` is Gregorio's zero-width hyphen and is fine.
     if text.starts_with('-') {
         sink.warn(
-            offset..offset + 1,
+            map.span(0, 1),
             "gabc::hyphen-in-syllable",
             "a hyphen at the start of a syllable prints in addition to the hyphen the engine draws; remove it",
         );
-        sink.fix(Fix::new(offset..offset + 1, "", "Remove the hyphen"));
+        sink.fix(Fix::new(map.span(0, 1), "", "Remove the hyphen"));
     }
     if text.ends_with('-') && !text.ends_with("<sp>-</sp>") && !text.ends_with("$-") {
-        let end = offset + text.len();
         sink.warn(
-            end - 1..end,
+            map.span(n - 1, n),
             "gabc::hyphen-in-syllable",
             "a hyphen at the end of a syllable prints in addition to the hyphen the engine draws; remove it",
         );
-        sink.fix(Fix::new(end - 1..end, "", "Remove the hyphen"));
+        sink.fix(Fix::new(map.span(n - 1, n), "", "Remove the hyphen"));
     }
 }
 
