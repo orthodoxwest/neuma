@@ -2,7 +2,7 @@
 
 use crate::engrave::{Ink, Mark, Piece, clef_pieces, custos_piece};
 use crate::glyphs::UNITS_PER_SPACE;
-use crate::layout::{INITIAL_BEFORE, Layout};
+use crate::layout::{INITIAL_BEFORE, Layout, PlacedLine};
 use crate::score::{LyricRun, TextStyle};
 
 /// The note a piece of ink belongs to, by score-wide note index.
@@ -117,10 +117,8 @@ impl Layout<'_> {
     pub fn display(&self) -> DisplayList {
         let s = self.scale;
         let eng = self.eng;
-        let size = eng.lyric_size * s;
         let mut items = Vec::new();
         let mut lines = Vec::new();
-        let staff_weight = crate::engrave::neume::STEM;
         for line in &self.lines {
             lines.push(LineBox {
                 top: line.top * s,
@@ -128,87 +126,7 @@ impl Layout<'_> {
                 staff: line.staff * s,
                 baseline: line.baseline * s,
             });
-            for k in [-3.0f32, -1.0, 1.0, 3.0] {
-                let y = line.staff + k - staff_weight / 2.0;
-                items.push(Item::Rect {
-                    x: line.indent * s,
-                    y: y * s,
-                    w: (self.width - line.indent) * s,
-                    h: staff_weight * s,
-                    role: Ink::Staff,
-                    note: None,
-                    through: None,
-                });
-            }
-            if let Some(clef) = &line.clef {
-                let (pieces, _) = clef_pieces(clef, 0.0);
-                for p in &pieces {
-                    push(&mut items, p, line.indent, line.staff, s);
-                }
-            }
-            for (i, seg) in eng.segments[line.first..=line.last].iter().enumerate() {
-                let x = line.xs[i];
-                for p in &seg.pieces {
-                    push(&mut items, p, x, line.staff, s);
-                }
-                if let Some(t) = &seg.lyric
-                    && t.lead_hyphen
-                {
-                    items.push(Item::Text {
-                        x: (x + t.left) * s,
-                        baseline: line.baseline * s,
-                        size,
-                        runs: runs(&t.runs),
-                        role: TextRole::Hyphen,
-                        syllable: None,
-                    });
-                } else if let Some(t) = &seg.lyric {
-                    let role = if t.runs.iter().all(|r| r.style.rubric) {
-                        TextRole::Rubric
-                    } else {
-                        TextRole::Lyric
-                    };
-                    items.push(Item::Text {
-                        x: (x + t.left) * s,
-                        baseline: line.baseline * s,
-                        size,
-                        runs: runs(&t.runs),
-                        role,
-                        syllable: Some(t.syllable),
-                    });
-                }
-            }
-            let hyphen_left = |c: f32| (c - eng.hyphen / 2.0) * s;
-            for &c in &line.hyphens {
-                items.push(Item::Text {
-                    x: hyphen_left(c),
-                    baseline: line.baseline * s,
-                    size,
-                    runs: vec![TextRun {
-                        text: "-".into(),
-                        style: TextStyle::REGULAR,
-                    }],
-                    role: TextRole::Hyphen,
-                    syllable: None,
-                });
-            }
-            if let Some(c) = line.hyphen {
-                items.push(Item::Text {
-                    x: hyphen_left(c),
-                    baseline: line.baseline * s,
-                    size,
-                    runs: vec![TextRun {
-                        text: "-".into(),
-                        style: TextStyle::REGULAR,
-                    }],
-                    role: TextRole::Hyphen,
-                    syllable: None,
-                });
-            }
-            if let Some((p, x)) = line.custos {
-                let (piece, _) = custos_piece(p, x);
-                push(&mut items, &piece, 0.0, line.staff, s);
-            }
+            self.push_line(&mut items, line, 0.0);
         }
         if let (Some(init), Some(placed), Some(_)) = (&eng.initial, &self.initial, self.lines.first()) {
             let column = placed.column;
@@ -246,6 +164,97 @@ impl Layout<'_> {
             lines,
             items,
             alt_text: eng.alt_text.clone(),
+        }
+    }
+
+    /// Appends the items of one line, `top` higher up than the layout places it.
+    pub(crate) fn push_line(&self, items: &mut Vec<Item>, line: &PlacedLine, top: f32) {
+        let s = self.scale;
+        let eng = self.eng;
+        let size = eng.lyric_size * s;
+        let staff_weight = crate::engrave::neume::STEM;
+        let staff = line.staff - top;
+        let baseline = line.baseline - top;
+        for k in [-3.0f32, -1.0, 1.0, 3.0] {
+            let y = staff + k - staff_weight / 2.0;
+            items.push(Item::Rect {
+                x: line.indent * s,
+                y: y * s,
+                w: (self.width - line.indent) * s,
+                h: staff_weight * s,
+                role: Ink::Staff,
+                note: None,
+                through: None,
+            });
+        }
+        if let Some(clef) = &line.clef {
+            let (pieces, _) = clef_pieces(clef, 0.0);
+            for p in &pieces {
+                push(items, p, line.indent, staff, s);
+            }
+        }
+        for (i, seg) in eng.segments[line.first..=line.last].iter().enumerate() {
+            let x = line.xs[i];
+            for p in &seg.pieces {
+                push(items, p, x, staff, s);
+            }
+            if let Some(t) = &seg.lyric
+                && t.lead_hyphen
+            {
+                items.push(Item::Text {
+                    x: (x + t.left) * s,
+                    baseline: baseline * s,
+                    size,
+                    runs: runs(&t.runs),
+                    role: TextRole::Hyphen,
+                    syllable: None,
+                });
+            } else if let Some(t) = &seg.lyric {
+                let role = if t.runs.iter().all(|r| r.style.rubric) {
+                    TextRole::Rubric
+                } else {
+                    TextRole::Lyric
+                };
+                items.push(Item::Text {
+                    x: (x + t.left) * s,
+                    baseline: baseline * s,
+                    size,
+                    runs: runs(&t.runs),
+                    role,
+                    syllable: Some(t.syllable),
+                });
+            }
+        }
+        let hyphen_left = |c: f32| (c - eng.hyphen / 2.0) * s;
+        for &c in &line.hyphens {
+            items.push(Item::Text {
+                x: hyphen_left(c),
+                baseline: baseline * s,
+                size,
+                runs: vec![TextRun {
+                    text: "-".into(),
+                    style: TextStyle::REGULAR,
+                }],
+                role: TextRole::Hyphen,
+                syllable: None,
+            });
+        }
+        if let Some(c) = line.hyphen {
+            items.push(Item::Text {
+                x: hyphen_left(c),
+                baseline: baseline * s,
+                size,
+                runs: vec![TextRun {
+                    text: "-".into(),
+                    style: TextStyle::REGULAR,
+                }],
+                role: TextRole::Hyphen,
+                syllable: None,
+            });
+        }
+        if let Some((p, x)) = line.custos {
+            let (piece, _) = custos_piece(p, x);
+            push(items, &piece, 0.0, staff, s);
         }
     }
 }

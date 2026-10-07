@@ -38,7 +38,7 @@ pub use score::{Score, ScoreBuilder};
 pub use source::{Element, ElementKind, SourceMap, Utf16Index};
 pub use summary::{Mode, OfficePart, Summary, summarize};
 #[cfg(feature = "svg")]
-pub use svg::{SvgLine, SvgOptions, SvgParts};
+pub use svg::{SvgCache, SvgLine, SvgOptions, SvgParts};
 pub use text::{ApproxMeasure, TextMeasure};
 pub use vowel::VowelRules;
 
