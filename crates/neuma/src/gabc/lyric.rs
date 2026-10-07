@@ -202,8 +202,12 @@ fn style(state: &LyricState) -> TextStyle {
 }
 
 /// The sign a common verbatim star or cross macro draws, as the matching `<sp>` character.
+/// Only a macro counts: a plain word such as `<v>star</v>` is text, which TeX prints as it is.
 fn tex_sign(inner: &str) -> Option<&'static str> {
     let name: String = inner.chars().filter(|c| !matches!(c, ' ' | '{' | '}' | '$')).collect();
+    if !name.starts_with('\\') {
+        return None;
+    }
     let name = name.trim_matches('\\');
     Some(match name {
         // GregorioTeX's eight- and six-pointed stars, set where the books print an asterisk.

@@ -121,7 +121,8 @@ pub enum CustosPolicy {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct StyleOptions {
-    /// Lyric font size, in staff spaces.
+    /// Lyric font size, in staff spaces. The default, 2.45, is GregorioTeX's: 10 pt lyrics on
+    /// its default staff.
     pub lyric_size: f32,
     /// The drop-cap initial.
     pub initial: Initial,
@@ -136,7 +137,7 @@ pub struct StyleOptions {
 impl Default for StyleOptions {
     fn default() -> StyleOptions {
         StyleOptions {
-            lyric_size: 2.7,
+            lyric_size: 2.45,
             initial: Initial::default(),
             annotation: true,
             vowels: None,
@@ -167,6 +168,11 @@ pub(crate) struct LyricBox {
     pub width: f32,
     /// The syllable ends its word, so no hyphen follows it.
     pub word_end: bool,
+    /// The text ends with a hyphen of its own (`Giê-(f)su(g)`), so none is added after it.
+    pub hyphenated: bool,
+    /// Not the syllable's text but the hyphen GregorioTeX sets under a first syllable the
+    /// initial took whole.
+    pub lead_hyphen: bool,
     pub syllable: u32,
 }
 
@@ -203,6 +209,11 @@ pub(crate) struct Segment {
 }
 
 impl Segment {
+    /// A bar standing in a syllable of its own, its text (`*(;)`) or none.
+    pub(crate) fn is_bar(&self) -> bool {
+        !self.pieces.is_empty() && self.pieces.iter().all(|p| p.role == Ink::Bar)
+    }
+
     pub(crate) fn right(&self) -> f32 {
         let r = self.ink.map_or(0.0, |(_, r)| r);
         match &self.lyric {
@@ -278,18 +289,25 @@ pub struct Engraving {
     /// The segment each pause is drawn in, parallel to `pauses`.
     pub(crate) pause_segments: Vec<usize>,
     pub(crate) custos_never: bool,
+    /// The lowest note's staff position, or 0 for a score without notes.
+    pub(crate) lowest: StaffPosition,
     pub diagnostics: Vec<Diagnostic>,
 }
 
-/// Gap between the notation of neighbouring syllables (exsurge's `interSyllabicMultiplier`).
+/// Gap between a clef, bar or accidental and the notes beside it in one syllable (exsurge's
+/// `interSyllabicMultiplier`). Layout sets the gaps between syllables.
 pub(crate) const SYLLABLE_GAP: f32 = INTRA * 2.5;
-/// Extra gap between words.
-pub(crate) const WORD_GAP: f32 = INTRA;
 const ACCIDENTAL_GAP: f32 = INTRA * 2.0;
 /// GregorioTeX's default `\gresetunbreakablesyllablenotes{10}{4}{4}`: a syllable of at least
 /// this many notes may break between its note groups, but not within this many of either end.
 const MELISMA_NOTES: usize = 10;
 const MELISMA_END_NOTES: usize = 4;
+/// The least space between the texts of two words, in ems of the lyrics: GregorioTeX's
+/// `interwordspacetext` (0.17 cm against 10 pt lyrics). The font's own space is narrower, and
+/// set words ran together.
+const WORD_SPACE: f32 = 0.48;
+/// A one-staff initial's size relative to the lyrics (GregorioTeX's 40 pt and 10 pt).
+const INITIAL_SCALE: f32 = 4.0;
 /// Annotation size relative to the lyrics.
 const ANNOTATION_RATIO: f32 = 0.75;
 const DEFAULT_CLEF: Clef = Clef {
@@ -299,14 +317,17 @@ const DEFAULT_CLEF: Clef = Clef {
     span: 0..0,
 };
 
+/// The spaces written inside notes. `/`, `//` and a space are GregorioTeX's
+/// interelementspace (0.069 cm), largerspace (0.109 cm) and glyphspace (0.219 cm) on its
+/// default staff, whose interline is 0.288 cm.
 fn space_width(s: Space) -> f32 {
     match s {
         Space::Zero => 0.0,
         Space::Tiny => INTRA * 0.5,
         Space::Half => INTRA * 0.5,
-        Space::Small => INTRA,
-        Space::Medium => INTRA * 2.0,
-        Space::Large | Space::LargeNoBreak => INTRA * 2.0,
+        Space::Small => 0.48,
+        Space::Medium => 0.76,
+        Space::Large | Space::LargeNoBreak => 1.52,
         Space::Scaled(f) => INTRA * f,
     }
 }
@@ -372,6 +393,10 @@ pub(crate) fn custos_piece(position: StaffPosition, left: f32) -> (Piece, f32) {
     ink_at(glyph, left, -(position as f32), Ink::Custos, None)
 }
 
+/// The distance between the centres of the two bars of a `::`: GregorioTeX's
+/// `divisiofinalissep` (0.109 cm, 0.76 staff spaces) between them, plus a bar's width.
+const FINALIS_SEP: f32 = 0.76 + STEM;
+
 fn bar_pieces(kind: BarKind, high: bool, left: f32) -> (Vec<Piece>, f32) {
     let shift = if high { -2 } else { 0 };
     let bar = |top: StaffPosition, bottom: StaffPosition| rect(left, top + shift, bottom + shift, Ink::Bar);
@@ -404,25 +429,14 @@ fn bar_pieces(kind: BarKind, high: bool, left: f32) -> (Vec<Piece>, f32) {
             (out, STEM)
         }
         BarKind::Finalis => {
-            let w = INTRA * 2.0;
-            (
-                vec![bar(3, -3), rect(left + w - STEM * 2.0, 3, -3, Ink::Bar)]
-                    .into_iter()
-                    .map(|mut p| {
-                        if let Mark::Rect { w: rw, x, .. } = &mut p.mark
-                            && *x > left
-                        {
-                            *rw = STEM * 2.0;
-                        }
-                        p
-                    })
-                    .collect(),
-                w,
-            )
+            // Two thin bars, as GregorioTeX draws `::`.
+            let second = left + FINALIS_SEP;
+            (vec![bar(3, -3), rect(second, 3 + shift, -3 + shift, Ink::Bar)], FINALIS_SEP + STEM)
         }
         BarKind::Dominican(n) => {
             // `;1`–`;8`: a bar an interline and a half long, as GregorioTeX draws them. An odd
-            // one rises from line (n+1)/2; an even one hangs from line n/2.
+            // one rises from line (n+1)/2; an even one hangs from line n/2+1. Lines count from
+            // the bottom, so `;7` and `;8` reach above the staff.
             let n = n as StaffPosition;
             let (top, bottom) = if n % 2 == 1 { (n - 1, n - 4) } else { (n - 3, n - 6) };
             (vec![bar(top, bottom)], STEM)
@@ -493,6 +507,22 @@ impl Engraver<'_> {
         }
         let next_note = self.note_positions.get(*run.ids.last().unwrap_or(&0) as usize + 1).copied();
         let splits = neume::split(&mut run.notes);
+        // A double mora after a neume ending on two pitches (`hg..`) is one mora for each of
+        // its last two notes, as Gregorio reads it: a dot after the neume at each note's height.
+        for s in &splits {
+            if s.end - s.start >= 2 {
+                let (a, b) = (s.end - 2, s.end - 1);
+                if run.notes[b].morae == 2 && run.notes[a].morae == 0 && run.notes[a].position != run.notes[b].position {
+                    run.notes[a].morae = 1;
+                    run.notes[b].morae = 1;
+                    for k in [a, b] {
+                        if let Some(info) = self.notes.get_mut(run.ids[k] as usize) {
+                            info.morae = 1;
+                        }
+                    }
+                }
+            }
+        }
         let mut x = open.advance(SYLLABLE_GAP);
         for (k, s) in splits.iter().enumerate() {
             let notes = &run.notes[s.start..s.end];
@@ -561,7 +591,9 @@ impl Engraver<'_> {
             after: Break::Allowed,
             space_before,
             clef: self.clef.clone(),
-            starts_with_clef: open.starts_with_clef,
+            // The score's opening clef is drawn at the start of the first line even when a clef
+            // change follows it at once, as in `(c4) (c3)`: Gregorio shows both.
+            starts_with_clef: open.starts_with_clef && !(self.segments.is_empty() && self.initial_clef.is_some()),
             first_note: open.first_note,
             suppress_custos: false,
         });
@@ -639,7 +671,7 @@ impl Score {
 
         let size = style.lyric_size;
         let hyphen = measure.advance("-", TextStyle::REGULAR) * size;
-        let word_space = measure.advance(" ", TextStyle::REGULAR) * size;
+        let word_space = measure.advance(" ", TextStyle::REGULAR).max(WORD_SPACE) * size;
         let (ascent, descent) = measure.vertical(TextStyle::REGULAR);
 
         // The drop cap comes off the first syllable with text; the rest of it is the lyric.
@@ -659,10 +691,12 @@ impl Score {
             // A nominal staff-to-staff distance (the staff, lyrics below it, and the gaps)
             // sizes the column the breaker indents for; layout sizes the capital itself to
             // the staves it actually spans.
-            let line_pitch = 6.0 + 0.5 + 0.4 + ascent * size * 0.85 + descent * size + 1.0;
+            let line_pitch = crate::layout::BASELINE_PITCH;
             let lines = n.min(initial::MAX_LINES) as usize;
             let cap = 6.0 + line_pitch * (lines - 1) as f32;
-            let initial_size = cap / CAP_HEIGHT;
+            // A one-staff initial is GregorioTeX's default: 40 pt against 10 pt lyrics, set on
+            // the lyric line rather than spanning the staff.
+            let initial_size = if lines == 1 { INITIAL_SCALE * size } else { cap / CAP_HEIGHT };
             let annotation_size = size * ANNOTATION_RATIO;
             let annotations = if style.annotation {
                 initial::annotations(&self.header)
@@ -681,7 +715,8 @@ impl Score {
             initial = Some(InitialBox {
                 width: advance_em * initial_size,
                 advance_em,
-                accent_room: if accented { 0.25 * initial_size } else { 0.0 },
+                // Standing on the lyric line, a one-staff initial's accent stays below the staff's top.
+                accent_room: if accented && lines > 1 { 0.25 * initial_size } else { 0.0 },
                 descent,
                 text,
                 syllable: si as u32,
@@ -728,7 +763,8 @@ impl Score {
             let mut seg_ids: Vec<usize> = Vec::new();
             let only_clef = syl.text.is_empty() && syl.notation.iter().all(|f| matches!(f, Figure::Clef(_) | Figure::Space(_)));
             let total_notes = syl.notation.iter().filter(|f| matches!(f, Figure::Note(_))).count();
-            let glued = syl.no_break_before || self.syllables.get(si as usize + 1).is_some_and(|s| s.no_break_before);
+            let glued =
+                syl.no_break_within || syl.no_break_before || self.syllables.get(si as usize + 1).is_some_and(|s| s.no_break_before);
             let mut notes_before = 0usize;
             // A break between note groups is allowed only inside a long melisma, away from its ends.
             let melisma_break = |notes_before: usize| {
@@ -997,6 +1033,34 @@ impl Score {
                     left: anchor - center,
                     width,
                     word_end: next_word,
+                    hyphenated: text.plain().ends_with(['-', '\u{2010}']),
+                    lead_hyphen: false,
+                    syllable: si,
+                });
+            } else if first_lyric.as_ref().is_some_and(|(i, _)| *i == si as usize)
+                && self.syllables.get(si as usize + 1).is_some_and(|s| !s.word_start)
+            {
+                // The initial took the whole first syllable of a longer word (`E(f)o(g)dem`):
+                // GregorioTeX sets a hyphen under its notes, so the line doesn't seem to start
+                // a new word.
+                let k = seg_ids[0];
+                let width = hyphen;
+                let seg = &e.segments[k];
+                let anchor = match seg.heads.first() {
+                    Some(h) => h.x,
+                    None => seg.ink.map_or(0.0, |(l, r)| (l + r) / 2.0),
+                };
+                e.segments[k].lyric = Some(LyricBox {
+                    runs: vec![LyricRun {
+                        text: "-".into(),
+                        style: TextStyle::REGULAR,
+                        consonant: true,
+                    }],
+                    left: anchor - width / 2.0,
+                    width,
+                    word_end: false,
+                    hyphenated: true,
+                    lead_hyphen: true,
                     syllable: si,
                 });
             }
@@ -1015,6 +1079,7 @@ impl Score {
                 .info(0..0, "engrave::final-break", "a line break at the end of the score is dropped");
         }
 
+        let lowest = e.notes.iter().map(|n| n.position).min().unwrap_or(0);
         Engraving {
             segments: e.segments,
             initial,
@@ -1031,6 +1096,7 @@ impl Score {
             pauses: e.pauses,
             pause_segments: e.pause_segments,
             custos_never: style.custos == CustosPolicy::Never,
+            lowest,
             diagnostics: e.sink.items,
         }
     }
@@ -1063,6 +1129,23 @@ mod tests {
         let (pieces, _) = bar_pieces(kind, false, 0.0);
         let (top, bottom) = pieces[0].y_extent();
         (-top, -bottom)
+    }
+
+    #[test]
+    fn a_double_bar_is_two_thin_bars() {
+        let (pieces, w) = bar_pieces(BarKind::Finalis, false, 0.0);
+        let rects: Vec<(f32, f32)> = pieces
+            .iter()
+            .filter_map(|p| match p.mark {
+                Mark::Rect { x, w, .. } => Some((x, w)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(rects, [(0.0, STEM), (FINALIS_SEP, STEM)]);
+        assert_eq!(w, FINALIS_SEP + STEM);
+        for p in &pieces {
+            assert_eq!(p.y_extent(), (-3.0, 3.0));
+        }
     }
 
     #[test]

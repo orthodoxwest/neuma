@@ -365,6 +365,16 @@ fn verbatim_stars_and_crosses_print() {
 }
 
 #[test]
+fn verbatim_sign_names_need_a_backslash() {
+    // Without the backslash, TeX prints the word, not the sign.
+    let p = parse("(c4) a<v>star</v>(g) b<v>{dag}</v>(h) c<v>$\\star$</v>(g)");
+    let s = &p.score.syllables;
+    assert_eq!(s[1].text.plain(), "astar");
+    assert!(!s[2].text.plain().contains('†'));
+    assert_eq!(s[3].text.plain(), "c*");
+}
+
+#[test]
 fn comma_digit_is_a_dominican_bar() {
     let bars: Vec<BarKind> = notes("(c4) a(f;3 f,4 f,0)")
         .iter()
@@ -372,7 +382,12 @@ fn comma_digit_is_a_dominican_bar() {
         .collect();
     assert_eq!(bars, [BarKind::Dominican(3), BarKind::Dominican(4), BarKind::Minima]);
     let p = parse("(c4) a(f;8)");
-    assert!(p.diagnostics.iter().any(|d| d.code == "gabc::dominican-bar"));
+    // `;7` and `;8` reach from the top line up past the staff.
+    assert!(
+        p.diagnostics
+            .iter()
+            .any(|d| d.code == "gabc::dominican-bar" && d.message.contains("partly above the staff"))
+    );
     assert!(parse("(c4) a(f;3)").diagnostics.is_empty());
 }
 
@@ -439,4 +454,11 @@ fn zero_width_notes_are_reported_once() {
     let p = parse("(c4) a(gF0/[-0.5]{ix}F0hi) b(h/[-0.5]{iy}hg)\n");
     let n = p.diagnostics.iter().filter(|d| d.code == "gabc::zero-width").count();
     assert_eq!(n, 1, "{:?}", p.diagnostics);
+    let d = p.diagnostics.iter().find(|d| d.code == "gabc::zero-width").unwrap();
+    assert!(d.message.ends_with("in all 2 groups"), "{}", d.message);
+    // A single group is one diagnostic, worded for that group alone.
+    let p = parse("(c4) a(gF0/[-0.5]{ix}F0hi)\n");
+    let zw: Vec<_> = p.diagnostics.iter().filter(|d| d.code == "gabc::zero-width").collect();
+    assert_eq!(zw.len(), 1, "{:?}", p.diagnostics);
+    assert_eq!(zw[0].message, "notes in `{…}` are drawn with their own width");
 }

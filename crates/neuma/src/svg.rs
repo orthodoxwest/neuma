@@ -81,7 +81,7 @@ impl DisplayList {
         if opts.style {
             let _ = write!(
                 out,
-                "<style>.{p}{{fill:currentColor}}.{p} text{{font-family:{f};font-variant-ligatures:none;font-kerning:normal}}.{p} .{p}-rubric{{fill:var(--{p}-rubric,#a3211c)}}</style>",
+                "<style>.{p}{{fill:currentColor}}.{p} text{{font-family:{f};font-variant-ligatures:none;font-kerning:normal}}.{p} .{p}-rubric{{fill:var(--{p}-rubric,#a3211c)}}.{p} .{p}-sign{{stroke:currentColor;stroke-width:.04em}}.{p} .{p}-rubric.{p}-sign,.{p} .{p}-rubric .{p}-sign{{stroke:var(--{p}-rubric,#a3211c)}}</style>",
                 f = opts
                     .font_family
                     .chars()
@@ -196,8 +196,20 @@ impl DisplayList {
                         if st.underline {
                             attrs.push_str(r#" text-decoration="underline""#);
                         }
-                        if st.rubric && *role != TextRole::Rubric {
-                            let _ = write!(attrs, r#" class="{p}-rubric""#);
+                        // ℣ and ℟ are thin in text faces; GregorioTeX's are heavier, so the style
+                        // block strokes them.
+                        let sign = r.text.contains(['℣', '℟']);
+                        match (st.rubric && *role != TextRole::Rubric, sign) {
+                            (true, true) => {
+                                let _ = write!(attrs, r#" class="{p}-rubric {p}-sign""#);
+                            }
+                            (true, false) => {
+                                let _ = write!(attrs, r#" class="{p}-rubric""#);
+                            }
+                            (false, true) => {
+                                let _ = write!(attrs, r#" class="{p}-sign""#);
+                            }
+                            (false, false) => {}
                         }
                         if attrs.is_empty() {
                             escape(&r.text, &mut out);

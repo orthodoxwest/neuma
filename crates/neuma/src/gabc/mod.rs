@@ -27,19 +27,20 @@ pub fn parse(src: &str) -> Parsed {
     }
     let syllables = parse_body(src, body_start, &mut sink);
     // An NABC score has NABC in nearly every syllable, and a score that uses zero-width notes
-    // uses them throughout; one diagnostic says each.
+    // often uses them in many places; one diagnostic says each, with how often it applies.
     for (code, all) in [
         ("gabc::nabc", "NABC notation isn't supported and is skipped throughout the score"),
         (
             "gabc::zero-width",
-            "notes in `{…}` are drawn with their own width throughout the score",
+            "notes in `{…}` are drawn with their own width, in all {n} groups",
         ),
     ] {
-        if sink.items.iter().filter(|d| d.code == code).count() > 1 {
+        let n = sink.items.iter().filter(|d| d.code == code).count();
+        if n > 1 {
             let mut seen = false;
             sink.items.retain(|d| d.code != code || !std::mem::replace(&mut seen, true));
             if let Some(d) = sink.items.iter_mut().find(|d| d.code == code) {
-                d.message = all.into();
+                d.message = all.replace("{n}", &n.to_string());
             }
         }
     }
@@ -265,6 +266,7 @@ fn parse_body(src: &str, start: usize, sink: &mut Sink) -> Vec<Syllable> {
                     notation,
                     span: syl_start..start + (close + 1).min(body.len()),
                     no_break_before: nlba_before && state.nlba,
+                    no_break_within: state.nlba,
                     euouae: state.euouae,
                 });
                 text.clear();

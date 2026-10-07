@@ -14,8 +14,9 @@ pub(crate) const CAP_HEIGHT: f32 = 0.65;
 pub enum Initial {
     None,
     /// The initial spans this many staves (at most 4, and no more than the layout has): its
-    /// cap height runs from the top line of the first staff to the bottom line of the last,
-    /// as in GregorioTeX.
+    /// cap height runs from the top line of the first staff to the bottom line of the last.
+    /// `Lines(1)`, the default, is GregorioTeX's default initial instead: four times the lyric
+    /// size, standing on the first line's lyric baseline.
     Lines(u8),
 }
 
@@ -65,7 +66,8 @@ pub(crate) fn split_initial(lyric: &Lyric) -> Option<(String, Lyric)> {
 }
 
 /// The lines shown above the initial: the `annotation` headers (at most two, the first on
-/// top), or else the mode written as a roman numeral with its modifier and differentia.
+/// top), or else the mode written as a lower-case roman numeral, as GregorioTeX prints it,
+/// with its modifier and differentia.
 pub(crate) fn annotations(header: &Header) -> Vec<String> {
     let given: Vec<String> = header
         .get_all("annotation")
@@ -80,7 +82,7 @@ pub(crate) fn annotations(header: &Header) -> Vec<String> {
         return Vec::new();
     };
     let mut line = match mode.parse::<u32>() {
-        Ok(n) if (1..=8).contains(&n) => ["I", "II", "III", "IV", "V", "VI", "VII", "VIII"][n as usize - 1].to_string(),
+        Ok(n) if (1..=8).contains(&n) => ["i", "ii", "iii", "iv", "v", "vi", "vii", "viii"][n as usize - 1].to_string(),
         _ => mode,
     };
     for name in ["mode-modifier", "mode-differentia"] {
@@ -146,7 +148,9 @@ mod tests {
         let h = parse("annotation: Ant.;\nannotation: VIII G;\nmode: 8;\n%%\n(c4)").score.header;
         assert_eq!(annotations(&h), ["Ant.", "VIII G"]);
         let h = parse("mode: 8;\nmode-differentia: G;\n%%\n(c4)").score.header;
-        assert_eq!(annotations(&h), ["VIII G"]);
+        assert_eq!(annotations(&h), ["viii G"]);
+        let h = parse("mode: 2;\n%%\n(c4)").score.header;
+        assert_eq!(annotations(&h), ["ii"]);
         let h = parse("annotation: {\\sc Ps.};\n%%\n(c4)").score.header;
         assert_eq!(annotations(&h), ["Ps."]);
         let h = parse("mode: per.;\n%%\n(c4)").score.header;
