@@ -710,6 +710,33 @@ fn a_word_after_one_ending_in_an_empty_syllable_keeps_its_space() {
 }
 
 #[test]
+fn a_text_past_the_last_syllable_stays_in_the_box() {
+    use neuma::TextMeasure;
+    // The last syllable is empty, so the text before it is the line's right end: squeezing the
+    // line must narrow that, not only the gap before the empty syllable.
+    let src = "(c4) O(hg) be(gh) joy(h)ful(h) in(hg~) God,(gi) all(hi) ye(h) lands:(h) *(:) sing(hg) \
+               prai(gh)ses(h) un(h)to(h) the(h) ho(h)nour(h) of(h) his(h) Name,(h.1) (,) make(h) his(h) \
+               praise(h) to(gf) be(gh) glo(g)ri(e)ous.(e) (::) All(fff) the(dfe) earth.(e/gh.1) ()";
+    for lyric_size in [2.0, 2.45, 8.0] {
+        let style = StyleOptions {
+            lyric_size,
+            ..NO_INITIAL.clone()
+        };
+        let eng = parse(src).score.engrave(&ApproxMeasure, &style);
+        for width in (150..900).step_by(3) {
+            let list = eng.layout(width as f32, &LayoutOptions::default()).display();
+            for item in &list.items {
+                if let Item::Text { runs, x, size, .. } = item {
+                    let text: String = runs.iter().map(|r| r.text.as_str()).collect();
+                    let right = x + ApproxMeasure.advance(&text, Default::default()) * size;
+                    assert!(right <= list.width + 0.01, "{lyric_size} {width}: {text} {right} {}", list.width);
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn a_hyphen_ends_a_line_inside_a_word() {
     use neuma::TextMeasure;
     let src = format!("(c4) {} (::)", ["la(g)ta(h)"; 30].join("-").replace("-", ""));

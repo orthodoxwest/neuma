@@ -277,8 +277,10 @@ struct Trial {
     touching: Vec<bool>,
     shrinks: Vec<f32>,
     natural: f32,
-    /// Ink right and lyric right ends, for justification and the custos.
-    ink_end: f32,
+    /// The width with every gap shrunk all it may. It is less than `natural` by less than the
+    /// shrinks' sum when the line's right end isn't its last segment's (a text running on
+    /// past an empty syllable's).
+    shrunk: f32,
 }
 
 impl Engraving {
@@ -330,6 +332,12 @@ impl Engraving {
         let mut right = 0.0f32;
         let mut ink_end = start;
         let mut last_lyric = 0;
+        // The same with every gap shrunk all it may: the segments shift left by the shrink
+        // of all the gaps before them.
+        let mut gone = 0.0f32;
+        let mut cur_shrunk = cur;
+        let mut right_shrunk = 0.0f32;
+        let mut ink_end_shrunk = start;
         for seg in &self.segments[first..=last] {
             let spot = place(&cur, seg, self.hyphen, self.word_space, start);
             let x = spot.x;
@@ -345,10 +353,14 @@ impl Engraving {
                 last_lyric = xs.len() - 1;
             }
             shrinks.push(if xs.len() == 1 { 0.0 } else { spot.shrink });
+            gone += shrinks[shrinks.len() - 1];
             cur = advance(&cur, seg, x);
+            cur_shrunk = advance(&cur_shrunk, seg, x - gone);
             right = right.max(x + seg.right());
+            right_shrunk = right_shrunk.max(x - gone + seg.right());
             if let Some((_, r)) = seg.ink {
                 ink_end = ink_end.max(x + r);
+                ink_end_shrunk = ink_end_shrunk.max(x - gone + r);
             }
         }
         Trial {
@@ -357,8 +369,39 @@ impl Engraving {
             touching,
             shrinks,
             natural: self.natural(&cur, right, ink_end, last),
-            ink_end,
+            shrunk: self.natural(&cur_shrunk, right_shrunk, ink_end_shrunk, last),
         }
+    }
+
+    /// The width of the line `first..=last` set at `xs`, and its ink's right end.
+    fn extent(&self, first: usize, last: usize, xs: &[f32], start: f32) -> (f32, f32) {
+        let mut cur = Cursor {
+            ink_right: None,
+            lyric_right: None,
+            word_continues: false,
+            own_hyphen: false,
+            after_bar: false,
+            x: start,
+        };
+        let mut right = 0.0f32;
+        let mut ink_end = start;
+        for (seg, &x) in self.segments[first..=last].iter().zip(xs) {
+            cur = advance(&cur, seg, x);
+            right = right.max(x + seg.right());
+            if let Some((_, r)) = seg.ink {
+                ink_end = ink_end.max(x + r);
+            }
+        }
+        (self.natural(&cur, right, ink_end, last), ink_end)
+    }
+
+    /// Whether the next text after segment `last` is in the same word, so a line ending there
+    /// ends with a hyphen when its last text's word goes on.
+    fn continues_past(&self, last: usize) -> bool {
+        self.segments[last + 1..]
+            .iter()
+            .find(|s| s.lyric.is_some())
+            .is_some_and(|s| !s.word_start)
     }
 
     /// The width a line ending at `last` needs: its segments, plus a trailing hyphen and the
@@ -366,6 +409,7 @@ impl Engraving {
     fn natural(&self, cur: &Cursor, mut right: f32, ink_end: f32, last: usize) -> f32 {
         if cur.word_continues
             && !cur.own_hyphen
+            && self.continues_past(last)
             && let Some(r) = cur.lyric_right
         {
             right = right.max(r + self.hyphen);
@@ -464,8 +508,12 @@ impl Engraving {
                 let mut stretch_weight = 0.0f32;
                 // The part of it since the last text, which a touching text takes back.
                 let mut since_text = 0.0f32;
-                // How far its word gaps may shrink together.
-                let mut shrink = 0.0f32;
+                // How far its word gaps may shrink together, and the line as packed with them
+                // all shrunk (see `Trial::shrunk`).
+                let mut gone = 0.0f32;
+                let mut cur_shrunk = cur;
+                let mut right_shrunk = 0.0f32;
+                let mut ink_end_shrunk = start;
                 // Whether this line has passed a boundary where it may end.
                 let mut breakable_seen = false;
                 for last in first..n {
@@ -482,17 +530,21 @@ impl Engraving {
                     if last > first {
                         stretch_weight += spot.weight;
                         since_text += spot.weight;
-                        shrink += spot.shrink;
+                        gone += spot.shrink;
                     }
                     if seg.lyric.is_some() {
                         since_text = 0.0;
                     }
                     cur = advance(&cur, seg, x);
+                    cur_shrunk = advance(&cur_shrunk, seg, x - gone);
                     right = right.max(x + seg.right());
+                    right_shrunk = right_shrunk.max(x - gone + seg.right());
                     if let Some((_, r)) = seg.ink {
                         ink_end = ink_end.max(x + r);
+                        ink_end_shrunk = ink_end_shrunk.max(x - gone + r);
                     }
                     let natural = self.natural(&cur, right, ink_end, last);
+                    let shrink = natural - self.natural(&cur_shrunk, right_shrunk, ink_end_shrunk, last);
                     // A line may be a little wider than the column: its word gaps shrink, as
                     // GregorioTeX's glue does.
                     let over = natural > target + shrink;
@@ -600,19 +652,19 @@ impl Engraving {
                     }
                 }
             }
-            if gaps > 0 && trial.natural > target {
-                // Too wide by no more than its word gaps can give: they shrink alike.
-                let total: f32 = trial.shrinks.iter().sum();
-                if total > 0.0 {
-                    let part = (trial.natural - target).min(total) / total;
-                    for (i, x) in xs.iter_mut().enumerate().skip(1) {
-                        stretch -= part * trial.shrinks[i];
-                        *x += stretch;
-                    }
+            let capacity = trial.natural - trial.shrunk;
+            if gaps > 0 && trial.natural > target && capacity > 0.0 {
+                // Too wide by no more than its word gaps can give: they shrink alike. The
+                // line's width is the most of linear functions of how far they shrink, so
+                // shrinking them by this part of their all narrows it at least as much.
+                let part = ((trial.natural - target) / capacity).min(1.0);
+                for (i, x) in xs.iter_mut().enumerate().skip(1) {
+                    stretch -= part * trial.shrinks[i];
+                    *x += stretch;
                 }
             }
-            let natural = trial.natural + stretch.min(0.0);
-            let ink_end = trial.ink_end + stretch;
+            // The line's extent as set.
+            let (natural, ink_end) = self.extent(first, last, &xs, start);
             let custos = if last + 1 < self.segments.len() {
                 self.custos_for(last).map(|p| (p, ink_end + CUSTOS_GAP))
             } else {
@@ -637,13 +689,8 @@ impl Engraving {
                     prev_lyric = Some((l + t.width, !t.word_end && !t.hyphenated));
                 }
             }
-            // The word goes on past the line only if the next text is in it.
-            let next_in_word = self.segments[last + 1..]
-                .iter()
-                .find(|s| s.lyric.is_some())
-                .is_some_and(|s| !s.word_start);
             let hyphen = match prev_lyric {
-                Some((r, true)) if next_in_word => Some(r + self.hyphen / 2.0),
+                Some((r, true)) if self.continues_past(last) => Some(r + self.hyphen / 2.0),
                 _ => None,
             };
             for x in xs.iter_mut().chain(hyphens.iter_mut()) {
@@ -786,8 +833,11 @@ impl Engraving {
         for &(first, last) in ranges.iter().skip(placed) {
             let (_, start) = self.line_start(first);
             let trial = self.trial(first, last, start);
-            let shrink: f32 = trial.shrinks.iter().sum();
-            let natural = trial.natural - (trial.natural - target).clamp(0.0, shrink);
+            let natural = if trial.natural > target {
+                target.max(trial.shrunk)
+            } else {
+                trial.natural
+            };
             let (ragged, _) = self.line_end(last, opts);
             rights.push(if ragged { natural } else { target.max(natural) });
         }
