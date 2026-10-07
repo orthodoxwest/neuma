@@ -252,6 +252,11 @@ struct Builder {
 
 impl Builder {
     fn push(&mut self, c: char, style: TextStyle, consonant: bool) {
+        // A byte-order mark past the start of the file is invisible and isn't lyric text; kept,
+        // it would read back as the body's own byte-order mark and vanish.
+        if c == '\u{feff}' {
+            return;
+        }
         match self.runs.last_mut() {
             Some(last) if last.style == style && last.consonant == consonant => last.text.push(c),
             _ => self.runs.push(LyricRun {

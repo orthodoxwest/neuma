@@ -485,6 +485,9 @@ fn writer_is_stable_on_fuzz_finds() {
         // An inclinatum's lean on a note another sign made an oriscus.
         "(G1o",
         "(c4) a(G1oh G2s G0v)",
+        // A byte-order mark that isn't at the start of the file.
+        "\n\u{feff}(",
+        "(c4) a\u{feff}b(g) \u{feff}(h)",
     ];
     for src in cases {
         let once = parse(src).score.to_gabc();
