@@ -2,9 +2,11 @@
 //! notation (and the lyric under it) with geometry relative to its own origin, plus what may
 //! happen at the break after it. Line breaking places segments on lines (`layout`).
 
+mod cache;
 mod initial;
 pub(crate) mod neume;
 
+pub use cache::EngraveCache;
 pub use initial::Initial;
 pub(crate) use initial::{CAP_HEIGHT, strip_tex};
 
@@ -652,6 +654,15 @@ impl Engraver<'_> {
 impl Score {
     /// Engraves the score: neumes, signs and lyric boxes, independent of width.
     pub fn engrave(&self, measure: &dyn TextMeasure, style: &StyleOptions) -> Engraving {
+        let mut pass = self.pass(measure, style, false);
+        for (si, syl) in self.syllables.iter().enumerate() {
+            pass.syllable(self, si, syl);
+        }
+        pass.finish(self).0
+    }
+
+    /// Sets up engraving: the vowel rules, the text metrics and the initial.
+    fn pass<'a>(&self, measure: &'a dyn TextMeasure, style: &'a StyleOptions, marks: bool) -> Pass<'a> {
         let rules = style
             .vowels
             .clone()
@@ -747,407 +758,510 @@ impl Score {
             });
             first_lyric = Some((si, rest));
         }
-        let mut syllable_text = Vec::new();
-        let mut syllable_spans = Vec::with_capacity(self.syllables.len());
-        let mut bar_spans = Vec::new();
-        let mut syllable_word = Vec::new();
-        let mut alt_text = String::new();
-        let mut word = 0u32;
-        let mut warned_face = false;
-        let mut pending_break: Option<Break> = None;
-        let mut pending_span = 0..0;
-        let mut nocustos = false;
+        Pass {
+            e,
+            measure,
+            size,
+            hyphen,
+            word_space,
+            ascent,
+            descent,
+            initial,
+            first_lyric,
+            syllable_text: Vec::new(),
+            syllable_spans: Vec::with_capacity(self.syllables.len()),
+            bar_spans: Vec::new(),
+            syllable_word: Vec::new(),
+            alt_text: String::new(),
+            word: 0,
+            warned_face: false,
+            pending_break: None,
+            pending_span: 0..0,
+            nocustos: false,
+            marks: marks.then(|| Vec::with_capacity(self.syllables.len() + 1)),
+        }
+    }
+}
 
-        for (si, syl) in self.syllables.iter().enumerate() {
-            let si = si as u32;
-            if syl.word_start && si > 0 {
-                word += 1;
+/// Engraving under way: the engraver and what it has carried from one syllable to the next.
+struct Pass<'a> {
+    e: Engraver<'a>,
+    measure: &'a dyn TextMeasure,
+    size: f32,
+    hyphen: f32,
+    word_space: f32,
+    ascent: f32,
+    descent: f32,
+    initial: Option<InitialBox>,
+    /// The syllable the initial came from, and the rest of its text.
+    first_lyric: Option<(usize, Lyric)>,
+    syllable_text: Vec<String>,
+    syllable_spans: Vec<std::ops::Range<usize>>,
+    bar_spans: Vec<std::ops::Range<usize>>,
+    syllable_word: Vec<u32>,
+    alt_text: String,
+    word: u32,
+    warned_face: bool,
+    /// A break written in a syllable of its own, for the next segment.
+    pending_break: Option<Break>,
+    pending_span: std::ops::Range<usize>,
+    nocustos: bool,
+    /// The state before each syllable and after the last, when kept for an [`EngraveCache`].
+    marks: Option<Vec<Resume>>,
+}
+
+/// What engraving carries into a syllable, and how much it has made by then. A syllable
+/// engraves the same from the same mark.
+#[derive(Clone, Debug, PartialEq)]
+struct Resume {
+    segments: usize,
+    notes: usize,
+    pauses: usize,
+    bars: usize,
+    diagnostics: usize,
+    alt_text: usize,
+    word: u32,
+    alt_empty: bool,
+    clef: Clef,
+    initial_clef: Option<Clef>,
+    alteration: Vec<(StaffPosition, i8)>,
+    pending_break: Option<Break>,
+    pending_span: std::ops::Range<usize>,
+    nocustos: bool,
+    warned_face: bool,
+    /// What may happen after the last segment so far, which a later syllable may change.
+    last_after: Option<Break>,
+}
+
+impl Pass<'_> {
+    fn mark(&self) -> Resume {
+        Resume {
+            segments: self.e.segments.len(),
+            notes: self.e.notes.len(),
+            pauses: self.e.pauses.len(),
+            bars: self.bar_spans.len(),
+            diagnostics: self.e.sink.items.len(),
+            alt_text: self.alt_text.len(),
+            word: self.word,
+            alt_empty: self.alt_text.is_empty(),
+            clef: self.e.clef.clone(),
+            initial_clef: self.e.initial_clef.clone(),
+            alteration: self.e.alteration.clone(),
+            pending_break: self.pending_break,
+            pending_span: self.pending_span.clone(),
+            nocustos: self.nocustos,
+            warned_face: self.warned_face,
+            last_after: self.e.segments.last().map(|s| s.after),
+        }
+    }
+
+    /// Engraves syllable `si` of `score`.
+    fn syllable(&mut self, score: &Score, si: usize, syl: &crate::score::Syllable) {
+        let mark = self.marks.is_some().then(|| self.mark());
+        if let (Some(marks), Some(m)) = (&mut self.marks, mark) {
+            marks.push(m);
+        }
+        let si = si as u32;
+        if syl.word_start && si > 0 {
+            self.word += 1;
+        }
+        self.syllable_word.push(self.word);
+        let plain = syl.text.plain();
+        if !plain.is_empty() {
+            if syl.word_start && !self.alt_text.is_empty() {
+                self.alt_text.push(' ');
             }
-            syllable_word.push(word);
-            let plain = syl.text.plain();
-            if !plain.is_empty() {
-                if syl.word_start && !alt_text.is_empty() {
-                    alt_text.push(' ');
+            self.alt_text.push_str(&plain);
+        }
+        self.syllable_text.push(plain);
+        self.syllable_spans.push(syl.span.clone());
+        self.e.reset_alterations(syl.word_start, false);
+        let pauses_before = self.e.pauses.len();
+        // This syllable's notes are the ones pushed from here on.
+        let notes_from = self.e.notes.len();
+
+        let mut open = Open::new();
+        let mut run = Run {
+            notes: Vec::new(),
+            ids: Vec::new(),
+        };
+        let mut first_seg = true;
+        let mut space_before = 0.0;
+        let mut seg_ids: Vec<usize> = Vec::new();
+        let only_clef = syl.text.is_empty() && syl.notation.iter().all(|f| matches!(f, Figure::Clef(_) | Figure::Space(_)));
+        let total_notes = syl.notation.iter().filter(|f| matches!(f, Figure::Note(_))).count();
+        let glued = syl.no_break_within || syl.no_break_before || score.syllables.get(si as usize + 1).is_some_and(|s| s.no_break_before);
+        let mut notes_before = 0usize;
+        // A break between note groups is allowed only inside a long melisma, away from its ends.
+        let melisma_break = |notes_before: usize| {
+            !glued && total_notes >= MELISMA_NOTES && notes_before >= MELISMA_END_NOTES && total_notes - notes_before >= MELISMA_END_NOTES
+        };
+
+        for f in &syl.notation {
+            match f {
+                Figure::Note(n) => {
+                    let id = self.e.notes.len() as u32;
+                    let alteration = if self.e.style.alterations == AlterationScope::Note {
+                        0
+                    } else {
+                        self.e.alteration_of(n.position, &self.e.clef.clone())
+                    };
+                    self.e.notes.push(NoteInfo {
+                        syllable: si,
+                        position: n.position,
+                        shape: n.shape,
+                        liquescent: n.liquescent != crate::score::Liquescent::None,
+                        morae: n.morae,
+                        episema: n.episema.is_some(),
+                        span: n.span.clone(),
+                        clef: self.e.clef.clone(),
+                        alteration,
+                        vowel: None,
+                    });
+                    if self.e.style.alterations == AlterationScope::Note {
+                        self.e.alteration.clear();
+                    }
+                    run.notes.push(n.clone());
+                    run.ids.push(id);
+                    notes_before += 1;
                 }
-                alt_text.push_str(&plain);
-            }
-            syllable_text.push(plain);
-            syllable_spans.push(syl.span.clone());
-            e.reset_alterations(syl.word_start, false);
-            let pauses_before = e.pauses.len();
-            // This syllable's notes are the ones pushed from here on.
-            let notes_from = e.notes.len();
-
-            let mut open = Open::new();
-            let mut run = Run {
-                notes: Vec::new(),
-                ids: Vec::new(),
-            };
-            let mut first_seg = true;
-            let mut space_before = 0.0;
-            let mut seg_ids: Vec<usize> = Vec::new();
-            let only_clef = syl.text.is_empty() && syl.notation.iter().all(|f| matches!(f, Figure::Clef(_) | Figure::Space(_)));
-            let total_notes = syl.notation.iter().filter(|f| matches!(f, Figure::Note(_))).count();
-            let glued =
-                syl.no_break_within || syl.no_break_before || self.syllables.get(si as usize + 1).is_some_and(|s| s.no_break_before);
-            let mut notes_before = 0usize;
-            // A break between note groups is allowed only inside a long melisma, away from its ends.
-            let melisma_break = |notes_before: usize| {
-                !glued
-                    && total_notes >= MELISMA_NOTES
-                    && notes_before >= MELISMA_END_NOTES
-                    && total_notes - notes_before >= MELISMA_END_NOTES
-            };
-
-            for f in &syl.notation {
-                match f {
-                    Figure::Note(n) => {
-                        let id = e.notes.len() as u32;
-                        let alteration = if e.style.alterations == AlterationScope::Note {
-                            0
-                        } else {
-                            e.alteration_of(n.position, &e.clef.clone())
-                        };
-                        e.notes.push(NoteInfo {
-                            syllable: si,
-                            position: n.position,
-                            shape: n.shape,
-                            liquescent: n.liquescent != crate::score::Liquescent::None,
-                            morae: n.morae,
-                            episema: n.episema.is_some(),
-                            span: n.span.clone(),
-                            clef: e.clef.clone(),
-                            alteration,
-                            vowel: None,
-                        });
-                        if e.style.alterations == AlterationScope::Note {
-                            e.alteration.clear();
-                        }
-                        run.notes.push(n.clone());
-                        run.ids.push(id);
-                        notes_before += 1;
-                    }
-                    Figure::Space(s) => {
-                        e.flush(&mut run, &mut open, si);
-                        let cut = match *s {
-                            Space::Small | Space::Medium | Space::Half => true,
-                            Space::Scaled(f) => f > 0.0,
-                            _ => false,
-                        };
-                        if !open.empty && (*s == Space::Large || cut && melisma_break(notes_before)) {
-                            let o = std::mem::replace(&mut open, Open::new());
-                            if let Some(k) = e.close(o, si, first_seg, syl.word_start, space_before) {
-                                if *s != Space::Large {
-                                    e.segments[k].after = Break::InMelisma;
-                                }
-                                seg_ids.push(k);
-                                first_seg = false;
+                Figure::Space(s) => {
+                    self.e.flush(&mut run, &mut open, si);
+                    let cut = match *s {
+                        Space::Small | Space::Medium | Space::Half => true,
+                        Space::Scaled(f) => f > 0.0,
+                        _ => false,
+                    };
+                    if !open.empty && (*s == Space::Large || cut && melisma_break(notes_before)) {
+                        let o = std::mem::replace(&mut open, Open::new());
+                        if let Some(k) = self.e.close(o, si, first_seg, syl.word_start, space_before) {
+                            if *s != Space::Large {
+                                self.e.segments[k].after = Break::InMelisma;
                             }
-                            space_before = space_width(*s);
-                        } else {
-                            open.gap = Some(open.gap.unwrap_or(0.0) + space_width(*s));
+                            seg_ids.push(k);
+                            first_seg = false;
                         }
+                        space_before = space_width(*s);
+                    } else {
+                        open.gap = Some(open.gap.unwrap_or(0.0) + space_width(*s));
                     }
-                    Figure::Clef(c) => {
-                        e.flush(&mut run, &mut open, si);
-                        e.alteration.clear();
-                        e.clef = c.clone();
-                        if e.initial_clef.is_none() && e.segments.is_empty() && only_clef {
-                            e.initial_clef = Some(c.clone());
-                            continue;
-                        }
-                        if open.empty {
-                            open.starts_with_clef = true;
-                        }
-                        let x = open.advance(SYLLABLE_GAP);
-                        let (pieces, right) = clef_pieces(c, x);
-                        open.pieces.extend(pieces);
-                        open.x = right;
-                        open.gap.get_or_insert(SYLLABLE_GAP);
+                }
+                Figure::Clef(c) => {
+                    self.e.flush(&mut run, &mut open, si);
+                    self.e.alteration.clear();
+                    self.e.clef = c.clone();
+                    if self.e.initial_clef.is_none() && self.e.segments.is_empty() && only_clef {
+                        self.e.initial_clef = Some(c.clone());
+                        continue;
                     }
-                    Figure::Alteration(a) => {
-                        e.flush(&mut run, &mut open, si);
-                        let delta = match a.kind {
-                            AlterationKind::Flat => -1,
-                            AlterationKind::Natural => 0,
-                            AlterationKind::Sharp => 1,
-                        };
-                        let in_force = e.alteration_of(a.position, &e.clef.clone());
-                        e.alteration.push((a.position, delta));
-                        if a.soft && in_force == delta {
-                            continue;
+                    if open.empty {
+                        open.starts_with_clef = true;
+                    }
+                    let x = open.advance(SYLLABLE_GAP);
+                    let (pieces, right) = clef_pieces(c, x);
+                    open.pieces.extend(pieces);
+                    open.x = right;
+                    open.gap.get_or_insert(SYLLABLE_GAP);
+                }
+                Figure::Alteration(a) => {
+                    self.e.flush(&mut run, &mut open, si);
+                    let delta = match a.kind {
+                        AlterationKind::Flat => -1,
+                        AlterationKind::Natural => 0,
+                        AlterationKind::Sharp => 1,
+                    };
+                    let in_force = self.e.alteration_of(a.position, &self.e.clef.clone());
+                    self.e.alteration.push((a.position, delta));
+                    if a.soft && in_force == delta {
+                        continue;
+                    }
+                    let glyph = match a.kind {
+                        AlterationKind::Flat => G::Flat,
+                        AlterationKind::Natural => G::Natural,
+                        AlterationKind::Sharp => G::Sharp,
+                    };
+                    let x = open.advance(SYLLABLE_GAP);
+                    let (piece, w) = ink_at(glyph, x, -(a.position as f32), Ink::Accidental, None);
+                    open.pieces.push(piece);
+                    open.x = x + w;
+                    open.gap.get_or_insert(ACCIDENTAL_GAP * 0.5);
+                }
+                Figure::Bar(b) => {
+                    self.e.flush(&mut run, &mut open, si);
+                    self.e.reset_alterations(false, true);
+                    let x = open.advance(SYLLABLE_GAP);
+                    let (pieces, w) = bar_pieces(b.kind, b.high, x);
+                    let (top, bottom) = pieces
+                        .iter()
+                        .map(Piece::y_extent)
+                        .fold((f32::MAX, f32::MIN), |(t, b), (pt, pb)| (t.min(pt), b.max(pb)));
+                    open.bars.push(BarBox {
+                        bar: self.bar_spans.len() as u32,
+                        x,
+                        w,
+                        top,
+                        bottom,
+                    });
+                    self.bar_spans.push(b.span.clone());
+                    open.pieces.extend(pieces);
+                    open.x = x + w;
+                    self.e.pauses.push((self.e.notes.len() as u32, PauseKind::Bar(b.kind)));
+                    // The bar's ink is in the open segment, which closes next.
+                    self.e.pause_segments.push(self.e.segments.len());
+                    if melisma_break(notes_before) {
+                        let o = std::mem::replace(&mut open, Open::new());
+                        if let Some(k) = self.e.close(o, si, first_seg, syl.word_start, space_before) {
+                            self.e.segments[k].after = Break::InMelisma;
+                            seg_ids.push(k);
+                            first_seg = false;
                         }
-                        let glyph = match a.kind {
-                            AlterationKind::Flat => G::Flat,
-                            AlterationKind::Natural => G::Natural,
-                            AlterationKind::Sharp => G::Sharp,
-                        };
+                        space_before = SYLLABLE_GAP;
+                    }
+                }
+                Figure::Custos { position, .. } => {
+                    self.e.flush(&mut run, &mut open, si);
+                    let pos = position.or_else(|| self.e.note_positions.get(self.e.notes.len()).copied());
+                    if let Some(p) = pos {
                         let x = open.advance(SYLLABLE_GAP);
-                        let (piece, w) = ink_at(glyph, x, -(a.position as f32), Ink::Accidental, None);
+                        let (piece, w) = custos_piece(p, x);
                         open.pieces.push(piece);
                         open.x = x + w;
-                        open.gap.get_or_insert(ACCIDENTAL_GAP * 0.5);
                     }
-                    Figure::Bar(b) => {
-                        e.flush(&mut run, &mut open, si);
-                        e.reset_alterations(false, true);
-                        let x = open.advance(SYLLABLE_GAP);
-                        let (pieces, w) = bar_pieces(b.kind, b.high, x);
-                        let (top, bottom) = pieces
-                            .iter()
-                            .map(Piece::y_extent)
-                            .fold((f32::MAX, f32::MIN), |(t, b), (pt, pb)| (t.min(pt), b.max(pb)));
-                        open.bars.push(BarBox {
-                            bar: bar_spans.len() as u32,
-                            x,
-                            w,
-                            top,
-                            bottom,
-                        });
-                        bar_spans.push(b.span.clone());
-                        open.pieces.extend(pieces);
-                        open.x = x + w;
-                        e.pauses.push((e.notes.len() as u32, PauseKind::Bar(b.kind)));
-                        // The bar's ink is in the open segment, which closes next.
-                        e.pause_segments.push(e.segments.len());
-                        if melisma_break(notes_before) {
-                            let o = std::mem::replace(&mut open, Open::new());
-                            if let Some(k) = e.close(o, si, first_seg, syl.word_start, space_before) {
-                                e.segments[k].after = Break::InMelisma;
-                                seg_ids.push(k);
-                                first_seg = false;
-                            }
-                            space_before = SYLLABLE_GAP;
+                }
+                Figure::Break(b) => {
+                    self.e.flush(&mut run, &mut open, si);
+                    let brk = Break::Forced {
+                        justify: b.justify,
+                        custos: b.custos,
+                    };
+                    if open.empty {
+                        self.pending_break = Some(brk);
+                        self.pending_span = b.span.clone();
+                    } else {
+                        let o = std::mem::replace(&mut open, Open::new());
+                        if let Some(k) = self.e.close(o, si, first_seg, syl.word_start, space_before) {
+                            self.e.segments[k].after = brk;
+                            seg_ids.push(k);
+                            first_seg = false;
                         }
-                    }
-                    Figure::Custos { position, .. } => {
-                        e.flush(&mut run, &mut open, si);
-                        let pos = position.or_else(|| e.note_positions.get(e.notes.len()).copied());
-                        if let Some(p) = pos {
-                            let x = open.advance(SYLLABLE_GAP);
-                            let (piece, w) = custos_piece(p, x);
-                            open.pieces.push(piece);
-                            open.x = x + w;
-                        }
-                    }
-                    Figure::Break(b) => {
-                        e.flush(&mut run, &mut open, si);
-                        let brk = Break::Forced {
-                            justify: b.justify,
-                            custos: b.custos,
-                        };
-                        if open.empty {
-                            pending_break = Some(brk);
-                            pending_span = b.span.clone();
-                        } else {
-                            let o = std::mem::replace(&mut open, Open::new());
-                            if let Some(k) = e.close(o, si, first_seg, syl.word_start, space_before) {
-                                e.segments[k].after = brk;
-                                seg_ids.push(k);
-                                first_seg = false;
-                            }
-                            space_before = 0.0;
-                        }
-                    }
-                    Figure::NoCustos => nocustos = true,
-                }
-            }
-            // The psalm marks pause after this syllable's notes, ahead of a bar written after
-            // them, since the text marks the end of the half-verse.
-            let end = e.notes.len() as u32;
-            let mut at = e.pauses.iter().rposition(|p| p.0 < end).map_or(0, |i| i + 1).max(pauses_before);
-            for c in syllable_text.last().map_or("", String::as_str).chars() {
-                let kind = match c {
-                    '*' => PauseKind::Mediant,
-                    '†' => PauseKind::Flex,
-                    _ => continue,
-                };
-                e.pauses.insert(at, (end, kind));
-                e.pause_segments.insert(at, usize::MAX);
-                at += 1;
-            }
-            e.flush(&mut run, &mut open, si);
-            if only_clef && e.initial_clef.as_ref().is_some_and(|c| *c == e.clef) && e.segments.is_empty() {
-                continue;
-            }
-            if let Some(k) = e.close(open, si, first_seg, syl.word_start, space_before) {
-                seg_ids.push(k);
-            }
-            // A psalm mark belongs to its syllable's last segment.
-            let last_seg = e.segments.len().saturating_sub(1);
-            for s in e.pause_segments.iter_mut().skip(pauses_before).filter(|s| **s == usize::MAX) {
-                *s = last_seg;
-            }
-            if seg_ids.is_empty() {
-                continue;
-            }
-            // A break written in its own syllable applies after the previous segment.
-            if let Some(brk) = pending_break.take() {
-                let k = seg_ids[0];
-                // A syllable with text keeps its segment, and the break follows it.
-                let break_only = syl.text.is_empty()
-                    && syl
-                        .notation
-                        .iter()
-                        .all(|f| matches!(f, Figure::Break(_) | Figure::Space(_) | Figure::NoCustos));
-                if break_only && k > 0 {
-                    e.segments[k - 1].after = brk;
-                    e.segments.truncate(k);
-                    continue;
-                }
-                e.segments[*seg_ids.last().unwrap_or(&k)].after = brk;
-            }
-            if nocustos {
-                if let Some(k) = seg_ids.last() {
-                    e.segments[*k].suppress_custos = true;
-                }
-                nocustos = false;
-            }
-            if syl.no_break_before {
-                let k = seg_ids[0];
-                if k > 0 && !matches!(e.segments[k - 1].after, Break::Forced { .. }) {
-                    e.segments[k - 1].after = Break::Forbidden;
-                }
-            }
-
-            // The lyric goes under the first segment, its vowel over the first note.
-            let text = match &first_lyric {
-                Some((i, rest)) if *i == si as usize => rest,
-                _ => &syl.text,
-            };
-            if !text.is_empty() {
-                let k = seg_ids[0];
-                let runs = text.runs.clone();
-                let mut width = 0.0;
-                for r in &runs {
-                    width += measure.advance(&r.text, r.style) * size;
-                    if !measure.has_face(r.style) {
-                        width += measure.advance(&r.text, TextStyle::REGULAR) * size * 0.03;
-                        if !warned_face {
-                            e.sink.info(
-                                syl.span.clone(),
-                                "text::synthetic-face",
-                                "no face for this style; measured with the regular face widened 3%",
-                            );
-                            warned_face = true;
-                        }
+                        space_before = 0.0;
                     }
                 }
-                let chars: Vec<char> = text.plain().chars().collect();
-                let mut masked = chars.clone();
-                let mut ci = 0;
-                for r in &runs {
-                    for _ in r.text.chars() {
-                        if r.consonant {
-                            masked[ci] = '\u{0}';
-                        }
-                        ci += 1;
-                    }
-                }
-                let nucleus = text.center.clone().or_else(|| e.rules.nucleus(&masked));
-                let seg = &e.segments[k];
-                let anchor = match seg.heads.first() {
-                    Some(h) => h.x,
-                    None => seg.ink.map_or(0.0, |(l, r)| (l + r) / 2.0),
-                };
-                let center = match &nucleus {
-                    Some(r) => {
-                        let before = prefix_advance(&runs, r.start, measure) * size;
-                        let upto = prefix_advance(&runs, r.end, measure) * size;
-                        (before + upto) / 2.0
-                    }
-                    None => width / 2.0,
-                };
-                if let Some(r) = &nucleus
-                    && let Some(c) = chars.get(r.start)
-                {
-                    for n in &mut e.notes[notes_from..] {
-                        n.vowel = Some(*c);
-                    }
-                }
-                let next_word = self.syllables.get(si as usize + 1).is_none_or(|s| s.word_start);
-                e.segments[k].lyric = Some(LyricBox {
-                    runs,
-                    left: anchor - center,
-                    width,
-                    word_end: next_word,
-                    hyphenated: text.plain().ends_with(['-', '\u{2010}']),
-                    lead_hyphen: false,
-                    syllable: si,
-                });
-            } else if first_lyric.as_ref().is_some_and(|(i, _)| *i == si as usize)
-                && self.syllables.get(si as usize + 1).is_some_and(|s| !s.word_start)
-            {
-                // The initial took the whole first syllable of a longer word (`E(f)o(g)dem`):
-                // GregorioTeX sets a hyphen under its notes, so the line doesn't seem to start
-                // a new word.
-                let k = seg_ids[0];
-                let width = hyphen;
-                let seg = &e.segments[k];
-                let anchor = match seg.heads.first() {
-                    Some(h) => h.x,
-                    None => seg.ink.map_or(0.0, |(l, r)| (l + r) / 2.0),
-                };
-                e.segments[k].lyric = Some(LyricBox {
-                    runs: vec![LyricRun {
-                        text: "-".into(),
-                        style: TextStyle::REGULAR,
-                        consonant: true,
-                    }],
-                    left: anchor - width / 2.0,
-                    width,
-                    word_end: false,
-                    hyphenated: true,
-                    lead_hyphen: true,
-                    syllable: si,
-                });
+                Figure::NoCustos => self.nocustos = true,
             }
         }
+        // The psalm marks pause after this syllable's notes, ahead of a bar written after
+        // them, since the text marks the end of the half-verse.
+        let end = self.e.notes.len() as u32;
+        let mut at = self
+            .e
+            .pauses
+            .iter()
+            .rposition(|p| p.0 < end)
+            .map_or(0, |i| i + 1)
+            .max(pauses_before);
+        for c in self.syllable_text.last().map_or("", String::as_str).chars() {
+            let kind = match c {
+                '*' => PauseKind::Mediant,
+                '†' => PauseKind::Flex,
+                _ => continue,
+            };
+            self.e.pauses.insert(at, (end, kind));
+            self.e.pause_segments.insert(at, usize::MAX);
+            at += 1;
+        }
+        self.e.flush(&mut run, &mut open, si);
+        if only_clef && self.e.initial_clef.as_ref().is_some_and(|c| *c == self.e.clef) && self.e.segments.is_empty() {
+            return;
+        }
+        if let Some(k) = self.e.close(open, si, first_seg, syl.word_start, space_before) {
+            seg_ids.push(k);
+        }
+        // A psalm mark belongs to its syllable's last segment.
+        let last_seg = self.e.segments.len().saturating_sub(1);
+        for s in self.e.pause_segments.iter_mut().skip(pauses_before).filter(|s| **s == usize::MAX) {
+            *s = last_seg;
+        }
+        if seg_ids.is_empty() {
+            return;
+        }
+        // A break written in its own syllable applies after the previous segment.
+        if let Some(brk) = self.pending_break.take() {
+            let k = seg_ids[0];
+            // A syllable with text keeps its segment, and the break follows it.
+            let break_only = syl.text.is_empty()
+                && syl
+                    .notation
+                    .iter()
+                    .all(|f| matches!(f, Figure::Break(_) | Figure::Space(_) | Figure::NoCustos));
+            if break_only && k > 0 {
+                self.e.segments[k - 1].after = brk;
+                self.e.segments.truncate(k);
+                return;
+            }
+            self.e.segments[*seg_ids.last().unwrap_or(&k)].after = brk;
+        }
+        if self.nocustos {
+            if let Some(k) = seg_ids.last() {
+                self.e.segments[*k].suppress_custos = true;
+            }
+            self.nocustos = false;
+        }
+        if syl.no_break_before {
+            let k = seg_ids[0];
+            if k > 0 && !matches!(self.e.segments[k - 1].after, Break::Forced { .. }) {
+                self.e.segments[k - 1].after = Break::Forbidden;
+            }
+        }
+
+        // The lyric goes under the first segment, its vowel over the first note.
+        let text = match &self.first_lyric {
+            Some((i, rest)) if *i == si as usize => rest,
+            _ => &syl.text,
+        };
+        if !text.is_empty() {
+            let k = seg_ids[0];
+            let runs = text.runs.clone();
+            let mut width = 0.0;
+            for r in &runs {
+                width += self.measure.advance(&r.text, r.style) * self.size;
+                if !self.measure.has_face(r.style) {
+                    width += self.measure.advance(&r.text, TextStyle::REGULAR) * self.size * 0.03;
+                    if !self.warned_face {
+                        self.e.sink.info(
+                            syl.span.clone(),
+                            "text::synthetic-face",
+                            "no face for this style; measured with the regular face widened 3%",
+                        );
+                        self.warned_face = true;
+                    }
+                }
+            }
+            let chars: Vec<char> = text.plain().chars().collect();
+            let mut masked = chars.clone();
+            let mut ci = 0;
+            for r in &runs {
+                for _ in r.text.chars() {
+                    if r.consonant {
+                        masked[ci] = '\u{0}';
+                    }
+                    ci += 1;
+                }
+            }
+            let nucleus = text.center.clone().or_else(|| self.e.rules.nucleus(&masked));
+            let seg = &self.e.segments[k];
+            let anchor = match seg.heads.first() {
+                Some(h) => h.x,
+                None => seg.ink.map_or(0.0, |(l, r)| (l + r) / 2.0),
+            };
+            let center = match &nucleus {
+                Some(r) => {
+                    let before = prefix_advance(&runs, r.start, self.measure) * self.size;
+                    let upto = prefix_advance(&runs, r.end, self.measure) * self.size;
+                    (before + upto) / 2.0
+                }
+                None => width / 2.0,
+            };
+            if let Some(r) = &nucleus
+                && let Some(c) = chars.get(r.start)
+            {
+                for n in &mut self.e.notes[notes_from..] {
+                    n.vowel = Some(*c);
+                }
+            }
+            let next_word = score.syllables.get(si as usize + 1).is_none_or(|s| s.word_start);
+            self.e.segments[k].lyric = Some(LyricBox {
+                runs,
+                left: anchor - center,
+                width,
+                word_end: next_word,
+                hyphenated: text.plain().ends_with(['-', '\u{2010}']),
+                lead_hyphen: false,
+                syllable: si,
+            });
+        } else if self.first_lyric.as_ref().is_some_and(|(i, _)| *i == si as usize)
+            && score.syllables.get(si as usize + 1).is_some_and(|s| !s.word_start)
+        {
+            // The initial took the whole first syllable of a longer word (`E(f)o(g)dem`):
+            // GregorioTeX sets a hyphen under its notes, so the line doesn't seem to start
+            // a new word.
+            let k = seg_ids[0];
+            let width = self.hyphen;
+            let seg = &self.e.segments[k];
+            let anchor = match seg.heads.first() {
+                Some(h) => h.x,
+                None => seg.ink.map_or(0.0, |(l, r)| (l + r) / 2.0),
+            };
+            self.e.segments[k].lyric = Some(LyricBox {
+                runs: vec![LyricRun {
+                    text: "-".into(),
+                    style: TextStyle::REGULAR,
+                    consonant: true,
+                }],
+                left: anchor - width / 2.0,
+                width,
+                word_end: false,
+                hyphenated: true,
+                lead_hyphen: true,
+                syllable: si,
+            });
+        }
+    }
+
+    /// Ends the score, and puts the engraving together.
+    fn finish(mut self, score: &Score) -> (Engraving, Option<Vec<Resume>>) {
+        let mark = self.marks.is_some().then(|| self.mark());
+        if let (Some(marks), Some(m)) = (&mut self.marks, mark) {
+            marks.push(m);
+        }
+        let e = &mut self.e;
         // A score of only a clef still draws its staff and clef, as Gregorio does.
         if e.segments.is_empty() && e.initial_clef.is_some() {
-            let last = self.syllables.len().saturating_sub(1) as u32;
+            let last = score.syllables.len().saturating_sub(1) as u32;
             e.close(Open::new(), last, true, true, 0.0);
         }
-        if let Some(brk) = pending_break
+        if let Some(brk) = self.pending_break
             && let Some(last) = e.segments.last_mut()
         {
             let _ = brk;
             last.after = Break::Allowed;
             e.sink.info(
-                pending_span.clone(),
+                self.pending_span.clone(),
                 "engrave::final-break",
                 "a line break at the end of the score is dropped",
             );
-            e.sink.fix(Fix::new(pending_span, "", "Remove the line break"));
+            e.sink.fix(Fix::new(self.pending_span.clone(), "", "Remove the line break"));
         }
 
+        let e = self.e;
         let lowest = e.notes.iter().map(|n| n.position).min().unwrap_or(0);
         let mut next_note = vec![None; e.segments.len()];
         for k in (0..e.segments.len().saturating_sub(1)).rev() {
             next_note[k] = e.segments[k + 1].first_note.or(next_note[k + 1]);
         }
-        Engraving {
+        let engraving = Engraving {
             next_note,
             segments: e.segments,
-            initial,
+            initial: self.initial,
             clef: e.initial_clef.unwrap_or(DEFAULT_CLEF),
             notes: e.notes,
-            syllable_text,
-            syllable_spans,
-            bar_spans,
-            syllable_word,
-            lyric_size: size,
-            hyphen,
-            word_space,
-            ascent,
-            descent,
-            alt_text,
+            syllable_text: self.syllable_text,
+            syllable_spans: self.syllable_spans,
+            bar_spans: self.bar_spans,
+            syllable_word: self.syllable_word,
+            lyric_size: self.size,
+            hyphen: self.hyphen,
+            word_space: self.word_space,
+            ascent: self.ascent,
+            descent: self.descent,
+            alt_text: self.alt_text,
             pauses: e.pauses,
             pause_segments: e.pause_segments,
-            custos_never: style.custos == CustosPolicy::Never,
+            custos_never: e.style.custos == CustosPolicy::Never,
             lowest,
             diagnostics: e.sink.items,
-        }
+        };
+        (engraving, self.marks)
     }
 }
 

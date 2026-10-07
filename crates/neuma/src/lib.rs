@@ -26,7 +26,7 @@ pub mod vowel;
 
 pub use diag::{Diagnostic, Fix, Severity};
 pub use display::{DisplayList, Item, LineBox, NoteRef, TextRole, TextRun};
-pub use engrave::{AlterationScope, CustosPolicy, Engraving, Initial, Ink, StyleOptions};
+pub use engrave::{AlterationScope, CustosPolicy, EngraveCache, Engraving, Initial, Ink, StyleOptions};
 #[cfg(feature = "fonts")]
 pub use fonts::Font;
 pub use gabc::{Parsed, parse, to_gabc};

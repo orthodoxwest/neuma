@@ -7,8 +7,8 @@ pub mod json;
 
 use neuma::score::Header;
 use neuma::{
-    Engraving, Initial, LastLine, LayoutCache, LayoutOptions, NoteMap, NoteRef, SourceMap, StyleOptions, SvgOptions, Utf16Index, Weights,
-    parse,
+    EngraveCache, Engraving, Initial, LastLine, LayoutCache, LayoutOptions, NoteMap, NoteRef, SourceMap, StyleOptions, SvgOptions,
+    Utf16Index, Weights, parse,
 };
 
 pub use neuma::Font;
@@ -67,7 +67,8 @@ pub struct Chant {
     source: String,
     utf16: Utf16Index,
     header: Header,
-    engraving: Engraving,
+    /// The score and its engraving, kept to engrave the next edit from.
+    engraved: EngraveCache,
     /// Parse and engrave diagnostics, as JSON.
     diagnostics: String,
     /// The catalogue entry, as JSON, made when first asked for.
@@ -88,9 +89,7 @@ impl Chant {
             source: String::new(),
             utf16: Utf16Index::default(),
             header: Header::default(),
-            engraving: neuma::ScoreBuilder::new()
-                .build()
-                .engrave(opts.font.table(), &StyleOptions::default()),
+            engraved: EngraveCache::default(),
             diagnostics: String::new(),
             summary: None,
             svg: String::new(),
@@ -122,14 +121,14 @@ impl Chant {
             },
             ..StyleOptions::default()
         };
-        self.engraving = parsed.score.engrave(opts.font.table(), &style);
+        self.header = parsed.score.header.clone();
+        let engraving = self.engraved.engrave(parsed.score, opts.font.table(), &style);
         self.source = gabc.to_string();
         self.utf16 = Utf16Index::new(gabc);
         let mut all = parsed.diagnostics;
-        all.extend(self.engraving.diagnostics.iter().cloned());
+        all.extend(engraving.diagnostics.iter().cloned());
         self.diagnostics.clear();
         json::diagnostics(&mut self.diagnostics, &all, Some(&self.utf16));
-        self.header = parsed.score.header;
         self.summary = None;
         self.svg.clear();
         self.notes = None;
@@ -144,7 +143,7 @@ impl Chant {
     pub fn summary_json(&mut self) -> &str {
         self.summary.get_or_insert_with(|| {
             let mut out = String::new();
-            json::summary(&mut out, &self.engraving.summary(&self.header));
+            json::summary(&mut out, &engraving(&self.engraved).summary(&self.header));
             out
         })
     }
@@ -156,7 +155,7 @@ impl Chant {
 
     /// As [`Chant::layout`], choosing what to produce.
     pub fn layout_with(&mut self, width: f32, opts: &LayoutOptions, weights: &Weights, svg: &SvgOptions, outputs: Outputs) {
-        let layout = self.engraving.layout_cached(width, opts, &mut self.layout_cache);
+        let layout = engraving(&self.engraved).layout_cached(width, opts, &mut self.layout_cache);
         self.svg = match outputs.svg {
             SvgOutput::Whole => layout.svg(svg),
             SvgOutput::Lines => {
@@ -242,6 +241,11 @@ impl Chant {
 }
 
 /// Weights from a flat list, in the order the JS glue sends them; NaN keeps the default.
+/// The engraving a chant's cache holds: there is one from the chant's first update on.
+fn engraving(cache: &EngraveCache) -> &Engraving {
+    cache.engraving().expect("a chant is engraved when made")
+}
+
 pub fn weights_from(values: &[f32]) -> Weights {
     let mut w = Weights::SOLESMES;
     let slots: [&mut f32; 10] = [

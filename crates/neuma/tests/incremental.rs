@@ -5,7 +5,7 @@
 //! some rarer notation. `NEUMA_CORPUS=<dir>` runs every `.gabc` in a directory as well (the
 //! GregoBase corpus takes a few minutes in release); `NEUMA_EDITS=<n>` sets the edits per score.
 
-use neuma::{ApproxMeasure, Initial, LastLine, LayoutCache, LayoutOptions, StyleOptions, SvgOptions, Weights, parse};
+use neuma::{ApproxMeasure, EngraveCache, Initial, LastLine, LayoutCache, LayoutOptions, StyleOptions, SvgOptions, Weights, parse};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -191,11 +191,13 @@ fn env_usize(name: &str, default: usize) -> usize {
 
 const WIDTHS: [f32; 4] = [900.0, 600.0, 330.0, 140.0];
 
-/// Edits `src` again and again, checking the cached layout against a fresh one each time.
-fn check_layouts(name: &str, src: &str, seed: u64, edits: usize) {
+/// Edits `src` again and again, checking the cached engraving and layout against fresh ones
+/// each time.
+fn check(name: &str, src: &str, seed: u64, edits: usize) {
     let mut rng = Rng(seed | 1);
     let mut src = src.to_string();
     let mut cache = LayoutCache::default();
+    let mut engraved = EngraveCache::default();
     let initial = [Initial::Lines(1), Initial::None, Initial::Lines(2)][rng.below(3)];
     let style = StyleOptions {
         initial,
@@ -211,10 +213,12 @@ fn check_layouts(name: &str, src: &str, seed: u64, edits: usize) {
             last_line: if rng.below(5) == 0 { LastLine::Justified } else { LastLine::Ragged },
             ..LayoutOptions::default()
         };
-        let eng = parse(&src).score.engrave(&ApproxMeasure, &style);
-        let cached = eng.layout_cached(width, &opts, &mut cache);
-        let fresh = eng.layout(width, &opts);
         let what = || format!("{name}, seed {seed}, edit {step}, width {width}:\n{src}");
+        let eng = parse(&src).score.engrave(&ApproxMeasure, &style);
+        let again = engraved.engrave(parse(&src).score, &ApproxMeasure, &style);
+        assert!(*again == eng, "{}", what());
+        let cached = again.layout_cached(width, &opts, &mut cache);
+        let fresh = eng.layout(width, &opts);
         let svg = SvgOptions::default();
         assert_eq!(cached.svg(&svg), fresh.svg(&svg), "{}", what());
         assert_eq!(cached.svg_parts(&svg), fresh.svg_parts(&svg), "{}", what());
@@ -225,19 +229,85 @@ fn check_layouts(name: &str, src: &str, seed: u64, edits: usize) {
 }
 
 #[test]
-fn a_cached_layout_is_a_fresh_one() {
+fn a_cached_engraving_and_layout_are_fresh_ones() {
     let edits = env_usize("NEUMA_EDITS", 40);
     for (i, (name, src)) in scores().iter().enumerate() {
         let rounds = if name == "all" { 8 } else { 2 };
         for r in 0..rounds {
-            check_layouts(name, src, 0x9e37_79b9 + (i * 101 + r) as u64, edits);
+            check(name, src, 0x9e37_79b9 + (i * 101 + r) as u64, edits);
+        }
+    }
+}
+
+/// Edits that random ones seldom make: each changes what engraving carries past the edit, or
+/// what a syllable reads of its neighbours.
+#[test]
+fn edits_whose_effects_reach_past_them() {
+    let tail = " ve(g)ni(h) cre(ih)á(g)tor(f) Spí(g)ri(h)tus,(g) (;) men(f)tes(g) tu(h)ó(g)rum(f) (::)";
+    let cases = [
+        // An oriscus turns towards the next note, past a bar.
+        ("(c4) a(go) (,) b(h)", "(c4) a(go) (,) b(f)"),
+        ("(c4) a(go) (,) b(h)", "(c4) a(go) (,) (z) b(f)"),
+        // A break of its own, and `<nlba>`, change the segment before them.
+        ("(c4) a(g) b(h) (z) c(g) d(h)", "(c4) a(g) b(j) (z) c(g) d(h)"),
+        ("(c4) a(g) b(h) (Z) c(g) d(h)", "(c4) a(g) bb(h) (Z) c(g) d(h)"),
+        (
+            "(c4) a(g) b(h) <nlba>c(g) d(h)</nlba> e(g)",
+            "(c4) a(g) b(hi) <nlba>c(g) d(h)</nlba> e(g)",
+        ),
+        ("(c4) a(g) b(h) <nlba>c(g) d(h)</nlba> e(g)", "(c4) a(g) b(h) c(g) d(h)</nlba> e(g)"),
+        ("(c4) a(g) b(h) (z) c(g)", "(c4) a(g) b(h) c(g)"),
+        ("(c4) a(g) (z) (z) c(g)", "(c4) a(g) (z) c(g)"),
+        // A clef, a flat or a custos carried past the edit.
+        ("(c4) a(g) b(h) (c3) c(g) d(h)", "(c4) a(g) b(hi) (c3) c(g) d(h)"),
+        ("(c4) a(g) b(h) c(g) d(h)", "(c4) a(g) (c3) b(h) c(g) d(h)"),
+        ("(c4) a(gx) b(g) c(g) d(h)", "(c4) a(g) b(g) c(g) d(h)"),
+        ("(c4) a(ix) b(i) c(i) (,) d(i)", "(c4) a(ix) b(i) cc(i) (,) d(i)"),
+        ("(c4) a(g) b(gx)c(g)d(g) e(h)", "(c4) a(g) b(g)c(g)d(g) e(h)"),
+        ("(c4) a(g) b(g)c(g)d(g) e(h)", "(c4) a(g) b(gx)c(g)d(g) e(h)"),
+        ("(c4) a(g) b(gx)c(g)d(g) e(h)", "(c4) a(g) b(gy)c(g)d(g) e(h)"),
+        ("(z) (c4) a(g) b(h)", "(z) (c4) a(g) b(i)"),
+        ("(c4) (z) a(g) b(h)", "(c4) (z) a(gh) b(h)"),
+        ("(c4) a(g) b(z0) c(h)", "(c4) a(g) b(z0) c(j)"),
+        ("(c4) a(g) b(h) [nocustos](z) c(g)", "(c4) a(g) b(hi) [nocustos](z) c(g)"),
+        ("(c4) a(g) b(h) (z) c(g)", "(c4) a(g) b(h) (z)"),
+        // Words joined and parted, and the first syllable, which the initial takes.
+        ("(c4) a(g) b(h) c(g)", "(c4) a(g)b(h) c(g)"),
+        ("(c4) a(g)b(h) c(g)", "(c4) a(g) b(h) c(g)"),
+        ("(c4) Al(g)le(h) c(g)", "(c4) Bl(g)le(h) c(g)"),
+        ("(c4) A(g) b(h) c(g)", "x(c4) A(g) b(h) c(g)"),
+        ("name: a;\n%%\n(c4) a(g) b(h)", "name: ab;\n%%\n(c4) a(g) b(h)"),
+        ("(c4) a(g) <i>b(h) c(g)", "(c4) a(g) b(h) c(g)"),
+        ("(c4) a*(g) b(h) c(g)", "(c4) a(g) b(h) c(g)"),
+    ];
+    let styles = [Initial::Lines(1), Initial::None, Initial::Lines(2)];
+    for (before, after) in cases {
+        for initial in styles {
+            let style = StyleOptions {
+                initial,
+                ..StyleOptions::default()
+            };
+            let (before, after) = (format!("{before}{tail}"), format!("{after}{tail}"));
+            let mut cache = EngraveCache::default();
+            let mut layouts = LayoutCache::default();
+            for src in [&before, &after, &before] {
+                let fresh = parse(src).score.engrave(&ApproxMeasure, &style);
+                let again = cache.engrave(parse(src).score, &ApproxMeasure, &style);
+                assert!(*again == fresh, "{initial:?}: {before:?} to {src:?}");
+                let opts = LayoutOptions::default();
+                let svg = SvgOptions::default();
+                for width in [900.0, 150.0] {
+                    let cached = again.layout_cached(width, &opts, &mut layouts).svg(&svg);
+                    assert_eq!(cached, fresh.layout(width, &opts).svg(&svg), "{initial:?}: {before:?} to {src:?}");
+                }
+            }
         }
     }
 }
 
 /// Every score in `NEUMA_CORPUS`, when it is set.
 #[test]
-fn a_cached_layout_is_a_fresh_one_across_a_corpus() {
+fn a_cached_engraving_and_layout_are_fresh_ones_across_a_corpus() {
     let Ok(dir) = std::env::var("NEUMA_CORPUS") else { return };
     let edits = env_usize("NEUMA_EDITS", 12);
     let mut paths = Vec::new();
@@ -245,6 +315,6 @@ fn a_cached_layout_is_a_fresh_one_across_a_corpus() {
     paths.sort();
     for (i, p) in paths.iter().enumerate() {
         let src = fs::read_to_string(p).unwrap_or_default();
-        check_layouts(&p.display().to_string(), &src, i as u64 + 1, edits);
+        check(&p.display().to_string(), &src, i as u64 + 1, edits);
     }
 }
