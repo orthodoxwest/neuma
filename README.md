@@ -142,7 +142,7 @@ Build the native libraries and generate the bindings as
 cargo install --git https://github.com/orthodoxwest/neuma neuma-cli
 
 neuma render --width 720 score.gabc > score.svg
-neuma check score.gabc            # diagnostics; exits 1 on errors
+neuma check *.gabc                # diagnostics; exits 1 on errors
 ```
 
 ## Tour
@@ -423,14 +423,31 @@ The same entry is `neuma::summarize` in Rust, `summarize(gabc)` in the browser a
 
 ```text
 neuma render [--width PX] [--scale PX] [--initial LINES] [--max-lines N] FILE|-   SVG to stdout
-neuma check FILE                    diagnostics, with fixes; exits 1 on errors
+neuma check FILE...                 diagnostics, with fixes; exits 1 on errors
 neuma notes FILE                    the layout and timeline as JSON
 neuma info FILE...                  one library entry per file, as JSON lines
 neuma tones                         the built-in psalm tones
 neuma point --tone TONE FILE        psalm text with pointing marks added
 neuma psalm --tone TONE FILE        psalm text set to a tone, as GABC
 neuma book FILE.book [-o OUT.pdf] [--svg DIR] [--text-as-paths]
+neuma --help | --version
 ```
+
+A file named `-` is stdin, and without a file every command but `tones` and `book` reads
+stdin (`neuma book -` needs `-o`). `--` ends the options, for a file whose name starts with
+`-`. `--help` and `--version` answer without reading stdin, after any command. Each command
+takes only its own options (`neuma COMMAND --help` lists them). An unknown command or option,
+an option without its value, or a width or scale out of range (above 0 and at most 1000000
+and 1000) is an error.
+
+Diagnostics come one to a line as `FILE:LINE:COL: SEVERITY: CODE: MESSAGE`, with the fix, if
+there is one, on the next line: from `neuma check` on stdout, in order of position, and from
+`psalm`, `point` and `book` on stderr. `FILE` is `<stdin>` for stdin, and for a book's piece
+its file (or the book and the piece's number). Lines and columns count from 1, the column in
+characters (Unicode scalar values, so a tab or an accented letter is one), not counting a
+byte-order mark at the start of the file. The exit status is 1 when the input has errors and
+2 for a usage error or a file that can't be read or written; output to a reader that stops
+early, such as `head`, just ends.
 
 ```console
 $ cat alleluia.gabc
@@ -438,7 +455,7 @@ name: Alleluia;
 %%
 (c4) Al-(f)le(gf)lú(gh)ia.(g.) (::)
 $ neuma check alleluia.gabc
-3:8: warning[gabc::hyphen-in-syllable] at 26..27: a hyphen at the end of a syllable prints in addition to the hyphen the engine draws; remove it
+alleluia.gabc:3:8: warning: gabc::hyphen-in-syllable: a hyphen at the end of a syllable prints in addition to the hyphen the engine draws; remove it
     fix: Remove the hyphen
 ```
 
