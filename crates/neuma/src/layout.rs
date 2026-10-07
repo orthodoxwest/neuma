@@ -269,6 +269,9 @@ struct Trial {
     xs: Vec<f32>,
     /// Per segment: how much the gap before it stretches.
     weights: Vec<f32>,
+    /// Per segment: its text touches the previous syllable's, so no hyphen goes between them
+    /// unless the whole line is spread evenly (see [`Spot::touching`]).
+    touching: Vec<bool>,
     shrinks: Vec<f32>,
     natural: f32,
     /// Ink right and lyric right ends, for justification and the custos.
@@ -320,6 +323,7 @@ impl Engraving {
         let mut xs = Vec::with_capacity(last - first + 1);
         let mut weights = Vec::with_capacity(last - first + 1);
         let mut shrinks = Vec::with_capacity(last - first + 1);
+        let mut touching = Vec::with_capacity(last - first + 1);
         let mut right = 0.0f32;
         let mut ink_end = start;
         let mut last_lyric = 0;
@@ -327,6 +331,7 @@ impl Engraving {
             let spot = place(&cur, seg, self.hyphen, self.word_space, start);
             let x = spot.x;
             xs.push(x);
+            touching.push(spot.touching);
             if spot.touching {
                 for w in &mut weights[last_lyric + 1..] {
                     *w = 0.0;
@@ -346,6 +351,7 @@ impl Engraving {
         Trial {
             xs,
             weights,
+            touching,
             shrinks,
             natural: self.natural(&cur, right, ink_end, last),
             ink_end,
@@ -573,6 +579,8 @@ impl Engraving {
             let mut xs = trial.xs.clone();
             let gaps = last - first;
             let mut stretch = 0.0;
+            // Whether the slack went evenly into every gap, touching ones included.
+            let mut spread = false;
             if !ragged && gaps > 0 && trial.natural < target {
                 // Each gap takes its share of the slack. A line whose gaps can't stretch (one
                 // word, its syllables touching) spreads it evenly when that leaves room for a
@@ -582,6 +590,7 @@ impl Engraving {
                 let even = total <= 0.0;
                 let per = (target - trial.natural) / if even { gaps as f32 } else { total };
                 if !even || per >= self.hyphen + HYPHEN_MIN_GAP {
+                    spread = even;
                     for (i, x) in xs.iter_mut().enumerate().skip(1) {
                         stretch += per * if even { 1.0 } else { trial.weights[i] };
                         *x += stretch;
@@ -612,10 +621,12 @@ impl Engraving {
             for (i, s) in self.segments[first..=last].iter().enumerate() {
                 if let Some(t) = &s.lyric {
                     let l = xs[i] + t.left;
-                    // Wherever the final positions hold a word's syllables apart, right after
-                    // the first text, as GregorioTeX sets it.
+                    // Wherever a word's syllables are apart, right after the first text, as
+                    // GregorioTeX sets it. Placing them decided that, unless an even spread
+                    // parted touching ones, which leaves room for it; the final positions'
+                    // floats aren't tested again.
                     if let Some((r, true)) = prev_lyric
-                        && l - r > HYPHEN_MIN_GAP
+                        && (!trial.touching[i] || spread)
                     {
                         hyphens.push(r + self.hyphen / 2.0);
                     }
@@ -829,6 +840,62 @@ mod tests {
             assert!(ink(2).0 - ink(1).1 >= BAR_GAP - 1e-4, "{src}");
             assert_eq!(t.shrinks[1..], [0.0, 0.0], "{src}");
         }
+    }
+
+    #[test]
+    fn a_hyphen_goes_only_where_placing_left_room_for_it() {
+        // Syllables whose texts are a hair apart, within HYPHEN_MIN_GAP, touch: placing them
+        // leaves no room for a hyphen, and justifying them by sums that round differently
+        // mustn't then draw one over the next text.
+        let style = StyleOptions {
+            initial: Initial::None,
+            ..StyleOptions::default()
+        };
+        let src = format!("(c4) {} (::)", ["Mag(ghg)da(g) le(g)na(h)"; 8].join(" "));
+        let base = parse(&src).score.engrave(&ApproxMeasure, &style);
+        let n = base.segments.len();
+        let natural = base.trial(0, n - 1, 0.0);
+        let opts = LayoutOptions {
+            last_line: LastLine::Justified,
+            ..LayoutOptions::default()
+        };
+        let mut steps = 0;
+        for k in 1..n {
+            let Some(t) = base.segments[k].lyric.as_ref().filter(|t| t.runs[0].text == "da") else {
+                continue;
+            };
+            let prev = base.segments[..k]
+                .iter()
+                .zip(&natural.xs)
+                .rev()
+                .find_map(|(s, x)| s.lyric.as_ref().map(|p| x + p.left + p.width))
+                .unwrap();
+            let gap = natural.xs[k] + t.left - prev;
+            for j in 0..8 {
+                let mut eng = base.clone();
+                // A gap just under or at the threshold, in steps finer than f32's rounding.
+                eng.segments[k].lyric.as_mut().unwrap().left += HYPHEN_MIN_GAP * (1.0 - j as f32 * 1.0e-4) - gap;
+                for width in (60..400).step_by(5) {
+                    let layout = eng.layout(width as f32, &opts);
+                    for line in &layout.lines {
+                        let lefts: Vec<f32> = (line.first..=line.last)
+                            .filter_map(|i| eng.segments[i].lyric.as_ref().map(|t| line.xs[i - line.first] + t.left))
+                            .collect();
+                        for h in &line.hyphens {
+                            steps += 1;
+                            // The text after it: the first to start past the one before it ends.
+                            let next = lefts
+                                .iter()
+                                .copied()
+                                .filter(|l| *l > h - eng.hyphen / 2.0 - 1e-3)
+                                .fold(f32::INFINITY, f32::min);
+                            assert!(next >= h + eng.hyphen / 2.0 - 1e-4, "{width} {j}: {h} {next}");
+                        }
+                    }
+                }
+            }
+        }
+        assert!(steps > 0);
     }
 
     #[test]
