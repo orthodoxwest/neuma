@@ -160,7 +160,8 @@ pub struct Layout<'e> {
 }
 
 impl Layout<'_> {
-    /// Width and height in output units.
+    /// Width and height in output units. The width is the one asked for, unless a line
+    /// couldn't fit it (see [`Engraving::layout`]).
     pub fn size(&self) -> (f32, f32) {
         (self.width * self.scale, self.height * self.scale)
     }
@@ -866,6 +867,12 @@ impl Engraving {
     }
 
     /// Lays the engraving out at `width` output units.
+    ///
+    /// A stretch of notes too wide for the column with no break allowed in it (one long
+    /// neume, or a column narrower than a clef and a syllable) still gets its line, which
+    /// runs past `width`; the layout, and every staff, widen with it. That is the only
+    /// way the layout comes out wider than asked: compare [`Layout::size`] with `width` to
+    /// tell.
     pub fn layout(&self, width: f32, opts: &LayoutOptions) -> Layout<'_> {
         self.layout_cached(width, opts, &mut LayoutCache::default())
     }
