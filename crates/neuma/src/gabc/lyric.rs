@@ -15,9 +15,6 @@ pub(super) fn parse(text: &str, offset: usize, state: &mut LyricState, sink: &mu
             '$' => {
                 let next = text[i + 1..].chars().next();
                 if let Some(n) = next {
-                    // An escaped line break or tab is a space, as it would be unescaped: the
-                    // writer can't keep it, and a lyric has no use for it.
-                    let n = if n.is_whitespace() { ' ' } else { n };
                     out.push(n, style(state), state.elision > 0);
                     i += 1 + n.len_utf8();
                 } else {
@@ -257,6 +254,9 @@ impl Builder {
         if c == '\u{feff}' {
             return;
         }
+        // A line break or tab, escaped or inside an unknown tag, is a space, as it would be
+        // anywhere else: the writer can't keep it, and a lyric has no use for it.
+        let c = if c.is_whitespace() { ' ' } else { c };
         match self.runs.last_mut() {
             Some(last) if last.style == style && last.consonant == consonant => last.text.push(c),
             _ => self.runs.push(LyricRun {

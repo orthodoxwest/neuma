@@ -488,6 +488,8 @@ fn writer_is_stable_on_fuzz_finds() {
         // A byte-order mark that isn't at the start of the file.
         "\n\u{feff}(",
         "(c4) a\u{feff}b(g) \u{feff}(h)",
+        // A line break inside an unknown tag, which is set as text.
+        "<$\n>(",
     ];
     for src in cases {
         let once = parse(src).score.to_gabc();
