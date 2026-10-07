@@ -146,16 +146,19 @@ fn write_lyric(out: &mut String, lyric: &Lyric, style: &mut TextStyle) {
                 out.push('{');
             }
             if is_special {
-                if c == 'A' && chars.peek() == Some(&'\u{0336}') {
+                // Two characters from one `<sp>`: a centering brace closes after both.
+                let pair = match (c, chars.peek()) {
+                    ('A', Some('\u{0336}')) => Some("<sp>A/</sp>"),
+                    ('œ', Some('\u{0301}')) => Some("<sp>'oe</sp>"),
+                    _ => None,
+                };
+                if let Some(sp) = pair {
                     chars.next();
-                    out.push_str("<sp>A/</sp>");
+                    out.push_str(sp);
                     index += 2;
-                    continue;
-                }
-                if c == 'œ' && chars.peek() == Some(&'\u{0301}') {
-                    chars.next();
-                    out.push_str("<sp>'oe</sp>");
-                    index += 2;
+                    if lyric.center.as_ref().is_some_and(|r| r.end == index || r.end == index - 1) {
+                        out.push('}');
+                    }
                     continue;
                 }
                 if c == '*' {

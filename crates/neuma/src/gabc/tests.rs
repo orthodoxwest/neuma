@@ -478,8 +478,10 @@ fn writer_is_stable_on_fuzz_finds() {
         "name: a\nb;\nc;;\n%%\n(c4) a(g)",
         // One whose first line ends in a space, which reading trims.
         ":\n! \n!\n%%",
-        // Found in GregoBase by the corpus run: a word space before `</nlba>`.
+        // Found in GregoBase by the corpus run: a word space before `</nlba>`, and a centered
+        // special character.
         "(c4) <nlba>* Dul(h)ce(hji) </nlba>li(g)gnum,(ge) (:) vé(f)<nlba>ni(fgf)ent,(f) </nlba>(:)",
+        "(c4) f{<sp>'oe</sp>}(h')de(g)ra(fe..) <sp>A/</sp>{<sp>A/</sp>}(g)",
     ];
     for src in cases {
         let once = parse(src).score.to_gabc();
@@ -487,9 +489,10 @@ fn writer_is_stable_on_fuzz_finds() {
     }
     let p = parse("a$\tb(g)");
     assert_eq!(p.score.syllables[0].text.runs[0].text, "a b");
-    // The word after `</nlba>` still starts a word.
-    let once = parse(&parse("(c4) <nlba>a(h)b(g) </nlba>c(g)").score.to_gabc()).score;
+    // The word after `</nlba>` still starts a word, and the centering survives.
+    let once = parse(&parse("(c4) <nlba>a(h)b(g) </nlba>c(g) f{<sp>'oe</sp>}(h)").score.to_gabc()).score;
     assert!(once.syllables[3].word_start);
+    assert_eq!(once.syllables[4].text.center, Some(1..3));
     // A multi-line value that reads back keeps its lines.
     let p = parse("commentary: one\ntwo;;\n%%\n(c4) a(g)");
     assert_eq!(p.score.header.get("commentary"), Some("one\ntwo"));
