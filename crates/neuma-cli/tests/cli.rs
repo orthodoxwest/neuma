@@ -1,5 +1,5 @@
-//! The `neuma` command's arguments: help, unknown commands and flags, numeric flags, and
-//! `neuma check` over several files.
+//! The `neuma` command's arguments, its diagnostics and its output: help, unknown commands
+//! and flags, numeric flags, `--` and `-`, `neuma check` over several files, and write errors.
 
 use std::io::Write as _;
 use std::path::PathBuf;
@@ -63,6 +63,11 @@ fn help_and_version_never_read_stdin() {
         &["book", "--version"],
         // Help wins over a bad flag before it.
         &["render", "--width", "abc", "--help"],
+        // Only the command's own flags take the next argument as their value.
+        &["render", "--name", "--help"],
+        &["info", "--tone", "-h"],
+        &["tones", "--intone", "--help"],
+        &["psalm", "--name", "-h", "--version"],
     ];
     for args in cases {
         let mut child = neuma()
@@ -99,6 +104,12 @@ fn unknown_commands_and_flags_are_usage_errors() {
         (&["--bogus"], "unknown option `--bogus`"),
         (&["render", "--bogus"], "render: unknown option `--bogus`"),
         (&["check", "-x"], "check: unknown option `-x`"),
+        (&["book", "-x"], "book: unknown option `-x`"),
+        (&["book", "a.book", "b.book"], "book: unexpected `b.book`"),
+        // The layout options don't apply to check.
+        (&["check", "--width", "500"], "check: unknown option `--width`"),
+        (&["check", "--scale", "8"], "check: unknown option `--scale`"),
+        (&["check", "--max-lines", "1"], "check: unknown option `--max-lines`"),
         // Flags that belong to another command.
         (&["info", "--width", "500"], "info: unknown option `--width`"),
         (&["render", "--tone", "8.G"], "render: unknown option `--tone`"),
@@ -132,7 +143,8 @@ fn numeric_flags_are_validated() {
         &["render", "--max-lines", "two"],
         &["render", "--initial", "5"],
         &["render", "--initial", "-1"],
-        &["check", "--width", "wide"],
+        &["check", "--initial", "x"],
+        &["render", "--font", "times"],
     ];
     let gabc = "(c4) a(f)";
     for args in cases {
@@ -145,6 +157,24 @@ fn numeric_flags_are_validated() {
             "neuma {args:?}: {err}"
         );
         assert!(out.stdout.is_empty(), "neuma {args:?}");
+    }
+}
+
+/// The width and scale have upper bounds, so the output stays finite.
+#[test]
+fn width_and_scale_are_bounded() {
+    for (flag, ok, too_big, max) in [("--width", "1000000", "1000001", "1000000"), ("--scale", "1000", "1000.5", "1000")] {
+        let out = run(&["render", flag, too_big], "(c4) a(f)");
+        assert_eq!(out.status.code(), Some(2), "{flag}");
+        assert!(
+            stderr(&out).contains(&format!("at most {max}, not `{too_big}`")),
+            "{}",
+            stderr(&out)
+        );
+        let out = run(&["render", "--width", "1000000", flag, ok], "(c4) a(f) b(g) c(h) (::)");
+        assert!(out.status.success(), "{flag}: {}", stderr(&out));
+        let svg = stdout(&out);
+        assert!(!svg.contains("inf") && !svg.contains("NaN"), "{flag}");
     }
 }
 
@@ -274,6 +304,95 @@ fn check_reads_stdin_without_files() {
     assert_eq!(stdout(&out), "");
 }
 
+/// The diagnostics are in order of position, whatever order the engine found them in.
+#[test]
+fn check_sorts_by_position() {
+    let out = run(&["check", &golden("text-styles.gabc")], "");
+    let positions: Vec<(usize, usize)> = stdout(&out)
+        .lines()
+        .filter(|l| !l.starts_with(' '))
+        .map(|l| {
+            let mut parts = l.split(':').skip(1).map(|n| n.parse::<usize>().unwrap());
+            (parts.next().unwrap(), parts.next().unwrap())
+        })
+        .collect();
+    assert!(positions.len() > 2, "{}", stdout(&out));
+    assert!(positions.is_sorted(), "{positions:?}");
+}
+
+/// A byte-order mark at the start isn't a column, as in editors; a tab and an accented
+/// letter are one each.
+#[test]
+fn columns_count_characters() {
+    let out = run(&["check"], "\u{feff}(c4) a(f\n");
+    assert!(stdout(&out).starts_with("<stdin>:1:7: error: "), "{}", stdout(&out));
+    let out = run(&["check"], "(c4)\tá(f\n");
+    assert!(stdout(&out).starts_with("<stdin>:1:7: error: "), "{}", stdout(&out));
+}
+
+/// psalm and point report on stderr in check's form.
+#[test]
+fn psalm_and_point_report_like_check() {
+    let out = run(&["psalm", "--tone", "8.G"], "");
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(stderr(&out), "<stdin>:1:1: warning: apply::empty: there is no verse to sing\n");
+    let out = run(&["point", "--tone", "8.G", "-"], "");
+    assert!(out.status.success(), "{}", stderr(&out));
+}
+
+/// `--` ends the options, so a file may start with `-`; `-` is stdin wherever a file is read.
+#[test]
+fn double_dash_and_stdin() {
+    let dir = scratch("dash");
+    std::fs::write(dir.join("-x.gabc"), "(c4) a(f\n").unwrap();
+    let out = neuma().current_dir(&dir).args(["check", "--", "-x.gabc"]).output().unwrap();
+    assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
+    assert!(stdout(&out).starts_with("-x.gabc:1:7: error: "), "{}", stdout(&out));
+    let out = neuma().current_dir(&dir).args(["render", "--", "-x.gabc"]).output().unwrap();
+    assert!(out.status.success() && stdout(&out).starts_with("<svg"), "{}", stderr(&out));
+    // After `--`, `--help` is a file name.
+    let out = neuma()
+        .current_dir(&dir)
+        .args(["render", "--", "--help"])
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(2));
+    assert!(stderr(&out).contains("neuma: --help: "), "{}", stderr(&out));
+    std::fs::remove_dir_all(&dir).ok();
+
+    let out = run(&["info", "-"], "name: A;\n%%\n(c4) a(f)\n");
+    assert!(stdout(&out).starts_with("{\"file\":\"-\",\"name\":\"A\""), "{}", stdout(&out));
+    let out = run(&["point", "--tone", "8.G", "-"], "Blessed is the man * that hath not walked\n");
+    assert!(out.status.success() && !out.stdout.is_empty(), "{}", stderr(&out));
+}
+
+/// A reader that stops early ends the output quietly; any other write error is reported.
+#[test]
+fn write_errors() {
+    let file = golden("text-styles.gabc");
+    let files = vec![file.as_str(); 500];
+    let mut child = neuma()
+        .arg("check")
+        .args(&files)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    drop(child.stdout.take());
+    let out = child.wait_with_output().unwrap();
+    assert_eq!(out.status.code(), Some(0));
+    assert_eq!(stderr(&out), "");
+
+    #[cfg(target_os = "linux")]
+    {
+        let full = std::fs::OpenOptions::new().write(true).open("/dev/full").unwrap();
+        let out = neuma().args(["render", &golden("adoro-te.gabc")]).stdout(full).output().unwrap();
+        assert_eq!(out.status.code(), Some(2));
+        assert!(stderr(&out).contains("neuma: can't write to stdout: "), "{}", stderr(&out));
+    }
+}
+
 /// An argument that isn't UTF-8 is an error, not a panic.
 #[cfg(unix)]
 #[test]
@@ -288,4 +407,5 @@ fn non_utf8_arguments_are_errors() {
     assert_eq!(out.status.code(), Some(2));
     let err = stderr(&out);
     assert!(err.contains("isn't valid UTF-8") && !err.contains("panicked"), "{err}");
+    assert!(err.contains("usage: neuma"), "{err}");
 }

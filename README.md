@@ -433,14 +433,21 @@ neuma book FILE.book [-o OUT.pdf] [--svg DIR] [--text-as-paths]
 neuma --help | --version
 ```
 
-Without a file, every command but `tones` and `book` reads stdin. `--help` and `--version`
-answer without reading it, after any command. An unknown command or flag, a flag another
-command takes, a missing value, or a width or scale that isn't a positive number is an
-error, with exit status 2.
+A file named `-` is stdin, and without a file every command but `tones` and `book` reads
+stdin (`neuma book -` needs `-o`). `--` ends the options, for a file whose name starts with
+`-`. `--help` and `--version` answer without reading stdin, after any command. Each command
+takes only its own options (`neuma COMMAND --help` lists them). An unknown command or option,
+an option without its value, or a width or scale out of range (above 0 and at most 1000000
+and 1000) is an error.
 
-`neuma check` prints one line per diagnostic, `FILE:LINE:COL: SEVERITY: CODE: MESSAGE`
-(`<stdin>` for stdin), with the fix, if there is one, on the next line. It exits 1 if any
-file has an error, and 2 if a file can't be read.
+Diagnostics come one to a line as `FILE:LINE:COL: SEVERITY: CODE: MESSAGE`, with the fix, if
+there is one, on the next line: from `neuma check` on stdout, in order of position, and from
+`psalm`, `point` and `book` on stderr. `FILE` is `<stdin>` for stdin, and for a book's piece
+its file (or the book and the piece's number). Lines and columns count from 1, the column in
+characters (Unicode scalar values, so a tab or an accented letter is one), not counting a
+byte-order mark at the start of the file. The exit status is 1 when the input has errors and
+2 for a usage error or a file that can't be read or written; output to a reader that stops
+early, such as `head`, just ends.
 
 ```console
 $ cat alleluia.gabc

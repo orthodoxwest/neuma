@@ -213,20 +213,32 @@ timelines, PDFs). Some behavior did change:
 **Command line.** `neuma psalm --no-point` → `--no-auto-point`. `neuma-cli` no longer depends on
 `neuma-wasm`. The JSON renames above apply to `neuma notes` and `neuma info`.
 
-- `neuma check` takes any number of files and prints each diagnostic as
-  `FILE:LINE:COL: SEVERITY: CODE: MESSAGE` (`<stdin>` for stdin), without the byte span: it
-  was `LINE:COL: severity[code] at START..END: message`. It exits 1 if any file has an
-  error, and 2 if a file can't be read.
+- Diagnostics have one form in every command: `FILE:LINE:COL: SEVERITY: CODE: MESSAGE`,
+  with the fix, if there is one, on the next line. `FILE` is `<stdin>` for stdin, and in
+  `neuma book` the piece's file (or the book and the piece's number). It was
+  `LINE:COL: severity[code] at START..END: message` from `check`, `psalm` and `point`, and
+  `BOOK: piece N: severity[code] at START..END: message` from `book`, whose positions are
+  now a line and column in the piece's own text. `point`'s unsure half-verses are
+  `point::unsure` diagnostics with a column. The column counts characters and skips a
+  byte-order mark at the start of the file.
+- `neuma check` takes any number of files, sorts each file's diagnostics by position, and
+  exits 1 if any file has an error and 2 if a file can't be read. It no longer takes
+  `--width`, `--scale` or `--max-lines`, which didn't change its diagnostics.
 - `--help`, `-h` and `--version`, alone or after any command, answer without reading stdin
   (`neuma --help` used to wait for it). `--version` is new.
 - Arguments are checked: an unknown command or flag, a flag that belongs to another
   command (`neuma info --width 500`), a flag without its value, a second file for a command
   that takes one, or an argument to `neuma tones` is an error with the usage and exit status
-  2. They used to be ignored, taken for a file name, or read as stdin.
-- `--width` and `--scale` take a positive, finite number; anything else is an error. A
-  value that didn't parse used to keep the default silently, and a zero, negative or NaN
-  one was laid out as the narrowest column or the default scale.
-- An argument that isn't valid UTF-8 is an error rather than a panic.
+  2. They used to be ignored, taken for a file name, or read as stdin. `--` ends the
+  options, and `neuma book -` reads the book from stdin (with `-o`).
+- `--width` takes a number above 0 and at most 1000000, and `--scale` above 0 and at most
+  1000; anything else is an error. A value that didn't parse used to keep the default
+  silently, a zero, negative or NaN one was laid out as the narrowest column or the default
+  scale, and a huge scale wrote `inf` into the SVG.
+- A write error on stdout, such as a full disk, is reported with exit status 2; it used to
+  be ignored. A closed pipe still ends the output quietly, and `check` stops there. `neuma
+  book` exits 2, not 1, when it can't write the PDF or an SVG page.
+- An argument that isn't valid UTF-8 is a usage error rather than a panic.
 
 ### Breaking changes (earlier in this release)
 
