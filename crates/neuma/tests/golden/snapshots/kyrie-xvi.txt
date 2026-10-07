@@ -2,7 +2,7 @@
 # width 360
 size 360.00 x 153.65, staff space 6.00
 line top 0.00 bottom 73.07 staff 30.89 baseline 68.69
-line top 80.82 bottom 153.65 staff 111.47 baseline 149.27
+line top 80.58 bottom 153.65 staff 111.47 baseline 149.27
 staff rect 54.38 12.51 305.62 0.77
 staff rect 54.38 24.51 305.62 0.77
 staff rect 54.38 36.51 305.62 0.77
@@ -45,7 +45,7 @@ mora Mora 326.72 20.39 n14
 Lyric 315.22 68.69 14.70 s15 "son."
 bar rect 341.68 12.89 0.77 36.00
 bar rect 347.01 12.89 0.77 36.00
-Hyphen 76.63 68.69 14.70 "-"
+Hyphen 77.22 68.69 14.70 "-"
 Hyphen 91.24 68.69 14.70 "-"
 Hyphen 137.39 68.69 14.70 "-"
 Hyphen 154.45 68.69 14.70 "-"
@@ -175,7 +175,7 @@ mora Mora 491.54 30.89 n30
 Lyric 440.57 68.69 14.70 s23 "son."
 bar rect 505.46 12.89 0.77 36.00
 bar rect 510.79 12.89 0.77 36.00
-Hyphen 76.63 68.69 14.70 "-"
+Hyphen 77.22 68.69 14.70 "-"
 Hyphen 90.20 68.69 14.70 "-"
 Hyphen 133.26 68.69 14.70 "-"
 Hyphen 149.28 68.69 14.70 "-"

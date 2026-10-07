@@ -3,7 +3,7 @@ info[gabc::fusion] at 153..154: neume fusion isn't drawn yet; the notes are draw
 # width 360
 size 360.00 x 153.65, staff space 6.00
 line top 0.00 bottom 73.07 staff 30.89 baseline 68.69
-line top 90.47 bottom 153.65 staff 111.47 baseline 149.27
+line top 80.58 bottom 153.65 staff 111.47 baseline 149.27
 staff rect 40.09 12.51 319.91 0.77
 staff rect 40.09 24.51 319.91 0.77
 staff rect 40.09 36.51 319.91 0.77

@@ -841,13 +841,19 @@ fn lyrics_sit_where_gregorio_sets_them() {
     }
     // A note below `c` anywhere in the score lowers the lyrics on every line by a staff space
     // a step.
-    let low = lines(&src.replacen("la(h)", "la(b)", 1));
+    let low = lines(&src.replacen("la(h)", "ma(b)", 1));
     for (drop, _) in &low {
         assert!((drop - 7.3).abs() < 0.01, "{low:?}");
     }
-    let lower = lines(&format!("{src} la(a)"));
+    let lower = lines(&format!("{src} ma(a)"));
     for (drop, _) in &lower {
         assert!((drop - 8.3).abs() < 0.01, "{lower:?}");
+    }
+    // A taller letter under a low note goes lower still, on its line only.
+    let tall = lines(&src.replacen("la(h)", "Lá(b)", 1));
+    assert!(tall[0].0 > 7.5, "{tall:?}");
+    for (drop, _) in &tall[1..] {
+        assert!((drop - 7.3).abs() < 0.01, "{tall:?}");
     }
 }
 
@@ -1116,4 +1122,121 @@ fn svg_lines_keep_their_strings_when_lines_above_change() {
     assert!(b[1].top > a[1].top);
     assert_eq!(a[1].svg, b[1].svg);
     assert_eq!(a[2].svg, b[2].svg);
+}
+
+#[test]
+fn glyph_ids_differ_by_scale() {
+    // Two scores at different sizes on one page: an id names one drawing of a glyph, so a
+    // `<use>` in either finds its own size.
+    let eng = parse("(c4) a(gh) b(ixg) c(e.) (::)").score.engrave(&ApproxMeasure, &NO_INITIAL);
+    let ids = |scale: f32| {
+        let svg = eng.layout_with(400.0, &LayoutOptions::default().with_scale(scale)).svg();
+        let defs: std::collections::BTreeSet<String> = svg
+            .split("<path id=\"")
+            .skip(1)
+            .map(|s| s[..s.find('"').unwrap()].to_string())
+            .collect();
+        for href in svg.split("<use href=\"#").skip(1).map(|s| &s[..s.find('"').unwrap()]) {
+            assert!(defs.contains(href), "{href} has no definition");
+        }
+        defs
+    };
+    let (small, large) = (ids(4.0), ids(8.0));
+    assert!(!small.is_empty() && small.is_disjoint(&large), "{small:?} {large:?}");
+    assert_eq!(ids(4.0), small);
+}
+
+#[test]
+fn the_a_sign_is_slashed_like_the_others() {
+    // GregorioTeX's `<sp>A/</sp>` is an A with a slash through it, drawn heavy and red like
+    // ℣ and ℟; a horizontal strike would read as struck-out text.
+    let svg = parse("(c4) <sp>A/</sp>. Al(g)le(h)lú(g)ia.(f) (::)")
+        .score
+        .engrave(&ApproxMeasure, &NO_INITIAL)
+        .layout(400.0)
+        .svg();
+    assert!(svg.contains("A\u{338}") && !svg.contains('\u{336}'), "{svg}");
+    assert!(svg.contains(r#"class="neuma-rubric neuma-sign">A"#), "{svg}");
+}
+
+#[test]
+fn ledger_lines_of_neighbouring_notes_join() {
+    // As GregorioTeX's do: one line under a run of low notes, not a dash under each. A bar
+    // between them, or a wide gap, keeps them apart.
+    let ledgers = |src: &str| -> Vec<(f32, f32)> {
+        let list = parse(src).score.engrave(&ApproxMeasure, &NO_INITIAL).layout(600.0).display();
+        let mut spans: Vec<(f32, f32)> = list
+            .items
+            .iter()
+            .filter_map(|i| match i {
+                Item::Rect {
+                    x,
+                    w,
+                    role: neuma::Ink::Ledger,
+                    ..
+                } => Some((*x, x + w)),
+                _ => None,
+            })
+            .collect();
+        spans.sort_by(|a, b| a.0.total_cmp(&b.0));
+        // Touching rectangles are one line.
+        let mut lines: Vec<(f32, f32)> = Vec::new();
+        for (l, r) in spans {
+            match lines.last_mut() {
+                Some(last) if l <= last.1 + 1e-3 => last.1 = last.1.max(r),
+                _ => lines.push((l, r)),
+            }
+        }
+        lines
+    };
+    assert_eq!(ledgers("(c4) a(b)b(b)c(a) (::)").len(), 1);
+    assert_eq!(ledgers("(c4) a(b) (,) b(b) (::)").len(), 2);
+    assert_eq!(ledgers("(c4) Ma(b) lon(h)gis(h)si(h)ma(b) (::)").len(), 2);
+    // Whether they join is seen as the line is set: justifying a line parts them.
+    assert_eq!(ledgers("(c4) a(b) b(b) c(b) (::)").len(), 1);
+    assert_eq!(ledgers("(c4) a(b) b(b) c(b) (z) d(g) (::)").len(), 3);
+    // One reaches about a staff space past its note each way, as GregorioTeX's does.
+    let one = ledgers("(c4) a(b) (::)");
+    let w = one[0].1 - one[0].0;
+    let sp = LayoutOptions::default().scale;
+    assert!(w > 2.5 * sp && w < 3.5 * sp, "{w}");
+}
+
+#[test]
+fn ledger_lines_stop_short_of_an_accidental() {
+    let list = parse("(c4) a(bxb) (::)")
+        .score
+        .engrave(&ApproxMeasure, &NO_INITIAL)
+        .layout(600.0)
+        .display();
+    let accidental = list
+        .items
+        .iter()
+        .find_map(|i| match i {
+            Item::Glyph {
+                glyph,
+                x,
+                scale,
+                role: neuma::Ink::Accidental,
+                ..
+            } => {
+                let (_, _, r, _) = neuma::glyphs::GlyphId::from_id(*glyph).unwrap().ink();
+                Some(x + r * scale * neuma::glyphs::UNITS_PER_SPACE)
+            }
+            _ => None,
+        })
+        .unwrap();
+    let ledger = list
+        .items
+        .iter()
+        .find_map(|i| match i {
+            Item::Rect {
+                x,
+                role: neuma::Ink::Ledger,
+                ..
+            } => Some(*x),
+            _ => None,
+        })
+        .unwrap();
+    assert!(ledger > accidental, "{ledger} {accidental}");
 }

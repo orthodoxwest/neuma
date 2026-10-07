@@ -184,8 +184,19 @@ pub(super) fn parse(text: &str, map: &TextMap, state: &mut LyricState, sink: &mu
                             if space {
                                 out.push(' ', style(state), state.elision > 0);
                             }
-                        } else if inner.chars().any(char::is_alphanumeric) {
-                            sink.warn(map.span(i, end), "gabc::verbatim-dropped", "verbatim TeX is dropped");
+                        } else {
+                            // TeX: its text, as TeX would print it in the common cases.
+                            let (chars, unknown) = super::tex::text(inner, style(state));
+                            for (ch, st, sign) in chars {
+                                out.push(ch, st, sign || state.elision > 0);
+                            }
+                            if let Some(cmd) = unknown {
+                                sink.warn(
+                                    map.span(i, end),
+                                    "gabc::verbatim-dropped",
+                                    format!("verbatim TeX `{cmd}` isn't run; the text in and around it is kept"),
+                                );
+                            }
                         }
                         (end + "</v>".len()).min(text.len())
                     }
@@ -316,7 +327,7 @@ fn special(inner: &str) -> Option<&'static str> {
     Some(match inner {
         "V/" => "℣",
         "R/" => "℟",
-        "A/" => "A\u{0336}",
+        "A/" => "A\u{0338}",
         "*" => "*",
         "+" => "†",
         "-" => "-",
@@ -344,7 +355,9 @@ impl Builder {
     fn push(&mut self, c: char, style: TextStyle, consonant: bool) {
         // A byte-order mark past the start of the file is invisible and isn't lyric text; kept,
         // it would read back as the body's own byte-order mark and vanish.
-        if c == '\u{feff}' {
+        // A soft hyphen (pasted in with the text) shows only where a line breaks, and the
+        // engraver sets its own hyphens; drawn, it would stand under the one it adds.
+        if c == '\u{feff}' || c == '\u{ad}' {
             return;
         }
         // A line break or tab, escaped or inside an unknown tag, is a space, as it would be

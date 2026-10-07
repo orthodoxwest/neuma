@@ -3,6 +3,7 @@
 
 mod lyric;
 mod notes;
+mod tex;
 mod write;
 
 use std::ops::Range;
@@ -416,7 +417,16 @@ fn parse_body(src: &str, start: usize, sink: &mut Sink) -> Vec<Syllable> {
                 i += end;
             }
             '(' => {
-                let close = find_close(body, i + 1);
+                let mut close = find_close(body, i + 1);
+                // Another `(` before the `)`: this group was never closed, and text went on
+                // after it (`A(fg men(f)`). It ends where that text starts, at its first space.
+                let unclosed = body[i + 1..close].contains('(');
+                if unclosed {
+                    let inner = &body[i + 1..close];
+                    let open = inner.find('(').unwrap_or(inner.len());
+                    let end = inner[..open].find(char::is_whitespace).unwrap_or(open);
+                    close = i + 1 + end;
+                }
                 let notes_src = &body[i + 1..close];
                 let syl_start = start + if text.trim().is_empty() { i } else { text_start };
                 let lead = text.len() - text.trim_start().len();
@@ -429,7 +439,15 @@ fn parse_body(src: &str, start: usize, sink: &mut Sink) -> Vec<Syllable> {
                 let nlba_before = state.nlba;
                 let lyric = lyric::parse(&trimmed, &map, &mut state, sink);
                 let notation = notes::parse(notes_src, start + i + 1, sink);
-                if close >= body.len() {
+                if unclosed {
+                    let end = start + close;
+                    sink.error(
+                        start + i..end,
+                        "gabc::unclosed-notes",
+                        "notes opened with `(` aren't closed before the next `(`",
+                    );
+                    sink.fix(Fix::new(end..end, ")", "Insert `)`"));
+                } else if close >= body.len() {
                     let end = start + body.trim_end().len();
                     sink.error(start + i..end, "gabc::unclosed-notes", "notes opened with `(` never close");
                     sink.fix(Fix::new(end..end, ")", "Insert `)`"));
@@ -439,14 +457,14 @@ fn parse_body(src: &str, start: usize, sink: &mut Sink) -> Vec<Syllable> {
                     text: lyric,
                     word_start,
                     notation,
-                    span: syl_start..start + (close + 1).min(body.len()),
+                    span: syl_start..start + if unclosed { close } else { (close + 1).min(body.len()) },
                     no_break_before: nlba_before && state.nlba,
                     no_break_within: state.nlba,
                     euouae: state.euouae,
                 });
                 text.clear();
                 from.clear();
-                i = (close + 1).min(body.len());
+                i = if unclosed { close } else { (close + 1).min(body.len()) };
                 text_start = i;
                 saw_space = false;
             }

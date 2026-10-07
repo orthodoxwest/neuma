@@ -92,7 +92,7 @@ neuma/
     neuma-mobile/            UniFFI bindings for Swift and Kotlin
     neuma-book/              print booklets: a `.book` list of pieces paginated into SVG pages
                              and a PDF (issue #10)
-    neuma-cli/               `neuma render|check|notes|fmt|point|book`
+    neuma-cli/               `neuma render|check|notes|info|psalm|point|tones|book`
   tools/
     gen-glyphs/              exsurge Glyphs.js → normalized glyphs/table.rs (checked in)
   tests/
