@@ -486,23 +486,14 @@ pub struct Chant {
 
 #[derive(Debug)]
 struct Inner {
-    source: Source,
+    source: neuma_tones::AnyChant,
     diagnostics: Vec<Diagnostic>,
     /// For a chant set from a psalm, the setting as `psalm()` gives it.
     psalm: Option<PsalmSetting>,
 }
 
-/// What a chant is made from.
-#[derive(Debug)]
-#[allow(clippy::large_enum_variant)] // one per chant, and never moved
-enum Source {
-    Gabc(neuma::Chant),
-    /// Psalm text, set to its tone again on each update.
-    Psalm(neuma_tones::PsalmChant),
-}
-
 impl Inner {
-    fn new(source: Source) -> Inner {
+    fn new(source: neuma_tones::AnyChant) -> Inner {
         let mut inner = Inner {
             source,
             diagnostics: Vec::new(),
@@ -513,20 +504,21 @@ impl Inner {
     }
 
     fn chant(&self) -> &neuma::Chant {
-        match &self.source {
-            Source::Gabc(c) => c,
-            Source::Psalm(p) => p,
-        }
+        &self.source
     }
 
     fn refresh(&mut self) {
         let chant = self.chant();
         let utf16 = chant.utf16();
         let diagnostics = chant.diagnostics().iter().map(|d| diagnostic(d, utf16)).collect();
-        let psalm = match &self.source {
-            Source::Gabc(_) => None,
-            Source::Psalm(p) => Some(mobile_setting(p.setting(), p.source())),
-        };
+        let psalm = self.source.psalm().map(|p| {
+            let utf16 = p.utf16();
+            PsalmSetting {
+                notes: psalm_notes(p.notes(), utf16),
+                diagnostics: p.setting_diagnostics().iter().map(|d| diagnostic(d, utf16)).collect(),
+                gabc: p.gabc().to_owned(),
+            }
+        });
         self.diagnostics = diagnostics;
         self.psalm = psalm;
     }
@@ -536,7 +528,7 @@ impl Inner {
 impl Chant {
     #[uniffi::constructor]
     pub fn new(gabc: String, options: ChantOptions) -> Arc<Chant> {
-        Chant::wrap(Inner::new(Source::Gabc(neuma::Chant::with_options(&gabc, options.into()))))
+        Chant::wrap(Inner::new(neuma::Chant::with_options(&gabc, options.into()).into()))
     }
 
     /// Sets psalm text to a tone, as [`psalm`] does, and engraves it with its spans in the
@@ -552,41 +544,37 @@ impl Chant {
             neuma_tones::Tone::named(&tone)?.clone()
         };
         let chant = neuma_tones::PsalmChant::new(&text, &tone, &psalm_options(psalm), options.into());
-        Ok(Chant::wrap(Inner::new(Source::Psalm(chant))))
+        Ok(Chant::wrap(Inner::new(chant.into())))
     }
 
     /// Replaces the score with `src` (GABC, or psalm text for a chant made with
     /// `from_psalm`), keeping the options, as an editor does on each change: only the
     /// syllables around the edit are engraved again, and the next layout reuses the line
-    /// breaks it can. Layouts made before keep showing the old score. Returns whether
-    /// anything changed: the current source changes nothing, so calling it again with the
-    /// same text is free. (Swift warns when the result goes unused; write `_ = chant.update(…)`.)
-    pub fn update(&self, src: String) -> bool {
+    /// breaks it can. Layouts made before keep showing the old score. The current source
+    /// changes nothing, so calling it again with the same text is free; `version()` says
+    /// whether anything changed.
+    pub fn update(&self, src: String) {
         let mut inner = self.write();
-        let changed = match &mut inner.source {
-            Source::Gabc(c) => c.update(&src),
-            Source::Psalm(p) => p.update(&src),
-        };
-        if changed {
+        if inner.source.update(&src) {
             inner.refresh();
         }
-        changed
     }
 
     /// Engraves the score again with new options, as when the reader changes the text size
-    /// (Dynamic Type, say). Returns whether anything changed: options that engrave as the
-    /// current ones change nothing.
-    pub fn set_options(&self, options: ChantOptions) -> bool {
+    /// (Dynamic Type, say). Options that engrave as the current ones change nothing.
+    pub fn set_options(&self, options: ChantOptions) {
         let mut inner = self.write();
-        let options = options.into();
-        let changed = match &mut inner.source {
-            Source::Gabc(c) => c.set_options(options),
-            Source::Psalm(p) => p.set_options(options),
-        };
-        if changed {
+        if inner.source.set_options(options.into()) {
             inner.refresh();
         }
-        changed
+    }
+
+    /// Counts the chant's changes: 0 when made, and one more for each `update` or
+    /// `setOptions` that changed anything. Key a view on it (a Compose `remember`, a SwiftUI
+    /// `id`) so it lays out again exactly when the score changed; a layout made at an older
+    /// version is out of date.
+    pub fn version(&self) -> i64 {
+        i64::try_from(self.read().source.version()).unwrap_or(i64::MAX)
     }
 
     /// Problems found while reading the score.
@@ -608,9 +596,10 @@ impl Chant {
     /// Lays the score out `width` output units wide. The chant remembers its last few
     /// layouts, so asking again with the same width and options is cheap.
     ///
-    /// A layout holds on to the engraving it was made from, which after an edit is a copy of
-    /// the whole old score: close the one a view has replaced rather than leave it to the
-    /// garbage collector. In Kotlin, `layout.close()` (or `.use { }`, or a Compose
+    /// A layout holds on to the engraving it was made from: while one is held, the next edit
+    /// copies the engraving (part of an edit's cost, since the layout on screen is always
+    /// held), and after it the old layout keeps a whole engraving alive. Close the one a view
+    /// has replaced rather than leave it to the garbage collector, to bound memory. In Kotlin, `layout.close()` (or `.use { }`, or a Compose
     /// `DisposableEffect(layout) { onDispose { layout.close() } }`); in Swift, drop the
     /// reference.
     pub fn layout(&self, width: f32, options: LayoutOptions) -> Arc<ChantLayout> {
@@ -1140,8 +1129,8 @@ fn psalm_options(options: PsalmOptions) -> neuma_tones::PsalmOptions {
         .with_auto_point(options.auto_point)
 }
 
-fn psalm_notes(s: &neuma_tones::PsalmSetting, utf16: &neuma::Utf16Index) -> Vec<PsalmNote> {
-    s.notes
+fn psalm_notes(notes: &[neuma_tones::PsalmNote], utf16: &neuma::Utf16Index) -> Vec<PsalmNote> {
+    notes
         .iter()
         .map(|n| {
             let r = utf16.range_to_utf16(&n.span);
@@ -1166,7 +1155,7 @@ fn setting(tone: &neuma_tones::Tone, text: &str, options: PsalmOptions) -> Psalm
 fn mobile_setting(s: &neuma_tones::PsalmSetting, text: &str) -> PsalmSetting {
     let utf16 = neuma::Utf16Index::new(text);
     PsalmSetting {
-        notes: psalm_notes(s, &utf16),
+        notes: psalm_notes(&s.notes, &utf16),
         diagnostics: s.diagnostics.iter().map(|d| diagnostic(d, &utf16)).collect(),
         gabc: s.gabc.clone(),
     }

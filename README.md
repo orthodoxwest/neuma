@@ -107,11 +107,11 @@ await init(); // once; every call after this is synchronous
 const chant = new Chant(gabc);
 for (const d of chant.diagnostics) console.warn(`${d.code}: ${d.message}`);
 
-let page;
-const draw = () => { page = chant.layout(host.clientWidth); host.innerHTML = page.svg; };
+const view = chant.view(); // where the score is shown; it frees the pages it replaces
+const draw = () => { host.innerHTML = view.layout(host.clientWidth).svg; };
 draw();
 addEventListener("resize", draw); // a new layout for each width is cheap
-host.addEventListener("click", (e) => console.log(page.noteAt(e.offsetX, e.offsetY))); // a note id
+host.addEventListener("click", (e) => console.log(view.page.noteAt(e.offsetX, e.offsetY))); // a note id
 ```
 
 The module fetches nothing (it works inside sandboxed pages), and lyrics are spaced for
@@ -212,10 +212,11 @@ CodeMirror's lint and update listeners.
 
 ```js
 const chant = new Chant(textarea.value);
-let page = chant.layout(host.clientWidth); // a page answers its own clicks
+const view = chant.view();
+let page = view.layout(host.clientWidth); // a page answers its own clicks
 textarea.addEventListener("input", () => {
   chant.update(textarea.value); // keeps the options; diagnostics follow the new source
-  page = chant.layout(host.clientWidth);
+  page = view.layout(host.clientWidth); // the view frees pages two layouts old
   host.innerHTML = page.svg;
   showProblems(chant.diagnostics); // { severity, code, message, utf16Start, utf16End, fix }
 });
@@ -247,14 +248,15 @@ import { noteAtTime } from "./neuma.mjs";
 
 const page = chant.layout(host.clientWidth);
 host.innerHTML = page.svg;
-const { notes, duration } = page.timeline; // made when first read
+const timeline = page.timeline(); // made on the first call
+const { notes, duration } = timeline;
 
 const secondsPerPulse = 0.35;
 const t0 = performance.now();
 requestAnimationFrame(function tick(now) {
   const t = (now - t0) / 1000 / secondsPerPulse;
   host.querySelectorAll(".sung").forEach((el) => el.classList.remove("sung"));
-  const note = noteAtTime(page.timeline, t); // null during a pause
+  const note = noteAtTime(timeline, t); // null during a pause
   if (note) {
     host.querySelectorAll(`[data-note~="${note.id}"]`).forEach((el) => el.classList.add("sung"));
   }
@@ -298,7 +300,7 @@ let setting = psalm(text, tone, &PsalmOptions::default());
 assert_eq!(setting.notes[0].role, ToneRole::Intonation);
 // Engrave it with its spans in the psalm text, so a tapped note's source is its syllable
 // in `text`, and the setting's diagnostics (such as `point::unsure`) are the chant's. Its
-// `update` sets new text to the same tone, and `setting()` follows.
+// `update` sets new text to the same tone, and `notes()` follow.
 let chant = PsalmChant::new(text, tone, &PsalmOptions::default(), ChantOptions::default());
 let first = &chant.layout(600.0).timeline().notes[0];
 assert_eq!(&text[first.span.clone()], "O");

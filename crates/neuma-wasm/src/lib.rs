@@ -10,7 +10,7 @@
 use std::fmt::Write as _;
 
 use neuma::{Element, Layout, LayoutOptions, SvgOptions, SvgParts, Utf16Index, Weights, json};
-use neuma_tones::PsalmChant;
+use neuma_tones::{AnyChant, PsalmChant, PsalmNote};
 
 pub use neuma::{ChantOptions, Initial, LyricFont};
 
@@ -25,18 +25,10 @@ pub enum SvgOutput {
     ChangedLines,
 }
 
-/// What a chant is made from.
-#[derive(Debug)]
-#[allow(clippy::large_enum_variant)] // one per chant, and never moved
-enum Source {
-    Gabc(neuma::Chant),
-    Psalm(PsalmChant),
-}
-
 /// One score, with its answers kept as the JSON the glue reads.
 #[derive(Debug)]
 pub struct Chant {
-    source: Source,
+    source: AnyChant,
     /// Parse (or psalm-setting) and engrave diagnostics, as JSON.
     diagnostics: String,
     /// The library entry, as JSON, made when first asked for.
@@ -55,15 +47,15 @@ pub struct Page {
 
 impl Chant {
     pub fn new(gabc: &str, options: ChantOptions) -> Chant {
-        Chant::wrap(Source::Gabc(neuma::Chant::with_options(gabc, options)))
+        Chant::wrap(neuma::Chant::with_options(gabc, options).into())
     }
 
     /// Psalm text set to `tone` and engraved, its spans in the text.
     pub fn from_psalm(text: &str, tone: &neuma_tones::Tone, psalm: &neuma_tones::PsalmOptions, options: ChantOptions) -> Chant {
-        Chant::wrap(Source::Psalm(PsalmChant::new(text, tone, psalm, options)))
+        Chant::wrap(PsalmChant::new(text, tone, psalm, options).into())
     }
 
-    fn wrap(source: Source) -> Chant {
+    fn wrap(source: AnyChant) -> Chant {
         let mut out = Chant {
             source,
             diagnostics: String::new(),
@@ -75,20 +67,19 @@ impl Chant {
     }
 
     fn chant(&self) -> &neuma::Chant {
-        match &self.source {
-            Source::Gabc(c) => c,
-            Source::Psalm(p) => p,
-        }
+        &self.source
+    }
+
+    /// Counts the chant's changes, as [`neuma::Chant::version`].
+    pub fn version(&self) -> u64 {
+        self.source.version()
     }
 
     /// Replaces the score with `src` (GABC, or psalm text for a chant set from a psalm),
     /// engraved with the same options, as an editor does on each change. Returns whether it
     /// changed anything (not when `src` is the current source).
     pub fn update(&mut self, src: &str) -> bool {
-        let changed = match &mut self.source {
-            Source::Gabc(c) => c.update(src),
-            Source::Psalm(p) => p.update(src),
-        };
+        let changed = self.source.update(src);
         if changed {
             self.refresh();
         }
@@ -98,10 +89,7 @@ impl Chant {
     /// Engraves again with `options`. Returns whether that changed anything: options that
     /// engrave as the current ones don't.
     pub fn set_options(&mut self, options: ChantOptions) -> bool {
-        let changed = match &mut self.source {
-            Source::Gabc(c) => c.set_options(options),
-            Source::Psalm(p) => p.set_options(options),
-        };
+        let changed = self.source.set_options(options);
         if changed {
             self.refresh();
         }
@@ -114,14 +102,11 @@ impl Chant {
         json::diagnostics(&mut diagnostics, chant.diagnostics(), Some(chant.utf16()));
         self.diagnostics = diagnostics;
         self.summary = None;
-        self.psalm = match &self.source {
-            Source::Gabc(_) => None,
-            Source::Psalm(p) => {
-                let mut out = String::new();
-                setting_json(&mut out, p.setting(), p.utf16());
-                Some(out)
-            }
-        };
+        self.psalm = self.source.psalm().map(|p| {
+            let mut out = String::new();
+            setting_json(&mut out, p.gabc(), p.notes(), p.setting_diagnostics(), p.utf16());
+            out
+        });
     }
 
     pub fn diagnostics_json(&self) -> &str {
@@ -270,18 +255,18 @@ fn role_name(r: neuma_tones::ToneRole) -> &'static str {
 /// sourceUtf16Start, sourceUtf16End }], diagnostics }`. `notes[i]` describes note `i` of the
 /// engraved score, and its source is the sung syllable's in `text`, named as the timeline
 /// names a note's.
-pub fn setting_json(out: &mut String, s: &neuma_tones::PsalmSetting, text: &Utf16Index) {
+pub fn setting_json(out: &mut String, gabc: &str, notes: &[PsalmNote], diagnostics: &[neuma::Diagnostic], text: &Utf16Index) {
     out.push_str("{\"gabc\":");
-    json::string(out, &s.gabc);
-    notes_json(out, s, text);
+    json::string(out, gabc);
+    notes_json(out, notes, text);
     out.push_str(",\"diagnostics\":");
-    json::diagnostics(out, &s.diagnostics, Some(text));
+    json::diagnostics(out, diagnostics, Some(text));
     out.push('}');
 }
 
-fn notes_json(out: &mut String, s: &neuma_tones::PsalmSetting, text: &Utf16Index) {
+fn notes_json(out: &mut String, notes: &[PsalmNote], text: &Utf16Index) {
     out.push_str(",\"notes\":[");
-    for (i, n) in s.notes.iter().enumerate() {
+    for (i, n) in notes.iter().enumerate() {
         if i > 0 {
             out.push(',');
         }
@@ -323,6 +308,8 @@ pub fn pointing_json(out: &mut String, p: &neuma_tones::Pointing, text: &Utf16In
 
 #[cfg(target_arch = "wasm32")]
 mod ffi;
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+mod slab;
 
 #[cfg(test)]
 mod tests {
@@ -426,7 +413,7 @@ mod tests {
         let tone = neuma_tones::Tone::named("8.G").unwrap();
         let s = neuma_tones::psalm(text, tone, &neuma_tones::PsalmOptions::default());
         let mut out = String::new();
-        setting_json(&mut out, &s, &Utf16Index::new(text));
+        setting_json(&mut out, &s.gabc, &s.notes, &s.diagnostics, &Utf16Index::new(text));
         assert!(
             out.contains(r#""sourceStart":0,"sourceEnd":8,"sourceUtf16Start":0,"sourceUtf16End":7}"#),
             "{out}"

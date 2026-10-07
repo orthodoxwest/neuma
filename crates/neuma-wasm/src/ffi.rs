@@ -6,13 +6,14 @@ use std::cell::RefCell;
 
 use neuma::{LastLine, LayoutOptions, SvgOptions, Weights};
 
+use crate::slab::Slab;
 use crate::{Chant, ChantOptions, Initial, LyricFont, Page, SvgOutput};
 
 thread_local! {
     static INPUT: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
     static OUTPUT: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
-    static CHANTS: RefCell<Vec<Option<Chant>>> = const { RefCell::new(Vec::new()) };
-    static PAGES: RefCell<Vec<Option<Page>>> = const { RefCell::new(Vec::new()) };
+    static CHANTS: RefCell<Slab<Chant>> = const { RefCell::new(Slab::new()) };
+    static PAGES: RefCell<Slab<Page>> = const { RefCell::new(Slab::new()) };
 }
 
 fn input() -> String {
@@ -28,7 +29,7 @@ fn output(s: &str) {
 }
 
 fn with_chant<R>(handle: u32, f: impl FnOnce(&mut Chant) -> R) -> Option<R> {
-    CHANTS.with(|c| c.borrow_mut().get_mut(handle as usize).and_then(Option::as_mut).map(f))
+    CHANTS.with(|c| c.borrow_mut().get_mut(handle).map(f))
 }
 
 fn chant_options(initial: i32, annotation: u32, lyric_size: f32, font: u32) -> ChantOptions {
@@ -48,26 +49,12 @@ fn layout_options(scale: f32, last: u32, max_lines: u32) -> LayoutOptions {
         .with_max_lines(max_lines as usize)
 }
 
-/// Puts `item` in the first free slot of `slots` and returns its index.
-fn put<T>(slots: &mut Vec<Option<T>>, item: T) -> u32 {
-    match slots.iter().position(Option::is_none) {
-        Some(i) => {
-            slots[i] = Some(item);
-            i as u32
-        }
-        None => {
-            slots.push(Some(item));
-            (slots.len() - 1) as u32
-        }
-    }
-}
-
 fn keep(chant: Chant) -> u32 {
-    CHANTS.with(|c| put(&mut c.borrow_mut(), chant))
+    CHANTS.with(|c| c.borrow_mut().put(chant))
 }
 
 fn with_page<R>(handle: u32, f: impl FnOnce(&Page) -> R) -> Option<R> {
-    PAGES.with(|p| p.borrow().get(handle as usize).and_then(Option::as_ref).map(f))
+    PAGES.with(|p| p.borrow().get(handle).map(f))
 }
 
 /// The diagnostics JSON, then for a chant set from a psalm a NUL and its `{ gabc, notes }`.
@@ -168,11 +155,15 @@ pub extern "C" fn chant_set_options(handle: u32, initial: i32, annotation: u32, 
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
 pub extern "C" fn chant_free(handle: u32) {
-    CHANTS.with(|c| {
-        if let Some(slot) = c.borrow_mut().get_mut(handle as usize) {
-            *slot = None;
-        }
-    });
+    CHANTS.with(|c| c.borrow_mut().free(handle));
+}
+
+/// The chant's version (see `neuma::Chant::version`), as a float so it crosses whole; -1 for
+/// an unknown handle.
+#[allow(unsafe_code)]
+#[unsafe(no_mangle)]
+pub extern "C" fn chant_version(handle: u32) -> f64 {
+    with_chant(handle, |c| c.version() as f64).unwrap_or(-1.0)
 }
 
 /// Lays out at `width` with the SVG class prefix in the input buffer. `flags`: 2 makes the
@@ -198,14 +189,14 @@ pub extern "C" fn chant_layout(handle: u32, width: f32, scale: f32, last: u32, m
     let made = with_chant(handle, |c| {
         PAGES.with(|p| {
             let pages = p.borrow();
-            let previous = pages.get(previous as usize).and_then(Option::as_ref);
+            let previous = pages.get(previous);
             c.layout(width, &opts, &svg, mode, previous)
         })
     });
     match made {
         Some((page, out)) => {
             output(&out);
-            PAGES.with(|p| put(&mut p.borrow_mut(), page))
+            PAGES.with(|p| p.borrow_mut().put(page))
         }
         None => u32::MAX,
     }
@@ -215,11 +206,7 @@ pub extern "C" fn chant_layout(handle: u32, width: f32, scale: f32, last: u32, m
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
 pub extern "C" fn page_free(handle: u32) {
-    PAGES.with(|p| {
-        if let Some(slot) = p.borrow_mut().get_mut(handle as usize) {
-            *slot = None;
-        }
-    });
+    PAGES.with(|p| p.borrow_mut().free(handle));
 }
 
 /// Leaves a page's timeline JSON, timed with the weights as ten numbers (NaN keeps a
@@ -339,7 +326,8 @@ pub extern "C" fn neuma_psalm(custom: u32, intone: u32, auto_point: u32) {
         Ok((tone, text)) => {
             let options = psalm_options(intone, auto_point);
             let index = neuma::Utf16Index::new(&text);
-            crate::setting_json(&mut out, &neuma_tones::psalm(&text, &tone, &options), &index);
+            let s = neuma_tones::psalm(&text, &tone, &options);
+            crate::setting_json(&mut out, &s.gabc, &s.notes, &s.diagnostics, &index);
         }
         Err(e) => error(&mut out, &e),
     }

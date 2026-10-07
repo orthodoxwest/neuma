@@ -192,6 +192,8 @@ pub struct Chant {
     /// `read`, then the engraving's.
     diagnostics: Vec<Diagnostic>,
     caches: Caches,
+    /// Counts the changes since the chant was made.
+    version: u64,
 }
 
 /// What lays the chant out again cheaply. Each is behind its own lock, taken only for a
@@ -243,11 +245,12 @@ impl Chant {
     pub fn with_options(gabc: &str, options: ChantOptions) -> Chant {
         let mut chant = Chant::empty(options);
         chant.update(gabc);
+        chant.version = 0;
         chant
     }
 
     /// Engraves a score built some other way, such as a psalm set to a tone
-    /// (`neuma_tones::PsalmSetting::into_chant`), whose spans count bytes of `source`: hit
+    /// (`neuma_tones::PsalmChant`), whose spans count bytes of `source`: hit
     /// tests and [`utf16`](Self::utf16) then answer in `source`. `diagnostics` are what
     /// building the score found; the chant's [`diagnostics`](Self::diagnostics) start with
     /// them. [`update`](Self::update) reads GABC: give a chant of another source its new
@@ -256,6 +259,7 @@ impl Chant {
     pub fn from_score(score: Score, source: &str, diagnostics: Vec<Diagnostic>, options: ChantOptions) -> Chant {
         let mut chant = Chant::empty(options);
         chant.update_score(score, source, diagnostics);
+        chant.version = 0;
         chant
     }
 
@@ -268,6 +272,7 @@ impl Chant {
             read: Vec::new(),
             diagnostics: Vec::new(),
             caches: Caches::default(),
+            version: 0,
         }
     }
 
@@ -276,12 +281,15 @@ impl Chant {
     /// breaks again only the lines they are on. Layouts made before keep showing the old
     /// score.
     ///
-    /// A layout still held shares the old engraving, which the update must then copy rather
-    /// than take back: on a long score that adds about a quarter to the update's time, on a
-    /// typical one next to nothing. Drop layouts a view has replaced.
+    /// A layout still held shares the engraving, which the update must then copy rather than
+    /// change in place. In an editor the layout on screen is always held when the next edit
+    /// comes, so this copy is part of an edit's cost: on the longest scores (about 4,900
+    /// notes) about 1.7 ms of a 5 ms update, on typical ones next to nothing. Dropping the
+    /// layouts a view has replaced doesn't avoid it, but bounds memory: each layout kept past
+    /// an edit keeps a whole engraving alive.
     ///
     /// Returns whether anything changed: `false` when `gabc` is the current source, and the
-    /// chant, its layouts and its memo stay as they were.
+    /// chant, its layouts, its memo and its [`version`](Self::version) stay as they were.
     pub fn update(&mut self, gabc: &str) -> bool {
         if self.engraved.score().is_some() && gabc == self.source {
             return false;
@@ -302,6 +310,7 @@ impl Chant {
         self.source.push_str(source);
         self.utf16 = Arc::new(Utf16Index::new(source));
         self.engrave(score);
+        self.version += 1;
         true
     }
 
@@ -320,7 +329,18 @@ impl Chant {
         if let Some(score) = self.engraved.take_score() {
             self.engrave(score);
         }
+        self.version += 1;
         true
+    }
+
+    /// Counts the changes made to the chant: 0 when made, and one more for each
+    /// [`update`](Self::update), [`update_score`](Self::update_score) or
+    /// [`set_options`](Self::set_options) that changed anything. A view keyed on it (a
+    /// Compose `remember`, a SwiftUI `id`, a memo) lays out again exactly when it must, and a
+    /// layout made at an older version is out of date.
+    #[must_use]
+    pub fn version(&self) -> u64 {
+        self.version
     }
 
     fn engrave(&mut self, score: Score) {
@@ -551,16 +571,25 @@ mod tests {
     #[test]
     fn says_whether_it_changed() {
         let mut chant = Chant::new("(c4) a(g)");
+        assert_eq!(chant.version(), 0);
         let before = chant.layout(300.0);
         assert!(!chant.update("(c4) a(g)"));
         assert!(std::ptr::eq(chant.layout(300.0).source_map(), before.source_map()));
         assert!(!chant.set_options(ChantOptions::default()));
         assert!(std::ptr::eq(chant.layout(300.0).source_map(), before.source_map()));
+        assert_eq!(chant.version(), 0);
         assert!(chant.update("(c4) a(h)"));
+        assert_eq!(chant.version(), 1);
         assert!(chant.set_options(ChantOptions::default().with_lyric_size(3.0)));
+        assert_eq!(chant.version(), 2);
         let score = chant.score().clone();
         let source = chant.source().to_owned();
         assert!(!chant.update_score(score, &source, Vec::new()));
+        assert_eq!(chant.version(), 2);
+        assert_eq!(
+            Chant::from_score(Score::default(), "", Vec::new(), ChantOptions::default()).version(),
+            0
+        );
     }
 
     #[test]

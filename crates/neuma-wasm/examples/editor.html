@@ -140,6 +140,7 @@ const stats = $("stats"), tip = $("tip"), preview = $("preview");
 await init();
 text.value = SAMPLE;
 const chant = new Chant(text.value, { initial: 1 });
+const view = chant.view({ svg: "lines", ids: false }); // the preview
 let page = null;          // the page shown, which answers clicks and the caret
 
 // ---- Rendering, coalesced to one per animation frame -------------------------------------
@@ -159,13 +160,8 @@ function render() {
   if (dirtySource) chant.update(text.value);
   if (dirtySource || dirtyLayout) {
     const width = Math.max(200, Math.floor(preview.clientWidth - 32));
-    const next = chant.layout(width, { svg: "lines", ids: false });
-    // Release the page this one replaces now, rather than when it is garbage collected: a
-    // page held keeps its engraving, which the next edit then copies.
-    if (next !== page) {
-      page?.free();
-      page = next;
-    }
+    // The view frees the pages it replaces, and reuses the lines of the last.
+    page = view.layout(width);
     engine = performance.now() - t0;
     patched = patch(page.svgParts);
   }

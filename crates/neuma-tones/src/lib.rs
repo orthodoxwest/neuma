@@ -23,7 +23,7 @@ mod syllable;
 mod tone;
 
 pub use apply::{Intone, PsalmNote, PsalmOptions, PsalmSetting, ToneRole, UNSURE, psalm};
-pub use chant::PsalmChant;
+pub use chant::{AnyChant, PsalmChant};
 pub use point::{HalfPointing, Pointing, point};
 pub use pointed::VersePart;
 pub use tone::{Cadence, Slot, Tone, ToneError};

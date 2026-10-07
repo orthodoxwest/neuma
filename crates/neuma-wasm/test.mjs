@@ -11,38 +11,38 @@ assert.ok(Array.isArray(chant.diagnostics));
 const narrow = chant.layout(360);
 const wide = chant.layout(900, { weights: { mediant: 3, full: 2.5 } });
 assert.ok(narrow.svg.startsWith("<svg") && narrow.svg.includes('data-note="0"'));
-assert.ok(narrow.timeline.lines.length > wide.timeline.lines.length);
+assert.ok(narrow.timeline().lines.length > wide.timeline().lines.length);
 
 // The same notes, by id, at both widths.
-const ids = (p) => p.timeline.notes.map((n) => n.id).join(",");
+const ids = (p) => p.timeline().notes.map((n) => n.id).join(",");
 assert.equal(ids(narrow), ids(wide));
 
 // Times run forward, and the caller's weights apply.
-const notes = wide.timeline.notes;
+const notes = wide.timeline().notes;
 for (let i = 1; i < notes.length; i++) assert.ok(notes[i].start >= notes[i - 1].start + notes[i - 1].duration - 1e-3);
-for (const p of wide.timeline.pauses) {
+for (const p of wide.timeline().pauses) {
   if (p.kind === "mediant") assert.equal(p.duration, 3);
   if (p.kind === "full") assert.equal(p.duration, 2.5);
 }
-assert.ok(wide.timeline.pauses.some((p) => p.kind === "half"));
+assert.ok(wide.timeline().pauses.some((p) => p.kind === "half"));
 // A playhead finds the note sounding at a time.
-assert.equal(noteAtTime(wide.timeline, -1), null);
-assert.equal(noteAtTime(wide.timeline, notes[3].start), notes[3]);
-assert.equal(noteAtTime(wide.timeline, notes[3].start + notes[3].duration / 2), notes[3]);
-assert.equal(noteAtTime(wide.timeline, 1e9), null);
-const rest = wide.timeline.pauses.find((p) => p.duration > 0);
-assert.equal(noteAtTime(wide.timeline, rest.start + rest.duration / 2), null, "silent in a pause");
+assert.equal(noteAtTime(wide.timeline(), -1), null);
+assert.equal(noteAtTime(wide.timeline(), notes[3].start), notes[3]);
+assert.equal(noteAtTime(wide.timeline(), notes[3].start + notes[3].duration / 2), notes[3]);
+assert.equal(noteAtTime(wide.timeline(), 1e9), null);
+const rest = wide.timeline().pauses.find((p) => p.duration > 0);
+assert.equal(noteAtTime(wide.timeline(), rest.start + rest.duration / 2), null, "silent in a pause");
 
 // Psalm marks pause by kind, and the half-verse counter turns at the mediant.
 const verse = new Chant("(c4) Di(h)xit(h) Dó(h)mi(h)nus(h) *(:) Dó(h)mi(g)no(h) me(h)o(g) †(,) se(g)de(h) (::)", { initial: 0 });
-const t = verse.layout(600).timeline;
+const t = verse.layout(600).timeline();
 assert.deepEqual(t.pauses.map((p) => p.kind), ["mediant", "full", "flex", "quarter", "double"]);
 assert.deepEqual(t.notes.map((n) => n.half).join(""), "000001111111");
 assert.ok(t.notes[0].recitation && t.notes[2].accent);
 // The mediant is the whole pause at its bar.
 assert.deepEqual(t.pauses.slice(0, 2).map((p) => p.duration), [DEFAULT_WEIGHTS.mediant, 0]);
 // Recitation doesn't run across a bar.
-const runs = new Chant("(c4) a(h) (::) b(h) (::) c(h)", { initial: 0 }).layout(400).timeline.notes;
+const runs = new Chant("(c4) a(h) (::) b(h) (::) c(h)", { initial: 0 }).layout(400).timeline().notes;
 assert.ok(runs.every((n) => !n.recitation));
 
 // A porrectus swash carries both of the notes it draws.
@@ -53,7 +53,7 @@ for (const id of [0, 1, 2]) assert.match(svg, new RegExp(`data-note="[0-9 ]*\\b$
 assert.match(svg, /data-note="0 1"/);
 
 // A freed Chant throws rather than reaching another score's handle; its pages keep answering.
-const swash = porrectusPage.timeline.notes[1];
+const swash = porrectusPage.timeline().notes[1];
 porrectus.free();
 assert.throws(() => porrectus.layout(400), /freed/);
 assert.equal(porrectusPage.noteAt(swash.cx, swash.cy), 1);
@@ -62,22 +62,27 @@ porrectusPage.free();
 porrectusPage.free();
 assert.throws(() => porrectusPage.noteAt(0, 0), /Page was freed/);
 assert.throws(() => porrectusPage.elementsAt(0), /Page was freed/);
-assert.equal(porrectusPage.timeline.notes[1], swash);
+assert.equal(porrectusPage.timeline().notes[1], swash);
 assert.ok(porrectusPage.svg.startsWith("<svg"));
-assert.equal(verse.layout(600, { weights: { note: null } }).timeline.notes[1].duration, 1);
+assert.equal(verse.layout(600, { weights: { note: null } }).timeline().notes[1].duration, 1);
 verse.free();
 
 // Hit testing finds the note whose box holds the point, on each page whatever was laid out
 // since: here a one-line thumbnail that leaves the note out.
 const n = notes.at(-1);
 const thumb = chant.layout(900, { maxLines: 1 });
-assert.ok(!thumb.timeline.notes.some((m) => m.id === n.id));
+assert.ok(!thumb.timeline().notes.some((m) => m.id === n.id));
 assert.equal(wide.noteAt(n.cx, n.cy), n.id);
 assert.equal(wide.noteAt(-50, -50), null);
 assert.ok(wide instanceof Page);
-// The same arguments give the same page, and its timeline is made once.
-assert.equal(chant.layout(900, { weights: { mediant: 3, full: 2.5 } }), chant.layout(900, { weights: { mediant: 3, full: 2.5 } }));
-assert.equal(wide.timeline, wide.timeline);
+// `chant.layout` gives a new page each call, so freeing one leaves the other; a page's
+// timeline is made once.
+const one = chant.layout(900), two = chant.layout(900);
+assert.notEqual(one, two);
+two.free();
+assert.equal(one.noteAt(n.cx, n.cy), n.id);
+one.free();
+assert.equal(wide.timeline(), wide.timeline());
 
 chant.free();
 assert.throws(() => chant.layout(400));
@@ -97,13 +102,13 @@ assert.deepEqual(own.otherHeaders, [{ name: "source", value: "Vespers, p. 7" }])
 const long = new Chant(puer.replace("(::)", "(;) " + "a(g) ".repeat(40) + "(::)"), { initial: 0 });
 const full = long.layout(300);
 const preview = long.layout(300, { maxLines: 1 });
-assert.ok(full.timeline.lines.length > 1 && preview.timeline.lines.length === 1);
+assert.ok(full.timeline().lines.length > 1 && preview.timeline().lines.length === 1);
 assert.ok(preview.height < full.height);
-assert.deepEqual(preview.timeline.notes.map((n) => n.id), full.timeline.notes.filter((n) => n.line === 0).map((n) => n.id));
+assert.deepEqual(preview.timeline().notes.map((n) => n.id), full.timeline().notes.filter((n) => n.line === 0).map((n) => n.id));
 // The preview's timeline ends with its line: no pauses from the lines left out.
-const lastNote = preview.timeline.notes.at(-1);
-assert.ok(preview.timeline.pauses.every((p) => p.beforeNote <= lastNote.id + 1));
-assert.ok(preview.timeline.duration < full.timeline.duration);
+const lastNote = preview.timeline().notes.at(-1);
+assert.ok(preview.timeline().pauses.every((p) => p.beforeNote <= lastNote.id + 1));
+assert.ok(preview.timeline().duration < full.timeline().duration);
 
 // Psalm tones: pointed text to GABC, with each note's role.
 const text = "1 The Lord is King, and hath put on glorious ap·pá-rel; * the Lord hath put on his apparel, and gird·ed him-sélf with strength.\n" +
@@ -112,7 +117,7 @@ const ps = psalm(text, "8.G");
 assert.deepEqual(ps.diagnostics, []);
 assert.ok(toneNames().includes("8.G"));
 const psChant = new Chant(ps.gabc);
-const psNotes = psChant.layout(500).timeline.notes;
+const psNotes = psChant.layout(500).timeline().notes;
 assert.equal(psNotes.length, ps.notes.length);
 assert.equal(ps.notes[0].role, "intonation");
 const accent = ps.notes.findIndex((n) => n.role === "accent");
@@ -124,7 +129,7 @@ assert.equal(text.slice(sung.sourceUtf16Start, sung.sourceUtf16End), "pá");
 const fromPsalm = Chant.fromPsalm(text, "8.G", { initial: 0 });
 assert.deepEqual(fromPsalm.psalm, ps);
 const psPage = fromPsalm.layout(500);
-const psNote = psPage.timeline.notes[accent];
+const psNote = psPage.timeline().notes[accent];
 assert.equal(text.slice(psNote.sourceUtf16Start, psNote.sourceUtf16End), "pá");
 assert.equal(text.slice(...(({ utf16Start, utf16End }) => [utf16Start, utf16End])(psPage.sourceAt(psNote.cx, psNote.cy))), "pá");
 // After edits the page on screen is stale, but answers for the text it shows.
@@ -138,7 +143,7 @@ assert.ok(psPage.stale);
 assert.equal(psPage.noteAt(psNote.cx, psNote.cy), accent);
 assert.equal(text.slice(psPage.sourceAt(psNote.cx, psNote.cy).utf16Start, psNote.sourceUtf16End), "pá");
 assert.equal(text.slice(...(({ utf16Start, utf16End }) => [utf16Start, utf16End])(psPage.elementsAt(psNote.sourceUtf16Start)[0])), "pá");
-assert.equal(psPage.timeline.notes[accent].id, accent);
+assert.equal(psPage.timeline().notes[accent].id, accent);
 assert.ok(!fromPsalm.layout(500).stale);
 assert.ok(Chant.fromPsalm("Lord ! * God ?", "1.D").diagnostics.some((d) => d.code === "point::unsure"));
 assert.throws(() => Chant.fromPsalm(text, "9.z"), /no built-in tone/);
@@ -173,7 +178,7 @@ assert.equal(new Chant("Ky(g)", { initial: 0 }).diagnostics[0].fix.replacement, 
 
 const page = ed.layout(500);
 assert.ok(page.svg.startsWith("<svg"));
-for (const n of page.timeline.notes) {
+for (const n of page.timeline().notes) {
   const hit = page.sourceAt(n.cx, n.cy);
   assert.equal(hit.kind, "note");
   assert.equal(hit.index, n.id);
@@ -203,14 +208,14 @@ for (const before of [-1, -(2 ** 32), -Infinity, NaN]) {
 // The SVG a line at a time, without ids, draws what the whole SVG draws.
 const parts = ed.layout(500, { svg: "lines", ids: false }).svgParts;
 assert.ok(parts.head.startsWith("<svg") && parts.defs.startsWith("<path"));
-assert.equal(parts.lines.length, page.timeline.lines.length);
+assert.equal(parts.lines.length, page.timeline().lines.length);
 const count = (text, tag) => text.split(tag).length - 1;
 const lineSvg = parts.lines.map((l) => l.svg).join("");
 assert.equal(count(lineSvg, "<use ") + count(parts.rest, "<use "), count(page.svg, "<use "));
 assert.ok(!lineSvg.includes("data-note"));
 assert.ok(parts.lines.every((l, i) => i === 0 || l.top > parts.lines[i - 1].top));
 // Notes are found under a point after other layouts.
-const first = page.timeline.notes[0];
+const first = page.timeline().notes[0];
 assert.equal(page.noteAt(first.cx, first.cy), first.id);
 // Edits one after another: the lines the engine kept, and those it made again, are what a
 // fresh Chant draws, with ids or without.
@@ -224,40 +229,65 @@ for (let i = 0; i < 12; i++) {
   assert.deepEqual(ed.layout(200, opts), fresh.layout(200, opts), `edit ${i}`);
   fresh.free();
 }
-// The same options change nothing: the page stays the one laid out.
-const before = ed.layout(500);
-const tap = before.timeline.notes[0];
+// The same options change nothing: a view gives the page it laid out.
+const edView = ed.view();
+const before = edView.layout(500);
+const tap = before.timeline().notes[0];
+const version = ed.version;
 assert.equal(ed.setOptions({ initial: 0 }), false);
-assert.equal(ed.layout(500), before);
+assert.equal(ed.version, version);
+assert.equal(edView.layout(500), before);
 // A larger lyric engraves again; the page from before still answers for what it shows.
 assert.equal(ed.setOptions({ initial: 0, lyricSize: 4 }), true);
-assert.ok(ed.layout(500).height > before.height);
+assert.equal(ed.version, version + 1);
+assert.ok(before.stale && before.version === version);
+const larger = edView.layout(500);
+assert.ok(larger.height > before.height && !larger.stale && larger.version === ed.version);
 assert.equal(before.noteAt(tap.cx, tap.cy), tap.id);
-// A page answers for as long as it is held: through many layouts at other widths and
-// edits between, and after its chant is freed.
+// A page answers until it is freed: through many layouts at other widths and edits between,
+// and after its chant is freed.
 const held = [500, 300, 400, 600, 700].map((w) => ed.layout(w));
-const kept = held[0].timeline.notes.at(-1);
+const kept = held[0].timeline().notes.at(-1);
 for (let i = 0; i < 6; i++) {
   ed.update(edited + " a(g)".repeat(i + 1));
-  for (const w of [500, 300, 250]) ed.layout(w, { svg: i % 2 ? "lines" : "whole" });
+  for (const w of [500, 300, 250]) ed.layout(w, { svg: i % 2 ? "lines" : "whole" }).free();
 }
 assert.ok(held.every((p) => p.stale));
 assert.equal(held[0].noteAt(kept.cx, kept.cy), kept.id);
-const after = ed.layout(500);
+// A view keeps its page and the one before; the one before that it frees, unless kept.
+const third = edView.layout(400);
+assert.ok(before.freed && !larger.freed && !third.freed && edView.page === third);
+assert.throws(() => before.noteAt(tap.cx, tap.cy), /freed by its View/);
+assert.equal(before.timeline().notes[0], tap, "a timeline already made stays");
+assert.equal(before.timeline, Page.prototype.timeline, "a method, so devtools can show a freed page");
+const keptPage = edView.layout(300).keep();
+edView.layout(250);
+edView.layout(200);
+assert.ok(larger.freed && third.freed && !keptPage.freed);
+// Alternating widths in one view swap its two pages without laying out again.
+const at200 = edView.layout(200), at250 = edView.layout(250);
+assert.equal(edView.layout(200), at200);
+assert.equal(edView.layout(250), at250);
+const after = edView.layout(500);
 assert.ok(!after.stale);
 ed.free();
 assert.throws(() => ed.update(src), /freed/);
+assert.throws(() => edView.layout(600), /freed/);
 assert.equal(after.noteAt(kept.cx, kept.cy), kept.id);
 assert.ok(after.elementsAt(0).length > 0);
-for (const p of [...held, after]) p.free();
+for (const p of [...held, keptPage]) p.free();
+edView.free();
+assert.ok(after.freed && keptPage.freed);
 
 // Each view in parts, here a page and a thumbnail, reuses the lines of its own last page,
 // even when the caller has changed that page's parts.
 {
   let body = "(c4) " + Array.from({ length: 30 }, (_, i) => `s${i}(${"fgh"[i % 3]})`).join(" ") + " (::)";
   const doc = new Chant(body, { initial: 0 });
-  let main = doc.layout(300, { svg: "lines" });
-  let thumb = doc.layout(300, { svg: "lines", scale: 3 });
+  const mainView = doc.view({ svg: "lines" });
+  const thumbView = doc.view({ svg: "lines", scale: 3 });
+  let main = mainView.layout(300);
+  let thumb = thumbView.layout(300);
   assert.ok(main.svgParts.lines.length > 2 && thumb.svgParts.lines.length > 1);
   for (let i = 0; i < 4; i++) {
     body = body.replace("(::)", "x(g) (::)");
@@ -265,28 +295,33 @@ for (const p of [...held, after]) p.free();
     assert.equal(doc.update(body), false);
     const lines = main.svgParts.lines.map((l) => l.svg);
     if (i === 2) main.svgParts.lines.length = 0;
-    const nextMain = doc.layout(300, { svg: "lines" });
-    const nextThumb = doc.layout(300, { svg: "lines", scale: 3 });
+    const nextMain = mainView.layout(300);
+    const nextThumb = thumbView.layout(300);
     const fresh = new Chant(body, { initial: 0 });
     assert.deepEqual(nextMain.svgParts, fresh.layout(300, { svg: "lines" }).svgParts, `main ${i}`);
     assert.deepEqual(nextThumb.svgParts, fresh.layout(300, { svg: "lines", scale: 3 }).svgParts, `thumb ${i}`);
     fresh.free();
     // The first line didn't change, and comes back as the same string.
     assert.equal(nextMain.svgParts.lines[0].svg, lines[0]);
-    main.free();
-    thumb.free();
     [main, thumb] = [nextMain, nextThumb];
   }
-  // The same arguments give the same page until it is freed, each view its own.
-  assert.equal(doc.layout(300, { svg: "lines" }), main);
-  assert.equal(doc.layout(300, { svg: "lines", scale: 3 }), thumb);
-  assert.equal(doc.layout(300, { svg: "lines" }), main);
+  // The same arguments give the same page, each view its own; two views of the same
+  // options (two panels, a component mounted twice) have pages of their own, and freeing
+  // one leaves the other.
+  assert.equal(mainView.layout(300), main);
+  assert.equal(thumbView.layout(300), thumb);
+  const twin = doc.view({ svg: "lines" });
+  const twinPage = twin.layout(300);
+  assert.notEqual(twinPage, main);
+  twin.free();
+  assert.ok(twinPage.freed && !main.freed);
+  const first = main.timeline().notes[0];
+  assert.equal(main.noteAt(first.cx, first.cy), first.id);
+  // A page its owner freed is laid out again.
   main.free();
-  const again = doc.layout(300, { svg: "lines" });
+  const again = mainView.layout(300);
   assert.notEqual(again, main);
   assert.ok(again.svgParts.lines.length > 2);
-  // A scale the engine reads as the default is the same view and the same page.
-  assert.equal(doc.layout(300, { svg: "lines", scale: NaN }), doc.layout(300, { svg: "lines", scale: NaN }));
   if (typeof Symbol.dispose === "symbol") {
     const p = doc.layout(200);
     p[Symbol.dispose]();
@@ -340,4 +375,4 @@ for (const p of [...held, after]) p.free();
 }
 
 assert.equal(DEFAULT_WEIGHTS.note, 1);
-console.log(`ok: ${notes.length} notes, ${wide.timeline.lines.length} lines at 900, ${narrow.timeline.lines.length} at 360`);
+console.log(`ok: ${notes.length} notes, ${wide.timeline().lines.length} lines at 900, ${narrow.timeline().lines.length} at 360`);

@@ -75,24 +75,32 @@ val layout = chant.layout(width, LayoutOptions(scale = 8f))
 val page = layout.page()      // keep it: each call copies the display list across
 val timeline = layout.timeline(Weights(mediant = 3f))
 val id = layout.noteAt(x, y)  // the note under a tap, or null
-chant.update(edited)          // after an edit (true if it changed); lay it out again to see it
-chant.setOptions(ChantOptions(initial = 2, lyricSize = 3f)) // a new text size, likewise
+chant.update(edited)          // after an edit; lay it out again to see it
+chant.setOptions(ChantOptions(initial = 2, lyricSize = 3f)) // a new text size
+chant.version()               // counts the changes that changed anything
 layout.close()                // when a new layout replaces it
 chant.close()
 ```
 
-**A layout's lifetime.** A `ChantLayout` holds on to the engraving it was made from; after
-an edit that is a copy of the whole old score (the edit makes it, which on the longest
-scores adds about a quarter to the edit's time), and it lives until the layout is freed. Close
-the layout a view has replaced instead of leaving it to the garbage collector: `close()`,
-`layout.use { }`, or in Compose a `DisposableEffect`. In Swift, drop the reference. `page()`
-is made once per layout, but each call copies it across the boundary, so keep the value
-rather than calling it on each recomposition or `body`. Here `version` counts the app's
-changes to the chant, bumped when `update` or `setOptions` returns true:
+**A layout's lifetime.** A `ChantLayout` holds on to the engraving it was made from. While
+a layout is held, the chant's next edit copies the engraving rather than changing it in
+place; an app always holds the layout on screen, so this copy is part of an edit's cost (on
+the longest scores, about 4,900 notes, about 1.7 ms of a 5 ms update; on typical ones next to
+nothing). After the edit the old layout keeps a whole engraving alive until it is freed, so
+close the layout a view has replaced instead of leaving it to the garbage collector:
+`close()`, `layout.use { }`, or in Compose a `DisposableEffect`. In Swift, drop the
+reference. That bounds memory; it doesn't make the edit cheaper. `page()` is made once per
+layout, but each call copies it across the boundary, so keep the value rather than calling
+it on each recomposition or `body`.
+
+**When to lay out again.** `chant.version()` counts the changes that changed anything (0 when
+made); `update` with the current source, or `setOptions` with options that engrave the same,
+leave it as it is. Keep it in the app's state after each edit and key the layout on it, here
+in Compose (in SwiftUI, `.id(version)` or an `onChange(of: version)`):
 
 ```kotlin
 @Composable
-fun Score(chant: Chant, width: Float, version: Int) {
+fun Score(chant: Chant, width: Float, version: Long) { // version: chant.version(), as state
     val layout = remember(chant, width, version) { chant.layout(width, LayoutOptions()) }
     DisposableEffect(layout) { onDispose { layout.close() } }
     val page = remember(layout) { layout.page() }
@@ -194,6 +202,5 @@ same tone and updates it. It is null for a chant made from GABC.
 
 On each edit, call `chant.update(src)` and lay it out again: the engraving around the edit
 is redone, and the rest, and the line breaks it can, are reused. A tap waits on no layout
-in progress: hit tests run on the `ChantLayout`, not the `Chant`. `update` and `setOptions`
-return whether anything changed: the source or options the chant already has change
-nothing. Swift warns when that result goes unused; write `_ = chant.update(src: edited)`.
+in progress: hit tests run on the `ChantLayout`, not the `Chant`. The source or options the
+chant already has change nothing, and leave `version()` as it was.

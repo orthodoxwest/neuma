@@ -364,6 +364,10 @@ pub struct SvgLine {
     /// From [`Layout::svg_parts_reusing`]: the index of the line of the previous parts that
     /// this line draws the same as, its SVG unchanged, so a page showing those parts can keep
     /// that line's element and only move it. Always `None` from [`Layout::svg_parts`].
+    ///
+    /// The index is in the engine's numbering of the previous parts: their lines as the
+    /// engine wrote them, which is `previous.lines` as returned. A caller that reorders or
+    /// drains those lines keeps its own map from that numbering to what it shows.
     pub reused_from: Option<usize>,
 }
 

@@ -16,11 +16,11 @@ let setting = psalm(text, tone, &PsalmOptions::default());
 // setting.notes[i] describes note i of the engraved score, and its `span` is the sung
 // syllable's bytes in `text`. So are the spans of `setting.score`.
 
-// A PsalmChant engraves it with its spans in the text, and keeps the setting in step:
+// A PsalmChant engraves it with its spans in the text, and keeps its notes in step:
 let options = neuma::ChantOptions::default();
 let mut chant = neuma_tones::PsalmChant::new(text, tone, &PsalmOptions::default(), options);
 chant.update("O praise the Lord * all ye nations."); // set to the same tone again
-assert_eq!(chant.setting().notes.len(), chant.layout(600.0).timeline().notes.len());
+assert_eq!(chant.notes().len(), chant.layout(600.0).timeline().notes.len());
 ```
 
 `PsalmOptions::default().with_intone(Intone::EveryVerse)` sings the intonation on every

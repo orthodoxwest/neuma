@@ -16,15 +16,16 @@ timelines, PDFs). Some behavior did change:
   and the CLI (it was EB Garamond 12).
 - Hit tests answer for the layout asked, not for whichever layout ran last: a thumbnail laid
   out after the main view no longer changes what a tap on the main view finds.
-- The browser package makes a page's timeline only when it is read, and returns the same
-  page for a repeated `layout` call; the mobile `ChantLayout` makes its timeline when asked.
+- The browser package makes a page's timeline only when asked (`page.timeline()`), and the
+  mobile `ChantLayout` makes its timeline when asked.
 - A page answers for the score it shows for as long as it is kept, whatever the chant has
   become since, in Rust, the browser and on mobile. `update` with the current source, or
   `set_options` with options that engrave the same, changes nothing and says so.
-- A layout kept after an edit keeps its engraving alive, so the next edit copies the
-  engraving rather than changing it in place: about a quarter more time per edit on the
-  longest scores (4,900 notes), next to nothing on typical ones. Drop or free a layout once
-  nothing shows it.
+- While a layout is held, the chant's next edit copies the engraving rather than changing
+  it in place. An editor always holds the layout on screen, so this is part of an edit's
+  cost: about 1.7 ms of a 5 ms update on the longest scores (4,900 notes), next to nothing on
+  typical ones. A layout kept past an edit keeps a whole engraving alive; dropping or freeing
+  the layouts a view has replaced bounds memory, though it doesn't make edits cheaper.
 - Weights follow one rule everywhere: a negative or non-finite weight keeps its default, and
   none goes above 1000.
 - `neuma book` reports `point::unsure` at the half-verse's syllables rather than the whole
@@ -39,7 +40,7 @@ timelines, PDFs). Some behavior did change:
   `Chant::with_options(gabc, ChantOptions)`, `Chant::from_score(score, source, diagnostics,
   options)`, `update(source)` and `update_score(…)` (incremental), `set_options(ChantOptions)`
   (engraves again only if the options engrave differently), each returning whether anything
-  changed, `diagnostics()` (reading and engraving, one list), `summary()`, and
+  changed, `version()` (counts the changes that changed anything), `diagnostics()` (reading and engraving, one list), `summary()`, and
   `layout(width)` / `layout_with(width, &LayoutOptions)` through `&self` (it remembers its
   last few layouts, keyed on the sanitized options). `ChantOptions` holds the lyric font, the `StyleOptions` (with a
   setter for each of its fields), and optionally a custom `TextMeasure` (`with_measure`).
@@ -53,7 +54,8 @@ timelines, PDFs). Some behavior did change:
   line that draws as one of `previous`'s taking its string, and saying which in
   `SvgLine::reused_from`. It keeps no state, so any number of views can each patch their own
   page, and it reads only what the engine wrote into `previous`, never its public fields, so
-  a caller may drain or change them. `SvgLine.svg` is an `Arc<str>`, shared with that copy.
+  a caller may drain or change them (`reused_from` is in the engine's numbering of the
+  previous lines, as returned). `SvgLine.svg` is an `Arc<str>`, shared with that copy.
   Parts carry what reuse needs, about two thirds again the memory of the line strings: keep
   only the parts a page shows.
 - `Score::engrave` returns an **`Arc<Engraving>`**, and `Engraving::layout` takes one, so
@@ -109,8 +111,12 @@ timelines, PDFs). Some behavior did change:
 - New: **`PsalmChant`**, psalm text set to a tone and engraved with its spans in the text
   and its diagnostics (such as `point::unsure`) as the chant's:
   `PsalmChant::new(text, &tone, &PsalmOptions, ChantOptions)`, `update(text)` (sets new text
-  to the same tone; returns whether it changed), `set_options`, `setting()`, `tone()`,
-  `psalm_options()`, and the `neuma::Chant` it derefs to (`chant()`, `into_chant()`).
+  to the same tone; returns whether it changed), `set_options`, `notes()`, `gabc()`,
+  `setting_diagnostics()`, `tone()`, `psalm_options()`, and the `neuma::Chant` it derefs to
+  (`chant()`, `into_chant()`). It keeps the setting's score only as its chant's.
+- New: **`AnyChant`**, `Gabc(Chant)` or `Psalm(PsalmChant)`, for an app or binding that
+  takes either: it derefs to `Chant`, and its `update` and `set_options` read the new source
+  as the chant was made from. The browser and mobile bindings use it.
 - `Options` → **`PsalmOptions`** (setters `with_intone`, `with_auto_point`,
   `with_strip_accents`, `with_name`); `no_auto_point` → **`auto_point`** (default `true`).
 - `Setting` → **`PsalmSetting`**, `NoteRole` → **`PsalmNote`** (its `source` → **`span`**),
@@ -131,18 +137,25 @@ timelines, PDFs). Some behavior did change:
 
 **Browser (`neuma.mjs`) and the JSON (`neuma notes`, `neuma info`)**
 
-- `chant.layout(width, options)` returns a **`Page`**: `width`, `height`, `svg` or
-  `svgParts`, a `timeline` getter that asks the engine on first read, and its own
-  `noteAt(x, y)`, `sourceAt(x, y)` and `elementsAt(caret, { unit })`, which answer for the
-  score that page shows for as long as the page is held, whatever the chant has laid out or
-  become since (and after `chant.free()`). Each page holds its own layout in the engine,
-  released when the page is garbage collected (a `FinalizationRegistry`) or by
-  `page.free()` (also `Symbol.dispose`, for `using`); a freed page throws. `page.stale` says
-  the chant has changed since the page was laid out. `chant.noteAt`, `sourceAt` and
-  `elementsAt`, and `layout(…, { timeline: false })`, are gone. The same `layout` arguments
-  with no change between return the same page while it is held. In parts, each view (the
-  options but width and weights), such as a main page and a thumbnail, reuses the lines of
-  its own last page. `update` and `setOptions` return whether anything changed.
+- Pages: `chant.layout(width, options)` returns a **`Page`**: `width`, `height`, `svg` or
+  `svgParts`, `timeline()` (made on the first call), and its own `noteAt(x, y)`,
+  `sourceAt(x, y)` and `elementsAt(caret, { unit })`, which answer for the score that page
+  shows for as long as it lives, whatever the chant has laid out or become since (and after
+  `chant.free()`). Each page holds its own layout in the engine until `page.free()` (or
+  `Symbol.dispose`, for `using`), or until it is garbage collected (a
+  `FinalizationRegistry`). A freed page's hit tests and `timeline()` throw; `page.freed`
+  says so without throwing. `page.stale` says the chant has changed since the page was laid
+  out, and `page.version` is the chant's version it was laid out at. `chant.layout` makes a
+  new page on each call. `chant.noteAt`, `sourceAt` and `elementsAt`, and
+  `layout(…, { timeline: false })`, are gone.
+- New: **views**, for a place that shows the score and lays it out again on each change:
+  `const view = chant.view(options)`, then `view.layout(width, { weights })`. A view keeps
+  its current page (`view.page`) and the one before, frees older ones itself (unless
+  `page.keep()`), returns the same page for the same width and weights while nothing
+  changed, and in parts reuses its last page's lines. An editor laying out through a view
+  needs no `free()`, and its memory stays flat.
+- `update` and `setOptions` return whether anything changed; `chant.version` counts the
+  changes.
 - New: `Chant.fromPsalm(text, tone, { intone, autoPoint, …chantOptions })`, with
   `chant.psalm` (the setting, `{ gabc, notes, diagnostics }`, as `psalm` returns it) and
   `update(text)` setting new text to the same tone;
@@ -172,9 +185,9 @@ timelines, PDFs). Some behavior did change:
   waits on a layout in progress. `Page.timeline`, `LayoutOptions.timeline` and
   `LayoutOptions.weights` are gone, as are `Chant.noteAt`, `sourceAt` and `elementsAt`.
 - New: `Chant.update(src)` (engrave again after an edit), `Chant.setOptions(options)` (a new
-  text size), each returning whether anything changed (Swift warns on an unused result:
-  `_ = chant.update(src: …)`), and `Chant.fromPsalm(text, tone, PsalmOptions, ChantOptions)`
-  with `psalm()`, the setting as `psalm` returns it.
+  text size), `Chant.version()` (counts the changes that changed anything, to key a view on),
+  and `Chant.fromPsalm(text, tone, PsalmOptions, ChantOptions)` with `psalm()`, the setting
+  as `psalm` returns it.
 - `ToneException`'s message is the error's ("no built-in tone 9.z").
 - Every option record field has a default: `ChantOptions()`, `LayoutOptions()`,
   `Weights()`, `PsalmOptions()`. `defaultChantOptions()`, `defaultLayoutOptions()` and

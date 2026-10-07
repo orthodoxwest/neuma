@@ -35,27 +35,65 @@ page that serves the EB Garamond 12 files instead passes `{ font: "eb-garamond-1
 the SVG text's size, weight and letter-spacing alone: CSS that changes them changes the
 widths the layout planned for.
 
-`page` is a `Page`: `{ width, height, svg }`, its `timeline`, made when first read, and its
-hit tests (below). Every position is in output units (staff spaces times `scale`, the SVG's
-user units) from the layout's top left, with y down. A box is `x`, `y`, `w`, `h` from its
-top-left corner; a point that is a center is named `cx`, `cy`. Laying out again with the same
-arguments and no change to the chant between returns the same page, while you hold it.
+`page` is a `Page`: `{ width, height, svg }`, its `timeline()`, made on the first call, and
+its hit tests (below). Every position is in output units (staff spaces times `scale`, the
+SVG's user units) from the layout's top left, with y down. A box is `x`, `y`, `w`, `h` from
+its top-left corner; a point that is a center is named `cx`, `cy`.
 
-A page answers for the score it shows for as long as you hold it, whatever the chant has
-laid out or become since: a thumbnail made with `maxLines: 1` leaves the main page's hit
-tests alone, and after `chant.update` or `chant.setOptions` a page made before still answers
-for the score it shows, so a click or a caret move between an edit and the next frame finds
-what is on screen. `page.stale` is true once the chant has changed since the page was laid
-out: lay out again to show the new score. `update` and `setOptions` return whether anything
-changed: the same source or options leave the chant, and its pages, as they were.
+A page answers for the score it shows for as long as it lives, whatever the chant has laid
+out or become since: a thumbnail made with `maxLines: 1` leaves the main page's hit tests
+alone, and after `chant.update` or `chant.setOptions` a page made before still answers for
+the score it shows, so a click or a caret move between an edit and the next frame finds what
+is on screen. `page.stale` is true once the chant has changed since the page was laid out:
+lay out again to show the new score. `update` and `setOptions` return whether anything
+changed, and `chant.version` counts the changes (`page.version` is the chant's version the
+page was laid out at), as in Rust and on mobile.
 
-Each page keeps its layout in the engine until the page is garbage collected (through a
-`FinalizationRegistry`). `page.free()`, or `using page = chant.layout(…)` where the runtime
-has explicit resource management, releases it sooner; a freed page throws, though its `svg`,
-`svgParts` and a `timeline` already read stay. Release a page once nothing shows it: a page
-held keeps its engraving alive, so the chant's next edit copies the engraving rather than
-changing it in place, which on the longest scores adds about a quarter to the edit's time
-and on typical ones next to nothing.
+### Views: pages for a place that shows the score
+
+Each page holds its layout, a whole engraving's worth of memory on a long score, in the
+engine. A place that lays the score out again on every change, an editor's preview above
+all, does it through a **view**, which frees the pages it replaces:
+
+```js
+const view = chant.view({ svg: "lines", ids: false }); // the options but width and weights
+let page = view.layout(host.clientWidth);               // on each change and each resize
+```
+
+- `view.layout(width, { weights })` returns the view's page for the chant as it is now. Asked
+  again with the same width and weights, and no change to the chant, it returns the same
+  page; otherwise a new one, made reusing the last page's lines (with `svg: "lines"`).
+- The view keeps its current page (`view.page`) and the one before it, so a click between an
+  edit and the next frame still finds what was on screen. It frees any older page itself.
+- `page.keep()` takes a page out of its view's care, for a page held longer (compared against
+  later, shown elsewhere); free a kept page yourself. `view.free()` frees the view's pages
+  but the kept ones.
+- Give each place its own view (each panel, each component instance): two views never share
+  pages, so one freeing its pages leaves the other's alone.
+
+`chant.layout(width, options)` makes a one-off page, a new one on each call: a static
+rendering, a print, a thumbnail drawn once. It lives until `page.free()` (or `using page =
+chant.layout(…)`, where the runtime has explicit resource management) or until it is garbage
+collected: a `FinalizationRegistry` frees its engine half then. That only runs between tasks
+and when the collector gets to it, so an editor that lays out with `chant.layout` on every
+keystroke and never frees grows the engine's memory far faster than the collector returns it
+(hundreds of megabytes on the longest scores, which a phone's browser may not survive). A
+view keeps an editor's memory flat.
+
+**A freed page throws** from its hit tests and `timeline()`, with a message saying how it was
+freed, as a freed `Chant` does: an answer of `null` would read as "nothing there" and hide
+the bug of asking an old page. `page.freed` says so without throwing, and the page's `svg`,
+`svgParts` and a timeline already made stay readable. With views, only a page held past two
+layouts of its view, without `keep()`, is freed under you.
+
+**Without `FinalizationRegistry`** (very old runtimes), nothing frees a page that is dropped:
+views still free what they replace, and pages from `chant.layout` must be freed by hand.
+
+**Memory and time.** A page held when the chant changes makes the update copy the engraving
+rather than change it in place, and an editor always holds the page on screen, so this copy
+is part of an edit's cost: on the longest scores (about 4,900 notes) about 1.7 ms of a 5 ms
+update, on typical ones next to nothing. Freeing replaced pages doesn't avoid it; it bounds
+memory, since each page kept past an edit keeps a whole engraving alive.
 
 - **`timeline.notes`**: one entry per note, in singing order, with these fields:
   - `id`: stable across layouts of one `Chant`. Each SVG element lists the notes it draws
@@ -118,15 +156,12 @@ and link the source and the score both ways.
 
 ```js
 const chant = new Chant(textarea.value, { initial: 1 });
-let page = chant.layout(host.clientWidth, { svg: "lines", ids: false });
+const view = chant.view({ svg: "lines", ids: false });
+let page = view.layout(host.clientWidth);
 textarea.addEventListener("input", () => {
   chant.update(textarea.value);    // keeps the options; diagnostics follow the new source
-  const next = chant.layout(host.clientWidth, { svg: "lines", ids: false });
-  // next.svgParts: { head, defs, rest, lines: [{ top, svg }] }
-  if (next !== page) {
-    page.free();                   // the page it replaces, so the next edit needn't copy
-    page = next;
-  }
+  page = view.layout(host.clientWidth); // the view frees the pages it replaces
+  // page.svgParts: { head, defs, rest, lines: [{ top, svg }] }
 });
 host.addEventListener("click", (e) => {
   // Layout coordinates from the score's top left: `offsetX`/`offsetY` would be relative to
@@ -142,9 +177,9 @@ const lit = page.elementsAt(textarea.selectionStart); // what to highlight for t
 
 - **`chant.update(gabc)`** replaces the score, keeping the options, and returns whether it
   changed. Lay it out again to see it.
-- **`page.timeline`** is made only when read, so an editor that never reads it skips what on
+- **`page.timeline()`** is made only when called, so an editor that never reads it skips what on
   a long score is most of the layout's cost.
-- **`layout(width, { svg: "lines" })`** returns `page.svgParts` instead of `page.svg`:
+- **`{ svg: "lines" }`** gives `page.svgParts` instead of `page.svg`:
   `head` (the `<svg>` start tag and style), `defs` (the glyph `<path>`s, for a `<defs>`),
   `rest` (the initial and its annotations) and `lines`, each `{ top, svg }` with the line's
   elements positioned relative to its top. Wrap each in
@@ -153,10 +188,10 @@ const lit = page.elementsAt(textarea.selectionStart); // what to highlight for t
   so an editor can replace only the lines whose string changed. On a long score, replacing
   the whole SVG costs the browser far more than the engine's work. Giving each line its own
   `<svg>` (`<use>` finds the glyphs in one shared `<defs>` anywhere in the page) keeps the
-  browser's work to the changed line as well; the example below does. Each view (the
-  options but `width` and `weights`), such as the main page and a thumbnail, reuses the
-  lines of its own last page while that page is held. A page in parts keeps what the engine
-  needs to reuse its lines, about two thirds again the memory of the strings.
+  browser's work to the changed line as well; the example below does. Each view, such as
+  the main page's and a thumbnail's, reuses the lines of its own last page; `chant.layout`
+  reuses none. A page in parts keeps what the engine needs to reuse its lines, about two
+  thirds again the memory of the strings.
 - **`page.sourceAt(x, y)`** returns what is under a point of the page, most specific
   first: a notehead, a bar (within half a staff space), a syllable's box, or the nearest
   syllable on that line; `null` outside the lines. The result is
@@ -187,14 +222,14 @@ import { linter } from "@codemirror/lint";
 import { EditorView } from "@codemirror/view";
 
 const chant = new Chant(gabc, { initial: 1 });
+const score = chant.view({ svg: "lines", ids: false }); // the preview's view
 let page = null;                   // the page shown, which answers the caret and clicks
 
 // Keep the chant and the preview in step with the document.
 function show(doc) {
   chant.update(doc);
-  const next = chant.layout(host.clientWidth, { svg: "lines", ids: false });
+  const next = score.layout(host.clientWidth); // the view frees the pages it replaces
   if (next === page) return;
-  page?.free();                    // release the page it replaces
   page = next;
   draw(page);                      // patch the preview from page.svgParts, as below
 }
