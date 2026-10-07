@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/neuma", "crates/neuma-book", "crates/neuma-cli", "crates/neuma-metrics", "crates/neuma-mobile", "crates/neuma-tones", "crates/neuma-wasm"]
+members = ["crates/neuma", "crates/neuma-book", "crates/neuma-cli", "crates/neuma-metrics", "crates/neuma-mobile", "crates/neuma-tones", "crates/neuma-wasm", "tools/readme"]
 exclude = ["fuzz"]
 
 [workspace.package]

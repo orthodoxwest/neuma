@@ -1,0 +1,17 @@
+[package]
+name = "readme-images"
+description = "Draws the images in the README from neuma's own output, and runs the README's Rust snippets as doctests"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+neuma = { path = "../../crates/neuma" }
+neuma-book = { path = "../../crates/neuma-book" }
+neuma-tones = { path = "../../crates/neuma-tones" }
+
+[lints]
+workspace = true

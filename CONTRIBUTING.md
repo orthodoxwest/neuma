@@ -19,6 +19,10 @@ node crates/neuma-wasm/build.mjs
 node crates/neuma-wasm/test.mjs
 ```
 
+The README's Rust snippets run as doctests of [tools/readme](tools/readme/README.md), so
+`cargo test` fails when an API change breaks one. After a change to the engraving, redraw the
+README's images as that page describes.
+
 ## Golden snapshots
 
 `cargo test` compares the engraving of about 30 reference scores, at two widths, with text
