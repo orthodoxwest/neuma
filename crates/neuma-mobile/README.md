@@ -1,10 +1,30 @@
 # neuma for iOS and Android
 
 UniFFI bindings for neuma (namespace `neuma`, UniFFI 0.32). A `Chant` engraves a score
-once. `layout(width, options)` returns a `Page`, which holds what to draw (glyphs,
-rectangles and text) and the playback timeline. Every call is synchronous, and a `Chant`
-can be shared across threads. `noteAt` answers for that Chant's most recent layout, so
-give each view that lays the score out at its own width its own `Chant`.
+once, and `update(src)` engraves it again after an edit, reusing what didn't change.
+`layout(width, options)` returns a `ChantLayout`: `page()` holds what to draw (glyphs,
+rectangles and text), `timeline(weights)` the playback timeline (a `ChantTimeline`), and
+`noteAt`, `sourceAt` and `elementsAt` its hit tests. (The `Chant` prefix keeps them clear of
+SwiftUI's `Layout` and WidgetKit's `Timeline`; Rust calls them `Layout` and `Timeline`.) Every
+call is synchronous, and a `Chant` can be shared across threads. Each `ChantLayout` answers
+for itself, so one `Chant` can serve a thumbnail and the main view, and a layout keeps
+showing the score it was made from after an update.
+
+The bindings are a thin layer over the Rust `neuma::Chant`: the defaults, and what happens
+to a value the engine can't use, are the engine's, the same as in the browser and on the
+command line. Every option record field has a default, so `ChantOptions()`,
+`LayoutOptions()`, `Weights()` and `PsalmOptions()` are the usual options. An enum field is
+nullable and defaults to null, which means the engine's default (UniFFI can't give an enum
+field any other default):
+
+| Field | null means |
+|---|---|
+| `ChantOptions.font` | `LyricFont.GOOGLE` (`.google`): Google Fonts' EB Garamond |
+| `LayoutOptions.lastLine` | `LastLine.RAGGED` (`.ragged`) |
+| `PsalmOptions.intone` | `Intone.FIRST_VERSE` (`.firstVerse`): the intonation on the first verse only |
+
+Ids,
+indices, counts and offsets are signed `Int`s (`Int32` in Swift).
 
 ## Build
 
@@ -38,9 +58,9 @@ three.
 ## Use
 
 ```swift
-let chant = Chant(gabc: source, options: defaultChantOptions())
-let page = chant.layout(width: Float(bounds.width), options: defaultLayoutOptions())
-for item in page.items {
+let chant = Chant(gabc: source, options: ChantOptions())
+let layout = chant.layout(width: Float(bounds.width), options: LayoutOptions())
+for item in layout.page().items {
     switch item {
     case let .glyph(glyph, x, y, scale, role, notes): ...  // fill glyphOutline(id: glyph)!.path
     case let .rect(x, y, w, h, role, notes): ...
@@ -50,47 +70,87 @@ for item in page.items {
 ```
 
 ```kotlin
-val chant = Chant(source, defaultChantOptions())
-val page = chant.layout(width, LayoutOptions(lastLine = LastLine.RAGGED, weights = Weights(mediant = 3f)))
-val id = chant.noteAt(x, y)   // the note under a tap, or null
-chant.close()                 // or let the cleaner free it
+val chant = Chant(source, ChantOptions(initial = 2))
+val layout = chant.layout(width, LayoutOptions(scale = 8f))
+val page = layout.page()      // keep it: each call copies the display list across
+val timeline = layout.timeline(Weights(mediant = 3f))
+val id = layout.noteAt(x, y)  // the note under a tap, or null
+chant.update(edited)          // after an edit; lay it out again to see it
+chant.setOptions(ChantOptions(initial = 2, lyricSize = 3f)) // a new text size
+chant.version()               // names the state: grows with each real change
+layout.close()                // when a new layout replaces it
+chant.close()
+```
+
+**A layout's lifetime.** A `ChantLayout` holds on to the engraving it was made from. While
+a layout is held, the chant's next edit copies the engraving rather than changing it in
+place; an app always holds the layout on screen, so this copy is part of an edit's cost (on
+the longest scores, about 4,900 notes, about 1.7 ms of a 5 ms update; on typical ones next to
+nothing). After the edit the old layout keeps a whole engraving alive until it is freed, so
+close the layout a view has replaced instead of leaving it to the garbage collector:
+`close()`, `layout.use { }`, or in Compose a `DisposableEffect`. In Swift, drop the
+reference. That bounds memory; it doesn't make the edit cheaper. `page()` is made once per
+layout, but each call copies it across the boundary, so keep the value rather than calling
+it on each recomposition or `body`.
+
+**When to lay out again.** `chant.version()` names the chant's state: it grows with each
+change that changed anything, no two chants share one, and `update` with the current source,
+or `setOptions` with options that engrave the same, leave it as it is. `update` then
+`version()` is not atomic: with several threads writing, another change can land between. Keep it in the app's state after each edit and key the layout on it, here
+in Compose (in SwiftUI, `.id(version)` or an `onChange(of: version)`):
+
+```kotlin
+@Composable
+fun Score(chant: Chant, width: Float, version: Long) { // version: chant.version(), as state
+    val layout = remember(chant, width, version) { chant.layout(width, LayoutOptions()) }
+    DisposableEffect(layout) { onDispose { layout.close() } }
+    val page = remember(layout) { layout.page() }
+    Canvas(Modifier.fillMaxWidth()) { draw(page) }
+}
 ```
 
 ### Drawing
 
 - **Coordinates.** Positions are in output units: `scale` units per staff space (default
-  6), with y pointing down. Pass the width in points and choose `scale` to suit the text
-  size.
-- **Glyphs.** Glyphs arrive as `u16` ids. Fetch each outline once with
+  6), from the page's top left with y pointing down. Boxes (`Item.Rect`, `SourceElement`)
+  are `x, y, w, h` from their top-left corner; a timeline note's notehead center is `cx,
+  cy`. Pass the width in points and choose `scale` to suit the text size.
+- **Glyphs.** Glyphs arrive as ids. Fetch each outline once with
   `glyphOutline(id)`; it is absolute `M L C Z` path data with nonzero fill. Draw it
   translated to (x, y) and scaled by the item's `scale`.
 - **Rectangles** are staff lines, ledger lines, stems, bars and episemata.
 - **Text.** Draw lyrics with EB Garamond at the item's x, baseline and size, ligatures off,
   and without the app's own tracking. `ChantOptions.font` (a `LyricFont`) says which EB
   Garamond the app bundles, so lyrics are measured the way they will be drawn. The default
-  is EB Garamond 12; use `google` for the Google Fonts build.
+  (null) is the Google Fonts build, as in the browser; use `GARAMOND12` (`.garamond12`) for
+  the EB Garamond 12 release.
 - **Highlighting.** `notes` lists the notes a piece of ink draws. A porrectus swash draws
   two. Every role (`Ink`, `TextRole`) can take its own color.
 - **Accessibility.** `page.altText` is the plain lyric text.
 
 ### Timeline
 
-`page.notes` lists the notes in singing order. Each note has:
+`layout.timeline(weights)` holds `notes`, `pauses` and the total `duration`, made when asked
+for, so a view that only draws never pays for it. `timeline.notes` lists the notes in
+singing order, each a `TimelineNote` with:
 
 - `id`: stable across layouts of one `Chant`.
-- `x`, `y`, `w`, `h`: the notehead's center and size.
+- `cx`, `cy`: the notehead's center; `w`, `h`: its size.
 - `start` and `duration`: in weight units.
 - `semitones`: from the clef's do, flats applied.
 - the syllable and word.
 - flags for `accent`, `newSyllable` and `recitation`.
 - `verse` and `half`.
-- the source span, in UTF-8 bytes like the diagnostics' `start` and `end`. Swift and
-  Kotlin strings index in UTF-16, so convert before highlighting source text.
+- the source range: `sourceStart`/`sourceEnd` in UTF-8 bytes like the diagnostics' `start`
+  and `end`, and `sourceUtf16Start`/`sourceUtf16End` in UTF-16 units, Swift's `NSRange`
+  and Kotlin's string indices.
 
-`page.pauses` have kinds that include the mediant `*` and the flex `†`. A mark is the whole
-pause at its bar, so a bar right after one has weight 0. `Weights` are the relative
-durations, and any field left out keeps its default. `virgula` also times the minimis bar,
-and `half` the Dominican bars. `noteAt(x, y)` hit-tests the last layout.
+`timeline.pauses` have kinds that include the mediant `*` and the flex `†`, and a `start` and
+`duration`. A mark is the whole pause at its bar, so a bar right after one lasts 0.
+`Weights` are the relative durations, and any field left out keeps its default. `virgula`
+also times the minimis bar, and `half` the Dominican bars. `layout.noteAtTime(t, weights)`
+finds the note sounding at time `t` for a playhead (null in a pause), keeping the timeline
+between calls; `layout.noteAt(x, y)` hit-tests a tap.
 
 ### Library entries
 
@@ -111,11 +171,22 @@ on them.
 
 ### Psalm tones
 
-`psalm(text, tone, intone)` sets psalm text (a verse per line, the mediant marked `*`) to a
-built-in tone from `toneNames()`, and `psalmWithTone` to a tone block of your own. The
-`PsalmSetting` holds GABC for `Chant` and each note's verse, half and role in the tone.
-Half-verses with no pointing marks are pointed automatically; `point(text, tone)` returns
-the pointed text with the pointer's confidence for each half-verse.
+`psalm(text, tone, PsalmOptions())` sets psalm text (a verse per line, the mediant marked
+`*`) to a built-in tone from `toneNames()`, and `psalmWithTone` to a tone block of your own.
+The `PsalmSetting` holds GABC and each note's verse, half and role in the tone, with the sung
+syllable's range in the text named as a timeline note's (`sourceStart`/`sourceEnd` and
+`sourceUtf16Start`/`sourceUtf16End`). Half-verses with no pointing marks are pointed
+automatically unless `PsalmOptions(autoPoint = false)`; `point(text, tone)` returns the
+pointed text with the pointer's confidence and source range for each half-verse.
+`PsalmOptions(intone = Intone.EVERY_VERSE)` sings the intonation on every verse. A
+`ToneException`'s message says what is wrong ("no built-in tone 9.z").
+
+`Chant.fromPsalm(text, tone, PsalmOptions(), ChantOptions())` sets and engraves the psalm in
+one step, with its sources in the text: a tap on a note finds its syllable in the psalm, and
+diagnostics (`point::unsure` among them) count the text. `tone` is a built-in name or a tone
+block. `chant.psalm()` gives the setting as `psalm` returns it (`gabc`, `notes` with each
+note's place in the tone, and `diagnostics`), and `chant.update(text)` sets new text to the
+same tone and updates it. It is null for a chant made from GABC.
 
 ### Editors
 
@@ -123,10 +194,14 @@ the pointed text with the pointer's confidence for each half-verse.
   code units (Kotlin string indices, `NSRange`). Codes are stable; docs/diagnostics.md lists
   them. `fix` is null or the one edit that fixes the problem: replace its range with
   `replacement`; `title` labels it in a menu.
-- **`chant.sourceAt(x, y)`** returns the note, bar or syllable under a tap in the last layout,
-  as a `SourceElement` with its source range (both units), line and box.
-- **`chant.elementsAt(offset, unit)`** returns what to highlight for a caret, most specific
+- **`layout.sourceAt(x, y)`** returns the note, bar or syllable under a tap, as a
+  `SourceElement` with its source range (both units), line, box and `cx` (a note's notehead
+  center).
+- **`layout.elementsAt(offset, unit)`** returns what to highlight for a caret, most specific
   first: the notes and bar whose source holds it, then a box per line for its syllable. Pass
   `OffsetUnit.UTF16` for a text view's caret, `OffsetUnit.UTF8` for a byte offset.
 
-A `Chant` is immutable: on each edit, make a new one and lay it out.
+On each edit, call `chant.update(src)` and lay it out again: the engraving around the edit
+is redone, and the rest, and the line breaks it can, are reused. A tap waits on no layout
+in progress: hit tests run on the `ChantLayout`, not the `Chant`. The source or options the
+chant already has change nothing, and leave `version()` as it was.

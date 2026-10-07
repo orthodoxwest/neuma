@@ -121,7 +121,7 @@ const target = await page.evaluate(() => {
   // The note under the third syllable of the first line: "na".
   for (let x = 120; x < host.width; x += 2) {
     for (let y = 0; y < 80; y += 2) {
-      const hit = window.neumaEditor.chant.sourceAt(x, y);
+      const hit = window.neumaEditor.page.sourceAt(x, y);
       if (hit && hit.kind === "note" && hit.index === 3) return { x: host.left + hit.x + hit.w / 2, y: host.top + hit.y + hit.h / 2 };
     }
   }

@@ -14,11 +14,11 @@
 
   What it shows:
   - the score redrawn as you type, at most once per animation frame, replacing only the
-    SVG lines whose markup changed (layout with svg: "lines", ids: false, timeline: false);
+    SVG lines whose markup changed (layout with svg: "lines", ids: false);
   - diagnostics underlined in the source (hover for the message) and listed, with the fix
     as a button where there is one;
-  - a click on the score selects the note, bar or syllable's source (sourceAt);
-  - the caret's note, bar and syllable highlighted in the score (elementsAt).
+  - a click on the score selects the note, bar or syllable's source (page.sourceAt);
+  - the caret's note, bar and syllable highlighted in the score (page.elementsAt).
 -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital@0;1&display=swap">
@@ -140,6 +140,8 @@ const stats = $("stats"), tip = $("tip"), preview = $("preview");
 await init();
 text.value = SAMPLE;
 const chant = new Chant(text.value, { initial: 1 });
+const view = chant.view({ svg: "lines", ids: false }); // the preview
+let page = null;          // the page shown, which answers clicks and the caret
 
 // ---- Rendering, coalesced to one per animation frame -------------------------------------
 
@@ -158,12 +160,13 @@ function render() {
   if (dirtySource) chant.update(text.value);
   if (dirtySource || dirtyLayout) {
     const width = Math.max(200, Math.floor(preview.clientWidth - 32));
-    const page = chant.layout(width, { timeline: false, svg: "lines", ids: false });
+    // The view frees the pages it replaces, and reuses the lines of the last.
+    page = view.layout(width);
     engine = performance.now() - t0;
     patched = patch(page.svgParts);
   }
   if (dirtySource) showDiagnostics(chant.diagnostics);
-  if (dirtySource || dirtyLayout || dirtyCaret) highlight(chant.elementsAt(text.selectionStart));
+  if (dirtySource || dirtyLayout || dirtyCaret) highlight(page.elementsAt(text.selectionStart));
   if (patched) {
     const total = performance.now() - t0;
     stats.textContent = `${text.value.length.toLocaleString()} chars · engine ${engine.toFixed(1)} ms · ` +
@@ -258,10 +261,10 @@ function highlight(elements) {
 
 host.addEventListener("click", (event) => {
   const box = host.getBoundingClientRect();
-  const hit = chant.sourceAt(event.clientX - box.left, event.clientY - box.top);
+  const hit = page?.sourceAt(event.clientX - box.left, event.clientY - box.top);
   if (!hit) return;
   text.focus({ preventScroll: true });
-  text.setSelectionRange(hit.from, hit.to);
+  text.setSelectionRange(hit.utf16Start, hit.utf16End);
   revealSelection();
   dirtyCaret = true;
   schedule();
@@ -296,16 +299,16 @@ function showDiagnostics(list) {
   // the last one is left out: laying out a long source on each keystroke would cost more
   // than the engine's work.
   const rank = { error: 3, warning: 2, info: 1 };
-  const src = text.value.slice(0, Math.max(0, ...list.map((d) => d.to)));
+  const src = text.value.slice(0, Math.max(0, ...list.map((d) => d.utf16End)));
   const cuts = new Set([0, src.length]);
-  for (const d of list) { cuts.add(d.from); cuts.add(d.to); }
+  for (const d of list) { cuts.add(d.utf16Start); cuts.add(d.utf16End); }
   const points = [...cuts].sort((a, b) => a - b);
   const frag = document.createDocumentFragment();
   for (let i = 0; i + 1 < points.length; i++) {
     const [a, b] = [points[i], points[i + 1]];
     let worst = null;
     for (const d of list) {
-      if (d.from <= a && b <= d.to && (!worst || rank[d.severity] > rank[worst.severity])) worst = d;
+      if (d.utf16Start <= a && b <= d.utf16End && (!worst || rank[d.severity] > rank[worst.severity])) worst = d;
     }
     const chunk = document.createTextNode(src.slice(a, b));
     if (worst) {
@@ -320,11 +323,11 @@ function showDiagnostics(list) {
   }
   // Empty spans (an insertion point) draw as a thin bar.
   for (const [i, d] of list.entries()) {
-    if (d.from === d.to) {
+    if (d.utf16Start === d.utf16End) {
       const m = document.createElement("mark");
       m.className = `${d.severity} empty`;
       m.dataset.diag = i;
-      placeAt(frag, d.from, m);
+      placeAt(frag, d.utf16Start, m);
     }
   }
   if (list.length || had) marks.replaceChildren(frag);
@@ -336,14 +339,14 @@ function showDiagnostics(list) {
   for (const [i, d] of list.entries()) {
     const li = document.createElement("li");
     li.className = d.severity;
-    li.title = `${d.code} at ${lineCol(d.from)}`;
+    li.title = `${d.code} at ${lineCol(d.utf16Start)}`;
     const sev = document.createElement("span");
     sev.className = "sev";
     sev.textContent = d.severity;
     const msg = document.createElement("span");
     msg.className = "msg";
     const code = document.createElement("code");
-    code.textContent = ` ${d.code} · ${lineCol(d.from)}`;
+    code.textContent = ` ${d.code} · ${lineCol(d.utf16Start)}`;
     msg.append(d.message, code);
     li.append(sev, msg);
     if (d.fix) {
@@ -354,7 +357,7 @@ function showDiagnostics(list) {
     }
     li.addEventListener("click", () => {
       text.focus();
-      text.setSelectionRange(d.from, Math.max(d.to, d.from));
+      text.setSelectionRange(d.utf16Start, Math.max(d.utf16End, d.utf16Start));
       revealSelection();
     });
     li.dataset.diag = i;
@@ -388,9 +391,9 @@ function lineCol(offset) {
 // Applies a fix as an edit the browser can undo, where it can.
 function applyFix(fix) {
   text.focus();
-  text.setSelectionRange(fix.from, fix.to);
-  if (!document.execCommand("insertText", false, fix.insert)) {
-    text.setRangeText(fix.insert, fix.from, fix.to, "end");
+  text.setSelectionRange(fix.utf16Start, fix.utf16End);
+  if (!document.execCommand("insertText", false, fix.replacement)) {
+    text.setRangeText(fix.replacement, fix.utf16Start, fix.utf16End, "end");
     text.dispatchEvent(new Event("input"));
   }
 }
@@ -421,7 +424,7 @@ new ResizeObserver(() => { dirtyLayout = true; schedule(); }).observe(preview);
 schedule();
 
 // For tests and the console.
-window.neumaEditor = { chant, text, render: () => { render(); return last; } };
+window.neumaEditor = { chant, text, get page() { return page; }, render: () => { render(); return last; } };
 </script>
 </body>
 </html>

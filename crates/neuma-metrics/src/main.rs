@@ -6,7 +6,7 @@
 
 use std::process::ExitCode;
 
-use neuma::metrics::{Face, MetricsTable};
+use neuma::metrics::{FaceMetrics, MetricsTable};
 use rustybuzz::{Feature, UnicodeBuffer, ttf_parser::Tag};
 use sha2::{Digest, Sha256};
 
@@ -60,14 +60,14 @@ fn shape(face: &rustybuzz::Face, text: &str, feats: &[Feature]) -> i32 {
     out.glyph_positions().iter().map(|p| p.x_advance).sum()
 }
 
-fn build_face(path: &str, italic: bool, bold: bool) -> Result<Face, String> {
+fn build_face(path: &str, italic: bool, bold: bool) -> Result<FaceMetrics, String> {
     let data = std::fs::read(path).map_err(|e| format!("{path}: {e}"))?;
     let hash: [u8; 32] = Sha256::digest(&data).into();
     let face = rustybuzz::Face::from_slice(&data, 0).ok_or_else(|| format!("{path}: not a font"))?;
     let upem = face.units_per_em() as f32;
     let ascent = face.ascender() as f32 / upem;
     let descent = -(face.descender() as f32) / upem;
-    let mut out = Face::new(italic, bold, hash, ascent, descent);
+    let mut out = FaceMetrics::new(italic, bold, hash, ascent, descent);
     let plain = features(false);
     let smcp = features(true);
     // Without small capitals of its own, a browser draws a capital at this size instead

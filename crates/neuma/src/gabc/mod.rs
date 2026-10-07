@@ -11,7 +11,7 @@ use std::ops::Range;
 use crate::diag::{Diagnostic, Fix, Sink};
 use crate::score::{Figure, Header, Score, Syllable};
 
-pub use write::to_gabc;
+pub(crate) use write::to_gabc;
 
 /// A parsed score and everything the parser had to say about it.
 #[derive(Clone, Debug)]

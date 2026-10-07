@@ -116,13 +116,13 @@ fn bars_breaks_spaces() {
             BarKind::Virgula,
             BarKind::Virgula,
             BarKind::Minimis,
-            BarKind::Minima,
-            BarKind::Minima,
-            BarKind::Minor,
+            BarKind::Quarter,
+            BarKind::Quarter,
+            BarKind::Half,
             BarKind::Dominican(3),
-            BarKind::Maior,
-            BarKind::DottedMaior,
-            BarKind::Finalis
+            BarKind::Full,
+            BarKind::DottedFull,
+            BarKind::Double
         ]
     );
     let breaks: Vec<(bool, CustosRule)> = f
@@ -380,7 +380,7 @@ fn comma_digit_is_a_dominican_bar() {
         .iter()
         .filter_map(|f| if let Figure::Bar(b) = f { Some(b.kind) } else { None })
         .collect();
-    assert_eq!(bars, [BarKind::Dominican(3), BarKind::Dominican(4), BarKind::Minima]);
+    assert_eq!(bars, [BarKind::Dominican(3), BarKind::Dominican(4), BarKind::Quarter]);
     let p = parse("(c4) a(f;8)");
     // `;7` and `;8` reach from the top line up past the staff.
     assert!(

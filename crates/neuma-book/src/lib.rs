@@ -12,19 +12,19 @@
 //! std::fs::write("compline.pdf", doc.pdf(&fonts)).unwrap();
 //! ```
 //!
-//! The pipeline: [`Book::parse`] reads the `.book` format, [`compose`] sets each piece into
-//! blocks (a staff line or a line of text each, with keep-together rules), [`paginate`] puts
-//! the blocks on pages with running headers and page numbers, and [`pdf`] and [`svg`] write
-//! the pages.
+//! The pipeline: [`Book::parse`] reads the `.book` format, composing sets each piece into
+//! blocks (a staff line or a line of text each, with keep-together rules), pagination puts
+//! the blocks on pages with running headers and page numbers, and [`Document::pdf`] and
+//! [`Document::svg`] write the pages.
 
 pub mod book;
-pub mod compose;
+mod compose;
 pub mod font;
 pub mod page;
-pub mod paginate;
-pub mod pdf;
-pub mod svg;
-pub mod text;
+mod paginate;
+mod pdf;
+mod svg;
+mod text;
 mod times;
 
 pub use book::{Book, BookError, PageNumbers, Piece, PsalmSet, Settings, Source};

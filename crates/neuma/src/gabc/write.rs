@@ -337,11 +337,11 @@ fn write_figure(out: &mut String, f: &Figure) {
             let mark = match b.kind {
                 BarKind::Virgula => "`",
                 BarKind::Minimis => "^",
-                BarKind::Minima => ",",
-                BarKind::Minor => ";",
-                BarKind::Maior => ":",
-                BarKind::DottedMaior => ":?",
-                BarKind::Finalis => "::",
+                BarKind::Quarter => ",",
+                BarKind::Half => ";",
+                BarKind::Full => ":",
+                BarKind::DottedFull => ":?",
+                BarKind::Double => "::",
                 BarKind::Dominican(n) => {
                     let _ = write!(out, ";{n}");
                     ""

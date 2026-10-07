@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 
 use neuma::glyphs::GlyphId;
 use neuma::score::TextStyle;
-use neuma::{DisplayList, Font, Item, LayoutOptions, MetricsTable, NoteRef, StyleOptions, parse};
+use neuma::{DisplayList, Item, LyricFont, MetricsTable, NoteRef, StyleOptions, parse};
 
 /// A narrow phone and a wide page.
 const WIDTHS: [f32; 2] = [360.0, 720.0];
@@ -127,6 +127,7 @@ fn dump(out: &mut String, list: &DisplayList) {
                 }
                 out.push('\n');
             }
+            other => panic!("an item the snapshot doesn't know: {other:?}"),
         }
     }
 }
@@ -140,7 +141,7 @@ fn snapshot(src: &str, metrics: &MetricsTable) -> String {
     }
     for width in WIDTHS {
         let _ = writeln!(out, "\n# width {width}");
-        dump(&mut out, &engraving.layout(width, &LayoutOptions::default()).display());
+        dump(&mut out, &engraving.layout(width).display());
     }
     out
 }
@@ -161,7 +162,7 @@ fn first_difference(expected: &str, actual: &str) -> String {
 
 #[test]
 fn golden_snapshots() {
-    let metrics = MetricsTable::from_bytes(Font::Google.table_bytes()).unwrap();
+    let metrics = MetricsTable::from_bytes(LyricFont::Google.metrics_bytes()).unwrap();
     let update = std::env::var_os("UPDATE_SNAPSHOTS").is_some_and(|v| !v.is_empty() && v != "0");
     let mut sources: Vec<PathBuf> = SOURCES
         .iter()

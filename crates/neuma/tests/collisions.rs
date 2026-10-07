@@ -6,7 +6,7 @@
 use std::path::Path;
 
 use neuma::glyphs::{GlyphId, UNITS_PER_SPACE};
-use neuma::{Font, Ink, Item, LayoutOptions, StyleOptions, TextMeasure, TextRole, parse};
+use neuma::{Ink, Item, LyricFont, StyleOptions, TextMeasure, TextRole, parse};
 
 fn scores() -> Vec<(String, String)> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests");
@@ -39,11 +39,11 @@ fn top(c: char) -> f32 {
 
 #[test]
 fn notes_keep_off_the_lyrics_and_ink_stays_on_the_page() {
-    let metrics = Font::Google.table();
+    let metrics = LyricFont::Google.metrics();
     for (name, src) in scores() {
         let eng = parse(&src).score.engrave(metrics, &StyleOptions::default());
         for width in [300.0, 500.0, 800.0, 1200.0] {
-            let list = eng.layout(width, &LayoutOptions::default()).display();
+            let list = eng.layout(width).display();
             let sp = list.staff_space;
             let ctx = format!("{name} at {width}");
             let mut ink: Vec<[f32; 4]> = Vec::new();
@@ -85,6 +85,7 @@ fn notes_keep_off_the_lyrics_and_ink_stays_on_the_page() {
                             pen += metrics.advance(&r.text, r.style) * size;
                         }
                     }
+                    _ => {}
                 }
             }
             for b in &ink {

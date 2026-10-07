@@ -20,7 +20,7 @@
 use std::path::{Path, PathBuf};
 
 use neuma::glyphs::{GlyphId, UNITS_PER_SPACE};
-use neuma::{Font, Ink, Item, LayoutOptions, StyleOptions, TextMeasure, TextRole};
+use neuma::{Ink, Item, LayoutOptions, LyricFont, StyleOptions, TextMeasure, TextRole};
 use rustybuzz::ttf_parser::Face;
 
 #[derive(Clone, Copy, PartialEq)]
@@ -154,20 +154,12 @@ fn letter_box(face: &Face, c: char) -> Option<[f32; 4]> {
 }
 
 fn check(src: &str, name: &str, widths: &[f32], scale: f32, faces: &[Face; 2], detail: bool) -> (Vec<Counts>, String) {
-    let metrics = Font::Google.table();
+    let metrics = LyricFont::Google.metrics();
     let eng = neuma::parse(src).score.engrave(metrics, &StyleOptions::default());
     let mut report = String::new();
     let mut all = Vec::new();
     for &w in widths {
-        let list = eng
-            .layout(
-                w,
-                &LayoutOptions {
-                    scale,
-                    ..LayoutOptions::default()
-                },
-            )
-            .display();
+        let list = eng.layout_with(w, &LayoutOptions::default().with_scale(scale)).display();
         let sp = list.staff_space;
         let mut boxes = Vec::new();
         // Text items by syllable, with their advance extents, to tell touching syllables.
@@ -250,6 +242,7 @@ fn check(src: &str, name: &str, widths: &[f32], scale: f32, faces: &[Face; 2], d
                         texts.push((i, *syllable, *baseline, *x, pen));
                     }
                 }
+                _ => {}
             }
         }
         // Items of consecutive syllables whose texts touch: one word, set as one.

@@ -14,21 +14,24 @@ use crate::diag::Diagnostic;
 use crate::score::{Clef, Figure, Lyric, Score, Syllable};
 use crate::text::TextMeasure;
 use std::ops::Range;
+use std::sync::Arc;
 
 /// What [`EngraveCache::engrave`] keeps between engravings, so engraving a score after a small
 /// edit costs about the syllables the edit touched rather than the whole score. The result is
 /// the same as [`Score::engrave`]'s.
 ///
 /// A cache assumes one [`TextMeasure`] throughout: give it the same one each time.
+/// [`crate::Chant`] keeps one.
 #[derive(Debug, Default)]
-pub struct EngraveCache {
+pub(crate) struct EngraveCache {
     last: Option<Kept>,
 }
 
 #[derive(Debug)]
 struct Kept {
     score: Score,
-    engraving: Engraving,
+    /// Shared with the layouts made from it; taken back without a copy once none is alive.
+    engraving: Arc<Engraving>,
     /// The state before each syllable, and after the last.
     marks: Vec<Resume>,
     style: StyleOptions,
@@ -40,17 +43,22 @@ struct Kept {
 
 impl EngraveCache {
     /// The last score engraved, and its engraving.
-    pub fn score(&self) -> Option<&Score> {
+    pub(crate) fn score(&self) -> Option<&Score> {
         self.last.as_ref().map(|k| &k.score)
     }
 
-    pub fn engraving(&self) -> Option<&Engraving> {
+    /// Takes the last score back, forgetting its engraving.
+    pub(crate) fn take_score(&mut self) -> Option<Score> {
+        self.last.take().map(|k| k.score)
+    }
+
+    pub(crate) fn engraving(&self) -> Option<&Arc<Engraving>> {
         self.last.as_ref().map(|k| &k.engraving)
     }
 
     /// Engraves `score` as [`Score::engrave`] does, reusing the last engraving where the score
     /// is unchanged, and keeps both for next time.
-    pub fn engrave(&mut self, score: Score, measure: &dyn TextMeasure, style: &StyleOptions) -> &Engraving {
+    pub(crate) fn engrave(&mut self, score: Score, measure: &dyn TextMeasure, style: &StyleOptions) -> &Arc<Engraving> {
         let mut pass = score.pass(measure, style, true);
         let metrics = [pass.hyphen, pass.word_space, pass.ascent, pass.descent].map(f32::to_bits);
         let first_lyric = pass.first_lyric.clone();
@@ -74,7 +82,7 @@ impl EngraveCache {
         let header_spans = score.header.spans.clone();
         let kept = self.last.insert(Kept {
             score,
-            engraving,
+            engraving: Arc::new(engraving),
             marks: marks.unwrap_or_default(),
             style: style.clone(),
             metrics,
@@ -163,6 +171,8 @@ fn resume(pass: &mut Pass, score: &Score, old: Kept) {
         marks: mut old_marks,
         ..
     } = old;
+    // A layout still alive shares the engraving; copy it then, else take it.
+    let old_eng = Arc::try_unwrap(old_eng).unwrap_or_else(|shared| (*shared).clone());
     let (new, prev) = (&score.syllables, &old_score.syllables);
     let (n, m) = (new.len(), prev.len());
     // The syllables the edit left alone at the start, and at the end, where they have moved.

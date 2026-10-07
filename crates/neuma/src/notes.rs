@@ -1,4 +1,4 @@
-//! The note map: where each note is drawn, its pitch and its relative duration, for practice
+//! The timeline: where each note is drawn, its pitch and its relative duration, for practice
 //! and playback tools (DESIGN section 12).
 
 use std::ops::Range;
@@ -6,11 +6,16 @@ use std::ops::Range;
 use crate::display::{LineBox, NoteRef};
 use crate::engrave::NoteInfo;
 use crate::layout::Layout;
+
 use crate::score::{BarKind, ClefKind, NoteShape};
 
+/// Every note of a layout in singing order, with when it starts and how long it lasts, and the
+/// pauses between them. Build it with [`Layout::timeline`].
 #[derive(Clone, Debug, PartialEq)]
-pub struct NoteMap {
-    pub notes: Vec<MappedNote>,
+#[non_exhaustive]
+pub struct Timeline {
+    /// By note id; notes on lines a `max_lines` layout leaves out are missing.
+    pub notes: Vec<TimelineNote>,
     pub pauses: Vec<Pause>,
     /// Each line's box, staff center and lyric baseline, in output units.
     pub lines: Vec<LineBox>,
@@ -20,7 +25,9 @@ pub struct NoteMap {
 
 /// Why the singing pauses.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum PauseKind {
+    /// A bar.
     Bar(BarKind),
     /// A `*` in the text: the mediant of a psalm verse, or where the soloist's intonation
     /// ends in other chants.
@@ -29,30 +36,33 @@ pub enum PauseKind {
     Flex,
 }
 
+/// One note of a [`Timeline`].
 #[derive(Clone, Debug, PartialEq)]
-pub struct MappedNote {
+#[non_exhaustive]
+pub struct TimelineNote {
+    /// The note's id: its index in the score, stable across layouts.
     pub id: NoteRef,
+    /// The syllable's index in the score.
     pub syllable: u32,
+    /// The line it is drawn on, from 0.
     pub line: u32,
-    /// Notehead center, output units.
-    pub x: f32,
-    pub y: f32,
-    /// Notehead box, output units.
+    /// The notehead's center, in output units.
+    pub cx: f32,
+    pub cy: f32,
+    /// The notehead's width and height, in output units.
     pub w: f32,
     pub h: f32,
-    /// The box [`NoteMap::note_at`] tests (left, top, right, bottom), output units: the
-    /// notehead box, less what overlaps a neighbour at a porrectus swash's ends.
-    hit: [f32; 4],
-    /// Source span in GABC bytes.
+    /// The note's source span, in UTF-8 bytes.
     pub span: Range<usize>,
-    pub staff_position: i8,
+    /// The note's staff position: 0 is the bottom line, 1 the space above it, and so on.
+    pub staff_position: i32,
     /// Diatonic steps above the clef's do (a fa clef's fa is degree 3).
     pub degree: i32,
     /// Semitones above the clef's do, alterations applied.
-    pub semitones: i16,
-    pub weight: f32,
+    pub semitones: i32,
     /// When the note starts and how long it lasts, in weight units: notes and pauses laid
-    /// end to end with the caller's weights.
+    /// end to end with the caller's weights. The duration is the note's weight (see
+    /// [`Weights`]); pauses are timed separately.
     pub start: f32,
     pub duration: f32,
     pub syllable_text: String,
@@ -61,7 +71,6 @@ pub struct MappedNote {
     pub vowel: Option<char>,
     pub shape: NoteShape,
     pub liquescent: bool,
-    pub quilisma: bool,
     /// The note's syllable has an acute accent in the source.
     pub accent: bool,
     /// The first note of its syllable.
@@ -72,33 +81,62 @@ pub struct MappedNote {
     /// Phrase counters: `verse` advances after each full or double bar, and `half` is 1
     /// after the verse's mediant `*`, else 0.
     pub verse: u32,
-    pub half: u8,
+    pub half: u32,
 }
 
 /// A pause before note `before_note` (`notes.len()` means after the last note).
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[non_exhaustive]
 pub struct Pause {
     pub before_note: u32,
     pub kind: PauseKind,
-    pub weight: f32,
+    /// How long the pause lasts, in weight units: the [`Weights`] value for its kind, or 0
+    /// for a bar that only closes the mediant or flex just before it.
+    pub duration: f32,
     /// When the pause starts, in weight units.
     pub start: f32,
 }
 
-/// Relative durations: multipliers per sign. Not beats; tools choose the tempo.
+/// Relative durations: multipliers per sign, in weight units. Not beats; tools choose the
+/// tempo. A value that is negative or not finite keeps the default, and values are capped at
+/// [`Weights::MAX`].
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[non_exhaustive]
 pub struct Weights {
+    /// A plain note.
     pub note: f32,
+    /// A dotted note.
     pub mora: f32,
+    /// A note with a horizontal episema.
     pub episema: f32,
+    /// The virgula `` ` `` and the minimis bar `^`.
     pub virgula: f32,
-    pub minima: f32,
-    pub minor: f32,
-    pub maior: f32,
-    pub finalis: f32,
+    /// The quarter bar `,` (divisio minima).
+    pub quarter: f32,
+    /// The half bar `;` (divisio minor) and the Dominican bars.
+    pub half: f32,
+    /// The full bar `:` (divisio maior).
+    pub full: f32,
+    /// The double bar `::` (divisio finalis).
+    pub double: f32,
+    /// The mediant `*` of a psalm verse.
     pub mediant: f32,
+    /// The flex `†`.
     pub flex: f32,
 }
+
+crate::setters!(Weights {
+    note: f32 => with_note,
+    mora: f32 => with_mora,
+    episema: f32 => with_episema,
+    virgula: f32 => with_virgula,
+    quarter: f32 => with_quarter,
+    half: f32 => with_half,
+    full: f32 => with_full,
+    double: f32 => with_double,
+    mediant: f32 => with_mediant,
+    flex: f32 => with_flex,
+});
 
 impl Weights {
     /// Solesmes-style reading: every note one pulse, a dotted note two, an episema a little
@@ -108,13 +146,36 @@ impl Weights {
         mora: 2.0,
         episema: 1.5,
         virgula: 0.5,
-        minima: 0.5,
-        minor: 1.0,
-        maior: 2.0,
-        finalis: 3.0,
+        quarter: 0.5,
+        half: 1.0,
+        full: 2.0,
+        double: 3.0,
         mediant: 2.0,
         flex: 1.0,
     };
+
+    /// The largest weight a timeline uses; larger ones are capped to it.
+    pub const MAX: f32 = 1000.0;
+
+    /// These weights as a timeline uses them: each that is negative or not finite replaced by
+    /// the default, and each capped at [`Weights::MAX`].
+    #[must_use]
+    pub fn sanitized(self) -> Weights {
+        let d = Weights::SOLESMES;
+        let keep = |v: f32, default: f32| if v.is_finite() && v >= 0.0 { v.min(Weights::MAX) } else { default };
+        Weights {
+            note: keep(self.note, d.note),
+            mora: keep(self.mora, d.mora),
+            episema: keep(self.episema, d.episema),
+            virgula: keep(self.virgula, d.virgula),
+            quarter: keep(self.quarter, d.quarter),
+            half: keep(self.half, d.half),
+            full: keep(self.full, d.full),
+            double: keep(self.double, d.double),
+            mediant: keep(self.mediant, d.mediant),
+            flex: keep(self.flex, d.flex),
+        }
+    }
 
     pub(crate) fn of_note(&self, info: &NoteInfo) -> f32 {
         if info.morae > 0 {
@@ -134,10 +195,10 @@ impl Weights {
         };
         match kind {
             BarKind::Virgula | BarKind::Minimis => self.virgula,
-            BarKind::Minima => self.minima,
-            BarKind::Minor | BarKind::Dominican(_) => self.minor,
-            BarKind::Maior | BarKind::DottedMaior => self.maior,
-            BarKind::Finalis => self.finalis,
+            BarKind::Quarter => self.quarter,
+            BarKind::Half | BarKind::Dominican(_) => self.half,
+            BarKind::Full | BarKind::DottedFull => self.full,
+            BarKind::Double => self.double,
         }
     }
 }
@@ -148,19 +209,19 @@ impl Default for Weights {
     }
 }
 
-const MAJOR: [i16; 7] = [0, 2, 4, 5, 7, 9, 11];
+const MAJOR: [i32; 7] = [0, 2, 4, 5, 7, 9, 11];
 
 /// Semitones above do for `degree` diatonic steps above do.
-fn semitones(degree: i32) -> i16 {
+fn semitones(degree: i32) -> i32 {
     let octave = degree.div_euclid(7);
-    MAJOR[degree.rem_euclid(7) as usize] + 12 * octave as i16
+    MAJOR[degree.rem_euclid(7) as usize] + 12 * octave
 }
 
 /// A note's diatonic degree and semitones above its clef's do, alterations applied.
-pub(crate) fn pitch(info: &NoteInfo) -> (i32, i16) {
+pub(crate) fn pitch(info: &NoteInfo) -> (i32, i32) {
     let reference = info.clef.position() as i32;
     let degree = info.position as i32 - reference + if info.clef.kind == ClefKind::Fa { 3 } else { 0 };
-    (degree, semitones(degree) + info.alteration as i16)
+    (degree, semitones(degree) + i32::from(info.alteration))
 }
 
 /// The score's pauses with their weights. A mediant or flex is the pause at its bar: the
@@ -171,34 +232,42 @@ pub(crate) fn timed_pauses(marks: &[(u32, PauseKind)], weights: &Weights) -> Vec
         .map(|&(before, kind)| Pause {
             before_note: before,
             kind,
-            weight: weights.pause(kind),
+            duration: weights.pause(kind),
             start: 0.0,
         })
         .collect();
     for i in 1..pauses.len() {
         let mark = matches!(pauses[i - 1].kind, PauseKind::Mediant | PauseKind::Flex);
         if mark && matches!(pauses[i].kind, PauseKind::Bar(_)) && pauses[i - 1].before_note == pauses[i].before_note {
-            pauses[i].weight = 0.0;
+            pauses[i].duration = 0.0;
         }
     }
     pauses
 }
 
-impl Layout<'_> {
-    pub fn notes(&self, weights: &Weights) -> NoteMap {
-        let eng = self.eng;
+impl Layout {
+    /// The timeline of this layout's notes, timed with the default [`Weights`].
+    #[must_use]
+    pub fn timeline(&self) -> Timeline {
+        self.timeline_with(&Weights::default())
+    }
+
+    /// The timeline of this layout's notes, timed with `weights` (sanitized as
+    /// [`Weights::sanitized`] says).
+    #[must_use]
+    pub fn timeline_with(&self, weights: &Weights) -> Timeline {
+        let weights = &weights.sanitized();
+        let eng = &*self.eng;
         let s = self.scale;
-        // (line, x, y, w, h, hit box) of each placed note.
-        type Placed = Option<(u32, f32, f32, f32, f32, [f32; 4])>;
+        // (line, x, y, w, h) of each placed note.
+        type Placed = Option<(u32, f32, f32, f32, f32)>;
         let mut placed: Vec<Placed> = vec![None; eng.notes.len()];
         for (li, line) in self.lines.iter().enumerate() {
             for (i, seg) in eng.segments[line.first..=line.last].iter().enumerate() {
                 for h in &seg.heads {
                     if let Some(slot) = placed.get_mut(h.note as usize) {
-                        let [l, t, r, b] = h.hit;
                         let (x0, y0) = (line.xs[i], line.staff);
-                        let hit = [(x0 + l) * s, (y0 + t) * s, (x0 + r) * s, (y0 + b) * s];
-                        *slot = Some((li as u32, (x0 + h.x) * s, (y0 + h.y) * s, h.w * s, h.h * s, hit));
+                        *slot = Some((li as u32, (x0 + h.x) * s, (y0 + h.y) * s, h.w * s, h.h * s));
                     }
                 }
             }
@@ -212,39 +281,35 @@ impl Layout<'_> {
         let mut kept = 0;
         for (id, info) in eng.notes.iter().enumerate() {
             let after = truncated && last_placed.is_none_or(|l| id > l);
-            let Some((line, x, y, w, h, hit)) = placed[id].or(after.then_some((0, 0.0, 0.0, 0.0, 0.0, [0.0; 4]))) else {
+            let Some((line, x, y, w, h)) = placed[id].or(after.then_some((0, 0.0, 0.0, 0.0, 0.0))) else {
                 continue;
             };
             if !after {
                 kept += 1;
             }
             let (degree, semitones) = pitch(info);
-            let weight = weights.of_note(info);
             let syllable_text = eng.syllable_text.get(info.syllable as usize).cloned().unwrap_or_default();
             let accent = syllable_text.chars().any(|c| "áéíóúýǽÁÉÍÓÚÝǼ\u{0301}".contains(c));
             let new_syllable = id == 0 || eng.notes[id - 1].syllable != info.syllable;
-            notes.push(MappedNote {
+            notes.push(TimelineNote {
                 id: id as u32,
                 syllable: info.syllable,
                 line,
-                x,
-                y,
+                cx: x,
+                cy: y,
                 w,
                 h,
-                hit,
                 span: info.span.clone(),
-                staff_position: info.position,
+                staff_position: i32::from(info.position),
                 degree,
                 semitones,
-                weight,
                 start: 0.0,
-                duration: weight,
+                duration: weights.of_note(info),
                 syllable_text,
                 word: eng.syllable_word.get(info.syllable as usize).copied().unwrap_or(0),
                 vowel: info.vowel,
                 shape: info.shape,
                 liquescent: info.liquescent,
-                quilisma: info.shape == NoteShape::Quilisma,
                 accent,
                 new_syllable,
                 recitation: false,
@@ -265,18 +330,18 @@ impl Layout<'_> {
         }
         let mut t = 0.0f32;
         let mut verse = 0u32;
-        let mut half = 0u8;
+        let mut half = 0u32;
         let mut p = 0;
         for i in 0..=notes.len() {
             let id = notes.get(i).map_or(u32::MAX, |n| n.id);
             while p < pauses.len() && pauses[p].before_note <= id {
                 pauses[p].start = t;
-                t += pauses[p].weight;
+                t += pauses[p].duration;
                 // A full bar right after the mediant belongs to it and doesn't end the verse.
                 let after_mediant = p > 0 && pauses[p - 1].kind == PauseKind::Mediant && pauses[p - 1].before_note == pauses[p].before_note;
                 match pauses[p].kind {
-                    PauseKind::Bar(BarKind::Maior | BarKind::DottedMaior) if after_mediant => {}
-                    PauseKind::Bar(BarKind::Maior | BarKind::DottedMaior | BarKind::Finalis) => {
+                    PauseKind::Bar(BarKind::Full | BarKind::DottedFull) if after_mediant => {}
+                    PauseKind::Bar(BarKind::Full | BarKind::DottedFull | BarKind::Double) => {
                         verse += 1;
                         half = 0;
                     }
@@ -302,7 +367,7 @@ impl Layout<'_> {
                 baseline: l.baseline * s,
             })
             .collect();
-        NoteMap {
+        Timeline {
             notes,
             pauses,
             lines,
@@ -313,8 +378,8 @@ impl Layout<'_> {
 
 /// Marks runs of three or more consecutive single-note syllables on one pitch, not counting
 /// across a pause (`paused` holds the note ids pauses come before, in order).
-fn mark_recitations(notes: &mut [MappedNote], paused: &[u32]) {
-    let single = |i: usize, notes: &[MappedNote]| notes[i].new_syllable && notes.get(i + 1).is_none_or(|n| n.new_syllable);
+fn mark_recitations(notes: &mut [TimelineNote], paused: &[u32]) {
+    let single = |i: usize, notes: &[TimelineNote]| notes[i].new_syllable && notes.get(i + 1).is_none_or(|n| n.new_syllable);
     let mut i = 0;
     while i < notes.len() {
         let mut j = i;
@@ -334,23 +399,14 @@ fn mark_recitations(notes: &mut [MappedNote], paused: &[u32]) {
     }
 }
 
-impl NoteMap {
-    /// The note under (`x`, `y`) in output units: one whose box contains the point, else the
-    /// nearest note on the line the point falls in. `None` outside every line.
-    pub fn note_at(&self, x: f32, y: f32) -> Option<NoteRef> {
-        if let Some(n) = self
-            .notes
-            .iter()
-            .find(|n| x >= n.hit[0] && x <= n.hit[2] && y >= n.hit[1] && y <= n.hit[3])
-        {
-            return Some(n.id);
-        }
-        let line = self.lines.iter().position(|l| y >= l.top && y <= l.bottom)? as u32;
-        self.notes
-            .iter()
-            .filter(|n| n.line == line)
-            .min_by(|a, b| (a.x - x).abs().total_cmp(&(b.x - x).abs()))
-            .map(|n| n.id)
+impl Timeline {
+    /// The note sounding at time `t` (in weight units), or `None` during a pause or outside
+    /// the timeline: what a player highlights on each frame. A binary search.
+    #[must_use]
+    pub fn note_at_time(&self, t: f32) -> Option<&TimelineNote> {
+        let i = self.notes.partition_point(|n| n.start <= t).checked_sub(1)?;
+        let n = &self.notes[i];
+        (t < n.start + n.duration).then_some(n)
     }
 }
 

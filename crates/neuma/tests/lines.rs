@@ -1,13 +1,13 @@
 //! How lines are made up: which get a staff, where the initial goes, and what stays inside
 //! the page.
 
-use neuma::{Font, Ink, Item, LayoutOptions, StyleOptions, TextRole, parse};
+use neuma::{Ink, Item, LyricFont, StyleOptions, TextRole, parse};
 
 fn display(src: &str, width: f32) -> neuma::DisplayList {
     parse(src)
         .score
-        .engrave(Font::Google.table(), &StyleOptions::default())
-        .layout(width, &LayoutOptions::default())
+        .engrave(LyricFont::Google.metrics(), &StyleOptions::default())
+        .layout(width)
         .display()
 }
 
@@ -44,7 +44,7 @@ fn a_custos_high_over_the_staff_stays_on_the_page() {
         };
         let top = list.items.iter().filter_map(|i| match i {
             Item::Glyph { y, .. } | Item::Rect { y, .. } => Some(*y),
-            Item::Text { .. } => None,
+            _ => None,
         });
         // The custos's head stands on its pitch; its stem points away from the staff's top.
         assert!(*y > 0.0 && top.fold(f32::INFINITY, f32::min) >= 0.0, "{src}");

@@ -4,12 +4,16 @@
 
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
+use std::sync::Arc;
 
 use crate::display::{DisplayList, Item, TextRole};
 use crate::glyphs::GlyphId;
 use crate::layout::Layout;
 
+/// How to write SVG. Build it with the `with_*` setters:
+/// `SvgOptions::default().with_prefix("intro").with_ids(false)`.
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub struct SvgOptions {
     /// CSS font-family for lyrics. Characters that could end the declaration or the
     /// `<style>` block (`< > & { } ;` and control characters) are dropped.
@@ -31,6 +35,36 @@ impl Default for SvgOptions {
             style: true,
             ids: true,
         }
+    }
+}
+
+impl SvgOptions {
+    /// Sets [`font_family`](Self::font_family).
+    #[must_use]
+    pub fn with_font_family(mut self, font_family: impl Into<String>) -> SvgOptions {
+        self.font_family = font_family.into();
+        self
+    }
+
+    /// Sets [`prefix`](Self::prefix).
+    #[must_use]
+    pub fn with_prefix(mut self, prefix: impl Into<String>) -> SvgOptions {
+        self.prefix = prefix.into();
+        self
+    }
+
+    /// Sets [`style`](Self::style).
+    #[must_use]
+    pub fn with_style(mut self, style: bool) -> SvgOptions {
+        self.style = style;
+        self
+    }
+
+    /// Sets [`ids`](Self::ids).
+    #[must_use]
+    pub fn with_ids(mut self, ids: bool) -> SvgOptions {
+        self.ids = ids;
+        self
     }
 }
 
@@ -68,52 +102,82 @@ fn escape(s: &str, out: &mut String) {
     }
 }
 
-impl Layout<'_> {
-    pub fn svg(&self, opts: &SvgOptions) -> String {
-        self.display().svg(opts)
+impl Layout {
+    /// This layout as one SVG document, with the default [`SvgOptions`].
+    #[must_use]
+    pub fn svg(&self) -> String {
+        self.svg_with(&SvgOptions::default())
+    }
+
+    /// This layout as one SVG document.
+    #[must_use]
+    pub fn svg_with(&self, opts: &SvgOptions) -> String {
+        self.display().svg_with(opts)
     }
 
     /// The SVG in parts, for an editor that patches its page rather than replacing it: each
     /// line's SVG is positioned relative to the line's top, so a line that only moves up or
     /// down keeps the same string. With `opts.ids` off, a line also keeps its string when
     /// notes are added or removed before it.
-    pub fn svg_parts(&self, opts: &SvgOptions) -> SvgParts {
-        self.svg_parts_cached(opts, &mut SvgCache::default())
+    #[must_use]
+    pub fn svg_parts(&self) -> SvgParts {
+        self.svg_parts_with(&SvgOptions::default())
     }
 
-    /// As [`Layout::svg_parts`], taking each line's SVG from `cache` when the line draws the
-    /// same as one the cache saw last time (and keeping this layout's lines there for the
-    /// next). After a small edit most lines draw as before, so only the lines it touched
-    /// are written again; the result is the same as `svg_parts`.
-    pub fn svg_parts_cached(&self, opts: &SvgOptions, cache: &mut SvgCache) -> SvgParts {
+    /// [`svg_parts`](Self::svg_parts) with `opts`.
+    #[must_use]
+    pub fn svg_parts_with(&self, opts: &SvgOptions) -> SvgParts {
+        self.parts(opts, None)
+    }
+
+    /// [`svg_parts_with`](Self::svg_parts_with), taking each line's SVG from `previous` (the
+    /// parts of an earlier layout, of this score or an earlier version of it) when the line
+    /// draws the same as one of `previous`'s. After a small edit most lines draw as before, so
+    /// only the lines it touched are written again, and each line's
+    /// [`reused_from`](SvgLine::reused_from) says which line of `previous` it repeats: a page
+    /// showing `previous` replaces only the lines where that is `None`, and moves the rest.
+    /// The result is otherwise the same as `svg_parts_with`'s. Parts written with another
+    /// prefix or `ids` setting reuse nothing.
+    ///
+    /// Only what `previous` keeps privately is read, so its public `lines` may have been
+    /// drained into a page or changed: what is reused is always the engine's own SVG.
+    ///
+    /// ```
+    /// use neuma::{Chant, SvgOptions};
+    ///
+    /// let mut chant = Chant::new("(c4) Ky(f)ri(gh)e(g) e(f)lé(g)i(h)son.(g) (::)");
+    /// let opts = SvgOptions::default().with_ids(false);
+    /// let shown = chant.layout(60.0).svg_parts_with(&opts);
+    /// chant.update("(c4) Ky(f)ri(gh)e(g) e(f)lé(g)i(h)son.(gf) (::)");
+    /// let next = chant.layout(60.0).svg_parts_reusing(&shown, &opts);
+    /// assert_eq!(next.lines[0].reused_from, Some(0)); // the edit is on the last line
+    /// assert_eq!(next.lines.last().unwrap().reused_from, None);
+    /// ```
+    #[must_use]
+    pub fn svg_parts_reusing(&self, previous: &SvgParts, opts: &SvgOptions) -> SvgParts {
+        self.parts(opts, Some(previous))
+    }
+
+    fn parts(&self, opts: &SvgOptions, previous: Option<&SvgParts>) -> SvgParts {
         let p = prefix(opts);
-        if cache.prefix != p || cache.ids != opts.ids {
-            *cache = SvgCache {
-                prefix: p.clone(),
-                ids: opts.ids,
-                ..SvgCache::default()
-            };
-        }
-        let mut old: Vec<Option<CachedLine>> = std::mem::take(&mut cache.lines).into_iter().map(Some).collect();
-        let mut by_hash: std::collections::HashMap<u64, Vec<usize>> = std::collections::HashMap::with_capacity(old.len());
-        for (k, l) in old.iter().enumerate() {
-            if let Some(l) = l {
-                by_hash.entry(l.hash).or_default().push(k);
+        // Only what the parts keep privately is read: the caller may have taken or changed
+        // the public lines.
+        let previous = previous.map(|q| &q.drawn).filter(|d| d.prefix == p && d.ids == opts.ids);
+        let mut taken = vec![false; previous.map_or(0, |d| d.lines.len())];
+        let mut by_hash: std::collections::HashMap<u64, Vec<usize>> = std::collections::HashMap::new();
+        if let Some(d) = previous {
+            for (k, line) in d.lines.iter().enumerate() {
+                by_hash.entry(line.hash).or_default().push(k);
             }
         }
         let s = self.scale;
-        let one = |line: crate::layout::PlacedLine, initial| Layout {
-            eng: self.eng,
-            lines: vec![line],
-            initial,
-            width: self.width,
-            height: self.height,
-            scale: self.scale,
+        let one = |line: crate::layout::PlacedLine, initial| {
+            Layout::new(self.eng.clone(), vec![line], initial, self.width, self.height, self.scale)
         };
         let mut used = BTreeSet::new();
         let mut glyph_scale = None;
         let mut lines = Vec::with_capacity(self.lines.len());
-        cache.reused.clear();
+        let mut drawn = Vec::with_capacity(self.lines.len());
         for line in &self.lines {
             let top = line.top;
             let mut items = Vec::new();
@@ -125,26 +189,30 @@ impl Layout<'_> {
                 strip_ids(&mut items);
             }
             let hash = hash_items(&items);
-            let seen = by_hash
-                .get(&hash)
-                .and_then(|ks| ks.iter().copied().find(|&k| old[k].as_ref().is_some_and(|l| l.items == items)));
-            let svg = match seen.and_then(|k| old[k].take()) {
-                Some(l) => {
-                    cache.reused.push(seen);
-                    l.svg
+            let seen = previous.and_then(|d| {
+                by_hash
+                    .get(&hash)?
+                    .iter()
+                    .copied()
+                    .find(|&k| !taken[k] && d.lines[k].items == items)
+            });
+            let svg: Arc<str> = match (previous, seen) {
+                (Some(d), Some(k)) => {
+                    taken[k] = true;
+                    Arc::clone(&d.lines[k].svg)
                 }
-                None => {
-                    cache.reused.push(None);
+                _ => {
                     let mut svg = String::with_capacity(items.len() * 96);
                     write_items(&mut svg, &items, &p, opts.ids);
-                    svg
+                    svg.into()
                 }
             };
             lines.push(SvgLine {
                 top: top * s,
-                svg: svg.clone(),
+                svg: Arc::clone(&svg),
+                reused_from: seen,
             });
-            cache.lines.push(CachedLine { hash, items, svg });
+            drawn.push(DrawnLine { hash, items, svg });
         }
         // The initial and annotations, which hang beside the first lines.
         let mut rest = String::new();
@@ -169,33 +237,30 @@ impl Layout<'_> {
             defs,
             lines,
             rest,
+            drawn: Drawn {
+                prefix: p,
+                ids: opts.ids,
+                lines: drawn,
+            },
         }
     }
 }
 
-/// What [`Layout::svg_parts_cached`] keeps between layouts: each line's drawing and SVG.
-#[derive(Clone, Debug, Default)]
-pub struct SvgCache {
+/// What each line of [`SvgParts`] draws and its SVG, kept apart from the public lines (which
+/// the caller may take or change) so that the next parts can tell which lines draw the same
+/// and share their strings.
+#[derive(Clone, Default)]
+struct Drawn {
     prefix: String,
     ids: bool,
-    lines: Vec<CachedLine>,
-    reused: Vec<Option<usize>>,
+    lines: Vec<DrawnLine>,
 }
 
-impl SvgCache {
-    /// For each line of the last [`Layout::svg_parts_cached`], the line of the call before
-    /// it whose SVG it took, if it took one: a page that kept those lines' SVG need not read
-    /// it again.
-    pub fn reused(&self) -> &[Option<usize>] {
-        &self.reused
-    }
-}
-
-#[derive(Clone, Debug)]
-struct CachedLine {
+#[derive(Clone)]
+struct DrawnLine {
     hash: u64,
     items: Vec<Item>,
-    svg: String,
+    svg: Arc<str>,
 }
 
 /// Clears the note and syllable numbers, which only ids write.
@@ -241,7 +306,12 @@ fn hash_items(items: &[Item]) -> u64 {
 }
 
 /// A layout's SVG in parts (see [`Layout::svg_parts`]).
-#[derive(Clone, Debug, PartialEq)]
+///
+/// Besides the strings, parts keep what each line draws, so that
+/// [`Layout::svg_parts_reusing`] can tell which lines of the next layout draw the same: about
+/// two thirds again the memory of the strings. Keep only the parts a page shows.
+#[derive(Clone)]
+#[non_exhaustive]
 pub struct SvgParts {
     pub width: f32,
     pub height: f32,
@@ -254,20 +324,56 @@ pub struct SvgParts {
     /// Everything that isn't on a line (the initial and its annotations), in page
     /// coordinates.
     pub rest: String,
+    drawn: Drawn,
+}
+
+impl PartialEq for SvgParts {
+    /// Whether the parts are written alike (what they keep to compare lines with aside).
+    fn eq(&self, other: &SvgParts) -> bool {
+        self.width == other.width
+            && self.height == other.height
+            && self.head == other.head
+            && self.defs == other.defs
+            && self.lines == other.lines
+            && self.rest == other.rest
+    }
+}
+
+impl std::fmt::Debug for SvgParts {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SvgParts")
+            .field("width", &self.width)
+            .field("height", &self.height)
+            .field("head", &self.head)
+            .field("defs", &self.defs)
+            .field("lines", &self.lines)
+            .field("rest", &self.rest)
+            .finish_non_exhaustive()
+    }
 }
 
 /// One line of a score's SVG.
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub struct SvgLine {
     /// Where the line's top falls on the page, in output units.
     pub top: f32,
     /// The line's elements, positioned relative to its top: draw them translated down by
-    /// `top`.
-    pub svg: String,
+    /// `top`. Shared, not copied, with the parts it is reused from and by.
+    pub svg: Arc<str>,
+    /// From [`Layout::svg_parts_reusing`]: the index of the line of the previous parts that
+    /// this line draws the same as, its SVG unchanged, so a page showing those parts can keep
+    /// that line's element and only move it. Always `None` from [`Layout::svg_parts`].
+    ///
+    /// The index is in the engine's numbering of the previous parts: their lines as the
+    /// engine wrote them, which is `previous.lines` as returned. A caller that reorders or
+    /// drains those lines keeps its own map from that numbering to what it shows.
+    pub reused_from: Option<usize>,
 }
 
 impl SvgParts {
     /// The parts put together as one SVG document, each line in a translated `<g>`.
+    #[must_use]
     pub fn to_svg(&self) -> String {
         let mut out = String::with_capacity(self.head.len() + self.defs.len() + self.lines.iter().map(|l| l.svg.len() + 40).sum::<usize>());
         out.push_str(&self.head);
@@ -346,7 +452,15 @@ fn write_defs(out: &mut String, used: &BTreeSet<u16>, scale: f32, p: &str) {
 }
 
 impl DisplayList {
-    pub fn svg(&self, opts: &SvgOptions) -> String {
+    /// This display list as one SVG document, with the default [`SvgOptions`].
+    #[must_use]
+    pub fn svg(&self) -> String {
+        self.svg_with(&SvgOptions::default())
+    }
+
+    /// This display list as one SVG document.
+    #[must_use]
+    pub fn svg_with(&self, opts: &SvgOptions) -> String {
         let p = prefix(opts);
         let mut out = String::with_capacity(1024 + self.items.len() * 96);
         write_head(&mut out, self.width, self.height, &self.alt_text, &p, opts);

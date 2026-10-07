@@ -1,345 +1,386 @@
-//! The browser package's engine side: a [`Chant`] engraves a score once and lays it out at
-//! any width, caching the SVG and the playback timeline. On `wasm32` the `ffi` module
-//! exports it over a plain C ABI that `js/neuma.mjs` wraps, so no generated glue is needed
-//! and the module can be inlined into a single file or turned into plain JavaScript.
+//! The browser package's engine side: a thin wrapper that gives [`neuma::Chant`]'s answers as
+//! the JSON and strings `js/neuma.mjs` reads. On `wasm32` the `ffi` module exports it over a
+//! plain C ABI, so no generated glue is needed and the module can be inlined into a single
+//! file. Options, defaults and sanitizing are the core's; this crate only converts.
+//!
+//! Each page in the glue owns a [`Page`] here, its layout (and its SVG in parts), so it
+//! answers for the score it shows for as long as it is kept, as a Rust `Layout` does. The
+//! glue frees it with the page.
 
-pub mod json;
+use std::fmt::Write as _;
 
-use neuma::score::Header;
-use neuma::{
-    EngraveCache, Engraving, Initial, LastLine, LayoutCache, LayoutOptions, NoteMap, NoteRef, SourceMap, StyleOptions, SvgCache,
-    SvgOptions, Utf16Index, Weights, parse,
-};
+use neuma::{Element, Layout, LayoutOptions, SvgOptions, SvgParts, Utf16Index, Weights, json};
+use neuma_tones::{AnyChant, PsalmChant, PsalmNote};
 
-pub use neuma::Font;
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct ChantOptions {
-    /// Drop-cap height in staves; 0 for none.
-    pub initial: u8,
-    pub annotation: bool,
-    pub lyric_size: f32,
-    pub font: Font,
-}
-
-impl Default for ChantOptions {
-    fn default() -> ChantOptions {
-        let style = StyleOptions::default();
-        ChantOptions {
-            initial: 1,
-            annotation: style.annotation,
-            lyric_size: style.lyric_size,
-            font: Font::default(),
-        }
-    }
-}
-
-/// What a layout returns besides its size.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Outputs {
-    /// The playback timeline in the layout JSON. An editor that only shows the score can
-    /// skip it: on long scores it is most of the JSON.
-    pub timeline: bool,
-    pub svg: SvgOutput,
-}
-
-impl Default for Outputs {
-    fn default() -> Outputs {
-        Outputs {
-            timeline: true,
-            svg: SvgOutput::Whole,
-        }
-    }
-}
+pub use neuma::{ChantOptions, Initial, LyricFont};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SvgOutput {
     /// One SVG document.
     Whole,
-    /// The SVG in parts, a string per line (see [`neuma::Layout::svg_parts`]).
+    /// The SVG in parts, a string per line (see [`neuma::Layout::svg_parts_with`]).
     Lines,
-    /// As `Lines`, but a line whose SVG is the same as a line's of the last layout in parts
+    /// As `Lines`, but a line whose SVG is the same as a line's of the previous page given
     /// is given as `\u{1}` and that line's index, for a page that kept them.
     ChangedLines,
+    /// No SVG: only the layout, for its hit tests and timeline.
+    None,
 }
 
-/// One score: engraved once, laid out on demand.
+/// One score, with its answers kept as the JSON the glue reads.
 #[derive(Debug)]
 pub struct Chant {
-    options: ChantOptions,
-    source: String,
-    utf16: Utf16Index,
-    header: Header,
-    /// The score and its engraving, kept to engrave the next edit from.
-    engraved: EngraveCache,
-    /// Parse and engrave diagnostics, as JSON.
+    source: AnyChant,
+    /// Parse (or psalm-setting) and engrave diagnostics, as JSON.
     diagnostics: String,
-    /// The catalogue entry, as JSON, made when first asked for.
+    /// The library entry, as JSON, made when first asked for.
     summary: Option<String>,
-    svg: String,
-    notes: Option<NoteMap>,
-    /// How the last layout was made, to make its note map when first asked for, if the
-    /// layout left it out.
-    laid_out: Option<(f32, LayoutOptions, Weights)>,
-    sources: Option<SourceMap>,
-    /// The layout as JSON: size, lines, notes and pauses (without the SVG).
-    layout_json: String,
-    /// The line breaker's work, reused by the next layout after an edit.
-    layout_cache: LayoutCache,
-    /// Each line's SVG from the last layout, to reuse for lines an edit left alone.
-    svg_cache: SvgCache,
+    /// For a psalm, the setting's `{ gabc, notes, diagnostics }` (see [`setting_json`]).
+    psalm: Option<String>,
+}
+
+/// A page's layout, and its SVG in parts if it was asked for them, for the next page of the
+/// same view to reuse.
+#[derive(Debug)]
+pub struct Page {
+    layout: Layout,
+    parts: Option<SvgParts>,
 }
 
 impl Chant {
-    pub fn new(gabc: &str, opts: ChantOptions) -> Chant {
-        let mut chant = Chant {
-            options: opts,
-            source: String::new(),
-            utf16: Utf16Index::default(),
-            header: Header::default(),
-            engraved: EngraveCache::default(),
-            diagnostics: String::new(),
-            summary: None,
-            svg: String::new(),
-            notes: None,
-            laid_out: None,
-            sources: None,
-            layout_json: String::new(),
-            layout_cache: LayoutCache::default(),
-            svg_cache: SvgCache::default(),
-        };
-        chant.update(gabc);
-        chant
+    pub fn new(gabc: &str, options: ChantOptions) -> Chant {
+        Chant::wrap(neuma::Chant::with_options(gabc, options).into())
     }
 
-    /// Replaces the score with `gabc`, engraved with the same options, as an editor does on
-    /// each change. The last layout is dropped.
-    pub fn update(&mut self, gabc: &str) {
-        let opts = self.options;
-        let parsed = parse(gabc);
-        let style = StyleOptions {
-            initial: if opts.initial == 0 {
-                Initial::None
-            } else {
-                Initial::Lines(opts.initial)
-            },
-            annotation: opts.annotation,
-            lyric_size: if opts.lyric_size.is_finite() && opts.lyric_size > 0.0 {
-                opts.lyric_size
-            } else {
-                StyleOptions::default().lyric_size
-            },
-            ..StyleOptions::default()
+    /// Psalm text set to `tone` and engraved, its spans in the text.
+    pub fn from_psalm(text: &str, tone: &neuma_tones::Tone, psalm: &neuma_tones::PsalmOptions, options: ChantOptions) -> Chant {
+        Chant::wrap(PsalmChant::new(text, tone, psalm, options).into())
+    }
+
+    fn wrap(source: AnyChant) -> Chant {
+        let mut out = Chant {
+            source,
+            diagnostics: String::new(),
+            summary: None,
+            psalm: None,
         };
-        self.header = parsed.score.header.clone();
-        let engraving = self.engraved.engrave(parsed.score, opts.font.table(), &style);
-        self.source = gabc.to_string();
-        self.utf16 = Utf16Index::new(gabc);
-        let mut all = parsed.diagnostics;
-        all.extend(engraving.diagnostics.iter().cloned());
-        self.diagnostics.clear();
-        json::diagnostics(&mut self.diagnostics, &all, Some(&self.utf16));
+        out.refresh();
+        out
+    }
+
+    fn chant(&self) -> &neuma::Chant {
+        &self.source
+    }
+
+    /// Names the chant's current state, as [`neuma::Chant::version`].
+    pub fn version(&self) -> u64 {
+        self.source.version()
+    }
+
+    /// Replaces the score with `src` (GABC, or psalm text for a chant set from a psalm),
+    /// engraved with the same options, as an editor does on each change. Returns whether it
+    /// changed anything (not when `src` is the current source).
+    pub fn update(&mut self, src: &str) -> bool {
+        let changed = self.source.update(src);
+        if changed {
+            self.refresh();
+        }
+        changed
+    }
+
+    /// Engraves again with `options`. Returns whether that changed anything: options that
+    /// engrave as the current ones don't.
+    pub fn set_options(&mut self, options: ChantOptions) -> bool {
+        let changed = self.source.set_options(options);
+        if changed {
+            self.refresh();
+        }
+        changed
+    }
+
+    fn refresh(&mut self) {
+        let chant = self.chant();
+        let mut diagnostics = String::new();
+        json::diagnostics(&mut diagnostics, chant.diagnostics(), Some(chant.utf16()));
+        self.diagnostics = diagnostics;
         self.summary = None;
-        self.svg.clear();
-        self.notes = None;
-        self.laid_out = None;
-        self.sources = None;
-        self.layout_json.clear();
+        self.psalm = self.source.psalm().map(|p| {
+            let mut out = String::new();
+            setting_json(&mut out, p.gabc(), p.notes(), p.setting_diagnostics(), p.utf16());
+            out
+        });
     }
 
     pub fn diagnostics_json(&self) -> &str {
         &self.diagnostics
     }
 
+    /// For a chant set from a psalm, the setting's `{ gabc, notes, diagnostics }`.
+    pub fn psalm_json(&self) -> Option<&str> {
+        self.psalm.as_deref()
+    }
+
     pub fn summary_json(&mut self) -> &str {
-        self.summary.get_or_insert_with(|| {
+        if self.summary.is_none() {
             let mut out = String::new();
-            json::summary(&mut out, &engraving(&self.engraved).summary(&self.header));
-            out
-        })
+            json::summary(&mut out, &self.chant().summary());
+            self.summary = Some(out);
+        }
+        self.summary.as_deref().unwrap_or_default()
     }
 
-    /// Lays the score out at `width` output units and caches the SVG and timeline.
-    pub fn layout(&mut self, width: f32, opts: &LayoutOptions, weights: &Weights, svg: &SvgOptions) {
-        self.layout_with(width, opts, weights, svg, Outputs::default());
-    }
-
-    /// As [`Chant::layout`], choosing what to produce.
-    pub fn layout_with(&mut self, width: f32, opts: &LayoutOptions, weights: &Weights, svg: &SvgOptions, outputs: Outputs) {
-        let layout = engraving(&self.engraved).layout_cached(width, opts, &mut self.layout_cache);
-        self.svg = match outputs.svg {
-            SvgOutput::Whole => layout.svg(svg),
-            SvgOutput::Lines | SvgOutput::ChangedLines => {
-                // Head, definitions and the initial, then each line's top and SVG, all
-                // separated by NULs, which SVG text never contains.
-                let parts = layout.svg_parts_cached(svg, &mut self.svg_cache);
-                let reused = if outputs.svg == SvgOutput::ChangedLines {
-                    self.svg_cache.reused()
-                } else {
-                    &[]
-                };
-                let mut out = String::with_capacity(parts.lines.iter().map(|l| l.svg.len() + 12).sum::<usize>() + 4096);
-                for s in [&parts.head, &parts.defs, &parts.rest] {
-                    out.push_str(s);
-                    out.push('\0');
-                }
-                for (i, line) in parts.lines.iter().enumerate() {
-                    json::number(&mut out, line.top);
-                    out.push('\0');
-                    match reused.get(i).copied().flatten() {
-                        Some(k) => {
-                            out.push('\u{1}');
-                            out.push_str(&k.to_string());
-                        }
-                        None => out.push_str(&line.svg),
-                    }
-                    out.push('\0');
-                }
-                out.pop();
-                out
-            }
-        };
+    /// Lays the score out at `width` output units: the page, and `{ width, height }`, a NUL,
+    /// then the SVG (for `Lines` and `ChangedLines`, as `svg_lines` gives it, reusing the lines
+    /// of `previous`, the view's last page).
+    pub fn layout(&self, width: f32, opts: &LayoutOptions, svg: &SvgOptions, mode: SvgOutput, previous: Option<&Page>) -> (Page, String) {
+        let layout = self.chant().layout_with(width, opts);
         let (w, h) = layout.size();
-        let mut out = String::with_capacity(64);
-        out.push_str("{\"width\":");
+        let mut out = String::from("{\"width\":");
         json::number(&mut out, w);
         out.push_str(",\"height\":");
         json::number(&mut out, h);
-        // The note map is the timeline; without it, `note_at` makes it when first asked.
-        self.notes = None;
-        if outputs.timeline {
-            let map = layout.notes(weights);
-            out.reserve(map.notes.len() * 420 + 1024);
-            out.push_str(",\"timeline\":");
-            json::note_map(&mut out, &map);
-            self.notes = Some(map);
-        }
-        out.push('}');
-        self.layout_json = out;
-        self.laid_out = Some((width, *opts, *weights));
-        self.sources = Some(layout.source_map());
-    }
-
-    pub fn svg(&self) -> &str {
-        &self.svg
-    }
-
-    pub fn layout_json(&self) -> &str {
-        &self.layout_json
-    }
-
-    pub fn note_at(&mut self, x: f32, y: f32) -> Option<NoteRef> {
-        if self.notes.is_none()
-            && let Some((width, opts, weights)) = self.laid_out
-        {
-            let layout = engraving(&self.engraved).layout_cached(width, &opts, &mut self.layout_cache);
-            self.notes = Some(layout.notes(&weights));
-        }
-        self.notes.as_ref()?.note_at(x, y)
-    }
-
-    /// The note, bar or syllable under (`x`, `y`) in the last layout, as JSON (`null` for
-    /// none).
-    pub fn source_at_json(&self, x: f32, y: f32) -> String {
-        let mut out = String::new();
-        match self.sources.as_ref().and_then(|m| m.source_at(x, y)) {
-            Some(e) => json::element(&mut out, e, &self.utf16),
-            None => out.push_str("null"),
-        }
-        out
-    }
-
-    /// What to highlight for a caret at `offset` (UTF-16 units if `utf16`, else UTF-8 bytes)
-    /// in the last layout, as a JSON array, most specific first.
-    pub fn elements_at_json(&self, offset: usize, utf16: bool) -> String {
-        // An offset past the end is the end.
-        let byte = if utf16 {
-            self.utf16.to_utf8(offset)
-        } else {
-            offset.min(self.source.len())
-        };
-        let mut out = String::from("[");
-        if let Some(map) = &self.sources {
-            for (i, e) in map.at(byte).into_iter().enumerate() {
-                if i > 0 {
-                    out.push(',');
-                }
-                json::element(&mut out, e, &self.utf16);
+        out.push_str("}\0");
+        let parts = match mode {
+            SvgOutput::None => None,
+            SvgOutput::Whole => {
+                out.push_str(&layout.svg_with(svg));
+                None
             }
-        }
-        out.push(']');
-        out
+            SvgOutput::Lines | SvgOutput::ChangedLines => {
+                let parts = match previous.and_then(|p| p.parts.as_ref()) {
+                    Some(shown) => layout.svg_parts_reusing(shown, svg),
+                    None => layout.svg_parts_with(svg),
+                };
+                svg_lines(&mut out, &parts, mode == SvgOutput::ChangedLines);
+                Some(parts)
+            }
+        };
+        (Page { layout, parts }, out)
     }
 
     /// The source this Chant was made or last updated from.
     pub fn source(&self) -> &str {
-        &self.source
+        self.chant().source()
     }
 }
 
-/// The engraving a chant's cache holds: there is one from the chant's first update on.
-fn engraving(cache: &EngraveCache) -> &Engraving {
-    cache.engraving().expect("a chant is engraved when made")
-}
-
-/// Weights from a flat list, in the order the JS glue sends them; NaN keeps the default.
-pub fn weights_from(values: &[f32]) -> Weights {
-    let mut w = Weights::SOLESMES;
-    let slots: [&mut f32; 10] = [
-        &mut w.note,
-        &mut w.mora,
-        &mut w.episema,
-        &mut w.virgula,
-        &mut w.minima,
-        &mut w.minor,
-        &mut w.maior,
-        &mut w.finalis,
-        &mut w.mediant,
-        &mut w.flex,
-    ];
-    for (slot, v) in slots.into_iter().zip(values) {
-        if v.is_finite() && *v >= 0.0 {
-            *slot = *v;
+/// Head, definitions and the initial, then each line's top and SVG, all separated by NULs,
+/// which SVG text never contains.
+fn svg_lines(out: &mut String, parts: &SvgParts, changed: bool) {
+    out.reserve(parts.lines.iter().map(|l| l.svg.len() + 12).sum::<usize>() + 4096);
+    for s in [&parts.head, &parts.defs, &parts.rest] {
+        out.push_str(s);
+        out.push('\0');
+    }
+    for line in &parts.lines {
+        json::number(out, line.top);
+        out.push('\0');
+        match line.reused_from.filter(|_| changed) {
+            Some(k) => {
+                out.push('\u{1}');
+                let _ = write!(out, "{k}");
+            }
+            None => out.push_str(&line.svg),
         }
+        out.push('\0');
     }
-    w
+    out.pop();
 }
 
-pub fn last_line(code: u32) -> LastLine {
-    if code == 1 { LastLine::Justified } else { LastLine::Ragged }
+impl Page {
+    pub fn layout(&self) -> &Layout {
+        &self.layout
+    }
+}
+
+/// The timeline of `layout`, timed with `weights`, as JSON.
+pub fn timeline_json(layout: &Layout, weights: &Weights) -> String {
+    let timeline = layout.timeline_with(weights);
+    let mut out = String::with_capacity(timeline.notes.len() * 460 + 1024);
+    json::timeline(&mut out, &timeline, layout.utf16());
+    out
+}
+
+/// The note, bar or syllable under (`x`, `y`) of `layout`, as JSON (`null` for none).
+pub fn source_at_json(layout: &Layout, x: f32, y: f32) -> String {
+    let mut out = String::new();
+    match layout.source_at(x, y) {
+        Some(e) => element_json(&mut out, layout, e),
+        None => out.push_str("null"),
+    }
+    out
+}
+
+/// What to highlight for a caret at `offset` (UTF-16 units if `utf16`, else bytes) of
+/// `layout`'s source, as a JSON array, most specific first. Past the end is at the end.
+pub fn elements_at_json(layout: &Layout, offset: usize, utf16: bool) -> String {
+    let found = if utf16 {
+        layout.elements_at_utf16(offset)
+    } else {
+        layout.elements_at(offset)
+    };
+    let mut out = String::from("[");
+    for (i, e) in found.into_iter().enumerate() {
+        if i > 0 {
+            out.push(',');
+        }
+        element_json(&mut out, layout, e);
+    }
+    out.push(']');
+    out
+}
+
+fn element_json(out: &mut String, layout: &Layout, e: &Element) {
+    let index = layout.utf16().expect("a chant's layouts know their source");
+    json::element(out, e, index);
+}
+
+fn part_name(k: neuma_tones::VersePart) -> &'static str {
+    match k {
+        neuma_tones::VersePart::Flex => "flex",
+        neuma_tones::VersePart::Mediant => "mediant",
+        neuma_tones::VersePart::Termination => "termination",
+    }
+}
+
+fn role_name(r: neuma_tones::ToneRole) -> &'static str {
+    match r {
+        neuma_tones::ToneRole::Intonation => "intonation",
+        neuma_tones::ToneRole::Tenor => "tenor",
+        neuma_tones::ToneRole::Preparatory => "preparatory",
+        neuma_tones::ToneRole::Accent => "accent",
+        neuma_tones::ToneRole::Ending => "ending",
+        _ => "other",
+    }
+}
+
+/// A psalm setting: `{ gabc, notes: [{ verse, number, part, role, sourceStart, sourceEnd,
+/// sourceUtf16Start, sourceUtf16End }], diagnostics }`. `notes[i]` describes note `i` of the
+/// engraved score, and its source is the sung syllable's in `text`, named as the timeline
+/// names a note's.
+pub fn setting_json(out: &mut String, gabc: &str, notes: &[PsalmNote], diagnostics: &[neuma::Diagnostic], text: &Utf16Index) {
+    out.push_str("{\"gabc\":");
+    json::string(out, gabc);
+    notes_json(out, notes, text);
+    out.push_str(",\"diagnostics\":");
+    json::diagnostics(out, diagnostics, Some(text));
+    out.push('}');
+}
+
+fn notes_json(out: &mut String, notes: &[PsalmNote], text: &Utf16Index) {
+    out.push_str(",\"notes\":[");
+    for (i, n) in notes.iter().enumerate() {
+        if i > 0 {
+            out.push(',');
+        }
+        let _ = write!(out, r#"{{"verse":{},"number":"#, n.verse);
+        match n.number {
+            Some(v) => {
+                let _ = write!(out, "{v}");
+            }
+            None => out.push_str("null"),
+        }
+        let _ = write!(out, r#","part":"{}","role":"{}","#, part_name(n.part), role_name(n.role));
+        json::source_span(out, &n.span, Some(text));
+        out.push('}');
+    }
+    out.push(']');
+}
+
+/// A pointing: `{ text, halves: [{ verse, part, confidence, kept, sourceStart, sourceEnd,
+/// sourceUtf16Start, sourceUtf16End }], diagnostics }`, each half's source its sung
+/// syllables in the text given.
+pub fn pointing_json(out: &mut String, p: &neuma_tones::Pointing, text: &Utf16Index) {
+    out.push_str("{\"text\":");
+    json::string(out, &p.text);
+    out.push_str(",\"halves\":[");
+    for (i, h) in p.halves.iter().enumerate() {
+        if i > 0 {
+            out.push(',');
+        }
+        let _ = write!(out, r#"{{"verse":{},"part":"{}","confidence":"#, h.verse, part_name(h.part));
+        json::number(out, h.confidence);
+        let _ = write!(out, r#","kept":{},"#, h.kept);
+        json::source_span(out, &h.span, Some(text));
+        out.push('}');
+    }
+    out.push_str("],\"diagnostics\":");
+    json::diagnostics(out, &p.diagnostics, Some(text));
+    out.push('}');
 }
 
 #[cfg(target_arch = "wasm32")]
 mod ffi;
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+mod slab;
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn split(page: &str) -> (&str, &str) {
+        page.split_once('\0').unwrap()
+    }
+
+    fn page(c: &Chant, width: f32, opts: &LayoutOptions) -> Page {
+        c.layout(width, opts, &SvgOptions::default(), SvgOutput::Whole, None).0
+    }
+
     #[test]
-    fn lays_out_and_caches() {
-        let mut c = Chant::new(
+    fn lays_out_and_hit_tests() {
+        let c = Chant::new(
             "mode: 8;\n%%\n(c4) Ky(g)ri(h)e(g) *() e(h)le(g)i(h)son(g) (::)",
             ChantOptions::default(),
         );
         assert_eq!(c.diagnostics_json(), "[]");
-        c.layout(400.0, &LayoutOptions::default(), &weights_from(&[]), &SvgOptions::default());
-        assert!(c.svg().starts_with("<svg"));
-        let j = c.layout_json();
+        let opts = LayoutOptions::default();
+        let (p, out) = c.layout(400.0, &opts, &SvgOptions::default(), SvgOutput::Whole, None);
+        let (size, svg) = split(&out);
+        assert!(size.starts_with(r#"{"width":400,"height":"#), "{size}");
+        assert!(svg.starts_with("<svg"));
+        let j = timeline_json(p.layout(), &Weights::default());
         assert!(j.contains("\"kind\":\"mediant\"") && j.contains("\"kind\":\"double\""), "{j}");
-        let n = &c.notes.as_ref().unwrap().notes[0];
-        let (x, y) = (n.x, n.y);
-        assert_eq!(c.note_at(x, y), Some(0));
-        let w = weights_from(&[f32::NAN, 3.0]);
-        assert_eq!((w.note, w.mora), (1.0, 3.0));
-        // Without the timeline, the note map is made when first asked for, the same.
-        let lines = Outputs {
-            timeline: false,
-            svg: SvgOutput::Lines,
-        };
-        c.layout_with(400.0, &LayoutOptions::default(), &weights_from(&[]), &SvgOptions::default(), lines);
-        assert!(c.notes.is_none() && !c.layout_json().contains("timeline"));
-        assert_eq!(c.note_at(x, y), Some(0));
+        assert!(
+            j.contains(r#""sourceStart":20,"sourceEnd":21,"sourceUtf16Start":20,"sourceUtf16End":21"#),
+            "{j}"
+        );
+        let n = &p.layout().timeline().notes[0];
+        assert_eq!(p.layout().note_at(n.cx, n.cy), Some(0));
+    }
+
+    #[test]
+    fn pages_answer_for_the_score_they_show() {
+        let mut c = Chant::new("(c4) a(g)", ChantOptions::default());
+        let opts = LayoutOptions::default();
+        let shown = page(&c, 400.0, &opts);
+        let before = elements_at_json(shown.layout(), 7, true);
+        assert!(!c.update("(c4) a(g)"));
+        assert!(!c.set_options(ChantOptions::default()));
+        // Any number of changes and other layouts later, the page answers as before.
+        for (i, src) in ["(c4) b(h) a(g)", "(c4) c(i) b(h) a(g)", "(c4) a(g) (::)"].iter().enumerate() {
+            assert!(c.update(src));
+            for w in [100.0, 200.0, 300.0, 500.0, 600.0] {
+                let _ = page(&c, w, &opts);
+            }
+            assert!(c.set_options(ChantOptions::default().with_lyric_size(3.0 + i as f32)));
+        }
+        assert_eq!(elements_at_json(shown.layout(), 7, true), before);
+    }
+
+    #[test]
+    fn each_view_reuses_its_own_lines() {
+        let mut c = Chant::new("(c4) a(g) b(h) (;) c(i) d(h) (:) e(g) f(h) (::)", ChantOptions::default());
+        let opts = LayoutOptions::default();
+        let thumb = opts.with_max_lines(1);
+        let svg = SvgOptions::default().with_ids(false);
+        let lines = |c: &Chant, o: &LayoutOptions, prev: Option<&Page>| c.layout(90.0, o, &svg, SvgOutput::ChangedLines, prev);
+        let (main, _) = lines(&c, &opts, None);
+        let (small, _) = lines(&c, &thumb, None);
+        c.update("(c4) a(g) b(h) (;) c(i) d(h) (:) e(g) f(hg) (::)");
+        let (_, out) = lines(&c, &opts, Some(&main));
+        assert!(out.contains("\u{1}0"), "the main view keeps its first line");
+        let (_, out) = lines(&c, &thumb, Some(&small));
+        assert!(out.contains("\u{1}0"), "so does the thumbnail");
     }
 
     #[test]
@@ -347,32 +388,43 @@ mod tests {
         let mut c = Chant::new("(c4) a-(g)", ChantOptions::default());
         assert!(
             c.diagnostics_json()
-                .contains(r#""fix":{"start":6,"end":7,"from":6,"to":7,"insert":"","title":"#)
+                .contains(r#""fix":{"start":6,"end":7,"utf16Start":6,"utf16End":7,"replacement":"","title":"#),
+            "{}",
+            c.diagnostics_json()
         );
         // `é` is two bytes and one UTF-16 unit.
         c.update("(c4) é(g) b(h)");
         assert_eq!(c.diagnostics_json(), "[]");
-        assert!(c.layout_json().is_empty());
-        let outputs = Outputs {
-            timeline: false,
-            svg: SvgOutput::Lines,
-        };
-        c.layout_with(
-            400.0,
-            &LayoutOptions::default(),
-            &Weights::default(),
-            &SvgOptions::default(),
-            outputs,
-        );
-        assert!(!c.layout_json().contains("timeline"));
-        assert_eq!(c.svg().split('\0').count(), 3 + 2);
-        let b = c.elements_at_json(12, true);
+        let opts = LayoutOptions::default();
+        let (p, out) = c.layout(400.0, &opts, &SvgOptions::default(), SvgOutput::Lines, None);
+        assert_eq!(split(&out).1.split('\0').count(), 3 + 2);
+        let layout = p.layout();
+        let b = elements_at_json(layout, 12, true);
         assert!(
-            b.starts_with(r#"[{"kind":"note","index":1,"start":13,"end":14,"from":12,"to":13,"#),
+            b.starts_with(r#"[{"kind":"note","index":1,"start":13,"end":14,"utf16Start":12,"utf16End":13,"#),
             "{b}"
         );
-        assert_eq!(c.elements_at_json(13, false), b);
-        assert_eq!(c.source_at_json(-5.0, -5.0), "null");
+        assert_eq!(elements_at_json(layout, 13, false), b);
+        assert_eq!(elements_at_json(layout, usize::MAX, false), elements_at_json(layout, 16, true));
+        assert_eq!(source_at_json(layout, -5.0, -5.0), "null");
         assert!(c.summary_json().contains("\"notes\":2"));
+    }
+
+    #[test]
+    fn psalm_notes_count_the_text_in_both_units() {
+        let text = "Bléssed is he * that cómeth.";
+        let tone = neuma_tones::Tone::named("8.G").unwrap();
+        let s = neuma_tones::psalm(text, tone, &neuma_tones::PsalmOptions::default());
+        let mut out = String::new();
+        setting_json(&mut out, &s.gabc, &s.notes, &s.diagnostics, &Utf16Index::new(text));
+        assert!(
+            out.contains(r#""sourceStart":0,"sourceEnd":8,"sourceUtf16Start":0,"sourceUtf16End":7}"#),
+            "{out}"
+        );
+        let mut c = Chant::from_psalm(text, tone, &neuma_tones::PsalmOptions::default(), ChantOptions::default());
+        assert_eq!(c.psalm_json().unwrap(), out);
+        assert_eq!(c.source(), text);
+        assert!(c.update("Bléssed is he * that cómeth, and is."));
+        assert!(c.psalm_json().unwrap().contains("is.(g)"), "{}", c.psalm_json().unwrap());
     }
 }

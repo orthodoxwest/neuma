@@ -13,10 +13,11 @@
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
-use neuma::{DisplayList, Engraving, Font, Initial, Item, LayoutOptions, StyleOptions, TextRole, Weights};
+use neuma::{DisplayList, Engraving, Initial, Item, LayoutOptions, LyricFont, StyleOptions, TextRole};
 use neuma_book::font::{FontFiles, Fonts, ITALIC, REGULAR, Seg};
-use neuma_tones::{Options, Role, Tone, apply_text, point_text};
+use neuma_tones::{PsalmOptions, Tone, ToneRole, point};
 
 const INK: &str = "#1d1b18";
 const RED: &str = "#a3211c";
@@ -50,16 +51,13 @@ fn read(path: &str) -> std::io::Result<String> {
 }
 
 /// Parses and engraves a score with the metrics of the font the images are drawn with.
-fn engrave(gabc: &str, initial: Initial) -> Engraving {
+fn engrave(gabc: &str, initial: Initial) -> Arc<Engraving> {
     let parsed = neuma::parse(gabc);
     for d in &parsed.diagnostics {
         eprintln!("{d}");
     }
-    let style = StyleOptions {
-        initial,
-        ..StyleOptions::default()
-    };
-    parsed.score.engrave(Font::Garamond12.table(), &style)
+    let style = StyleOptions::default().with_initial(initial);
+    parsed.score.engrave(LyricFont::Garamond12.metrics(), &style)
 }
 
 /// An SVG built up from display lists and text, with every outline in one `<defs>`.
@@ -114,6 +112,7 @@ impl<'a> Canvas<'a> {
                         at += self.text(at, *baseline, *size, &r.text, face, r.style.small_caps, fill);
                     }
                 }
+                _ => {}
             }
         }
         self.body.push_str("</g>");
@@ -206,15 +205,7 @@ const PAD: f32 = 24.0;
 /// Puer natus est, engraved at one width.
 fn hero(fonts: &Fonts) -> std::io::Result<String> {
     let eng = engrave(&read("tools/readme/scores/puer-natus.gabc")?, Initial::Lines(1));
-    let list = eng
-        .layout(
-            780.0,
-            &LayoutOptions {
-                scale: 7.0,
-                ..LayoutOptions::default()
-            },
-        )
-        .display();
+    let list = eng.layout_with(780.0, &LayoutOptions::default().with_scale(7.0)).display();
     let mut c = Canvas::new(fonts);
     c.items(&list, PAD, PAD, &|_| None);
     Ok(c.finish(
@@ -234,7 +225,7 @@ fn reflow(fonts: &Fonts) -> std::io::Result<String> {
     frames.extend(widths.iter().rev().skip(1).take(widths.len() - 2));
     let step = 0.6f32;
     let dur = step * frames.len() as f32;
-    let lists: Vec<DisplayList> = widths.iter().map(|w| eng.layout(*w, &LayoutOptions::default()).display()).collect();
+    let lists: Vec<DisplayList> = widths.iter().map(|w| eng.layout(*w).display()).collect();
     let height = lists.iter().map(|l| l.height).fold(0.0, f32::max) + 2.0 * PAD + 18.0;
     let width = widths[0] + 2.0 * PAD;
     let mut c = Canvas::new(fonts);
@@ -286,32 +277,27 @@ fn reflow(fonts: &Fonts) -> std::io::Result<String> {
 fn psalm(fonts: &Fonts) -> String {
     let tone = Tone::named("8.G").expect("built-in tone");
     let text = read("tools/readme/scores/psalm-117.txt").expect("psalm text");
-    let pointed = point_text(tone, &text).text();
-    let options = Options {
-        strip_accents: true,
-        ..Options::default()
-    };
-    let setting = apply_text(tone, &text, &options);
+    let pointed = point(&text, tone).text;
+    let options = PsalmOptions::default().with_strip_accents(true);
+    let setting = neuma_tones::psalm(&text, tone, &options);
     for d in &setting.diagnostics {
         eprintln!("psalm: {d}");
     }
-    let colors = |r: Role| match r {
-        Role::Intonation => "#2f6db3",
-        Role::Tenor => INK,
-        Role::Preparatory => "#2e8b57",
-        Role::Accent => RED,
-        Role::Ending => "#c77700",
+    let colors = |r: ToneRole| match r {
+        ToneRole::Intonation => "#2f6db3",
+        ToneRole::Tenor => INK,
+        ToneRole::Preparatory => "#2e8b57",
+        ToneRole::Accent => RED,
+        ToneRole::Ending => "#c77700",
+        _ => INK,
     };
     // Start each verse on a new line (`(Z)`, a ragged break after the bar that ends it).
     // Breaks aren't notes, so `setting.notes` still numbers the notes.
     let parsed = neuma::parse(&setting.gabc.replace(" (:) ", " (:) (Z) "));
-    let style = StyleOptions {
-        initial: Initial::None,
-        ..StyleOptions::default()
-    };
-    let eng = parsed.score.engrave(Font::Garamond12.table(), &style);
+    let style = StyleOptions::default().with_initial(Initial::None);
+    let eng = parsed.score.engrave(LyricFont::Garamond12.metrics(), &style);
     let width = 880.0;
-    let list = eng.layout(width, &LayoutOptions::default()).display();
+    let list = eng.layout(width).display();
 
     let mut c = Canvas::new(fonts);
     // The pointed text, marks in red.
@@ -342,7 +328,7 @@ fn psalm(fonts: &Fonts) -> String {
     c.items(&list, PAD, top, &|item| {
         let note = match item {
             Item::Glyph { note, .. } | Item::Rect { note, .. } => *note,
-            Item::Text { .. } => None,
+            _ => None,
         }?;
         setting.notes.get(note as usize).map(|n| colors(n.role))
     });
@@ -350,11 +336,11 @@ fn psalm(fonts: &Fonts) -> String {
     let mut x = PAD;
     let y = top + list.height + 18.0;
     for (role, name) in [
-        (Role::Intonation, "intonation"),
-        (Role::Tenor, "tenor"),
-        (Role::Preparatory, "preparatory"),
-        (Role::Accent, "accent"),
-        (Role::Ending, "ending"),
+        (ToneRole::Intonation, "intonation"),
+        (ToneRole::Tenor, "tenor"),
+        (ToneRole::Preparatory, "preparatory"),
+        (ToneRole::Accent, "accent"),
+        (ToneRole::Ending, "ending"),
     ] {
         let _ = write!(
             c.body,
@@ -371,9 +357,9 @@ fn psalm(fonts: &Fonts) -> String {
 /// A cursor following the note map's timeline: each note lit for its duration.
 fn timeline(fonts: &Fonts) -> std::io::Result<String> {
     let eng = engrave(&read("crates/neuma/tests/golden/regina-caeli-simple.gabc")?, Initial::Lines(1));
-    let layout = eng.layout(700.0, &LayoutOptions::default());
+    let layout = eng.layout(700.0);
     let list = layout.display();
-    let map = layout.notes(&Weights::default());
+    let map = layout.timeline();
     let pulse = 0.32f32;
     let tail = 2.0f32;
     let dur = map.duration * pulse + tail;
@@ -391,8 +377,8 @@ fn timeline(fonts: &Fonts) -> std::io::Result<String> {
             ops.push("0");
             keys.push(t(prev_end));
         }
-        xs.push(format!("{:.2}", n.x - n.w / 2.0 - 3.0));
-        ys.push(format!("{:.2}", n.y - n.h / 2.0 - 3.0));
+        xs.push(format!("{:.2}", n.cx - n.w / 2.0 - 3.0));
+        ys.push(format!("{:.2}", n.cy - n.h / 2.0 - 3.0));
         ops.push("1");
         keys.push(t(n.start));
         prev_end = n.start + n.duration;

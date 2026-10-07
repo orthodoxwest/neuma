@@ -10,7 +10,7 @@ use neuma::{ApproxMeasure, Diagnostic, StyleOptions, parse};
 fn diagnostics(src: &str) -> Vec<Diagnostic> {
     let parsed = parse(src);
     let eng = parsed.score.engrave(&ApproxMeasure, &StyleOptions::default());
-    parsed.diagnostics.into_iter().chain(eng.diagnostics).collect()
+    parsed.diagnostics.into_iter().chain(eng.diagnostics.iter().cloned()).collect()
 }
 
 /// Every `"prefix::code"` string literal in a crate's sources.

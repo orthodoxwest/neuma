@@ -11,8 +11,10 @@
 use crate::score::TextStyle;
 use crate::text::TextMeasure;
 
+/// One face's metrics in a [`MetricsTable`]. Its constructor and setters are for the table
+/// builder (`neuma-metrics`); the stability contract is the `NMET` format version.
 #[derive(Clone, Debug)]
-pub struct Face {
+pub struct FaceMetrics {
     pub italic: bool,
     pub bold: bool,
     pub sha256: [u8; 32],
@@ -24,8 +26,8 @@ pub struct Face {
     direct: Direct,
 }
 
-impl PartialEq for Face {
-    fn eq(&self, o: &Face) -> bool {
+impl PartialEq for FaceMetrics {
+    fn eq(&self, o: &FaceMetrics) -> bool {
         self.italic == o.italic
             && self.bold == o.bold
             && self.sha256 == o.sha256
@@ -44,15 +46,16 @@ const DIRECT: usize = 0x250;
 /// measuring lyrics looks them up over and over. Empty until the arrays are sorted.
 #[derive(Clone, Debug, Default)]
 struct Direct {
-    /// Each code point's advance, as [`Face::advance_of`] finds it.
+    /// Each code point's advance, as [`FaceMetrics::advance_of`] finds it.
     advances: Vec<f32>,
     /// Where the kerning pairs with each code point on the left are: `kern[c]..kern[c + 1]`.
     kern: Vec<u32>,
 }
 
-impl Face {
-    pub fn new(italic: bool, bold: bool, sha256: [u8; 32], ascent: f32, descent: f32) -> Face {
-        Face {
+impl FaceMetrics {
+    #[doc(hidden)]
+    pub fn new(italic: bool, bold: bool, sha256: [u8; 32], ascent: f32, descent: f32) -> FaceMetrics {
+        FaceMetrics {
             italic,
             bold,
             sha256,
@@ -65,15 +68,18 @@ impl Face {
         }
     }
 
+    #[doc(hidden)]
     pub fn set_advance(&mut self, c: char, em: f32) {
         self.advances.push((c as u32, em));
         self.direct = Direct::default();
     }
 
+    #[doc(hidden)]
     pub fn set_small_cap(&mut self, c: char, em: f32) {
         self.small_caps.push((c as u32, em));
     }
 
+    #[doc(hidden)]
     pub fn set_kern(&mut self, left: char, right: char, em: f32) {
         self.kerning.push((left as u32, right as u32, em));
         self.direct = Direct::default();
@@ -142,12 +148,17 @@ impl Face {
     }
 }
 
+/// Font metrics for measuring lyrics: a [`TextMeasure`] read from a table that
+/// `neuma-metrics` builds from font files. The built-in EB Garamond tables are
+/// [`LyricFont::metrics`](crate::LyricFont::metrics).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct MetricsTable {
-    pub faces: Vec<Face>,
+    pub faces: Vec<FaceMetrics>,
 }
 
+/// Why a metrics table can't be read.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum MetricsError {
     BadMagic,
     UnsupportedVersion(u16),
@@ -211,7 +222,7 @@ impl MetricsTable {
             sha256.copy_from_slice(r.take(32)?);
             let ascent = r.f32()?;
             let descent = r.f32()?;
-            let mut face = Face::new(flags & 1 != 0, flags & 2 != 0, sha256, ascent, descent);
+            let mut face = FaceMetrics::new(flags & 1 != 0, flags & 2 != 0, sha256, ascent, descent);
             for _ in 0..r.u32()? {
                 face.advances.push((r.u32()?, r.f32()?));
             }
@@ -227,6 +238,7 @@ impl MetricsTable {
         Ok(MetricsTable { faces })
     }
 
+    #[doc(hidden)]
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut out = Vec::new();
         out.extend_from_slice(b"NMET");
@@ -260,12 +272,12 @@ impl MetricsTable {
     }
 
     /// The face for `style`, if the table has one.
-    fn face(&self, style: TextStyle) -> Option<&Face> {
+    fn face(&self, style: TextStyle) -> Option<&FaceMetrics> {
         self.faces.iter().find(|f| f.italic == style.italic && f.bold == style.bold)
     }
 
     /// The face to measure `style` with: its own, else the same slant without bold, else any.
-    fn fallback(&self, style: TextStyle) -> Option<&Face> {
+    fn fallback(&self, style: TextStyle) -> Option<&FaceMetrics> {
         self.face(style)
             .or_else(|| self.faces.iter().find(|f| f.italic == style.italic && !f.bold))
             .or_else(|| self.faces.iter().find(|f| !f.italic && !f.bold))
@@ -296,7 +308,7 @@ mod tests {
 
     #[test]
     fn round_trip_and_measure() {
-        let mut f = Face::new(false, false, [7; 32], 0.8, 0.25);
+        let mut f = FaceMetrics::new(false, false, [7; 32], 0.8, 0.25);
         f.set_advance('A', 0.7);
         f.set_advance('V', 0.7);
         f.set_advance('a', 0.45);

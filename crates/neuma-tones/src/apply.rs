@@ -2,15 +2,16 @@
 
 use std::ops::Range;
 
-use neuma::score::{Bar, BarKind, Clef, Figure, Lyric};
+use neuma::score::{Bar, BarKind, Figure, Lyric};
 use neuma::{Diagnostic, Score, ScoreBuilder, Severity};
 
-use crate::pointed::{self, Part, PartKind, Pointed, Syllable};
+use crate::pointed::{self, Part, Pointed, Syllable, VersePart};
 use crate::syllable::fold;
 use crate::tone::{Cadence, Slot, Tone};
 
 /// When the intonation is sung.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum Intone {
     /// On the first verse only, as at the Office.
     #[default]
@@ -21,16 +22,61 @@ pub enum Intone {
     Never,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct Options {
+/// How to set a psalm. Build it with the `with_*` setters:
+/// `PsalmOptions::default().with_intone(Intone::EveryVerse)`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct PsalmOptions {
+    /// When the intonation is sung; default on the first verse.
     pub intone: Intone,
     /// Remove the acute accents from the printed text (they still place the accents).
     pub strip_accents: bool,
     /// The score's `name:` header.
     pub name: Option<String>,
-    /// Leave half-verses with no marks as they are, instead of pointing them with
-    /// [`point`](crate::point::point) first. Their cadence then falls on the last syllables.
-    pub no_auto_point: bool,
+    /// Point half-verses that carry no marks with [`point`](crate::point()) first; default
+    /// true. Without it their cadence falls on the last syllables.
+    pub auto_point: bool,
+}
+
+impl Default for PsalmOptions {
+    fn default() -> PsalmOptions {
+        PsalmOptions {
+            intone: Intone::default(),
+            strip_accents: false,
+            name: None,
+            auto_point: true,
+        }
+    }
+}
+
+impl PsalmOptions {
+    /// Sets [`intone`](Self::intone).
+    #[must_use]
+    pub fn with_intone(mut self, intone: Intone) -> PsalmOptions {
+        self.intone = intone;
+        self
+    }
+
+    /// Sets [`strip_accents`](Self::strip_accents).
+    #[must_use]
+    pub fn with_strip_accents(mut self, strip_accents: bool) -> PsalmOptions {
+        self.strip_accents = strip_accents;
+        self
+    }
+
+    /// Sets [`name`](Self::name).
+    #[must_use]
+    pub fn with_name(mut self, name: impl Into<String>) -> PsalmOptions {
+        self.name = Some(name.into());
+        self
+    }
+
+    /// Sets [`auto_point`](Self::auto_point).
+    #[must_use]
+    pub fn with_auto_point(mut self, auto_point: bool) -> PsalmOptions {
+        self.auto_point = auto_point;
+        self
+    }
 }
 
 /// Below this confidence an automatically pointed half-verse is reported for checking.
@@ -38,7 +84,8 @@ pub const UNSURE: f32 = 0.8;
 
 /// What a note does in the tone.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Role {
+#[non_exhaustive]
+pub enum ToneRole {
     Intonation,
     /// The reciting note.
     Tenor,
@@ -50,55 +97,72 @@ pub enum Role {
 
 /// One note of the setting, in the order the engraving numbers notes.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct NoteRole {
+#[non_exhaustive]
+pub struct PsalmNote {
     /// Index into the pointed text's verses.
     pub verse: usize,
     /// The printed verse number.
     pub number: Option<u32>,
-    pub part: PartKind,
-    pub role: Role,
-    /// The sung syllable's text in the pointed source.
-    pub source: Range<usize>,
+    pub part: VersePart,
+    pub role: ToneRole,
+    /// The sung syllable's UTF-8 bytes in the psalm text: the same span as the engraved
+    /// note's (`TimelineNote::span`).
+    pub span: Range<usize>,
 }
 
-/// A pointed text set to a tone.
+/// Psalm text set to a tone.
 #[derive(Clone, Debug)]
-pub struct Setting {
+#[non_exhaustive]
+pub struct PsalmSetting {
+    /// The psalm text the setting was made from.
+    pub text: String,
+    /// The setting as a score whose spans count UTF-8 bytes of the psalm text: a note's is its
+    /// sung syllable's, a syllable's its text, and a bar's is empty at the end of its
+    /// half-verse. A [`PsalmChant`](crate::PsalmChant) engraves it, and its hit tests and
+    /// timeline answer in the text.
     pub score: Score,
-    /// The score as GABC.
+    /// The score as GABC, for a GABC editor or file (parsed again, its spans count GABC).
     pub gabc: String,
     /// Every note's place in the tone: `notes[i]` is note `i` of the engraved score.
-    pub notes: Vec<NoteRole>,
-    /// Problems in the pointing, with spans in the pointed text.
+    pub notes: Vec<PsalmNote>,
+    /// Problems in the text and its pointing, with spans in the text.
     pub diagnostics: Vec<Diagnostic>,
 }
 
-/// Parses `pointed` text and sets it to `tone`.
-pub fn apply_text(tone: &Tone, pointed: &str, options: &Options) -> Setting {
-    let parsed = pointed::parse(pointed);
-    let mut setting = apply(tone, &parsed, options);
-    let mut diags = parsed.diagnostics;
+/// Sets psalm text (a verse a line, the mediant marked `*`, optionally pointed with `†`, `·`,
+/// acutes and `–`) to `tone`. Half-verses with no marks are pointed automatically first
+/// (unless [`PsalmOptions::auto_point`] is off); a pointing the model is unsure of is reported
+/// as `point::unsure`.
+///
+/// ```
+/// use neuma_tones::{PsalmOptions, Tone, psalm};
+///
+/// let text = "O praise the Lord, all ye heathen * praise him, all ye nations.";
+/// let setting = psalm(text, Tone::named("8.G").unwrap(), &PsalmOptions::default());
+/// assert_eq!(&text[setting.notes[0].span.clone()], "O");
+/// ```
+#[must_use]
+pub fn psalm(text: &str, tone: &Tone, options: &PsalmOptions) -> PsalmSetting {
+    let mut parsed = Pointed::parse(text);
+    let mut diags = std::mem::take(&mut parsed.diagnostics);
+    let mut setting = set_pointed(&parsed, tone, options);
     diags.append(&mut setting.diagnostics);
     setting.diagnostics = diags;
+    setting.text = text.to_string();
     setting
 }
 
-/// Sets a parsed pointed text to `tone`. The text is split into sung syllables first, and
-/// half-verses with no marks are pointed automatically (unless `options.no_auto_point`); a
-/// pointing the model is unsure of is reported as `point::unsure`.
-pub fn apply(tone: &Tone, pointed: &Pointed, options: &Options) -> Setting {
+/// [`psalm`] for text already parsed, with only the setting's own diagnostics.
+fn set_pointed(pointed: &Pointed, tone: &Tone, options: &PsalmOptions) -> PsalmSetting {
     let mut unsure = Vec::new();
-    let text = if options.no_auto_point {
+    let text = if !options.auto_point {
         pointed.syllabified()
     } else {
-        let p = crate::point::point(tone, pointed);
-        for h in p.halves.iter().filter(|h| !h.kept && h.confidence < UNSURE) {
-            let part = p.pointed.verses[h.verse].parts.iter().find(|x| x.kind == h.part);
-            if let Some(syls) = part.map(|x| &x.syllables).filter(|s| !s.is_empty()) {
-                unsure.push((syls[0].span.start..syls[syls.len() - 1].span.end, h.confidence));
-            }
+        let (text, halves) = crate::point::point_parsed(pointed, tone);
+        for h in halves.iter().filter(|h| !h.kept && h.confidence < UNSURE && !h.span.is_empty()) {
+            unsure.push((h.span.clone(), h.confidence));
         }
-        p.pointed
+        text
     };
     let mut b = ScoreBuilder::new();
     if let Some(name) = &options.name {
@@ -123,13 +187,15 @@ pub fn apply(tone: &Tone, pointed: &Pointed, options: &Options) -> Setting {
         );
     }
     let mut figures = Figures::default();
+    // Each syllable's span in the text, after the clef's.
+    let mut spans = Vec::new();
     let last_verse = text.verses.len().saturating_sub(1);
     for (vi, verse) in text.verses.iter().enumerate() {
         for (pi, part) in verse.parts.iter().enumerate() {
             let cadence = match part.kind {
-                PartKind::Flex => &tone.flex,
-                PartKind::Mediant => &tone.mediant,
-                PartKind::Termination => &tone.termination,
+                VersePart::Flex => &tone.flex,
+                VersePart::Mediant => &tone.mediant,
+                VersePart::Termination => &tone.termination,
             };
             // The intonation opens the verse, whichever part comes first.
             let intone = pi == 0
@@ -138,7 +204,7 @@ pub fn apply(tone: &Tone, pointed: &Pointed, options: &Options) -> Setting {
                     Intone::EveryVerse => true,
                     Intone::Never => false,
                 };
-            let lead: &[String] = if part.kind == PartKind::Termination {
+            let lead: &[String] = if part.kind == VersePart::Termination {
                 &cadence.lead
             } else if intone {
                 &tone.mediant.lead
@@ -149,16 +215,22 @@ pub fn apply(tone: &Tone, pointed: &Pointed, options: &Options) -> Setting {
             for (s, neumes) in part.syllables.iter().zip(sung) {
                 let mut fig = Vec::new();
                 for (neume, role) in &neumes {
-                    let f = figures.get(neume);
-                    let count = f.iter().filter(|f| matches!(f, Figure::Note(_))).count();
-                    for _ in 0..count {
-                        notes.push(NoteRole {
-                            verse: vi,
-                            number: verse.number,
-                            part: part.kind,
-                            role: *role,
-                            source: s.span.clone(),
-                        });
+                    let mut f = figures.get(neume);
+                    for figure in &mut f {
+                        match figure {
+                            Figure::Note(n) => {
+                                n.span = s.span.clone();
+                                notes.push(PsalmNote {
+                                    verse: vi,
+                                    number: verse.number,
+                                    part: part.kind,
+                                    role: *role,
+                                    span: s.span.clone(),
+                                });
+                            }
+                            Figure::Alteration(a) => a.span = s.span.clone(),
+                            _ => {}
+                        }
                     }
                     fig.extend(f);
                 }
@@ -168,22 +240,26 @@ pub fn apply(tone: &Tone, pointed: &Pointed, options: &Options) -> Setting {
                     s.text.clone()
                 };
                 b = b.syllable(Lyric::from_plain(&shown), s.starts_word(), fig);
+                spans.push(s.span.clone());
             }
+            let end = part.syllables.last().map_or(verse.span.end, |s| s.span.end);
             let (mark, kind) = match part.kind {
-                PartKind::Flex => ("†", BarKind::Minima),
-                PartKind::Mediant => ("*", BarKind::Maior),
-                PartKind::Termination => ("", if vi == last_verse { BarKind::Finalis } else { BarKind::Maior }),
+                VersePart::Flex => ("†", BarKind::Quarter),
+                VersePart::Mediant => ("*", BarKind::Full),
+                VersePart::Termination => ("", if vi == last_verse { BarKind::Double } else { BarKind::Full }),
             };
-            let bar = vec![Figure::Bar(Bar {
-                kind,
-                high: false,
-                span: 0..0,
-            })];
+            let bar = vec![Figure::Bar(Bar::new(kind, end..end))];
             b = b.syllable(Lyric::from_plain(mark), true, bar);
+            spans.push(end..end);
         }
     }
-    let score = b.build();
-    Setting {
+    let mut score = b.build();
+    // The clef's syllable, then the sung ones and the bars: each gets its span in the text.
+    for (syl, span) in score.syllables.iter_mut().rev().zip(spans.into_iter().rev()) {
+        syl.span = span;
+    }
+    PsalmSetting {
+        text: String::new(),
         gabc: score.to_gabc(),
         score,
         notes,
@@ -206,7 +282,7 @@ impl Figures {
             .syllables
             .into_iter()
             .last()
-            .map(|s| s.notation.into_iter().filter(|f| !matches!(f, Figure::Clef(Clef { .. }))).collect())
+            .map(|s| s.notation.into_iter().filter(|f| !matches!(f, Figure::Clef(_))).collect())
             .unwrap_or_default();
         self.0.push((neume.to_string(), f.clone()));
         f
@@ -231,16 +307,10 @@ fn strip_acutes(text: &str) -> String {
         .collect()
 }
 
-type Sung = Vec<Vec<(String, Role)>>;
+type Sung = Vec<Vec<(String, ToneRole)>>;
 
 fn warn(diags: &mut Vec<Diagnostic>, severity: Severity, span: Range<usize>, code: &'static str, message: &str) {
-    diags.push(Diagnostic {
-        severity,
-        span,
-        code,
-        message: message.to_string(),
-        fix: None,
-    });
+    diags.push(Diagnostic::new(severity, span, code, message));
 }
 
 /// The neumes each syllable of `part` takes.
@@ -264,7 +334,7 @@ fn set_part(part: &Part, cadence: &Cadence, lead: &[String], diags: &mut Vec<Dia
             });
         }
         let mut sung = set_cadence(&ext, cadence, lead, diags);
-        let held: Vec<(String, Role)> = sung.drain(n..).flatten().collect();
+        let held: Vec<(String, ToneRole)> = sung.drain(n..).flatten().collect();
         sung[n - 1].extend(held);
         sung
     } else {
@@ -274,7 +344,7 @@ fn set_part(part: &Part, cadence: &Cadence, lead: &[String], diags: &mut Vec<Dia
     for i in 0..out.len() {
         if out[i].is_empty() {
             let prev = if i > 0 { out[i - 1].last().cloned() } else { None };
-            out[i].push(prev.unwrap_or_else(|| (cadence.tenor.clone(), Role::Tenor)));
+            out[i].push(prev.unwrap_or_else(|| (cadence.tenor.clone(), ToneRole::Tenor)));
         }
     }
     out
@@ -310,7 +380,7 @@ fn set_cadence(part: &Part, cadence: &Cadence, lead: &[String], diags: &mut Vec<
     let wanted = units.len();
     if wanted == 0 {
         // A formula with no accent (only a hand-built tone can have one): recite it all.
-        return vec![vec![(cadence.tenor.clone(), Role::Tenor)]; n];
+        return vec![vec![(cadence.tenor.clone(), ToneRole::Tenor)]; n];
     }
 
     // Where the cadence starts and which syllables carry its accents.
@@ -318,7 +388,7 @@ fn set_cadence(part: &Part, cadence: &Cadence, lead: &[String], diags: &mut Vec<
     let marked: Vec<usize> = (start.unwrap_or(0)..n).filter(|&i| syls[i].accent).collect();
     let (start, accents) = if marked.is_empty() {
         // No accent marked: the flex drops on its last syllable, and other halves guess.
-        if part.kind != PartKind::Flex || start.is_some() {
+        if part.kind != VersePart::Flex || start.is_some() {
             warn(
                 diags,
                 Severity::Warning,
@@ -345,7 +415,7 @@ fn set_cadence(part: &Part, cadence: &Cadence, lead: &[String], diags: &mut Vec<
             acc,
         )
     } else {
-        if start.is_none() && part.kind != PartKind::Flex {
+        if start.is_none() && part.kind != VersePart::Flex {
             warn(
                 diags,
                 Severity::Info,
@@ -382,8 +452,8 @@ fn set_cadence(part: &Part, cadence: &Cadence, lead: &[String], diags: &mut Vec<
     // Before the cadence: the intonation, then the tenor.
     for (i, slot) in out.iter_mut().enumerate().take(start) {
         match lead.get(i) {
-            Some(neume) => slot.push((neume.clone(), Role::Intonation)),
-            None => slot.push((cadence.tenor.clone(), Role::Tenor)),
+            Some(neume) => slot.push((neume.clone(), ToneRole::Intonation)),
+            None => slot.push((cadence.tenor.clone(), ToneRole::Tenor)),
         }
     }
     if lead.len() > start && !lead.is_empty() {
@@ -408,10 +478,10 @@ fn set_cadence(part: &Part, cadence: &Cadence, lead: &[String], diags: &mut Vec<
         // More syllables than preparatory notes: the first ones stay on the tenor.
         let extra = preps - fixed.len();
         for slot in out.iter_mut().skip(start).take(extra) {
-            slot.push((cadence.tenor.clone(), Role::Tenor));
+            slot.push((cadence.tenor.clone(), ToneRole::Tenor));
         }
         for (j, f) in fixed.iter().enumerate() {
-            out[start + extra + j].push(((*f).clone(), Role::Preparatory));
+            out[start + extra + j].push(((*f).clone(), ToneRole::Preparatory));
         }
         if start < first {
             warn(
@@ -429,7 +499,7 @@ fn set_cadence(part: &Part, cadence: &Cadence, lead: &[String], diags: &mut Vec<
         // Fewer: the first preparatory notes are left out, which dashes before the first
         // syllable say on purpose.
         for (j, f) in fixed[fixed.len() - preps..].iter().enumerate() {
-            out[start + j].push(((*f).clone(), Role::Preparatory));
+            out[start + j].push(((*f).clone(), ToneRole::Preparatory));
         }
         if part.omitted < fixed.len() - preps {
             warn(
@@ -441,12 +511,12 @@ fn set_cadence(part: &Part, cadence: &Cadence, lead: &[String], diags: &mut Vec<
             );
         }
     } else {
-        fill(&mut out[start..first], prep, Role::Preparatory);
+        fill(&mut out[start..first], prep, ToneRole::Preparatory);
     }
 
     // The accents and what follows each.
     for (u, (&at, (accent, after))) in accents.iter().zip(units).enumerate() {
-        out[at].push((accent.to_string(), Role::Accent));
+        out[at].push((accent.to_string(), ToneRole::Accent));
         let next = accents.get(u + 1).copied().unwrap_or(n);
         let last = u + 1 == accents.len();
         let gap = next - at - 1;
@@ -456,8 +526,8 @@ fn set_cadence(part: &Part, cadence: &Cadence, lead: &[String], diags: &mut Vec<
             // is dropped.
             for s in *after {
                 match s {
-                    Slot::Open(o) if !last => out[at].push((o.clone(), Role::Ending)),
-                    Slot::Fixed(f) => out[at].push((f.clone(), Role::Ending)),
+                    Slot::Open(o) if !last => out[at].push((o.clone(), ToneRole::Ending)),
+                    Slot::Fixed(f) => out[at].push((f.clone(), ToneRole::Ending)),
                     _ => {}
                 }
             }
@@ -480,7 +550,7 @@ fn set_cadence(part: &Part, cadence: &Cadence, lead: &[String], diags: &mut Vec<
                     "a `–` hold, but syllables come between the accents",
                 );
             }
-            fill(&mut out[at + 1..next], after, Role::Ending);
+            fill(&mut out[at + 1..next], after, ToneRole::Ending);
         }
     }
     out
@@ -489,7 +559,7 @@ fn set_cadence(part: &Part, cadence: &Cadence, lead: &[String], diags: &mut Vec<
 /// Gives `syls` syllables the slots in order: one each for a fixed slot, and any extra
 /// syllables to the open slot. With too few syllables, the leftover fixed notes are sung on the
 /// last syllable; with too many and no open slot, the extras repeat the last note.
-fn fill(syls: &mut [Vec<(String, Role)>], slots: &[Slot], role: Role) {
+fn fill(syls: &mut [Vec<(String, ToneRole)>], slots: &[Slot], role: ToneRole) {
     let k = syls.len();
     if k == 0 {
         return;
@@ -532,12 +602,12 @@ mod tests {
     use super::*;
     use neuma::{ApproxMeasure, StyleOptions};
 
-    fn set(tone: &str, text: &str) -> Setting {
-        apply_text(Tone::named(tone).unwrap(), text, &Options::default())
+    fn set(tone: &str, text: &str) -> PsalmSetting {
+        psalm(text, Tone::named(tone).unwrap(), &PsalmOptions::default())
     }
 
     /// The notes on each syllable, as `text(notes)`.
-    fn sung(s: &Setting) -> String {
+    fn sung(s: &PsalmSetting) -> String {
         s.score
             .syllables
             .iter()
@@ -602,16 +672,16 @@ mod tests {
         assert!(out.starts_with("A(f) gainst(gh) thee(h)"), "{out}");
         assert!(out.contains("I(h) sin(h) ned,(g) †()"), "{out}");
         let eng = neuma::parse(&s.gabc).score.engrave(&ApproxMeasure, &StyleOptions::default());
-        let map = eng.layout(800.0, &Default::default()).notes(&Default::default());
+        let map = eng.layout(800.0).timeline();
         assert_eq!(map.notes.len(), s.notes.len());
         // Every note's role points at its syllable in the pointed text.
         for (n, r) in map.notes.iter().zip(&s.notes) {
-            let src = text[r.source.clone()].replace('-', "");
+            let src = text[r.span.clone()].replace('-', "");
             assert!(src.contains(n.syllable_text.as_str()), "{src} vs {}", n.syllable_text);
         }
         // The second verse isn't intoned.
         let v2: Vec<_> = s.notes.iter().filter(|r| r.verse == 1).collect();
-        assert!(v2.iter().all(|r| r.role != Role::Intonation));
+        assert!(v2.iter().all(|r| r.role != ToneRole::Intonation));
         assert_eq!(v2[0].number, Some(5));
         // The verse ends on a full bar and the psalm on a double bar.
         assert!(s.gabc.contains("(:)") && s.gabc.trim_end().ends_with("(::)"), "{}", s.gabc);
@@ -621,20 +691,24 @@ mod tests {
     fn trailing_dashes_and_odd_tones() {
         // The dashes after "Dá-vid," hold its last syllable for the second accent and the end.
         let tone = Tone::named("7.a").unwrap();
-        let held = apply_text(tone, "Lord, remember · Dávid, – – * and · áll his tróu-ble.", &Options::default());
+        let held = psalm(
+            "Lord, remember · Dávid, – – * and · áll his tróu-ble.",
+            tone,
+            &PsalmOptions::default(),
+        );
         assert!(held.diagnostics.is_empty(), "{:?}", held.diagnostics);
-        let plain = apply_text(tone, "Lord, remember · Dávid, * and · áll his tróu-ble.", &Options::default());
+        let plain = psalm("Lord, remember · Dávid, * and · áll his tróu-ble.", tone, &PsalmOptions::default());
         assert_ne!(held.gabc, plain.gabc);
         assert!(held.gabc.contains("vid,(jij)") || held.gabc.contains("vid,(j)"), "{}", held.gabc);
         // A hand-built tone ending on its accent still gives every syllable a note.
         let t = Tone::parse("name: x\nmediant: jr 'k\ntermination: jr 'k 'j").unwrap();
-        let s = apply_text(&t, "The Lord is · Kíng and · glad * and · práise him", &Options::default());
+        let s = psalm("The Lord is · Kíng and · glad * and · práise him", &t, &PsalmOptions::default());
         assert!(!s.gabc.split("()").any(|x| x.ends_with(char::is_alphabetic)), "{}", s.gabc);
         let eng = neuma::parse(&s.gabc).score.engrave(&ApproxMeasure, &StyleOptions::default());
-        let map = eng.layout(800.0, &Default::default()).notes(&Default::default());
+        let map = eng.layout(800.0).timeline();
         assert_eq!(map.notes.len(), s.notes.len());
         assert!(
-            apply_text(tone, "", &Options::default())
+            psalm("", tone, &PsalmOptions::default())
                 .diagnostics
                 .iter()
                 .any(|d| d.code == "apply::empty")
@@ -646,15 +720,37 @@ mod tests {
         let codes = |tone: &str, t: &str| set(tone, t).diagnostics.iter().map(|d| d.code).collect::<Vec<_>>();
         // 1.D's mediant has two accents.
         assert!(codes("1.D", "a b · cé d * e · fé g").contains(&"apply::missing-accent"));
-        let manual = Options {
-            no_auto_point: true,
-            ..Options::default()
-        };
-        let plain = apply_text(Tone::named("8.G").unwrap(), "a b c d * e f g h", &manual);
+        let manual = PsalmOptions::default().with_auto_point(false);
+        let plain = psalm("a b c d * e f g h", Tone::named("8.G").unwrap(), &manual);
         assert!(plain.diagnostics.iter().any(|d| d.code == "apply::no-accent"));
         // Pointed automatically, with no complaint about missing marks.
         assert!(!codes("8.G", "a b c d * e f g h").iter().any(|c| c.starts_with("apply::")));
         assert!(codes("8.G", "a b · c dé * e · fé g").contains(&"apply::few-preparatory"));
         assert!(codes("8.G", "a b c dé * · e f g hé i").contains(&"apply::extra-preparatory"));
+    }
+
+    #[test]
+    fn spans_count_the_text() {
+        let text = "1 O praise the Lord, all ye · héathen * praise him, · all ye nátions.\n\
+                    2 For his merciful kindness * and the truth of the Lord endureth for ever.";
+        let s = set("8.G", text);
+        let chant = neuma::Chant::from_score(s.score.clone(), text, s.diagnostics.clone(), neuma::ChantOptions::default());
+        assert_eq!(chant.source(), text);
+        let layout = chant.layout(600.0);
+        let timeline = layout.timeline();
+        assert_eq!(timeline.notes.len(), s.notes.len());
+        for (note, role) in timeline.notes.iter().zip(&s.notes) {
+            assert_eq!(note.span, role.span);
+        }
+        assert_eq!(&text[s.notes[0].span.clone()], "O");
+        // A click on a note finds its syllable in the text.
+        let first = &timeline.notes[0];
+        let hit = layout.source_at(first.cx, first.cy).unwrap();
+        assert_eq!(&text[hit.span.clone()], "O");
+        let map = layout.source_map();
+        for e in map.syllables.iter().chain(&map.bars) {
+            assert!(text.get(e.span.clone()).is_some(), "{e:?}");
+        }
+        assert!(map.bars.iter().all(|b| b.span.is_empty() && b.span.start > 0));
     }
 }

@@ -6,10 +6,7 @@ use std::path::Path;
 use neuma::{ApproxMeasure, Initial, Item, LayoutOptions, StyleOptions, SvgOptions, TextRole, Weights, parse};
 
 /// Style without a drop cap, for tests about where syllables fall.
-static NO_INITIAL: std::sync::LazyLock<StyleOptions> = std::sync::LazyLock::new(|| StyleOptions {
-    initial: Initial::None,
-    ..StyleOptions::default()
-});
+static NO_INITIAL: std::sync::LazyLock<StyleOptions> = std::sync::LazyLock::new(|| StyleOptions::default().with_initial(Initial::None));
 
 fn corpus() -> Vec<(String, String)> {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/corpus");
@@ -35,7 +32,7 @@ fn lays_out_within_width() {
             .filter(|f| matches!(f, neuma::score::Figure::Note(_)))
             .count();
         for width in [320.0, 700.0, 1200.0] {
-            let layout = eng.layout(width, &LayoutOptions::default());
+            let layout = eng.layout(width);
             let (w, h) = layout.size();
             assert!(w <= width + 0.01, "{name} at {width}: {w}");
             assert!(h > 0.0);
@@ -45,14 +42,14 @@ fn lays_out_within_width() {
                     assert!(*x <= w + 0.01, "{name} at {width}: glyph at {x}");
                 }
             }
-            let map = layout.notes(&Weights::SOLESMES);
+            let map = layout.timeline();
             assert_eq!(map.notes.len(), total_notes, "{name}");
             let mut last = (0, f32::MIN);
             for n in &map.notes {
                 if n.line == last.0 {
-                    assert!(n.x >= last.1 - 0.01, "{name} at {width}: note {} goes backwards", n.id);
+                    assert!(n.cx >= last.1 - 0.01, "{name} at {width}: note {} goes backwards", n.id);
                 }
-                last = (n.line, n.x);
+                last = (n.line, n.cx);
             }
         }
     }
@@ -62,8 +59,8 @@ fn lays_out_within_width() {
 fn narrower_means_more_lines() {
     let (_, src) = corpus().into_iter().find(|(n, _)| n.contains("psalm-134")).unwrap();
     let eng = parse(&src).score.engrave(&ApproxMeasure, &StyleOptions::default());
-    let wide = eng.layout(1200.0, &LayoutOptions::default()).line_count();
-    let narrow = eng.layout(320.0, &LayoutOptions::default()).line_count();
+    let wide = eng.layout(1200.0).line_count();
+    let narrow = eng.layout(320.0).line_count();
     assert!(narrow > wide, "{narrow} vs {wide}");
 }
 
@@ -71,14 +68,8 @@ fn narrower_means_more_lines() {
 fn output_is_deterministic() {
     for (_, src) in corpus() {
         let score = parse(&src).score;
-        let a = score
-            .engrave(&ApproxMeasure, &StyleOptions::default())
-            .layout(500.0, &LayoutOptions::default())
-            .svg(&SvgOptions::default());
-        let b = score
-            .engrave(&ApproxMeasure, &StyleOptions::default())
-            .layout(500.0, &LayoutOptions::default())
-            .svg(&SvgOptions::default());
+        let a = score.engrave(&ApproxMeasure, &StyleOptions::default()).layout(500.0).svg();
+        let b = score.engrave(&ApproxMeasure, &StyleOptions::default()).layout(500.0).svg();
         assert_eq!(a, b);
         assert!(a.starts_with("<svg") && a.ends_with("</svg>"));
     }
@@ -86,7 +77,7 @@ fn output_is_deterministic() {
 
 fn render(src: &str, width: f32) -> String {
     let eng = parse(src).score.engrave(&ApproxMeasure, &StyleOptions::default());
-    eng.layout(width, &LayoutOptions::default()).svg(&SvgOptions::default())
+    eng.layout(width).svg()
 }
 
 #[test]
@@ -94,7 +85,7 @@ fn lyric_on_break_only_syllable_is_kept() {
     // The break follows the syllable, text and all, as in Gregorio.
     for (src, first_line) in [("(c4) A(g) men(z) (h)", ["A", "men"]), ("(c4) Ky(g)ri(z)e(h)", ["Ky", "ri"])] {
         let eng = parse(src).score.engrave(&ApproxMeasure, &NO_INITIAL);
-        let layout = eng.layout(400.0, &LayoutOptions::default());
+        let layout = eng.layout(400.0);
         assert_eq!(layout.line_count(), 2, "{src}");
         let list = layout.display();
         let top: Vec<String> = list
@@ -116,13 +107,11 @@ fn lyric_on_break_only_syllable_is_kept() {
 fn svg_drops_characters_xml_forbids() {
     let svg = render("(c4) A\u{1}B\u{7f}(g)", 400.0);
     assert!(!svg.contains('\u{1}'));
-    let opts = SvgOptions {
-        prefix: "x\"><script>".into(),
-        font_family: "a}</style><script>".into(),
-        ..SvgOptions::default()
-    };
+    let opts = SvgOptions::default()
+        .with_prefix("x\"><script>")
+        .with_font_family("a}</style><script>");
     let eng = parse("(c4) A(g)").score.engrave(&ApproxMeasure, &StyleOptions::default());
-    let svg = eng.layout(400.0, &LayoutOptions::default()).svg(&opts);
+    let svg = eng.layout(400.0).svg_with(&opts);
     assert!(!svg.contains("<script"), "{svg}");
 }
 
@@ -133,16 +122,10 @@ fn non_finite_sizes_stay_finite() {
         .engrave(&ApproxMeasure, &StyleOptions::default());
     for width in [f32::INFINITY, f32::NAN, -5.0, 1e9, 3e38] {
         for scale in [f32::INFINITY, f32::NAN, 0.0, 1e-38, 6.0] {
-            let layout = eng.layout(
-                width,
-                &LayoutOptions {
-                    scale,
-                    ..LayoutOptions::default()
-                },
-            );
+            let layout = eng.layout_with(width, &LayoutOptions::default().with_scale(scale));
             let (w, h) = layout.size();
             assert!(w.is_finite() && h.is_finite(), "{width} {scale}: {w} {h}");
-            assert!(!layout.svg(&SvgOptions::default()).contains("inf"));
+            assert!(!layout.svg().contains("inf"));
         }
     }
 }
@@ -152,7 +135,7 @@ fn wide_layout_is_fast() {
     let src = format!("(c4) {}(::)", "la(g) ".repeat(2000));
     let eng = parse(&src).score.engrave(&ApproxMeasure, &StyleOptions::default());
     let t = std::time::Instant::now();
-    let layout = eng.layout(1e9, &LayoutOptions::default());
+    let layout = eng.layout(1e9);
     assert!(layout.line_count() > 0);
     // The quadratic breaker takes milliseconds here; the old cubic one took tens of seconds.
     // The bound is loose so a slow runner can't trip it.
@@ -161,7 +144,7 @@ fn wide_layout_is_fast() {
 
 fn line_texts(src: &str, width: f32) -> Vec<Vec<String>> {
     let eng = parse(src).score.engrave(&ApproxMeasure, &NO_INITIAL);
-    let list = eng.layout(width, &LayoutOptions::default()).display();
+    let list = eng.layout(width).display();
     let mut out = vec![Vec::new(); list.lines.len()];
     for item in &list.items {
         if let Item::Text { runs, baseline, role, .. } = item
@@ -199,7 +182,7 @@ fn unclosed_nlba_still_fills_lines() {
     // the width instead of taking one syllable each.
     let src = format!("(c4) <nlba>{} (::)", vec!["la(g)"; 60].join(" "));
     let eng = parse(&src).score.engrave(&ApproxMeasure, &NO_INITIAL);
-    let layout = eng.layout(300.0, &LayoutOptions::default());
+    let layout = eng.layout(300.0);
     let lines = layout.display().lines.len();
     assert!((2..10).contains(&lines), "{lines} lines");
     assert!(layout.size().0 <= 300.01);
@@ -207,7 +190,7 @@ fn unclosed_nlba_still_fills_lines() {
     // the syllables after it still share lines.
     let src = "(c4) <nlba>Ab(g) c(h) d(g) e(h) f(g) g(h) h(g) Supercalifragilistic(ghghghghghghghghghghghghgh) i(g) j(h) k(g) l(h) m(g) n(h) o(g) p(h) q(g)</nlba>(::)";
     let eng = parse(src).score.engrave(&ApproxMeasure, &NO_INITIAL);
-    let lines = eng.layout(200.0, &LayoutOptions::default()).display().lines.len();
+    let lines = eng.layout(200.0).display().lines.len();
     assert!((3..8).contains(&lines), "{lines} lines");
 }
 
@@ -216,21 +199,21 @@ fn long_melismas_break_between_note_groups() {
     // From GregoBase: one syllable wider than a phone column, cut by `//` and bars.
     let src = "(c4) To(ixdh//gih//ivGF;ggf//gg//f/gh//jjg;hhg//hvGF;4hiHG//ixhi)ta(h) (::)";
     let eng = parse(src).score.engrave(&ApproxMeasure, &NO_INITIAL);
-    let layout = eng.layout(300.0, &LayoutOptions::default());
+    let layout = eng.layout(300.0);
     assert!(layout.size().0 <= 300.01, "{:?}", layout.size());
     assert!(layout.display().lines.len() >= 2);
     // As in Gregorio, a syllable of fewer than ten notes isn't split, and a longer one keeps
     // four notes at either end.
     let lines = |src: &str| {
         let eng = parse(src).score.engrave(&ApproxMeasure, &NO_INITIAL);
-        eng.layout(40.0, &LayoutOptions::default()).display().lines.len()
+        eng.layout(40.0).display().lines.len()
     };
     assert_eq!(lines("(c4) A(ghg/hgh/ghg)"), 1);
     assert_eq!(lines("(c4) A(gh/hg/gh/hg/gh)"), 3);
     // Inside `<nlba>` the melisma stays whole, even past the width.
     let src = "(c4) <nlba>To(ixdh//gih//ivGF;ggf//gg//f/gh//jjg;hhg//hvGF;4hiHG//ixhi//ixdh//gih//ivGF)ta(h)</nlba> (::)";
     let eng = parse(src).score.engrave(&ApproxMeasure, &NO_INITIAL);
-    assert!(eng.layout(300.0, &LayoutOptions::default()).size().0 > 300.0);
+    assert!(eng.layout(300.0).size().0 > 300.0);
 }
 
 #[test]
@@ -239,12 +222,12 @@ fn one_syllable_nlba_keeps_its_melisma_whole() {
     let src = "(c4) <nlba>To(g/h/g/h/g/h/g/h/g/h/g/h/g/h/g/h/g/h)</nlba> (::)";
     // Its line: the clef, the whole melisma, and the final bar on a line of its own.
     let eng = parse(src).score.engrave(&ApproxMeasure, &NO_INITIAL);
-    assert_eq!(eng.layout(100.0, &LayoutOptions::default()).line_count(), 2);
+    assert_eq!(eng.layout(100.0).line_count(), 2);
     // Without the region the same melisma breaks.
     let eng = parse("(c4) To(g/h/g/h/g/h/g/h/g/h/g/h/g/h/g/h/g/h) (::)")
         .score
         .engrave(&ApproxMeasure, &NO_INITIAL);
-    assert_eq!(eng.layout(100.0, &LayoutOptions::default()).line_count(), 3);
+    assert_eq!(eng.layout(100.0).line_count(), 3);
     // And the region survives a round trip through GABC.
     let gabc = parse(src).score.to_gabc();
     assert!(gabc.contains("<nlba>To("), "{gabc}");
@@ -269,7 +252,7 @@ fn forced_breaks_keep_lines_balanced() {
 fn initial_and_annotations() {
     let src = "annotation: Ant.;\nannotation: VIII G;\n%%\n(c4) Ky(g)ri(h)e(g) e(h)le(g)i(h)son(g) (::)";
     let eng = parse(src).score.engrave(&ApproxMeasure, &StyleOptions::default());
-    let list = eng.layout(600.0, &LayoutOptions::default()).display();
+    let list = eng.layout(600.0).display();
     let texts: Vec<(TextRole, String, f32, f32)> = list
         .items
         .iter()
@@ -316,14 +299,11 @@ fn initial_and_annotations() {
     assert!(ann[0].3 > 0.0, "annotations stay inside the layout");
 
     // Two-line initials indent the first two staves.
-    let style = StyleOptions {
-        initial: Initial::Lines(2),
-        ..StyleOptions::default()
-    };
+    let style = StyleOptions::default().with_initial(Initial::Lines(2));
     let eng = parse(&src.replace("(::)", &"la(g) ".repeat(120)))
         .score
         .engrave(&ApproxMeasure, &style);
-    let list = eng.layout(500.0, &LayoutOptions::default()).display();
+    let list = eng.layout(500.0).display();
     assert!(list.lines.len() > 3);
     let lefts: Vec<f32> = list
         .items
@@ -359,10 +339,7 @@ fn initial_item(list: &neuma::DisplayList) -> Option<(f32, f32, f32, f32)> {
 
 #[test]
 fn tall_initials_fit_the_staves_they_span() {
-    let style = StyleOptions {
-        initial: Initial::Lines(2),
-        ..StyleOptions::default()
-    };
+    let style = StyleOptions::default().with_initial(Initial::Lines(2));
     let cases = [
         // Fits on one line at this width, so the capital spans one staff.
         (
@@ -379,7 +356,7 @@ fn tall_initials_fit_the_staves_they_span() {
     ];
     for (src, width) in cases {
         let eng = parse(src).score.engrave(&ApproxMeasure, &style);
-        let list = eng.layout(width, &LayoutOptions::default()).display();
+        let list = eng.layout(width).display();
         assert_initial_clear_of_staff(&list, src);
         let (_, baseline, size, _) = initial_item(&list).unwrap();
         let span = list.lines.len().min(2);
@@ -410,10 +387,10 @@ fn initial_only_from_the_opening_syllable() {
     // Notes before the first text: no drop cap, since it would sit lines away.
     let src = format!("(c4) {}Ky(g)ri(h)e(g) (::)", "(g) ".repeat(70));
     let eng = parse(&src).score.engrave(&ApproxMeasure, &StyleOptions::default());
-    assert!(initial_item(&eng.layout(500.0, &LayoutOptions::default()).display()).is_none());
+    assert!(initial_item(&eng.layout(500.0).display()).is_none());
     // A capital with a tail still fits inside the layout.
     let eng = parse("(c4) Q(g)").score.engrave(&ApproxMeasure, &StyleOptions::default());
-    let list = eng.layout(500.0, &LayoutOptions::default()).display();
+    let list = eng.layout(500.0).display();
     let (_, baseline, size, _) = initial_item(&list).unwrap();
     assert!(baseline + 0.25 * size <= list.height + 0.01);
 }
@@ -441,13 +418,10 @@ fn tall_initials_never_cover_the_clef() {
     // High notes and breaks that land on the spanned lines only after the second pass.
     let src = "%%\n(c4) Wglo(ghgh) glori(ahvhv)menmi(,)(goz)Ky(ijz,)men(h.g_)e()(,) mi(,)";
     for lines in 2..=4 {
-        let style = StyleOptions {
-            initial: Initial::Lines(lines),
-            ..StyleOptions::default()
-        };
+        let style = StyleOptions::default().with_initial(Initial::Lines(lines));
         let eng = parse(src).score.engrave(&ApproxMeasure, &style);
         for width in [200.0, 240.0, 320.0] {
-            assert_initial_clear_of_staff(&eng.layout(width, &LayoutOptions::default()).display(), src);
+            assert_initial_clear_of_staff(&eng.layout(width).display(), src);
         }
     }
 }
@@ -456,21 +430,15 @@ fn tall_initials_never_cover_the_clef() {
 fn max_lines_keeps_the_first_lines_as_broken() {
     for (name, src) in corpus() {
         for spans in 1..=4 {
-            let style = StyleOptions {
-                initial: Initial::Lines(spans),
-                ..StyleOptions::default()
-            };
+            let style = StyleOptions::default().with_initial(Initial::Lines(spans));
             let eng = parse(&src).score.engrave(&ApproxMeasure, &style);
             for width in [300.0, 500.0] {
-                let full = eng.layout(width, &LayoutOptions::default());
+                let full = eng.layout(width);
                 let full_list = full.display();
-                let full_map = full.notes(&Weights::default());
+                let full_map = full.timeline();
                 for n in 1..=3 {
-                    let opts = LayoutOptions {
-                        max_lines: n,
-                        ..LayoutOptions::default()
-                    };
-                    let part = eng.layout(width, &opts);
+                    let opts = LayoutOptions::default().with_max_lines(n);
+                    let part = eng.layout_with(width, &opts);
                     let list = part.display();
                     let ctx = format!("{name} spans {spans} width {width} lines {n}");
                     let kept = n.min(full_list.lines.len());
@@ -488,12 +456,12 @@ fn max_lines_keeps_the_first_lines_as_broken() {
                     }
                     // The timeline is the full one cut after the kept notes and the pauses
                     // drawn with them.
-                    let map = part.notes(&Weights::default());
+                    let map = part.timeline();
                     assert_eq!(map.notes[..], full_map.notes[..map.notes.len()], "{ctx}");
                     assert_eq!(map.pauses[..], full_map.pauses[..map.pauses.len()], "{ctx}");
                     if kept < full_list.lines.len() {
                         let last = map.notes.last().unwrap();
-                        let end = map.pauses.last().map_or(0.0, |p| p.start + p.weight);
+                        let end = map.pauses.last().map_or(0.0, |p| p.start + p.duration);
                         let expected = (last.start + last.duration).max(end);
                         assert!((map.duration - expected).abs() < 1e-4, "{ctx}");
                         assert!(map.pauses.iter().all(|p| p.before_note <= last.id + 1), "{ctx}");
@@ -512,7 +480,7 @@ fn clefs_fit_their_lines() {
     // only a clef draws its staff, as Gregorio does, rather than nothing.
     for src in ["(c4) a(f) b(g)", "(c4)", "name: a;\n%%\n(f3) ()"] {
         let eng = parse(src).score.engrave(&ApproxMeasure, &NO_INITIAL);
-        let list = eng.layout(300.0, &LayoutOptions::default()).display();
+        let list = eng.layout(300.0).display();
         assert_eq!(list.lines.len(), 1, "{src}");
         let line = list.lines[0];
         let mut clefs = 0;
@@ -540,7 +508,7 @@ fn clefs_fit_their_lines() {
 fn a_clef_change_right_after_the_opening_clef_shows_both() {
     let clefs = |src: &str| {
         let eng = parse(src).score.engrave(&ApproxMeasure, &NO_INITIAL);
-        let list = eng.layout(400.0, &LayoutOptions::default()).display();
+        let list = eng.layout(400.0).display();
         list.items
             .iter()
             .filter(|i| {
@@ -564,7 +532,7 @@ fn a_clef_change_right_after_the_opening_clef_shows_both() {
 /// The lyric and hyphen texts of a layout, with their left edges and sizes, in drawing order.
 fn texts(src: &str, width: f32, opts: &LayoutOptions) -> Vec<(String, f32, f32, TextRole)> {
     let eng = parse(src).score.engrave(&ApproxMeasure, &NO_INITIAL);
-    eng.layout(width, opts)
+    eng.layout_with(width, opts)
         .display()
         .items
         .iter()
@@ -600,11 +568,7 @@ fn touching_syllables_stay_together_on_a_justified_line() {
     let src = format!("(c4) {} (::)", ["Dóm(g)mim(g)num(g)"; 12].join(" "));
     let t = texts(&src, 500.0, &LayoutOptions::default());
     // Only the lines that end inside a word have a hyphen, at their end.
-    let lines = parse(&src)
-        .score
-        .engrave(&ApproxMeasure, &NO_INITIAL)
-        .layout(500.0, &LayoutOptions::default())
-        .line_count();
+    let lines = parse(&src).score.engrave(&ApproxMeasure, &NO_INITIAL).layout(500.0).line_count();
     assert!(lines > 1);
     let hyphens: Vec<_> = t.iter().filter(|t| t.3 == TextRole::Hyphen).collect();
     assert!(hyphens.len() < lines, "{t:?}");
@@ -644,11 +608,7 @@ type Span = (String, f32, f32);
 /// Each line's lyric and hyphen texts, left to right.
 fn line_spans(src: &str, width: f32, style: &StyleOptions) -> Vec<Vec<Span>> {
     use neuma::TextMeasure;
-    let list = parse(src)
-        .score
-        .engrave(&ApproxMeasure, style)
-        .layout(width, &LayoutOptions::default())
-        .display();
+    let list = parse(src).score.engrave(&ApproxMeasure, style).layout(width).display();
     let mut lines: Vec<(f32, Vec<Span>)> = Vec::new();
     for item in &list.items {
         if let Item::Text {
@@ -689,10 +649,7 @@ fn a_word_after_one_ending_in_an_empty_syllable_keeps_its_space() {
     ] {
         let src = format!("(c4) {}", [&src[5..]; 6].join(" "));
         for lyric_size in [1.0, 2.45, 8.0] {
-            let style = StyleOptions {
-                lyric_size,
-                ..NO_INITIAL.clone()
-            };
+            let style = NO_INITIAL.clone().with_lyric_size(lyric_size);
             for width in (100..700).step_by(9) {
                 for line in line_spans(&src, width as f32, &style) {
                     for p in line.windows(2) {
@@ -718,13 +675,10 @@ fn a_text_past_the_last_syllable_stays_in_the_box() {
                prai(gh)ses(h) un(h)to(h) the(h) ho(h)nour(h) of(h) his(h) Name,(h.1) (,) make(h) his(h) \
                praise(h) to(gf) be(gh) glo(g)ri(e)ous.(e) (::) All(fff) the(dfe) earth.(e/gh.1) ()";
     for lyric_size in [2.0, 2.45, 8.0] {
-        let style = StyleOptions {
-            lyric_size,
-            ..NO_INITIAL.clone()
-        };
+        let style = NO_INITIAL.clone().with_lyric_size(lyric_size);
         let eng = parse(src).score.engrave(&ApproxMeasure, &style);
         for width in (150..900).step_by(3) {
-            let list = eng.layout(width as f32, &LayoutOptions::default()).display();
+            let list = eng.layout(width as f32).display();
             for item in &list.items {
                 if let Item::Text { runs, x, size, .. } = item {
                     let text: String = runs.iter().map(|r| r.text.as_str()).collect();
@@ -742,13 +696,10 @@ fn a_line_starting_without_text_keeps_its_first_text_in_the_box() {
     // start at the least; squeezing the gaps before it mustn't push it past.
     let src = format!("(c4) {} (::)", ["() * Quidquid(ghGF) est(h) in(g) di(h)ce(g)re(h)"; 12].join(" "));
     for lyric_size in [2.45, 4.0, 8.0] {
-        let style = StyleOptions {
-            lyric_size,
-            ..NO_INITIAL.clone()
-        };
+        let style = NO_INITIAL.clone().with_lyric_size(lyric_size);
         let eng = parse(&src).score.engrave(&ApproxMeasure, &style);
         for width in (150..900).step_by(3) {
-            let list = eng.layout(width as f32, &LayoutOptions::default()).display();
+            let list = eng.layout(width as f32).display();
             for item in &list.items {
                 if let Item::Text { runs, x, .. } = item {
                     assert!(*x >= -0.01, "{lyric_size} {width}: {runs:?} {x}");
@@ -781,14 +732,11 @@ fn squeezed_small_lyrics_never_meet() {
     use neuma::TextMeasure;
     // Words whose texts are wider than their notes are set a word space apart; squeezing a
     // line takes at most part of that space, however small the lyrics.
-    let style = StyleOptions {
-        lyric_size: 0.5,
-        ..NO_INITIAL.clone()
-    };
+    let style = NO_INITIAL.clone().with_lyric_size(0.5);
     let src = format!("(c4) {} (::)", ["Mmmmmmmmmmmmmmmm(g)"; 24].join(" "));
     let eng = parse(&src).score.engrave(&ApproxMeasure, &style);
     for width in (100..600).step_by(7) {
-        let list = eng.layout(width as f32, &LayoutOptions::default()).display();
+        let list = eng.layout(width as f32).display();
         let lyrics: Vec<(f32, f32)> = list
             .items
             .iter()
@@ -820,16 +768,8 @@ fn a_preview_draws_its_staves_as_wide_as_the_whole_score() {
     // one-line preview's staff is as wide as in the whole score.
     let src = "(c4) a(g) b(g) c(g) Supercalifragilisticexpialidocious(g) d(g)";
     let eng = parse(src).score.engrave(&ApproxMeasure, &NO_INITIAL);
-    let full = eng.layout(120.0, &LayoutOptions::default()).display();
-    let preview = eng
-        .layout(
-            120.0,
-            &LayoutOptions {
-                max_lines: 1,
-                ..LayoutOptions::default()
-            },
-        )
-        .display();
+    let full = eng.layout(120.0).display();
+    let preview = eng.layout_with(120.0, &LayoutOptions::default().with_max_lines(1)).display();
     assert!(full.width > 120.0);
     assert_eq!(preview.width, full.width);
     for item in &preview.items {
@@ -857,9 +797,9 @@ fn notes_keep_gregorios_space_between_syllables_and_words() {
     let gaps = |src: &str| {
         let eng = parse(src).score.engrave(&ApproxMeasure, &NO_INITIAL);
         let opts = LayoutOptions::default();
-        let map = eng.layout(2000.0, &opts).notes(&Weights::default());
+        let map = eng.layout_with(2000.0, &opts).timeline();
         let n = &map.notes;
-        (n[1].x - n[0].x - n[0].w) / opts.scale
+        (n[1].cx - n[0].cx - n[0].w) / opts.scale
     };
     assert!((gaps("(c4) i(g)i(g)") - 1.67).abs() < 0.01);
     assert!((gaps("(c4) i(g) i(g)") - 2.0).abs() < 0.01);
@@ -881,7 +821,7 @@ fn lyrics_sit_where_gregorio_sets_them() {
     let lines = |src: &str| {
         let eng = parse(src).score.engrave(&ApproxMeasure, &NO_INITIAL);
         let opts = LayoutOptions::default();
-        let list = eng.layout(100.0, &opts).display();
+        let list = eng.layout_with(100.0, &opts).display();
         let s = opts.scale;
         list.lines
             .iter()
@@ -922,7 +862,7 @@ fn a_double_mora_on_a_clivis_dots_each_note() {
     // Gregorio reads `hg..` as a mora on each note: one dot after the clivis at each note's
     // height, and both notes held.
     let eng = parse("(c4) a(hg..)").score.engrave(&ApproxMeasure, &NO_INITIAL);
-    let layout = eng.layout(400.0, &LayoutOptions::default());
+    let layout = eng.layout(400.0);
     let dots: Vec<(f32, f32, Option<u32>)> = layout
         .display()
         .items
@@ -943,11 +883,11 @@ fn a_double_mora_on_a_clivis_dots_each_note() {
     assert!(dots[0].1 < dots[1].1, "{dots:?}");
     assert_eq!((dots[0].2, dots[1].2), (Some(0), Some(1)));
     let weights = Weights::default();
-    let map = layout.notes(&weights);
-    assert!(map.notes.iter().all(|n| n.weight == weights.mora), "{:?}", map.notes);
+    let map = layout.timeline_with(&weights);
+    assert!(map.notes.iter().all(|n| n.duration == weights.mora), "{:?}", map.notes);
     // A double mora on a single note stays two dots side by side, on that note.
     let eng = parse("(c4) a(h..)").score.engrave(&ApproxMeasure, &NO_INITIAL);
-    let list = eng.layout(400.0, &LayoutOptions::default()).display();
+    let list = eng.layout(400.0).display();
     let ys: Vec<f32> = list
         .items
         .iter()
@@ -968,14 +908,14 @@ fn an_end_of_line_custos_keeps_gregorios_gap() {
     let src = format!("(c4) {} (::)", ["la(g)"; 40].join(" "));
     let eng = parse(&src).score.engrave(&ApproxMeasure, &NO_INITIAL);
     let opts = LayoutOptions::default();
-    let layout = eng.layout(300.0, &opts);
+    let layout = eng.layout_with(300.0, &opts);
     let list = layout.display();
-    let map = layout.notes(&Weights::default());
+    let map = layout.timeline();
     let first_line_end = map
         .notes
         .iter()
         .filter(|n| n.line == 0)
-        .map(|n| n.x + n.w / 2.0)
+        .map(|n| n.cx + n.w / 2.0)
         .fold(0.0, f32::max);
     let custos = list
         .items
@@ -999,7 +939,7 @@ fn versicle_signs_are_drawn_heavier() {
     let eng = parse("(c4) <sp>V/</sp> Ve(g)ni(h) <sp>R/</sp> Do(g)")
         .score
         .engrave(&ApproxMeasure, &NO_INITIAL);
-    let svg = eng.layout(400.0, &LayoutOptions::default()).svg(&SvgOptions::default());
+    let svg = eng.layout(400.0).svg();
     assert!(svg.contains(r#"class="neuma-rubric neuma-sign">℣"#), "{svg}");
     assert!(svg.contains(r#"class="neuma-rubric neuma-sign">℟"#), "{svg}");
     assert!(svg.contains(".neuma .neuma-sign{stroke:currentColor;stroke-width:.04em}"));
@@ -1010,7 +950,7 @@ fn a_first_syllable_taken_by_the_initial_leaves_a_hyphen() {
     // GregorioTeX's "E -O-dem": the initial took the whole first syllable of the word.
     let roles = |src: &str| -> Vec<(TextRole, String, f32)> {
         let eng = parse(src).score.engrave(&ApproxMeasure, &StyleOptions::default());
-        eng.layout(600.0, &LayoutOptions::default())
+        eng.layout(600.0)
             .display()
             .items
             .iter()
@@ -1038,9 +978,9 @@ fn spaces_inside_notes_are_gregorios() {
     let gap = |notes: &str| {
         let eng = parse(&format!("(c4) a({notes})")).score.engrave(&ApproxMeasure, &NO_INITIAL);
         let opts = LayoutOptions::default();
-        let map = eng.layout(2000.0, &opts).notes(&Weights::default());
+        let map = eng.layout_with(2000.0, &opts).timeline();
         let n = &map.notes;
-        (n[1].x - n[1].w / 2.0 - (n[0].x + n[0].w / 2.0)) / opts.scale
+        (n[1].cx - n[1].w / 2.0 - (n[0].cx + n[0].w / 2.0)) / opts.scale
     };
     assert!((gap("f/f") - 0.48).abs() < 0.01, "{}", gap("f/f"));
     assert!((gap("f//f") - 0.76).abs() < 0.01, "{}", gap("f//f"));
@@ -1051,8 +991,8 @@ fn spaces_inside_notes_are_gregorios() {
 fn a_bar_keeps_gregorios_space_either_side() {
     let eng = parse("(c4) a(g) (;) b(g)").score.engrave(&ApproxMeasure, &NO_INITIAL);
     let opts = LayoutOptions::default();
-    let layout = eng.layout(2000.0, &opts);
-    let map = layout.notes(&Weights::default());
+    let layout = eng.layout_with(2000.0, &opts);
+    let map = layout.timeline();
     let bar = layout
         .display()
         .items
@@ -1068,8 +1008,8 @@ fn a_bar_keeps_gregorios_space_either_side() {
         })
         .unwrap();
     let (a, b) = (&map.notes[0], &map.notes[1]);
-    let before = (bar.0 - (a.x + a.w / 2.0)) / opts.scale;
-    let after = (b.x - b.w / 2.0 - (bar.0 + bar.1)) / opts.scale;
+    let before = (bar.0 - (a.cx + a.w / 2.0)) / opts.scale;
+    let after = (b.cx - b.w / 2.0 - (bar.0 + bar.1)) / opts.scale;
     assert!((before - 1.6).abs() < 0.01 && (after - 1.6).abs() < 0.01, "{before} {after}");
 }
 
@@ -1082,7 +1022,7 @@ fn a_line_a_little_too_wide_shrinks_its_word_gaps() {
     let opts = LayoutOptions::default();
     // The narrowest column that holds the score on one line.
     let mut w = 2000.0;
-    while eng.layout(w - 1.0, &opts).line_count() == 1 {
+    while eng.layout_with(w - 1.0, &opts).line_count() == 1 {
         w -= 1.0;
     }
     let t = texts(&src, w, &opts);
@@ -1106,7 +1046,7 @@ fn a_score_takes_as_few_lines_as_gregorio_would() {
     let eng = parse(&src).score.engrave(&ApproxMeasure, &NO_INITIAL);
     let opts = LayoutOptions::default();
     let mut w = 2000.0;
-    while eng.layout(w - 1.0, &opts).line_count() == 1 {
+    while eng.layout_with(w - 1.0, &opts).line_count() == 1 {
         w -= 1.0;
     }
     let t = texts(&src, w, &opts);
@@ -1121,17 +1061,17 @@ fn a_score_takes_as_few_lines_as_gregorio_would() {
 fn source_map_links_every_note_both_ways() {
     for (name, src) in corpus() {
         let eng = parse(&src).score.engrave(&ApproxMeasure, &StyleOptions::default());
-        let layout = eng.layout(500.0, &LayoutOptions::default());
+        let layout = eng.layout(500.0);
         let map = layout.source_map();
-        let notes = layout.notes(&Weights::SOLESMES);
+        let notes = layout.timeline();
         assert_eq!(map.notes.len(), notes.notes.len(), "{name}");
         for (e, n) in map.notes.iter().zip(&notes.notes) {
             assert_eq!((e.index, &e.span), (n.id, &n.span), "{name}");
             // Score to source: the notehead's center is a note.
-            let hit = map.source_at(n.x, n.y).unwrap();
+            let hit = map.source_at(n.cx, n.cy).unwrap();
             assert_eq!(hit.kind, neuma::ElementKind::Note, "{name}: note {}", n.id);
             // Source to score: a caret on the note highlights it and its syllable.
-            let at = map.at(e.span.start);
+            let at = map.elements_at(e.span.start);
             assert!(
                 at.iter().any(|a| a.kind == neuma::ElementKind::Note && a.index == n.id),
                 "{name}: note {}",
@@ -1153,9 +1093,9 @@ fn source_map_links_every_note_both_ways() {
 fn svg_parts_draw_what_the_svg_draws() {
     for (name, src) in corpus() {
         let eng = parse(&src).score.engrave(&ApproxMeasure, &StyleOptions::default());
-        let layout = eng.layout(500.0, &LayoutOptions::default());
-        let whole = layout.svg(&SvgOptions::default());
-        let parts = layout.svg_parts(&SvgOptions::default());
+        let layout = eng.layout(500.0);
+        let whole = layout.svg();
+        let parts = layout.svg_parts();
         let joined = parts.to_svg();
         assert_eq!(parts.lines.len(), layout.line_count(), "{name}");
         for tag in ["<use ", "<rect ", "<text ", "<path ", "<style>", "data-note=\""] {
@@ -1167,13 +1107,10 @@ fn svg_parts_draw_what_the_svg_draws() {
 
 #[test]
 fn svg_lines_keep_their_strings_when_lines_above_change() {
-    let opts = SvgOptions {
-        ids: false,
-        ..SvgOptions::default()
-    };
+    let opts = SvgOptions::default().with_ids(false);
     let lines = |src: &str| {
         let eng = parse(src).score.engrave(&ApproxMeasure, &NO_INITIAL);
-        let parts = eng.layout(600.0, &LayoutOptions::default()).svg_parts(&opts);
+        let parts = eng.layout(600.0).svg_parts_with(&opts);
         assert!(!parts.to_svg().contains("data-note"));
         parts.lines
     };
@@ -1193,15 +1130,7 @@ fn glyph_ids_differ_by_scale() {
     // `<use>` in either finds its own size.
     let eng = parse("(c4) a(gh) b(ixg) c(e.) (::)").score.engrave(&ApproxMeasure, &NO_INITIAL);
     let ids = |scale: f32| {
-        let svg = eng
-            .layout(
-                400.0,
-                &LayoutOptions {
-                    scale,
-                    ..LayoutOptions::default()
-                },
-            )
-            .svg(&SvgOptions::default());
+        let svg = eng.layout_with(400.0, &LayoutOptions::default().with_scale(scale)).svg();
         let defs: std::collections::BTreeSet<String> = svg
             .split("<path id=\"")
             .skip(1)
@@ -1224,8 +1153,8 @@ fn the_a_sign_is_slashed_like_the_others() {
     let svg = parse("(c4) <sp>A/</sp>. Al(g)le(h)lú(g)ia.(f) (::)")
         .score
         .engrave(&ApproxMeasure, &NO_INITIAL)
-        .layout(400.0, &LayoutOptions::default())
-        .svg(&SvgOptions::default());
+        .layout(400.0)
+        .svg();
     assert!(svg.contains("A\u{338}") && !svg.contains('\u{336}'), "{svg}");
     assert!(svg.contains(r#"class="neuma-rubric neuma-sign">A"#), "{svg}");
 }
@@ -1235,11 +1164,7 @@ fn ledger_lines_of_neighbouring_notes_join() {
     // As GregorioTeX's do: one line under a run of low notes, not a dash under each. A bar
     // between them, or a wide gap, keeps them apart.
     let ledgers = |src: &str| -> Vec<(f32, f32)> {
-        let list = parse(src)
-            .score
-            .engrave(&ApproxMeasure, &NO_INITIAL)
-            .layout(600.0, &LayoutOptions::default())
-            .display();
+        let list = parse(src).score.engrave(&ApproxMeasure, &NO_INITIAL).layout(600.0).display();
         let mut spans: Vec<(f32, f32)> = list
             .items
             .iter()
@@ -1282,7 +1207,7 @@ fn ledger_lines_stop_short_of_an_accidental() {
     let list = parse("(c4) a(bxb) (::)")
         .score
         .engrave(&ApproxMeasure, &NO_INITIAL)
-        .layout(600.0, &LayoutOptions::default())
+        .layout(600.0)
         .display();
     let accidental = list
         .items

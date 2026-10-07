@@ -12,10 +12,9 @@ name = "neuma"
 path = "src/main.rs"
 
 [dependencies]
-neuma = { path = "../neuma" }
+neuma = { path = "../neuma", features = ["json"] }
 neuma-book = { path = "../neuma-book" }
 neuma-tones = { path = "../neuma-tones" }
-neuma-wasm = { path = "../neuma-wasm" }
 
 [lints]
 workspace = true
