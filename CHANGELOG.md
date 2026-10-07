@@ -17,7 +17,8 @@ engraving and layout.
 - **`neuma-wasm`** (the Rust side of the browser package): `Chant::summary_json` takes
   `&mut self`, as it now builds the summary on first use; `json::diagnostics`,
   `json::setting` and `json::pointing` take an extra `Option<&Utf16Index>` for UTF-16
-  offsets.
+  offsets. `Chant::note_at` takes `&mut self`, as a layout without the timeline leaves the
+  note map to be made when first asked for. `SvgOutput` has a new variant, `ChangedLines`.
 - **`neuma-mobile`** (UniFFI): the `Diagnostic` record has new fields, `utf16Start`,
   `utf16End` and `fix`. Reading diagnostics is unaffected; Kotlin or Swift code that
   constructs one must pass them.
@@ -34,6 +35,11 @@ engraving and layout.
 - `Fix` on diagnostics where one edit makes sense, with `Fix::apply`.
 - `Layout::svg_parts()`: the SVG as a head, definitions and one string per line, so a page
   can replace only the lines an edit changed.
+- `EngraveCache`, `Engraving::layout_cached` with `LayoutCache`, and
+  `Layout::svg_parts_cached` with `SvgCache`: after an edit, engraving, line breaking and
+  each line's SVG are redone only where the edit could change them, with the same result as
+  doing them afresh. The browser package's `Chant` uses them, and passes only the lines that
+  changed from the engine to the page.
 - Browser package: `Chant.update`, `sourceAt`, `elementsAt`, `layout(…, { timeline: false,
   svg: "lines", ids: false })`, and UTF-16 offsets and fixes on diagnostics; an example
   editor in `crates/neuma-wasm/examples/editor.html`.

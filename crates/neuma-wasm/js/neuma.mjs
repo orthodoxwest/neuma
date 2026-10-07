@@ -169,6 +169,8 @@ export class Chant {
   #generation;
   #diagnostics;
   #summary;
+  /** Each line's SVG from the last layout in parts, which the engine refers to for lines it kept. */
+  #lines = [];
 
   /**
    * Engraves `gabc` once.
@@ -256,7 +258,7 @@ export class Chant {
     });
     return guarded((w) => {
       putInput(prefix);
-      const flags = (timeline ? 0 : 1) | (svg === "lines" ? 2 : 0) | (ids ? 0 : 4);
+      const flags = (timeline ? 0 : 1) | (svg === "lines" ? 2 | 8 : 0) | (ids ? 0 : 4);
       if (!w.chant_layout(handle, width, scale, lastLine === "justified" ? 1 : 0, maxLines >>> 0, ...values, flags)) {
         throw new Error("neuma: this Chant was freed");
       }
@@ -265,7 +267,13 @@ export class Chant {
       if (svg === "lines") {
         const [head, defs, rest, ...tail] = takeOutput().split("\0");
         const lines = [];
-        for (let i = 0; i + 1 < tail.length; i += 2) lines.push({ top: Number(tail[i]), svg: tail[i + 1] });
+        // A line the last layout had comes as \u0001 and its index there, so its SVG isn't
+        // copied out of the engine and decoded again.
+        for (let i = 0; i + 1 < tail.length; i += 2) {
+          const s = tail[i + 1];
+          lines.push({ top: Number(tail[i]), svg: s.charCodeAt(0) === 1 ? this.#lines[Number(s.slice(1))] : s });
+        }
+        this.#lines = lines.map((l) => l.svg);
         page.svgParts = { head, defs, rest, lines };
       } else {
         page.svg = takeOutput();

@@ -163,6 +163,21 @@ const lineSvg = parts.lines.map((l) => l.svg).join("");
 assert.equal(count(lineSvg, "<use ") + count(parts.rest, "<use "), count(page.svg, "<use "));
 assert.ok(!lineSvg.includes("data-note"));
 assert.ok(parts.lines.every((l, i) => i === 0 || l.top > parts.lines[i - 1].top));
+// Without the timeline, notes are still found under a point.
+const first = page.timeline.notes[0];
+assert.equal(ed.noteAt(first.x, first.y), first.id);
+// Edits one after another: the lines the engine kept, and those it made again, are what a
+// fresh Chant draws, with ids or without.
+let edited = fixed;
+for (let i = 0; i < 12; i++) {
+  const at = edited.indexOf("(", (i * 37) % edited.length);
+  edited = i % 3 === 2 ? edited.slice(0, at) + edited.slice(at + 3) : edited.slice(0, at) + "a" + edited.slice(at);
+  ed.update(edited);
+  const opts = { svg: "lines", ids: i % 4 === 3, timeline: false };
+  const fresh = new Chant(edited, { initial: 0 });
+  assert.deepEqual(ed.layout(200, opts), fresh.layout(200, opts), `edit ${i}`);
+  fresh.free();
+}
 ed.free();
 assert.throws(() => ed.update(src), /freed/);
 assert.throws(() => ed.sourceAt(0, 0), /freed/);
