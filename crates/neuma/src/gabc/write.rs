@@ -12,7 +12,8 @@ use crate::score::{
 /// GABC for `score`. Parsing the result gives back an equal score, apart from source spans.
 /// GABC can't express a `%` in a header value (it starts a comment), so one is lost, nor a
 /// value whose lines would end it early, which is written on one line. Nor can it express an
-/// augmented liquescent followed by notes that spell `nlba>`, which read back as the tag.
+/// augmented liquescent followed by notes that spell `nlba>`, which read back as the tag, or
+/// two spaces in a row that read back as one (`/` then `/0`).
 pub fn to_gabc(score: &Score) -> String {
     let mut out = String::new();
     for (name, value) in &score.header.fields {

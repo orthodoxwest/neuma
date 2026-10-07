@@ -3,7 +3,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use neuma::score::Figure;
+use neuma::score::{Figure, Space};
 
 fn notes(score: &neuma::Score) -> usize {
     score
@@ -25,11 +25,27 @@ fn spells_nlba_in_notes(gabc: &str) -> bool {
     })
 }
 
+/// Whether the score has two spaces in a row that GABC writes as one: `/` before `/`, `//`,
+/// `/0` or `/!`, or `!` before a space, which reads back as `! `. Valid GABC never has them.
+fn ambiguous_spaces(score: &neuma::Score) -> bool {
+    score.syllables.iter().any(|s| {
+        s.notation.windows(2).any(|w| {
+            matches!(
+                (&w[0], &w[1]),
+                (
+                    Figure::Space(Space::Small),
+                    Figure::Space(Space::Small | Space::Medium | Space::Half | Space::Tiny)
+                ) | (Figure::Space(Space::Zero), Figure::Space(Space::Large | Space::LargeNoBreak))
+            )
+        })
+    })
+}
+
 fuzz_target!(|data: &[u8]| {
     let Ok(src) = std::str::from_utf8(data) else { return };
     let first = neuma::parse(src).score;
     let once = first.to_gabc();
-    if spells_nlba_in_notes(&once) {
+    if spells_nlba_in_notes(&once) || ambiguous_spaces(&first) {
         return;
     }
     let second = neuma::parse(&once).score;
