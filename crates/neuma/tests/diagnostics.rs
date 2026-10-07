@@ -136,6 +136,9 @@ fn fix_until_done(src: &str, last: bool) {
         let ds = diagnostics(&s);
         let mut fixes = ds.iter().filter_map(|d| d.fix.as_ref().map(|f| (d, f)));
         let next = if last { fixes.next_back() } else { fixes.next() };
+        for (d, f) in ds.iter().filter_map(|d| d.fix.as_ref().map(|f| (d, f))) {
+            assert!(s.get(f.span.clone()).is_some(), "{d}: fix {f:?} is off a char boundary in {s:?}");
+        }
         let Some((d, fix)) = next else { return };
         assert!(seen.insert(s.clone()), "fixing {src:?} came back to {s:?}");
         s = fix.apply(&s).unwrap_or_else(|| panic!("{d}: fix {fix:?} doesn't apply to {s:?}"));
@@ -162,6 +165,13 @@ fn fixes_never_loop() {
             "(c4) <sp>a</sp(g)",
             "(c4) <v>\\x</v(g)",
             "(c4) <i>a</b(g)",
+            // Text whose bytes aren't the source's: comments are dropped from it, and any
+            // whitespace reads as one space.
+            "(c4) <i>a% c\nb(g)",
+            "(c4) a(g) x% c\n<i>b(h)",
+            "(c4) a\u{a0}<i>bé(g)",
+            "(c4) a\u{202f}b-(g) c(h)",
+            "(c4) <i>a\u{3000}b[x(g)",
             // Headers and their separator.
             "name: x;\nmode: 8\n(c4) a(g)",
             "name: a (b);\nmode: 8;\n(c4) a(g)",
@@ -170,6 +180,11 @@ fn fixes_never_loop() {
             "name: x\n(c4) a(g)",
             "a(g) b(h)",
             "name: x;\nmode: 8;\n",
+            "\u{feff}name: x;\na(g)",
+            "\u{feff}name: x;\n(c4) a(g)",
+            "name: x;\n% a note\nmode: 8;\n(c4) a(g)",
+            "name: x;\nV: a(g) b(h);\n(c4) c(g)",
+            "name: x;\ncenteringmode: 8\n-scheme: english;\nfont: x;\n(c4) a(g)",
         ]
         .map(String::from),
     );
@@ -192,4 +207,57 @@ fn fixes_never_loop() {
         fix_until_done(src, false);
         fix_until_done(src, true);
     }
+}
+
+/// The diagnostics with `code` for `src`, as (the source they point at, the fixed source).
+fn found(src: &str, code: &str) -> Vec<(String, Option<String>)> {
+    diagnostics(src)
+        .into_iter()
+        .filter(|d| d.code == code)
+        .map(|d| (src[d.span.clone()].to_string(), d.fix.and_then(|f| f.apply(src))))
+        .collect()
+}
+
+#[test]
+fn lyric_spans_count_the_source_not_the_text() {
+    // A comment inside a syllable's text, and whitespace other than a space before it.
+    assert_eq!(
+        found("(c4) <i>a% c\nb(g)", "gabc::unclosed-tag"),
+        [("<i>".into(), Some("(c4) <i>a% c\nb</i>(g)".into()))]
+    );
+    assert_eq!(
+        found("(c4) a\u{a0}<i>bé(g)", "gabc::unclosed-tag"),
+        [("<i>".into(), Some("(c4) a\u{a0}<i>bé</i>(g)".into()))]
+    );
+    assert_eq!(
+        found("(c4) a\u{202f}b-(g) c(h)", "gabc::hyphen-in-syllable"),
+        [("-".into(), Some("(c4) a\u{202f}b(g) c(h)".into()))]
+    );
+    assert_eq!(
+        found("(c4) b-% c\n(g)", "gabc::hyphen-in-syllable"),
+        [("-".into(), Some("(c4) b% c\n(g)".into()))]
+    );
+    assert_eq!(found("(c4) a\u{a0}[x(g)", "gabc::translation-ignored")[0].0, "[x");
+}
+
+#[test]
+fn the_separator_goes_where_it_surely_belongs() {
+    let fixed = |src: &str| found(src, "gabc::no-separator").into_iter().map(|(_, f)| f).collect::<Vec<_>>();
+    assert_eq!(
+        fixed("\u{feff}name: x;\n(c4) a(g)"),
+        [Some("\u{feff}name: x;\n%%\n(c4) a(g)".into())]
+    );
+    // A byte-order mark doesn't hide the header from the clef's fix either.
+    assert_eq!(found("\u{feff}name: x;\na(g)", "gabc::no-clef"), [("g".into(), None)]);
+    assert_eq!(
+        fixed("name: x;\n% a note\nmode: 8;\n(c4) a(g)"),
+        [Some("name: x;\n% a note\nmode: 8;\n%%\n(c4) a(g)".into())]
+    );
+    // A line that may be notes, or header-looking lines past the run, leave it unsure.
+    assert_eq!(fixed("name: x;\nV: a(g) b(h);\n(c4) c(g)"), [None]);
+    assert_eq!(fixed("name: x;\ncenteringmode: 8\n-scheme: english;\nfont: x;\n(c4) a(g)"), [None]);
+    assert_eq!(
+        fixed("name: a (b);\nmode: 8;\n(c4) a(g)"),
+        [Some("name: a (b);\nmode: 8;\n%%\n(c4) a(g)".into())]
+    );
 }
