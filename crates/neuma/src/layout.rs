@@ -77,9 +77,10 @@ const SHRINK_OF_WORD_SPACE: f32 = 0.3;
 const STRETCH: f32 = 1.5;
 /// The widest gap between two notes' ledger lines that is drawn through, in staff spaces, as
 /// the notes are spaced before a line is justified. GregorioTeX's ledger lines overhang their
-/// notes by about 0.95 staff spaces, so those of notes closer than 1.9 meet; these overhang
-/// by 0.25 (see `add_markings`).
-const LEDGER_JOIN: f32 = 1.9 - 2.0 * 0.25;
+/// notes by about 0.95 staff spaces, so those of notes 1.9 apart meet, and those of
+/// neighbouring words' notes ([`NOTES_WORD_GAP`]) all but meet; a wider gap, as where the
+/// text holds the notes apart, parts them. These overhang by 0.25 (see `add_markings`).
+const LEDGER_JOIN: f32 = NOTES_WORD_GAP + 0.1 - 2.0 * 0.25;
 /// The widest column laid out, in output units and in staff spaces; wider requests are
 /// clamped to it.
 const MAX_WIDTH: f32 = 1.0e6;
