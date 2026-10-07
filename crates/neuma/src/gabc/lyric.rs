@@ -355,7 +355,9 @@ impl Builder {
     fn push(&mut self, c: char, style: TextStyle, consonant: bool) {
         // A byte-order mark past the start of the file is invisible and isn't lyric text; kept,
         // it would read back as the body's own byte-order mark and vanish.
-        if c == '\u{feff}' {
+        // A soft hyphen (pasted in with the text) shows only where a line breaks, and the
+        // engraver sets its own hyphens; drawn, it would stand under the one it adds.
+        if c == '\u{feff}' || c == '\u{ad}' {
             return;
         }
         // A line break or tab, escaped or inside an unknown tag, is a space, as it would be

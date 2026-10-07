@@ -54,6 +54,10 @@ fn char_top(c: char, small_caps: bool) -> f32 {
         'β' | 'δ' | 'ζ' | 'θ' | 'λ' | 'ξ' | 'φ' | 'ψ' | 'б' | 'ф' => ASCENDER,
         'ά'..='ί' | 'ό'..='ώ' | 'ΐ' | 'ΰ' | 'й' | 'ѐ'..='џ' => ACCENTED_LOWER,
         'α'..='ω' | 'а'..='я' => X_HEIGHT,
+        // Polytonic Greek: a capital's breathing stands at its shoulder, a lowercase letter's
+        // over it, often with an accent.
+        c if c.is_uppercase() && ('\u{1f00}'..='\u{1fff}').contains(&c) => CAPITAL + 0.05,
+        c if ('\u{1f00}'..='\u{1fff}').contains(&c) => STACKED_LOWER,
         _ => ASCENDER,
     }
 }

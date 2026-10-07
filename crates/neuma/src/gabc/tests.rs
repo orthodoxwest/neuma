@@ -560,3 +560,11 @@ fn notes_left_open_end_where_the_text_goes_on() {
     let fixed = p.diagnostics[0].fix.as_ref().unwrap().apply("(c4) A(fg men(f) (::)").unwrap();
     assert_eq!(fixed, "(c4) A(fg) men(f) (::)");
 }
+
+#[test]
+fn soft_hyphens_are_not_lyric_text() {
+    // Pasted in with the text (found in GregoBase); the engraver sets its own hyphens.
+    let p = parse("(c4) ve(dc)ní\u{ad}(f)te,(gh)");
+    let syl: Vec<String> = p.score.syllables.iter().map(|s| s.text.plain()).collect();
+    assert_eq!(syl, ["", "ve", "ní", "te,"]);
+}

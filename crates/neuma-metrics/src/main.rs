@@ -12,12 +12,13 @@ use sha2::{Digest, Sha256};
 
 /// Characters to record advances for, when the font has them.
 fn coverage() -> impl Iterator<Item = char> {
-    let ranges: [(u32, u32); 7] = [
+    let ranges: [(u32, u32); 8] = [
         (0x20, 0x7E),
         (0xA0, 0x24F),
         (0x300, 0x36F),
-        // Greek and Cyrillic, which some chant texts and initials use.
+        // Greek, with its accented letters, and Cyrillic, which some chant texts use.
         (0x370, 0x45F),
+        (0x1F00, 0x1FFF),
         (0x1E00, 0x1EFF),
         (0x2010, 0x205E),
         (0x2100, 0x2135),
