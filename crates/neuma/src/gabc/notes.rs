@@ -602,6 +602,10 @@ impl Parser<'_, '_> {
         let span = self.span(start);
         for mut n in done.into_iter().chain(std::iter::once(note)) {
             n.span = span.clone();
+            // A lean only means something on an inclinatum: `G1o` is an oriscus.
+            if n.shape != NoteShape::Inclinatum {
+                n.lean = None;
+            }
             self.out.push(Figure::Note(n));
         }
     }

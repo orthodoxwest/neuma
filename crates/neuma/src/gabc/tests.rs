@@ -482,6 +482,9 @@ fn writer_is_stable_on_fuzz_finds() {
         // special character.
         "(c4) <nlba>* Dul(h)ce(hji) </nlba>li(g)gnum,(ge) (:) vé(f)<nlba>ni(fgf)ent,(f) </nlba>(:)",
         "(c4) f{<sp>'oe</sp>}(h')de(g)ra(fe..) <sp>A/</sp>{<sp>A/</sp>}(g)",
+        // An inclinatum's lean on a note another sign made an oriscus.
+        "(G1o",
+        "(c4) a(G1oh G2s G0v)",
     ];
     for src in cases {
         let once = parse(src).score.to_gabc();
