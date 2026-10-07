@@ -83,9 +83,11 @@ fn parse_marked(src: &str, keep: Option<&mut ParseMarks>) -> Parsed {
     if src[body_start..].starts_with('\u{feff}') {
         body_start += '\u{feff}'.len_utf8();
     }
-    let mut syllables = Vec::new();
+    // A syllable to each `(`, near enough, so the list is allocated once.
+    let groups = src.as_bytes()[body_start..].iter().filter(|&&b| b == b'(').count();
+    let mut syllables = Vec::with_capacity(groups);
     let mut state = BodyState::default();
-    let mut marks = keep.is_some().then(Vec::new);
+    let mut marks = keep.is_some().then(|| Vec::with_capacity(groups));
     let rest = read_body(
         src,
         body_start,
@@ -473,7 +475,7 @@ pub(crate) struct Rest {
 /// reading stops there, and `None` is returned. Otherwise reading goes to the end, and
 /// returns the text after the last syllable.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn read_body(
+pub(crate) fn read_body<M: FnMut(usize, &BodyState) -> bool>(
     src: &str,
     start: usize,
     mut i: usize,
@@ -482,7 +484,7 @@ pub(crate) fn read_body(
     sink: &mut Sink,
     mut marks: Option<&mut Vec<BodyMark>>,
     before: Option<usize>,
-    meet: &mut dyn FnMut(usize, &BodyState) -> bool,
+    meet: &mut M,
 ) -> Option<Rest> {
     let body = &src[start..];
     let bytes = body.as_bytes();
