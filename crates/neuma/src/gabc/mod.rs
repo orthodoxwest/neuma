@@ -21,6 +21,37 @@ pub struct Parsed {
 
 /// Parses GABC source. Never fails.
 pub fn parse(src: &str) -> Parsed {
+    let mut parsed = parse_unchecked(src);
+    // A closer put in for one tag can be taken by another, Gregorio's way, and make text of
+    // notes. Each unclosed-tag fix is tried, and kept only if it clears its diagnostic and
+    // keeps every note.
+    let notes = |score: &Score| {
+        score
+            .syllables
+            .iter()
+            .flat_map(|s| &s.notation)
+            .filter(|f| matches!(f, Figure::Note(_)))
+            .count()
+    };
+    let before = notes(&parsed.score);
+    for d in &mut parsed.diagnostics {
+        if d.code != "gabc::unclosed-tag" {
+            continue;
+        }
+        let Some(fixed) = d.fix.as_ref().and_then(|f| f.apply(src)) else {
+            d.fix = None;
+            continue;
+        };
+        let after = parse_unchecked(&fixed);
+        let cleared = !after.diagnostics.iter().any(|a| a.code == d.code && a.span == d.span);
+        if !cleared || notes(&after.score) < before {
+            d.fix = None;
+        }
+    }
+    parsed
+}
+
+fn parse_unchecked(src: &str) -> Parsed {
     let mut sink = Sink::default();
     let (header, mut body_start) = parse_header(src, &mut sink);
     // A byte-order mark isn't text; spans still count it, so they index `src`.
@@ -256,6 +287,8 @@ fn header_lines(src: &str) -> Option<(usize, bool)> {
     }
     let mut end = 0;
     let mut last = (0, TopLine::Empty);
+    // A line in the run that might be notes, under a name that isn't a header field's.
+    let mut doubtful = false;
     let mut lines = src.split_inclusive('\n');
     for line in lines.by_ref() {
         match top_line(line) {
@@ -269,14 +302,52 @@ fn header_lines(src: &str) -> Option<(usize, bool)> {
                     (!was).then_some(l)
                 });
                 let fields_after = before_notes.any(|l| is_header_line(strip_comment(l).trim()));
-                return Some((last.0, last.1 == TopLine::Field && !fields_after));
+                return Some((last.0, last.1 == TopLine::Field && !fields_after && !doubtful));
             }
-            t => last = (end + line.len(), t),
+            t => {
+                if t == TopLine::MaybeField {
+                    let l = strip_comment(line).trim_start_matches('\u{feff}');
+                    let name = l.split_once(':').map_or("", |(n, _)| n.trim());
+                    doubtful |= has_group(l) && !KNOWN_FIELDS.contains(&name.to_ascii_lowercase().as_str());
+                }
+                last = (end + line.len(), t);
+            }
         }
         end += line.len();
     }
-    Some((last.0, last.1 == TopLine::Field))
+    Some((last.0, last.1 == TopLine::Field && !doubtful))
 }
+
+/// Header fields Gregorio and the scores in use know, whose values may hold parentheses
+/// (`name: Kyrie II. (Rex Magne);`) without being notes.
+const KNOWN_FIELDS: &[&str] = &[
+    "name",
+    "title",
+    "annotation",
+    "author",
+    "arranger",
+    "book",
+    "commentary",
+    "date",
+    "gabc-copyright",
+    "score-copyright",
+    "manuscript",
+    "manuscript-reference",
+    "manuscript-storage-place",
+    "mode",
+    "mode-modifier",
+    "mode-differentia",
+    "occasion",
+    "office-part",
+    "meter",
+    "transcriber",
+    "transcription-date",
+    "user-notes",
+    "def-macro",
+    "language",
+    "gregoriotex-font",
+    "font",
+];
 
 /// Lyric styling that stays open across syllables until its closing tag.
 #[derive(Debug, Default)]
@@ -291,10 +362,11 @@ pub(crate) struct LyricState {
     pub euouae: bool,
     /// Style tags not yet closed: the tag, its span, and where its syllable's text ends.
     pub open: Vec<lyric::OpenTag>,
-    /// The verbatim tags (`v`, `alt`, `sp`) found unclosed so far. A closer put in for a later
-    /// one of these would close the first instead, as Gregorio reads an opener to the next
-    /// closer, taking all between as text: only the first gets a fix.
-    pub verbatim_unclosed: Vec<&'static str>,
+    /// Where the first opener of each verbatim tag (`v`, `alt`, `sp`) with no closer after it
+    /// is in the source. A closer put in for a later one would close that one instead, as
+    /// Gregorio reads an opener to the next closer, taking all between as text: only that
+    /// opener gets a fix, and none does when it is hidden (in a translation, say).
+    pub verbatim_first: [Option<usize>; 3],
 }
 
 fn parse_body(src: &str, start: usize, sink: &mut Sink) -> Vec<Syllable> {
@@ -329,7 +401,7 @@ fn parse_body(src: &str, start: usize, sink: &mut Sink) -> Vec<Syllable> {
                 copied(&mut from, start + i, len);
                 i += len;
             }
-            '<' if let Some(end) = verbatim_end(&body[i..], &mut unclosed) => {
+            '<' if let Some(end) = verbatim_end(&body[i..], start + i, &mut unclosed, &mut state.verbatim_first) => {
                 // Gregorio reads `<v>`, `<alt>` and `<sp>` to their closing tag, so a `(` inside
                 // is text, not notes: `<v>(</v>` prints a parenthesis.
                 if text.is_empty() {
@@ -416,10 +488,14 @@ fn parse_body(src: &str, start: usize, sink: &mut Sink) -> Vec<Syllable> {
     syllables
 }
 
+/// The verbatim tags, in the order `verbatim_end` and `LyricState::verbatim_first` index them.
+pub(crate) const VERBATIM: [&str; 3] = ["v", "alt", "sp"];
+
 /// For text starting with `<v>`, `<alt>` or `<sp>`, the length through its closing tag. `None`
-/// for other text, or when the tag never closes, which `unclosed` remembers per tag.
-fn verbatim_end(text: &str, unclosed: &mut [bool; 3]) -> Option<usize> {
-    let k = ["v", "alt", "sp"].into_iter().position(|t| {
+/// for other text, or when the tag never closes, which `unclosed` remembers per tag, and
+/// `first` where that opener (at `at` in the source) is.
+fn verbatim_end(text: &str, at: usize, unclosed: &mut [bool; 3], first: &mut [Option<usize>; 3]) -> Option<usize> {
+    let k = VERBATIM.into_iter().position(|t| {
         text.strip_prefix('<')
             .and_then(|r| r.strip_prefix(t))
             .is_some_and(|r| r.starts_with('>'))
@@ -430,6 +506,9 @@ fn verbatim_end(text: &str, unclosed: &mut [bool; 3]) -> Option<usize> {
     let close = ["</v>", "</alt>", "</sp>"][k];
     let end = text.find(close).map(|n| n + close.len());
     unclosed[k] = end.is_none();
+    if end.is_none() {
+        first[k] = Some(at);
+    }
     end
 }
 

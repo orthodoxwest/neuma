@@ -1,6 +1,6 @@
 //! Syllable text: style tags, special characters, centering braces and escapes.
 
-use super::{LyricState, TextMap};
+use super::{LyricState, TextMap, VERBATIM};
 use std::ops::Range;
 
 use crate::diag::{Fix, Sink};
@@ -80,8 +80,8 @@ pub(super) fn parse(text: &str, map: &TextMap, state: &mut LyricState, sink: &mu
                     );
                     let end = map.end(text.len());
                     let half = format!("</{t}");
-                    if !state.verbatim_unclosed.contains(&t) {
-                        state.verbatim_unclosed.push(t);
+                    let k = VERBATIM.iter().position(|v| *v == t);
+                    if k.is_some_and(|k| state.verbatim_first[k] == Some(map.at(i))) {
                         // A closer left without its `>` (`<sp>ae</sp`) is completed; another
                         // would only be taken into the text.
                         match text[after..].find(&half) {
