@@ -142,7 +142,7 @@ Build the native libraries and generate the bindings as
 cargo install --git https://github.com/orthodoxwest/neuma neuma-cli
 
 neuma render --width 720 score.gabc > score.svg
-neuma check score.gabc            # diagnostics; exits 1 on errors
+neuma check *.gabc                # diagnostics; exits 1 on errors
 ```
 
 ## Tour
@@ -423,14 +423,24 @@ The same entry is `neuma::summarize` in Rust, `summarize(gabc)` in the browser a
 
 ```text
 neuma render [--width PX] [--scale PX] [--initial LINES] [--max-lines N] FILE|-   SVG to stdout
-neuma check FILE                    diagnostics, with fixes; exits 1 on errors
+neuma check FILE...                 diagnostics, with fixes; exits 1 on errors
 neuma notes FILE                    the layout and timeline as JSON
 neuma info FILE...                  one library entry per file, as JSON lines
 neuma tones                         the built-in psalm tones
 neuma point --tone TONE FILE        psalm text with pointing marks added
 neuma psalm --tone TONE FILE        psalm text set to a tone, as GABC
 neuma book FILE.book [-o OUT.pdf] [--svg DIR] [--text-as-paths]
+neuma --help | --version
 ```
+
+Without a file, every command but `tones` and `book` reads stdin. `--help` and `--version`
+answer without reading it, after any command. An unknown command or flag, a flag another
+command takes, a missing value, or a width or scale that isn't a positive number is an
+error, with exit status 2.
+
+`neuma check` prints one line per diagnostic, `FILE:LINE:COL: SEVERITY: CODE: MESSAGE`
+(`<stdin>` for stdin), with the fix, if there is one, on the next line. It exits 1 if any
+file has an error, and 2 if a file can't be read.
 
 ```console
 $ cat alleluia.gabc
@@ -438,7 +448,7 @@ name: Alleluia;
 %%
 (c4) Al-(f)le(gf)lú(gh)ia.(g.) (::)
 $ neuma check alleluia.gabc
-3:8: warning[gabc::hyphen-in-syllable] at 26..27: a hyphen at the end of a syllable prints in addition to the hyphen the engine draws; remove it
+alleluia.gabc:3:8: warning: gabc::hyphen-in-syllable: a hyphen at the end of a syllable prints in addition to the hyphen the engine draws; remove it
     fix: Remove the hyphen
 ```
 

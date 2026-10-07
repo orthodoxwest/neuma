@@ -213,6 +213,21 @@ timelines, PDFs). Some behavior did change:
 **Command line.** `neuma psalm --no-point` → `--no-auto-point`. `neuma-cli` no longer depends on
 `neuma-wasm`. The JSON renames above apply to `neuma notes` and `neuma info`.
 
+- `neuma check` takes any number of files and prints each diagnostic as
+  `FILE:LINE:COL: SEVERITY: CODE: MESSAGE` (`<stdin>` for stdin), without the byte span: it
+  was `LINE:COL: severity[code] at START..END: message`. It exits 1 if any file has an
+  error, and 2 if a file can't be read.
+- `--help`, `-h` and `--version`, alone or after any command, answer without reading stdin
+  (`neuma --help` used to wait for it). `--version` is new.
+- Arguments are checked: an unknown command or flag, a flag that belongs to another
+  command (`neuma info --width 500`), a flag without its value, a second file for a command
+  that takes one, or an argument to `neuma tones` is an error with the usage and exit status
+  2. They used to be ignored, taken for a file name, or read as stdin.
+- `--width` and `--scale` take a positive, finite number; anything else is an error. A
+  value that didn't parse used to keep the default silently, and a zero, negative or NaN
+  one was laid out as the narrowest column or the default scale.
+- An argument that isn't valid UTF-8 is an error rather than a panic.
+
 ### Breaking changes (earlier in this release)
 
 - **`neuma::Diagnostic`** has a new public field, `fix: Option<Fix>`. Code that builds a

@@ -5,19 +5,21 @@ use std::process::ExitCode;
 
 use neuma::{Chant, ChantOptions, Initial, LayoutOptions, LyricFont, Severity};
 
-const USAGE: &str = "usage: neuma <render|check|notes> [--width PX] [--scale PX] [--initial LINES] [--font FONT]
-                     [--max-lines N] [FILE|-]
+const USAGE: &str = "usage: neuma <render|notes> [--width PX] [--scale PX] [--initial LINES] [--font FONT]
+                    [--max-lines N] [FILE|-]
+       neuma check [the options above] [FILE...]
        neuma info [FILE...]
        neuma psalm --tone TONE [--tone-file FILE] [--intone first|every|never] [--name NAME] [--no-auto-point] [FILE|-]
        neuma point --tone TONE [--tone-file FILE] [FILE|-]
        neuma tones
        neuma book FILE.book [-o OUT.pdf] [--svg DIR] [--text-as-paths]
+       neuma --help | --version
 
   render   write SVG to stdout
-  check    print diagnostics; exit 1 on errors
+  check    print each file's diagnostics as FILE:LINE:COL: SEVERITY: CODE: MESSAGE (stdin is
+           <stdin>); exit 1 if any file has errors, 2 if one can't be read
   notes    print the layout and playback timeline as JSON, as the browser package does
-  info     print each score's library entry as one line of JSON, with its file name;
-           the layout options don't apply
+  info     print each score's library entry as one line of JSON, with its file name
   psalm    set psalm text (a verse per line, the mediant marked `*`) to a tone and print it
            as GABC. Half-verses without pointing marks are pointed automatically, unless
            --no-auto-point. Problems go to stderr. Pipe it to `neuma render -` to see it.
@@ -28,11 +30,41 @@ const USAGE: &str = "usage: neuma <render|check|notes> [--width PX] [--scale PX]
            crates/neuma-book/README.md) on pages, and write a PDF (-o, default FILE.pdf)
            and, with --svg DIR, one SVG per page. Problems go to stderr.
 
+  With no FILE, render, check, notes, info, psalm and point read stdin.
+
+  --width PX        the column width in pixels, a positive number (default 800)
+  --scale PX        pixels per staff space, a positive number (default 6)
   --initial LINES   drop-cap height in staves, 0 to 4; 0 for none (default 1)
   --max-lines N     keep only the first N lines, as broken for the whole score (an incipit);
-                    a taller initial keeps its full size
+                    0 keeps them all; a taller initial keeps its full size
   --font FONT       the EB Garamond the lyrics are measured for: google (Google Fonts,
                     the default) or eb-garamond-12";
+
+/// The commands, besides `book`, which parses its own arguments.
+const COMMANDS: &[&str] = &["render", "check", "notes", "info", "psalm", "point", "tones"];
+
+/// The flags that take a value, so that a value such as `--name -h` isn't read as a flag.
+const VALUE_FLAGS: &[&str] = &[
+    "--width",
+    "--scale",
+    "--initial",
+    "--font",
+    "--max-lines",
+    "--tone",
+    "--tone-file",
+    "--name",
+    "--intone",
+];
+
+/// The flags each command takes.
+fn takes(cmd: &str, flag: &str) -> bool {
+    match cmd {
+        "render" | "check" | "notes" => matches!(flag, "--width" | "--scale" | "--initial" | "--font" | "--max-lines"),
+        "psalm" => matches!(flag, "--tone" | "--tone-file" | "--intone" | "--name" | "--no-auto-point"),
+        "point" => matches!(flag, "--tone" | "--tone-file"),
+        _ => false,
+    }
+}
 
 /// Prints a line to stdout, ignoring a closed pipe (`neuma info *.gabc | head`).
 macro_rules! out {
@@ -41,15 +73,88 @@ macro_rules! out {
     };
 }
 
+/// Reports a usage error, with the usage, and returns the exit code for one.
+fn usage_error(message: &str) -> ExitCode {
+    eprintln!("neuma: {message}\n{USAGE}");
+    ExitCode::from(2)
+}
+
+/// `neuma --help`.
+fn help() -> ExitCode {
+    out!("{USAGE}");
+    ExitCode::SUCCESS
+}
+
+/// `neuma --version`.
+fn version() -> ExitCode {
+    out!("neuma {}", env!("CARGO_PKG_VERSION"));
+    ExitCode::SUCCESS
+}
+
+/// `--help` or `--version` among `args`, whichever comes first, skipping the values of
+/// `value_flags`. Either answers at once, before anything is read.
+fn help_or_version(args: &[String], value_flags: &[&str]) -> Option<ExitCode> {
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "-h" | "--help" => return Some(help()),
+            "--version" => return Some(version()),
+            f if value_flags.contains(&f) => {
+                it.next();
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// The value after `flag`, or a usage error if there is none.
+fn value<'a>(it: &mut std::slice::Iter<'a, String>, flag: &str) -> Result<&'a str, ExitCode> {
+    it.next()
+        .map(String::as_str)
+        .ok_or_else(|| usage_error(&format!("{flag} needs a value")))
+}
+
+/// `v` as a positive, finite number of pixels for `flag`, or a usage error.
+fn pixels(flag: &str, v: &str) -> Result<f32, ExitCode> {
+    match v.parse::<f32>() {
+        Ok(x) if x.is_finite() && x > 0.0 => Ok(x),
+        _ => Err(usage_error(&format!("{flag} takes a positive number of pixels, not `{v}`"))),
+    }
+}
+
 fn main() -> ExitCode {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    let Some(cmd) = args.first().cloned() else {
-        eprintln!("{USAGE}");
-        return ExitCode::from(2);
-    };
-    // `book` has flags of its own; the rendering flags below don't apply to it.
-    if cmd == "book" {
-        return book_command(&args[1..]);
+    let mut args = Vec::new();
+    for a in std::env::args_os().skip(1) {
+        match a.into_string() {
+            Ok(a) => args.push(a),
+            Err(a) => {
+                eprintln!("neuma: `{}` isn't valid UTF-8", a.to_string_lossy());
+                return ExitCode::from(2);
+            }
+        }
+    }
+    match args.first().map(String::as_str) {
+        None => {
+            eprintln!("{USAGE}");
+            ExitCode::from(2)
+        }
+        Some("-h" | "--help") => help(),
+        Some("--version") => version(),
+        // `book` has flags of its own; the rendering flags below don't apply to it.
+        Some("book") => book_command(&args[1..]),
+        Some(cmd) if COMMANDS.contains(&cmd) => match run(cmd, &args[1..]) {
+            Ok(code) | Err(code) => code,
+        },
+        Some(other) if other.starts_with('-') => usage_error(&format!("unknown option `{other}`; a command comes first")),
+        Some(other) => usage_error(&format!("unknown command `{other}`")),
+    }
+}
+
+/// Every command but `book`.
+fn run(cmd: &str, args: &[String]) -> Result<ExitCode, ExitCode> {
+    if let Some(code) = help_or_version(args, VALUE_FLAGS) {
+        return Ok(code);
     }
     let mut width = 800.0f32;
     let mut layout = LayoutOptions::default();
@@ -58,56 +163,56 @@ fn main() -> ExitCode {
     let mut tone_name: Option<String> = None;
     let mut tone_file: Option<String> = None;
     let mut psalm = neuma_tones::PsalmOptions::default();
-    let mut it = args[1..].iter();
+    let mut it = args.iter();
     while let Some(a) = it.next() {
-        match a.as_str() {
-            "--width" => width = it.next().and_then(|v| v.parse().ok()).unwrap_or(width),
-            "--scale" => {
-                if let Some(scale) = it.next().and_then(|v| v.parse().ok()) {
-                    layout = layout.with_scale(scale);
+        let a = a.as_str();
+        if a.starts_with('-') && a != "-" && !takes(cmd, a) {
+            return Err(usage_error(&format!("{cmd}: unknown option `{a}`")));
+        }
+        match a {
+            "--width" => width = pixels(a, value(&mut it, a)?)?,
+            "--scale" => layout = layout.with_scale(pixels(a, value(&mut it, a)?)?),
+            "--initial" => {
+                let v = value(&mut it, a)?;
+                match v.parse::<u8>().ok().filter(|n| *n <= 4) {
+                    Some(n) => options = options.with_initial(Initial::from_staves(n.into())),
+                    None => return Err(usage_error(&format!("--initial takes a number of staves from 0 to 4, not `{v}`"))),
                 }
             }
-            "--initial" => match it.next().and_then(|v| v.parse::<u8>().ok()).filter(|n| *n <= 4) {
-                Some(n) => options = options.with_initial(Initial::from_staves(n.into())),
-                None => {
-                    eprintln!("neuma: --initial takes a number of staves from 0 to 4\n{USAGE}");
-                    return ExitCode::from(2);
-                }
+            "--font" => match value(&mut it, a)? {
+                "google" => options = options.with_font(LyricFont::Google),
+                "eb-garamond-12" => options = options.with_font(LyricFont::Garamond12),
+                v => return Err(usage_error(&format!("--font takes google or eb-garamond-12, not `{v}`"))),
             },
-            "--font" => match it.next().map(String::as_str) {
-                Some("google") => options = options.with_font(LyricFont::Google),
-                Some("eb-garamond-12") => options = options.with_font(LyricFont::Garamond12),
-                _ => {
-                    eprintln!("neuma: --font takes google or eb-garamond-12\n{USAGE}");
-                    return ExitCode::from(2);
+            "--max-lines" => {
+                let v = value(&mut it, a)?;
+                match v.parse() {
+                    Ok(n) => layout = layout.with_max_lines(n),
+                    Err(_) => return Err(usage_error(&format!("--max-lines takes a number of lines, 0 for all, not `{v}`"))),
                 }
-            },
-            "-h" | "--help" => {
-                out!("{USAGE}");
-                return ExitCode::SUCCESS;
             }
-            "--max-lines" => match it.next().and_then(|v| v.parse().ok()) {
-                Some(n) => layout = layout.with_max_lines(n),
-                None => {
-                    eprintln!("neuma: --max-lines takes a number of lines\n{USAGE}");
-                    return ExitCode::from(2);
-                }
-            },
-            "--tone" => tone_name = it.next().cloned(),
-            "--tone-file" => tone_file = it.next().cloned(),
-            "--name" => psalm.name = it.next().cloned(),
+            "--tone" => tone_name = Some(value(&mut it, a)?.to_string()),
+            "--tone-file" => tone_file = Some(value(&mut it, a)?.to_string()),
+            "--name" => psalm.name = Some(value(&mut it, a)?.to_string()),
             "--no-auto-point" => psalm.auto_point = false,
-            "--intone" => match it.next().map(String::as_str) {
-                Some("first") => psalm.intone = neuma_tones::Intone::FirstVerse,
-                Some("every") => psalm.intone = neuma_tones::Intone::EveryVerse,
-                Some("never") => psalm.intone = neuma_tones::Intone::Never,
-                _ => {
-                    eprintln!("neuma: --intone takes first, every or never\n{USAGE}");
-                    return ExitCode::from(2);
-                }
+            "--intone" => match value(&mut it, a)? {
+                "first" => psalm.intone = neuma_tones::Intone::FirstVerse,
+                "every" => psalm.intone = neuma_tones::Intone::EveryVerse,
+                "never" => psalm.intone = neuma_tones::Intone::Never,
+                v => return Err(usage_error(&format!("--intone takes first, every or never, not `{v}`"))),
             },
             f => files.push(f.to_string()),
         }
+    }
+    let many = matches!(cmd, "check" | "info");
+    if cmd == "tones" && !files.is_empty() {
+        return Err(usage_error("tones takes no arguments"));
+    }
+    if !many && files.len() > 1 {
+        return Err(usage_error(&format!("{cmd} takes one file")));
+    }
+    if files.is_empty() {
+        files.push("-".to_string());
     }
     if cmd == "tones" {
         for t in neuma_tones::Tone::builtin() {
@@ -119,25 +224,18 @@ fn main() -> ExitCode {
                 t.termination
             );
         }
-        return ExitCode::SUCCESS;
+        return Ok(ExitCode::SUCCESS);
     }
     if cmd == "psalm" || cmd == "point" {
-        let tone = match resolve_tone(tone_name, tone_file) {
-            Ok(t) => t,
-            Err(code) => return code,
-        };
-        let path = files.first().map_or("-", String::as_str);
-        let Some(src) = read(path) else { return ExitCode::from(2) };
-        return if cmd == "psalm" {
+        let tone = resolve_tone(tone_name, tone_file)?;
+        let src = read(&files[0]).ok_or(ExitCode::from(2))?;
+        return Ok(if cmd == "psalm" {
             psalm_command(&src, &tone, &psalm)
         } else {
             point_command(&src, &tone)
-        };
+        });
     }
     if cmd == "info" {
-        if files.is_empty() {
-            files.push("-".to_string());
-        }
         let mut status = ExitCode::SUCCESS;
         for path in &files {
             let Some(src) = read(path) else {
@@ -153,46 +251,58 @@ fn main() -> ExitCode {
             line.push_str(&entry[1..]);
             out!("{line}");
         }
-        return status;
+        return Ok(status);
     }
-    if files.len() > 1 {
-        eprintln!("neuma: {cmd} takes one file\n{USAGE}");
-        return ExitCode::from(2);
+    if cmd == "check" {
+        return Ok(check_command(&files, &options));
     }
-    let Some(src) = read(files.first().map_or("-", String::as_str)) else {
-        return ExitCode::from(2);
-    };
+    let src = read(&files[0]).ok_or(ExitCode::from(2))?;
     let chant = Chant::with_options(&src, options);
-    match cmd.as_str() {
-        "render" => {
-            out!("{}", chant.layout_with(width, &layout).svg());
-            ExitCode::SUCCESS
-        }
-        "check" => {
-            let mut errors = false;
-            for d in chant.diagnostics() {
-                let (line, col) = neuma::diag::line_col(&src, d.span.start);
-                out!("{line}:{col}: {d}");
-                if let Some(fix) = &d.fix {
-                    out!("    fix: {}", fix.title);
-                }
-                errors |= d.severity == Severity::Error;
+    if cmd == "render" {
+        out!("{}", chant.layout_with(width, &layout).svg());
+    } else {
+        // `notes`: the browser package's layout JSON, without the SVG, with the same note ids.
+        let placed = chant.layout_with(width, &layout);
+        let timeline = placed.timeline();
+        let mut json = String::new();
+        neuma::json::layout(&mut json, placed.size(), Some(&timeline), Some(chant.utf16()));
+        out!("{json}");
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
+/// `neuma check`: each file's diagnostics, a line each, as `path:line:col: severity: code:
+/// message`. Exits 1 if any file has errors, and 2 if any can't be read.
+fn check_command(files: &[String], options: &ChantOptions) -> ExitCode {
+    let mut errors = false;
+    let mut unreadable = false;
+    for path in files {
+        let Some(src) = read(path) else {
+            unreadable = true;
+            continue;
+        };
+        let name = if path == "-" { "<stdin>" } else { path.as_str() };
+        let chant = Chant::with_options(&src, options.clone());
+        for d in chant.diagnostics() {
+            let (line, col) = neuma::diag::line_col(&src, d.span.start);
+            let severity = match d.severity {
+                Severity::Info => "info",
+                Severity::Warning => "warning",
+                Severity::Error => "error",
+            };
+            out!("{name}:{line}:{col}: {severity}: {}: {}", d.code, d.message);
+            if let Some(fix) = &d.fix {
+                out!("    fix: {}", fix.title);
             }
-            if errors { ExitCode::FAILURE } else { ExitCode::SUCCESS }
+            errors |= d.severity == Severity::Error;
         }
-        "notes" => {
-            // The browser package's layout JSON, without the SVG, with the same note ids.
-            let placed = chant.layout_with(width, &layout);
-            let timeline = placed.timeline();
-            let mut json = String::new();
-            neuma::json::layout(&mut json, placed.size(), Some(&timeline), Some(chant.utf16()));
-            out!("{json}");
-            ExitCode::SUCCESS
-        }
-        _ => {
-            eprintln!("{USAGE}");
-            ExitCode::from(2)
-        }
+    }
+    if unreadable {
+        ExitCode::from(2)
+    } else if errors {
+        ExitCode::FAILURE
+    } else {
+        ExitCode::SUCCESS
     }
 }
 
@@ -213,8 +323,7 @@ fn resolve_tone(name: Option<String>, file: Option<String>) -> Result<neuma_tone
         (Some(n), _) => neuma_tones::Tone::find(&custom, n).or_else(|| neuma_tones::Tone::named(n).ok()),
         (None, Some(_)) => custom.first(),
         (None, None) => {
-            eprintln!("neuma: this needs --tone or --tone-file\n{USAGE}");
-            return Err(ExitCode::from(2));
+            return Err(usage_error("this needs --tone or --tone-file"));
         }
     };
     found.cloned().ok_or_else(|| {
@@ -268,16 +377,18 @@ fn book_command(args: &[String]) -> ExitCode {
     let mut pdf_out = None;
     let mut svg_dir = None;
     let mut paths = false;
+    if let Some(code) = help_or_version(args, &["-o", "--output", "--svg"]) {
+        return code;
+    }
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
-            "-o" | "--output" => pdf_out = it.next().cloned(),
-            "--svg" => svg_dir = it.next().cloned(),
+            flag @ ("-o" | "--output" | "--svg") => match value(&mut it, flag) {
+                Ok(v) if flag == "--svg" => svg_dir = Some(v.to_string()),
+                Ok(v) => pdf_out = Some(v.to_string()),
+                Err(code) => return code,
+            },
             "--text-as-paths" => paths = true,
-            "-h" | "--help" => {
-                out!("{USAGE}");
-                return ExitCode::SUCCESS;
-            }
             f if file.is_none() && !f.starts_with('-') => file = Some(f.to_string()),
             other => {
                 eprintln!("neuma: book: unexpected `{other}`\n{USAGE}");
@@ -357,8 +468,8 @@ fn book_command(args: &[String]) -> ExitCode {
 fn read(path: &str) -> Option<String> {
     if path == "-" {
         let mut s = String::new();
-        if std::io::stdin().read_to_string(&mut s).is_err() {
-            eprintln!("neuma: can't read stdin");
+        if let Err(e) = std::io::stdin().read_to_string(&mut s) {
+            eprintln!("neuma: can't read stdin: {e}");
             return None;
         }
         return Some(s);
