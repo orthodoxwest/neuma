@@ -168,6 +168,14 @@ fn fixes_never_loop() {
             "(c4) <alt>x a(g) b(h) <alt>y c(g)",
             "(c4) <sp>V/ a(g) b(h) <sp>R/</sp c(g)",
             "(c4) <sp>R/</sp d(g)",
+            // The opener a closer would go to is one the lyric never sees: in a translation,
+            // inside another verbatim tag, or with its own closer split by a comment.
+            "(c4) a[x<sp>y](g) b(h) <sp>V/ c(g)",
+            "(c4) a[<v>](g) b(h) c<v>(g)",
+            "(c4) <v>\\x <sp>y(g) b(h) <sp>V/ c(g)",
+            "(c4) <alt>x <sp>y(g) b(h) <sp>V/ c(g)",
+            "(c4) a<sp>V/</sp% c\n>(g) b(h) <sp>R/ c(g)",
+            "(c4) <v>\\greheightstar</% c\nv>(,) a(g) b(h) ú(l)ti(k)<v>que(kj) c(g) (::)",
             // A closer left without its `>`.
             "(c4) <i>a</i(g)",
             "(c4) <sp>a</sp(g)",
@@ -288,6 +296,11 @@ fn the_separator_goes_where_it_surely_belongs() {
     // A line that may be notes, or header-looking lines past the run, leave it unsure.
     assert_eq!(fixed("name: x;\nV: a(g) b(h);\n(c4) c(g)"), [None]);
     assert_eq!(fixed("name: x;\ncenteringmode: 8\n-scheme: english;\nfont: x;\n(c4) a(g)"), [None]);
+    assert_eq!(fixed("name: x;\nV: a(g) b(h);\nmode: 8;\n(c4) c(g)"), [None]);
+    assert_eq!(
+        fixed("name:Kyrie II. (Rex Magne);\nmode: 1;\n(c4) a(g)"),
+        [Some("name:Kyrie II. (Rex Magne);\nmode: 1;\n%%\n(c4) a(g)".into())]
+    );
     assert_eq!(
         fixed("name: a (b);\nmode: 8;\n(c4) a(g)"),
         [Some("name: a (b);\nmode: 8;\n%%\n(c4) a(g)".into())]
