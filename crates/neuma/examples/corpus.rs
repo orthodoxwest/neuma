@@ -10,6 +10,7 @@
 //! ```
 //!
 //! The counts file has one line per diagnostic code: severity, code, diagnostics, files.
+//! Panic messages in the report are cut short, so they don't copy a score's text into it.
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -114,6 +115,19 @@ fn run(src: &str, metrics: &MetricsTable) -> Outcome {
     }
 }
 
+/// A panic message for the report: its first line, at most 120 characters, and none of what
+/// follows a `:` or a quote, which is where an assertion or a `{:?}` prints the score's text.
+/// The report is uploaded, so it must not carry the chants themselves.
+fn short(msg: &str) -> String {
+    let line = msg.lines().next().unwrap_or("");
+    let cut = line.find([':', '"', '`', '\'']).unwrap_or(line.len());
+    let mut out: String = line[..cut].chars().take(120).collect();
+    if out.len() < line.len() {
+        out.push('…');
+    }
+    out
+}
+
 fn severity(s: Severity) -> &'static str {
     match s {
         Severity::Info => "info",
@@ -172,7 +186,7 @@ fn main() -> ExitCode {
                 .or_else(|| info.payload().downcast_ref::<String>().cloned())
                 .unwrap_or_default();
             let place = info.location().map(|l| format!(" at {l}")).unwrap_or_default();
-            *last_panic.lock().unwrap() = format!("{msg}{place}");
+            *last_panic.lock().unwrap() = format!("{}{place}", short(&msg));
         }));
     }
 
