@@ -751,10 +751,18 @@ impl Engraving {
         let ragged =
             end + 1 == self.segments.len() && opts.last_line == LastLine::Ragged || matches!(after, Break::Forced { justify: false, .. });
         // A syllable's end is a better break than a cut inside its melisma, a word's end
-        // better still, and a bar best.
+        // better still, and a bar best. A ℣ or ℟ under a bar (`<sp>V/</sp>.(::)`) leads into
+        // the verse after it, so a line ending there would leave it behind: no better than
+        // any break.
+        let seg = &self.segments[end];
+        let leads = seg
+            .lyric
+            .as_ref()
+            .is_some_and(|t| t.runs.first().is_some_and(|r| r.text.starts_with(['℣', '℟'])));
         let cost = match after {
             Break::InMelisma => MELISMA_DEMERITS,
-            Break::Allowed if self.segments[end].is_bar() => AFTER_BAR_DEMERITS,
+            Break::Allowed if seg.is_bar() && leads => 0.0,
+            Break::Allowed if seg.is_bar() => AFTER_BAR_DEMERITS,
             Break::Allowed if self.segments.get(end + 1).is_none_or(|s| s.word_start) => WORD_END_DEMERITS,
             _ => 0.0,
         };
@@ -1384,6 +1392,31 @@ mod tests {
             }
         }
         assert!(steps > 0);
+    }
+
+    #[test]
+    fn breaks_prefer_bars_then_words() {
+        let style = StyleOptions {
+            initial: Initial::None,
+            ..StyleOptions::default()
+        };
+        let eng = parse("(c4) Dó(g)mi(h)ne(g) (;) Lord(g) <sp>V/</sp>.(:) Ple(g)ni(h) (::)")
+            .score
+            .engrave(&ApproxMeasure, &style);
+        let opts = LayoutOptions::default();
+        let cost = |text: &str| {
+            let k = eng
+                .segments
+                .iter()
+                .rposition(|s| s.lyric.as_ref().is_some_and(|t| t.runs[0].text == text))
+                .unwrap();
+            eng.line_end(k, &opts).1
+        };
+        assert_eq!(cost("Dó"), 0.0);
+        assert_eq!(cost("ne"), WORD_END_DEMERITS);
+        assert_eq!(eng.line_end(3, &opts).1, AFTER_BAR_DEMERITS);
+        // A versicle sign under a bar leads into its verse.
+        assert_eq!(cost("℣"), 0.0);
     }
 
     #[test]
