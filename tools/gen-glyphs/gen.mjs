@@ -1,7 +1,7 @@
 // Converts exsurge's Glyphs.js (MIT, (c) 2008-2016 Fr. Matthew Spencer, OSJ) into
 // crates/neuma/src/glyphs/table.rs, normalizing every outline to absolute M/L/C/Z with holes
-// as reverse-wound subpaths, so a nonzero fill draws them and simple path parsers (the Office's
-// iOS SVG.swift handles only M L H V C A Z) can read every glyph.
+// as reverse-wound subpaths, so a nonzero fill draws them and simple path parsers (such as
+// ones that handle only M L H V C A Z) can read every glyph.
 //
 // Usage: node tools/gen-glyphs/gen.mjs path/to/Exsurge.Glyphs.js > crates/neuma/src/glyphs/table.rs
 import { readFileSync } from "node:fs";

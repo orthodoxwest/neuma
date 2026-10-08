@@ -910,7 +910,7 @@ fn diagnostic(d: &neuma::Diagnostic, utf16: &neuma::Utf16Index) -> Diagnostic {
 /// When a psalm's intonation is sung.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, uniffi::Enum)]
 pub enum Intone {
-    /// On the first verse only, as at the Office.
+    /// On the first verse only, as at the daily office.
     #[default]
     FirstVerse,
     /// On every verse, as in the Gospel canticles.

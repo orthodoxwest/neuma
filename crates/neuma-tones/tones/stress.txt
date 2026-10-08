@@ -1,4 +1,4 @@
-# Lexical stress for words of the Office texts and the Coverdale psalter, from the CMU
+# Lexical stress for words of the Book of Common Prayer's daily office and its Coverdale psalter, from the CMU
 # Pronouncing Dictionary (see NOTICE). One word per line with a digit per syllable: 1 primary,
 # 2 secondary, 0 none. Words stressed on the first syllable alone are left out.
 abandon 010

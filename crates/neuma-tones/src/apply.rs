@@ -13,7 +13,7 @@ use crate::tone::{Cadence, Slot, Tone};
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum Intone {
-    /// On the first verse only, as at the Office.
+    /// On the first verse only, as at the daily office.
     #[default]
     FirstVerse,
     /// On every verse, as in the Magnificat and Benedictus.
