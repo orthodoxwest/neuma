@@ -1,0 +1,33 @@
+# cargo-deny's configuration (https://embarkstudios.github.io/cargo-deny/). CI runs
+# `cargo deny --all-features check`; run it locally after changing a dependency.
+
+[graph]
+all-features = true
+
+# RustSec advisories: a vulnerable, unsound or unmaintained crate fails the check, and so
+# does a yanked version in Cargo.lock.
+[advisories]
+yanked = "deny"
+ignore = [
+    # rustybuzz and its ttf-parser are unmaintained, with no fixes outstanding. neuma-book and
+    # neuma-metrics use them to shape text and read fonts; moving to their successors
+    # (harfrust, skrifa) is its own change.
+    { id = "RUSTSEC-2026-0206", reason = "rustybuzz unmaintained; no known vulnerability" },
+    { id = "RUSTSEC-2026-0192", reason = "ttf-parser unmaintained; no known vulnerability" },
+]
+
+# Every dependency's license must be one of these (an `OR` needs only one of them). MPL-2.0 is
+# UniFFI's, in neuma-mobile only.
+[licenses]
+allow = ["Apache-2.0", "MIT", "MPL-2.0", "Unicode-3.0"]
+confidence-threshold = 0.93
+
+[bans]
+# Two versions of a crate are worth a look, not a failure.
+multiple-versions = "warn"
+wildcards = "deny"
+
+# Crates come from crates.io only.
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

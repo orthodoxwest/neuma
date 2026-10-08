@@ -9,9 +9,9 @@ repository.workspace = true
 publish = false
 
 [dependencies]
-neuma = { path = "../../crates/neuma" }
-neuma-book = { path = "../../crates/neuma-book" }
-neuma-tones = { path = "../../crates/neuma-tones" }
+neuma = { workspace = true, default-features = true }
+neuma-book.workspace = true
+neuma-tones = { workspace = true, default-features = true }
 
 [lints]
 workspace = true

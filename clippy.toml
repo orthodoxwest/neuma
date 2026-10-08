@@ -1,0 +1,9 @@
+# Rendered output must be byte-identical on every platform. `powf`'s precision is unspecified
+# and varies with the platform's libm. `mul_add` rounds once where `a * b + c` rounds twice,
+# and where the target has no FMA instruction it falls back to the platform's `fma`.
+disallowed-methods = [
+    { path = "f32::mul_add", reason = "rounds differently from `a * b + c` and depends on the platform's FMA; output must be byte-identical across platforms" },
+    { path = "f64::mul_add", reason = "rounds differently from `a * b + c` and depends on the platform's FMA; output must be byte-identical across platforms" },
+    { path = "f32::powf", reason = "precision varies with the platform's libm; output must be byte-identical across platforms" },
+    { path = "f64::powf", reason = "precision varies with the platform's libm; output must be byte-identical across platforms" },
+]

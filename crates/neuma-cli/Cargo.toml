@@ -6,15 +6,22 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+readme.workspace = true
+keywords = ["gabc", "gregorian", "chant", "cli", "engraving"]
+categories = ["command-line-utilities", "multimedia"]
+# The tests read files elsewhere in the repository, so they stay out of the package.
+exclude = ["tests/"]
 
 [[bin]]
 name = "neuma"
 path = "src/main.rs"
+# Its rustdoc would land in target/doc/neuma and overwrite the `neuma` library's.
+doc = false
 
 [dependencies]
-neuma = { path = "../neuma", features = ["json"] }
-neuma-book = { path = "../neuma-book" }
-neuma-tones = { path = "../neuma-tones" }
+neuma = { workspace = true, default-features = true, features = ["json"] }
+neuma-book.workspace = true
+neuma-tones = { workspace = true, default-features = true }
 
 [lints]
 workspace = true

@@ -23,9 +23,9 @@ required-features = ["bindgen"]
 bindgen = ["uniffi/cli"]
 
 [dependencies]
-neuma = { path = "../neuma", default-features = false, features = ["fonts"] }
-neuma-tones = { path = "../neuma-tones" }
-uniffi = "0.32"
+neuma = { workspace = true, features = ["fonts"] }
+neuma-tones = { workspace = true, default-features = true }
+uniffi.workspace = true
 
 # No workspace lint table: UniFFI's generated scaffolding is `unsafe` FFI glue, which the
 # workspace's `unsafe_code = "forbid"` would reject. This crate's own code stays safe.

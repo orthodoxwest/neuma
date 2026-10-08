@@ -6,6 +6,9 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+readme = "README.md"
+keywords = ["gregorian", "chant", "psalm", "psalm-tones", "pointing"]
+categories = ["multimedia", "text-processing"]
 
 [features]
 default = ["pointing"]
@@ -14,10 +17,10 @@ default = ["pointing"]
 pointing = []
 
 [dependencies]
-neuma = { path = "../neuma", default-features = false }
+neuma.workspace = true
 
 [dev-dependencies]
-neuma = { path = "../neuma" }
+neuma = { workspace = true, default-features = true }
 
 [lints]
 workspace = true

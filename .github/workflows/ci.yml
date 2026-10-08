@@ -3,43 +3,86 @@ on:
   push:
     branches: [main]
   pull_request:
+permissions:
+  contents: read
 # A new push to a pull request supersedes the run before it.
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+# Third-party actions are pinned to commits; the comment names the release.
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
         with:
           components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - run: cargo fmt --all --check
-      - run: cargo clippy --all-targets -- -D warnings
-      - run: cargo test --all
-  browser:
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
+      - run: cargo doc --workspace --no-deps --all-features
+        env:
+          RUSTDOCFLAGS: -D warnings
+      # Each published crate carries the license files, and every crate packages.
+      - name: Package the crates
+        run: |
+          for crate in neuma neuma-tones neuma-book neuma-metrics neuma-cli; do
+            for file in LICENSE-APACHE LICENSE-MIT NOTICE; do cmp "$file" "crates/$crate/$file"; done
+          done
+          cargo package --workspace --no-verify
+  # The oldest Rust the workspace supports: `rust-version` in Cargo.toml.
+  msrv:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - id: msrv
+        run: echo "version=$(sed -n 's/^rust-version = "\(.*\)"$/\1/p' Cargo.toml)" >> "$GITHUB_OUTPUT"
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
+        with:
+          toolchain: ${{ steps.msrv.outputs.version }}
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - run: cargo test --workspace --locked
+  # Licenses, RustSec advisories, banned crates and sources, as deny.toml sets them.
+  deny:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
+  browser:
+    runs-on: ubuntu-latest
+    env:
+      # dist/neuma.mjs with every default feature was 466,959 bytes (456 KB) in October 2026.
+      # The budget leaves about 3% for growth; raise it in a change that says why it grew.
+      NEUMA_MJS_BUDGET: 481280 # 470 KiB
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
         with:
           targets: wasm32-unknown-unknown
           components: clippy
-      - uses: Swatinem/rust-cache@v2
-      - uses: actions/setup-node@v4
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
       - run: cargo build -p neuma-wasm --target wasm32-unknown-unknown --profile wasm
       - run: npm install --no-save binaryen@132.0.0 typescript@6.0.2
       - run: node crates/neuma-wasm/build.mjs node_modules/binaryen/bin/wasm-opt
+      - name: Check the module's size
+        run: |
+          size=$(stat -c %s crates/neuma-wasm/dist/neuma.mjs)
+          echo "dist/neuma.mjs: $size bytes, budget $NEUMA_MJS_BUDGET"
+          if [ "$size" -gt "$NEUMA_MJS_BUDGET" ]; then
+            echo "::error::dist/neuma.mjs is $size bytes, over its budget of $NEUMA_MJS_BUDGET (see ci.yml)"
+            exit 1
+          fi
       - run: node crates/neuma-wasm/test.mjs
       - run: node_modules/.bin/tsc -p crates/neuma-wasm/js
       # The parts a build can leave out still build without them.
       - run: cargo clippy -p neuma-wasm --target wasm32-unknown-unknown --no-default-features -- -D warnings
       - run: cargo clippy -p neuma-wasm --target wasm32-unknown-unknown --no-default-features --features tones,font-garamond12 -- -D warnings
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: neuma-browser
           path: |
@@ -49,22 +92,32 @@ jobs:
             crates/neuma-wasm/dist/neuma.d.mts
   mobile:
     runs-on: ubuntu-latest
+    env:
+      KOTLIN_VERSION: 2.1.0
+      # JetBrains' kotlin-compiler-2.1.0.zip.sha256 from the release.
+      KOTLIN_SHA256: b6698d5728ad8f9edcdd01617d638073191d8a03139cc538a391b4e3759ad297
+      JNA_VERSION: 5.14.0
+      # The jar whose SHA-1 matches Maven Central's jna-5.14.0.jar.sha1.
+      JNA_SHA256: 34ed1e1f27fa896bca50dbc4e99cf3732967cec387a7a0d5e3486c09673fe8c6
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
         with:
           targets: aarch64-linux-android, x86_64-linux-android, aarch64-apple-ios, aarch64-apple-ios-sim
-      - uses: Swatinem/rust-cache@v2
-      - uses: actions/setup-java@v4
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
         with:
           distribution: temurin
           java-version: 21
       - run: cargo check -p neuma-mobile --target aarch64-linux-android --target x86_64-linux-android --target aarch64-apple-ios --target aarch64-apple-ios-sim
       - name: Fetch the Kotlin compiler and JNA
         run: |
-          curl -sSfL -o kotlinc.zip https://github.com/JetBrains/kotlin/releases/download/v2.1.0/kotlin-compiler-2.1.0.zip
-          unzip -q kotlinc.zip -d "$RUNNER_TEMP"
-          curl -sSfL -o "$RUNNER_TEMP/jna.jar" https://repo1.maven.org/maven2/net/java/dev/jna/jna/5.14.0/jna-5.14.0.jar
+          curl -sSfL --retry 3 -o "$RUNNER_TEMP/kotlinc.zip" \
+            "https://github.com/JetBrains/kotlin/releases/download/v$KOTLIN_VERSION/kotlin-compiler-$KOTLIN_VERSION.zip"
+          curl -sSfL --retry 3 -o "$RUNNER_TEMP/jna.jar" \
+            "https://repo1.maven.org/maven2/net/java/dev/jna/jna/$JNA_VERSION/jna-$JNA_VERSION.jar"
+          printf '%s  %s\n' "$KOTLIN_SHA256" "$RUNNER_TEMP/kotlinc.zip" "$JNA_SHA256" "$RUNNER_TEMP/jna.jar" | sha256sum -c -
+          unzip -q "$RUNNER_TEMP/kotlinc.zip" -d "$RUNNER_TEMP"
       - run: crates/neuma-mobile/test.sh
         env:
           NEUMA_KOTLINC: ${{ runner.temp }}/kotlinc/bin/kotlinc
@@ -72,7 +125,7 @@ jobs:
   mobile-swift:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - run: crates/neuma-mobile/test.sh
