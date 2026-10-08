@@ -1480,7 +1480,7 @@ impl Engraving {
                 baseline += shift;
             }
             // Under a one-staff initial, which stands on the first line's lyric baseline, the
-            // second line's ink keeps clear of its tail (a Q's).
+            // second line's ink keeps clear of its tail (a Q's), its staff lines included.
             if li == 1
                 && let Some(init) = self.initial.as_ref().filter(|i| i.lines == 1)
                 && let Some(line0) = lines.first()
@@ -1496,7 +1496,7 @@ impl Engraving {
                     .chain(seg_ink)
                     .filter(|p| p.ink_box()[0] < reach)
                     .map(|p| p.ink_box()[1])
-                    .fold(f32::INFINITY, f32::min);
+                    .fold(if staffless { f32::INFINITY } else { -3.0 - STEM / 2.0 }, f32::min);
                 let (size, _) = self.one_staff_initial(init, line0.baseline - line0.staff, column);
                 let tail = line0.baseline + init.depth_em * size + INITIAL_TAIL_GAP;
                 let shift = tail - (staff + under);

@@ -32,20 +32,57 @@ pub(crate) fn depth(initial: &str) -> f32 {
     }
 }
 
-/// How far an initial's ink rises above its cap height, in ems: an accent (any letter beyond
-/// ASCII is taken to carry one), a lowercase ascender, the apex of an A, the serifs of a T.
+/// How far an initial's ink rises above its cap height, in ems: an accent, a lowercase
+/// ascender, the apex of an A, the serifs of a T. Measured from the letter's outline in both
+/// built-in faces ([`RISE_LETTERS`]); a letter not listed rises by no more than its overshoot,
+/// and a combining mark after it is taken as an accent.
 pub(crate) fn rise(initial: &str) -> f32 {
-    if !initial.is_ascii() {
-        return 0.25;
-    }
-    match initial.chars().next() {
-        Some('b' | 'd' | 'f' | 'h' | 'k' | 'l') => 0.06,
-        Some('T') => 0.05,
-        Some('A') => 0.04,
-        Some('Z') => 0.03,
-        _ => 0.015,
+    let mut chars = initial.chars();
+    let base = chars
+        .next()
+        .and_then(|c| RISE_LETTERS.chars().position(|l| l == c))
+        .map_or(0.015, |i| f32::from(RISE[i]) / 100.0);
+    if chars.any(|m| ('\u{0300}'..='\u{036F}').contains(&m)) {
+        base.max(0.25)
+    } else {
+        base
     }
 }
+
+/// The letters of the built-in EB Garamond faces whose ink rises more than 0.02 em above the
+/// cap height (0.65 em), and by how much, in hundredths of an em rounded up ([`RISE`]): the
+/// higher of the Google Fonts and EB Garamond 12 regular faces' outlines.
+const RISE_LETTERS: &str = concat!(
+    "ATZbdfhklÀÁÂÃÄÅÈÉÊËÌÍÎÏÑÒÓÔÕÖÙÚÛÜÝßðþĀĂĄĆĈĊČĎďđĒĔĖĚĜĞĠģĤĥħĨĪ",
+    "ĬİĴķĹĺļľŀłŃŇŉŌŎŐŔŘŚŜŠŢŤŦŨŪŬŮŰŴŶŸŹŻŽſƀƃƅƇƌƒƓƕƙƚƛƠƥƩƪƬƭƮƯƵǀǁǂǄ",
+    "ǆǉǍǏǑǓǕǖǗǘǙǚǛǜǞǟǠǡǢǦǨǩǬǮǱǳǴǸǺǻǼǾȀȂȄȆȈȊȌȎȐȒȔȖȚȞȟȡȢȣȦȪȫȬȭȮȰȱȲȴ",
+    "ȸȺȻȾɅɆɊɓɖɗɠɦɧɫɬɭɮɺʃʄʆʎʔʕʖʠʡʢʣʤʥʧʩʪʫʰʱʹʺʻʼʽˈˡʹΆΈΉΊΌΎΏΐΑΔΖΛΞΣΤ",
+    "ΦΪΫάέήίΰβδζθλξόύώϑϓϔϡЀЁЂЃЇЋЌЍЎАЙТФбђћѢѣѶҊҌҍҐҞҟҤҬҴһҾӁӏӐӒӖӚӜӞӢ",
+    "ӤӦӪӬӮӰӲӴӸԧᴬᴮᴰᴱᴳᴴᴵᴶᴷᴸᴹᴺᴼᴾᴿᵀᵁᵂᵇᵈᵏᶞᶠḀḂḃḅḇḈḊḋḍḏḑḓḔḕḖḗḜḞḟḠḢḣḥḦḧḩḫ",
+    "ḮḯḰḱḳḵḷḸḹḻḽḾṀṄṌṍṎṏṐṑṒṓṔṖṘṜṠṤṥṦṧṨṪṬṮṰṸṹṺṻṼẀẂẄẆẊẌẎẐẒẔẖẛẜẝẟẠẢảẤ",
+    "ấẦầẨẩẪẫẬẮắẰằẲẳẴẵẶẺẻẼẾếỀềỂểỄễỆỈỉỎỏỐốỒồỔổỖỗỘỚỜỞởỠỢỦủỨỪỬửỮỰỲỶỷỸ",
+    "ỻỽἆἇἈἉἊἋἌἍἎἏἚἛἜἝἦἧἪἫἬἭἮἯἶἷἺἻἼἽἾἿὊὋὌὍὖὗὛὝὟὦὧὪὫὬὭὮὯὰάὲέὴήὶίὸόὺ",
+    "ύὼώᾆᾇᾈᾉᾊᾋᾌᾍᾎᾏᾖᾗᾚᾛᾜᾝᾞᾟᾦᾧᾪᾫᾬᾭᾮᾯᾲᾴᾸᾹᾺΆᾼῂῄῈΈῊΉῒΐῗῘῙῚΊῢΰῧῨῩῪΎῲῴῸΌ",
+    "ῺΏℎℓÅⱡⱨⱪⱹⱿꜧꜨꝃꝉꞎꟾꟿﬀﬁﬂﬃﬄﬅ",
+);
+const RISE: [u8; 623] = [
+    4, 5, 3, 6, 6, 6, 6, 6, 6, 19, 19, 18, 18, 15, 20, 19, 19, 18, 15, 19, 19, 18, 15, 18, 19, 19, 18, 18, 15, 19, 19, 18, 15, 19, 6, 6, 6,
+    13, 17, 4, 19, 18, 16, 18, 18, 6, 6, 13, 17, 16, 18, 18, 17, 16, 4, 18, 22, 6, 18, 13, 17, 16, 18, 6, 19, 21, 6, 6, 6, 6, 19, 20, 4,
+    13, 17, 20, 19, 20, 19, 18, 20, 5, 20, 5, 18, 13, 17, 20, 20, 18, 18, 15, 19, 16, 18, 6, 6, 6, 6, 8, 7, 6, 8, 6, 6, 6, 6, 8, 6, 3, 6,
+    5, 6, 5, 13, 3, 6, 6, 6, 18, 6, 6, 20, 20, 20, 20, 25, 6, 29, 11, 28, 11, 29, 11, 25, 6, 26, 6, 13, 20, 20, 16, 13, 20, 3, 6, 19, 19,
+    33, 11, 19, 19, 21, 17, 21, 18, 21, 17, 21, 17, 21, 17, 21, 17, 5, 20, 21, 6, 3, 6, 16, 25, 6, 25, 6, 16, 26, 5, 13, 6, 6, 7, 7, 7, 3,
+    7, 3, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 4, 5, 5, 6, 6, 5, 5, 6, 6, 6, 6, 6, 6, 6, 5, 6, 3, 3, 4, 5, 5, 6, 5, 3, 5, 5, 5, 5, 5,
+    5, 5, 6, 4, 2, 3, 2, 3, 3, 5, 3, 15, 15, 4, 4, 4, 4, 6, 6, 6, 8, 5, 5, 10, 4, 4, 4, 6, 5, 15, 3, 19, 15, 5, 19, 17, 5, 19, 19, 21, 4,
+    21, 5, 5, 6, 6, 6, 4, 6, 25, 21, 4, 6, 11, 4, 6, 4, 5, 5, 6, 15, 24, 6, 21, 15, 21, 15, 17, 17, 13, 15, 15, 15, 17, 13, 15, 20, 17, 17,
+    6, 4, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 5, 3, 3, 6, 6, 5, 6, 5, 4, 16, 22, 6, 6, 19, 16, 22, 6, 6, 6, 6, 28, 10, 28, 10, 17,
+    16, 20, 13, 16, 20, 6, 15, 18, 6, 6, 31, 11, 19, 16, 6, 6, 6, 13, 15, 6, 6, 19, 16, 16, 29, 13, 29, 8, 28, 10, 28, 10, 19, 16, 16, 13,
+    16, 24, 10, 28, 10, 16, 16, 5, 5, 5, 29, 13, 28, 5, 18, 19, 19, 15, 16, 16, 15, 16, 18, 3, 3, 6, 20, 6, 6, 6, 4, 20, 3, 22, 8, 21, 8,
+    24, 7, 30, 10, 18, 27, 8, 26, 8, 28, 6, 32, 8, 17, 20, 3, 18, 21, 8, 21, 8, 24, 7, 29, 10, 18, 20, 3, 20, 3, 21, 8, 21, 8, 24, 7, 29,
+    9, 18, 19, 19, 20, 3, 18, 8, 20, 3, 19, 19, 20, 3, 18, 13, 19, 20, 3, 18, 6, 6, 8, 8, 4, 4, 5, 5, 5, 5, 10, 10, 5, 5, 5, 5, 8, 8, 5, 5,
+    5, 5, 10, 10, 8, 8, 5, 5, 5, 5, 10, 10, 5, 5, 5, 5, 8, 8, 5, 5, 10, 8, 8, 5, 5, 5, 5, 10, 10, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+    8, 8, 4, 4, 5, 5, 5, 5, 10, 10, 8, 8, 5, 5, 5, 5, 10, 10, 8, 8, 5, 5, 5, 5, 10, 10, 4, 4, 17, 13, 5, 5, 4, 4, 4, 5, 5, 5, 5, 6, 6, 10,
+    17, 13, 5, 5, 6, 6, 10, 17, 13, 5, 5, 4, 4, 5, 5, 5, 5, 6, 6, 20, 6, 6, 6, 6, 3, 6, 5, 6, 6, 6, 10, 2, 6, 6, 6, 6, 6, 6,
+];
 
 /// Whether to set the score's first letter as a drop cap, and how many staves tall.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -193,6 +230,20 @@ mod tests {
         let (i, rest) = split_initial(&Lyric::from_plain("A")).unwrap();
         assert_eq!((i.as_str(), rest.is_empty()), ("A", true));
         assert!(split_initial(&Lyric::from_plain("1. A")).is_none());
+    }
+
+    #[test]
+    fn rise_is_measured_per_letter() {
+        assert_eq!(RISE_LETTERS.chars().count(), RISE.len());
+        assert_eq!(rise("H"), 0.015);
+        assert_eq!(rise("T"), 0.05);
+        assert_eq!(rise("h"), 0.06);
+        assert_eq!(rise("É"), 0.19);
+        // Capitals beyond ASCII with nothing above them.
+        for c in ["Æ", "Đ", "Χ", "Œ", "Ç"] {
+            assert!(rise(c) < 0.03, "{c}");
+        }
+        assert_eq!(rise("E\u{0301}"), 0.25);
     }
 
     #[test]

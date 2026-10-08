@@ -60,7 +60,9 @@ timelines, PDFs). Some behavior did change:
   lyric baseline, as a one-line initial does in Solesmes books. It was GregorioTeX's
   default size, four times the lyrics, which reached only about halfway up the staff. Its
   annotations sit above the staff, over the capital, and the gap between any initial's
-  column and the staff is GregorioTeX's `afterinitialshift`, 0.2 cm (it was 0.144 cm).
+  column and the staff is GregorioTeX's `afterinitialshift`, 0.2 cm (it was 0.144 cm). The
+  second line moves down, if need be, so that a Q's or J's tail clears its staff lines as
+  well as its notes.
 - SVG output asks for `text-rendering: geometricPrecision` on its text, in the score's style
   and in a book's SVG pages. A browser that hints the lyric face (Chrome on Linux and
   Windows) rounded each glyph's advance to a whole pixel at the size drawn, so a syllable
