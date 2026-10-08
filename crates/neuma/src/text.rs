@@ -3,6 +3,15 @@
 
 use crate::score::TextStyle;
 
+/// Measures text in the lyric face, in ems. The engine sizes every syllable, hyphen, initial
+/// and annotation through this, so a renderer whose text matches the measurer draws text where
+/// the layout expects it: lyrics set with ligatures off (`font-variant-ligatures: none` on
+/// the web, `'liga' 0` on Android, `.ligature: 0` on iOS), kerning on, and small caps from the
+/// face's `smcp` feature. [`MetricsTable`](crate::MetricsTable) measures from a table built
+/// from the font files, the same numbers on every platform; [`ApproxMeasure`] guesses.
+///
+/// A measurer must be `Send + Sync` to engrave a [`Chant`](crate::Chant) with it
+/// ([`ChantOptions::with_measure`](crate::ChantOptions::with_measure)).
 pub trait TextMeasure {
     /// Advance of `text` in `style`, in ems, with ligatures off, kerning on and real small
     /// caps, the way the renderers set lyrics.

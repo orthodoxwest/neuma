@@ -16,6 +16,7 @@ use crate::score::{BarKind, ClefKind, NoteShape};
 pub struct Timeline {
     /// By note id; notes on lines a `max_lines` layout leaves out are missing.
     pub notes: Vec<TimelineNote>,
+    /// The pauses, in singing order, each before the note it names.
     pub pauses: Vec<Pause>,
     /// Each line's box, staff center and lyric baseline, in output units.
     pub lines: Vec<LineBox>,
@@ -48,13 +49,16 @@ pub struct TimelineNote {
     pub line: u32,
     /// The notehead's center, in output units.
     pub cx: f32,
+    /// The notehead's center, in output units.
     pub cy: f32,
-    /// The notehead's width and height, in output units.
+    /// The notehead's width, in output units.
     pub w: f32,
+    /// The notehead's height, in output units.
     pub h: f32,
     /// The note's source span, in UTF-8 bytes.
     pub span: Range<usize>,
-    /// The note's staff position: 0 is the bottom line, 1 the space above it, and so on.
+    /// The note's staff position ([`StaffPosition`](crate::score::StaffPosition)): 0 is the
+    /// staff's middle space, the lines are at −3, −1, 1 and 3, and it grows upward.
     pub staff_position: i32,
     /// Diatonic steps above the clef's do (a fa clef's fa is degree 3).
     pub degree: i32,
@@ -64,12 +68,17 @@ pub struct TimelineNote {
     /// end to end with the caller's weights. The duration is the note's weight (see
     /// [`Weights`]); pauses are timed separately.
     pub start: f32,
+    /// How long the note lasts, in weight units.
     pub duration: f32,
+    /// The text of the note's syllable, as plain text.
     pub syllable_text: String,
+    /// The index of the syllable's word in the score.
     pub word: u32,
     /// The vowel the engine centered the syllable on.
     pub vowel: Option<char>,
+    /// The note's shape: punctum, virga, quilisma, oriscus and so on.
     pub shape: NoteShape,
+    /// Whether the note is liquescent.
     pub liquescent: bool,
     /// The note's syllable has an acute accent in the source.
     pub accent: bool,
@@ -81,6 +90,7 @@ pub struct TimelineNote {
     /// Phrase counters: `verse` advances after each full or double bar, and `half` is 1
     /// after the verse's mediant `*`, else 0.
     pub verse: u32,
+    /// 1 after the verse's mediant `*`, else 0.
     pub half: u32,
 }
 
@@ -88,7 +98,9 @@ pub struct TimelineNote {
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[non_exhaustive]
 pub struct Pause {
+    /// The index in [`Timeline::notes`] of the note the pause comes before.
     pub before_note: u32,
+    /// Why the singing pauses.
     pub kind: PauseKind,
     /// How long the pause lasts, in weight units: the [`Weights`] value for its kind, or 0
     /// for a bar that only closes the mediant or flex just before it.

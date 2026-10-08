@@ -12,10 +12,16 @@ pub type NoteRef = u32;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum TextRole {
+    /// A syllable's text under the staff.
     Lyric,
+    /// A hyphen between two syllables of a word, or after the last syllable on a line when
+    /// the word goes on.
     Hyphen,
+    /// The drop-cap initial.
     Initial,
+    /// A line above the initial: an `annotation` header, or the mode.
     Annotation,
+    /// A syllable's text set all in the rubric style (`<c>`), as directions are.
     Rubric,
 }
 
@@ -23,7 +29,9 @@ pub enum TextRole {
 #[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
 pub struct TextRun {
+    /// The text, to draw with ligatures off (see [`crate::text::TextMeasure`]).
     pub text: String,
+    /// Its style: italic, bold, small caps, colored, underlined.
     pub style: TextStyle,
 }
 
@@ -34,22 +42,36 @@ pub enum Item {
     /// A glyph outline (see [`crate::glyphs::glyph_outline`]) drawn with its anchor at (x, y),
     /// scaled by `scale` (output units per glyph unit).
     Glyph {
+        /// The glyph's stable id; [`crate::glyph_outline`] gives its outline.
         glyph: u16,
+        /// Where the outline's origin goes, in output units.
         x: f32,
+        /// Where the outline's origin goes, in output units.
         y: f32,
+        /// Output units per glyph unit: the outline's coordinates times this are output units
+        /// (100 glyph units are one staff space).
         scale: f32,
+        /// What the ink is, for styling.
         role: Ink,
+        /// The note it draws, if any.
         note: Option<NoteRef>,
         /// For ink that draws several notes (a porrectus swash), the last of them; the ink
         /// belongs to every note from `note` through this one.
         through: Option<NoteRef>,
     },
+    /// A filled rectangle: a staff or ledger line, a stem, a bar, an episema.
     Rect {
+        /// Left edge, in output units.
         x: f32,
+        /// Top edge, in output units.
         y: f32,
+        /// Width, in output units.
         w: f32,
+        /// Height, in output units.
         h: f32,
+        /// What the ink is, for styling.
         role: Ink,
+        /// The note it belongs to, if any (a stem, an episema or a ledger line of a note).
         note: Option<NoteRef>,
         /// For ink that draws several notes (a porrectus swash), the last of them; the ink
         /// belongs to every note from `note` through this one.
@@ -57,11 +79,18 @@ pub enum Item {
     },
     /// Text starting at x on `baseline`, `size` output units high.
     Text {
+        /// Where the text starts, in output units.
         x: f32,
+        /// The baseline's y, in output units.
         baseline: f32,
+        /// The font size (one em), in output units.
         size: f32,
+        /// The text, in runs of one style each, drawn one after another from `x`.
         runs: Vec<TextRun>,
+        /// What the text is, for styling.
         role: TextRole,
+        /// The index of the score's syllable it belongs to, for a lyric, a rubric or the
+        /// initial.
         syllable: Option<u32>,
     },
 }
@@ -70,10 +99,13 @@ pub enum Item {
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[non_exhaustive]
 pub struct LineBox {
+    /// y of the top of the line's box, half a staff space or more above its highest ink.
     pub top: f32,
+    /// y of the bottom of the line's box: below its lyrics' descenders and its lowest ink.
     pub bottom: f32,
     /// y of the staff's middle (staff position 0).
     pub staff: f32,
+    /// y of the line's lyric baseline.
     pub baseline: f32,
 }
 
@@ -81,11 +113,16 @@ pub struct LineBox {
 #[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
 pub struct DisplayList {
+    /// The layout's width, in output units: the width asked for, or wider if a line can't
+    /// fit in it.
     pub width: f32,
+    /// The layout's height, in output units.
     pub height: f32,
     /// Distance between staff positions (one staff space), in output units.
     pub staff_space: f32,
+    /// Each line's box, top to bottom.
     pub lines: Vec<LineBox>,
+    /// What to draw, in drawing order.
     pub items: Vec<Item>,
     /// The lyrics as plain text, for an accessibility label.
     pub alt_text: String,

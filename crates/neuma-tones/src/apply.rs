@@ -110,10 +110,13 @@ pub const UNSURE: f32 = 0.8;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum ToneRole {
+    /// The intonation that opens a first half-verse.
     Intonation,
     /// The reciting note.
     Tenor,
+    /// A preparatory note before a cadence's first accent.
     Preparatory,
+    /// An accented note of the cadence.
     Accent,
     /// The notes after an accent: passing notes between accents and the cadence's ending.
     Ending,
@@ -127,7 +130,9 @@ pub struct PsalmNote {
     pub verse: usize,
     /// The printed verse number.
     pub number: Option<u32>,
+    /// The half-verse it is in.
     pub part: VersePart,
+    /// What it does in the tone.
     pub role: ToneRole,
     /// The sung syllable's UTF-8 bytes in the psalm text: the same span as the engraved
     /// note's (`TimelineNote::span`).

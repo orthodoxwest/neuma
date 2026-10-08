@@ -7,6 +7,7 @@ use std::ops::Range;
 /// The rules for one language.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct VowelRules {
+    /// The language the rules are for, as its vowel file names it (`latin`, `english`).
     pub language: String,
     vowels: Vec<char>,
     prefixes: Vec<Vec<char>>,
@@ -37,6 +38,8 @@ impl VowelRules {
         rules
     }
 
+    /// The Latin rules, which a score whose language neuma has no rules for is centered by.
+    #[must_use]
     pub fn latin() -> VowelRules {
         VowelRules::builtin("la").unwrap_or_default()
     }

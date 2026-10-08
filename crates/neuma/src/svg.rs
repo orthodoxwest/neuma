@@ -401,13 +401,16 @@ impl Glyphs {
 #[derive(Clone)]
 #[non_exhaustive]
 pub struct SvgParts {
+    /// The SVG's width, in output units.
     pub width: f32,
+    /// The SVG's height, in output units.
     pub height: f32,
     /// The `<svg>` start tag, with its size, class and label, and the `<style>` element if
     /// asked for.
     pub head: String,
     /// The `<path>` elements of the glyphs the score uses, to go inside a `<defs>` element.
     pub defs: String,
+    /// Each line of the score, top to bottom.
     pub lines: Vec<SvgLine>,
     /// Everything that isn't on a line (the initial and its annotations), in page
     /// coordinates.

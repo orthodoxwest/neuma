@@ -70,7 +70,9 @@ pub struct PsalmVerse {
 #[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
 pub struct PsalmRun {
+    /// The text to print.
     pub text: String,
+    /// What it is, which says how to style it.
     pub kind: PsalmRunKind,
 }
 
@@ -106,6 +108,7 @@ pub enum PsalmRunKind {
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct PsalmSyllable {
+    /// The half-verse it is in.
     pub part: VersePart,
     /// What the syllable sings in the tone: its first note's role.
     pub role: ToneRole,
@@ -166,6 +169,8 @@ impl PsalmDisplay {
         &self.tone
     }
 
+    /// The verses, pointed for the tone, in order.
+    #[must_use]
     pub fn verses(&self) -> &[PsalmVerse] {
         &self.verses
     }

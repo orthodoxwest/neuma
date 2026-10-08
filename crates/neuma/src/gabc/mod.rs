@@ -19,11 +19,20 @@ pub(crate) use write::to_gabc;
 /// A parsed score and everything the parser had to say about it.
 #[derive(Clone, Debug)]
 pub struct Parsed {
+    /// The score, as much of it as could be read.
     pub score: Score,
+    /// What the parser found: the `gabc::` codes in docs/diagnostics.md, in source order.
     pub diagnostics: Vec<Diagnostic>,
 }
 
-/// Parses GABC source. Never fails.
+/// Parses GABC source. Never fails: what it can't read is reported in
+/// [`Parsed::diagnostics`], and the score holds what could be recovered.
+///
+/// ```
+/// let parsed = neuma::parse("(c4) Ky-(g)ri(h)e(g)");
+/// assert_eq!(parsed.score.syllables.len(), 4); // the clef's, and three with notes
+/// assert_eq!(parsed.diagnostics[0].code, "gabc::hyphen-in-syllable");
+/// ```
 pub fn parse(src: &str) -> Parsed {
     let mut parsed = parse_unchecked(src);
     check_fixes(src, &mut parsed);

@@ -28,16 +28,27 @@ use std::sync::Arc;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum Ink {
+    /// A staff line.
     Staff,
+    /// A ledger line above or below the staff.
     Ledger,
+    /// A notehead, or a neume glyph that draws several notes.
     Note,
+    /// A stem or a line joining two notes.
     Stem,
+    /// A bar (divisio).
     Bar,
+    /// A horizontal or vertical episema.
     Episema,
+    /// A mora (dot).
     Mora,
+    /// An ictus mark.
     Ictus,
+    /// A flat, natural or sharp.
     Accidental,
+    /// A clef, and a `cb` clef's flat.
     Clef,
+    /// A custos at the end of a line.
     Custos,
 }
 
@@ -125,10 +136,15 @@ pub enum AlterationScope {
     /// Until the next clef or written line break. Engraving doesn't know where layout will
     /// break lines, so an alteration carries past a line break that layout chose.
     Line,
+    /// Until the end of the word.
     Word,
+    /// Until the next bar.
     Bar,
+    /// Until the end of the word or the next bar, whichever comes first, as in the Solesmes
+    /// books; the default.
     #[default]
     WordOrBar,
+    /// For its own note only.
     Note,
 }
 
@@ -139,6 +155,7 @@ pub enum CustosPolicy {
     /// Where the score and GregorioTeX's defaults put one.
     #[default]
     Auto,
+    /// Never, whatever the score asks for.
     Never,
 }
 
@@ -424,6 +441,7 @@ pub struct Engraving {
     /// The segments from here on have no ink, only text, so a line of them alone draws no
     /// staff; the segments' count when every segment has ink or none has.
     pub(crate) inkless_from: usize,
+    /// What engraving found: the `engrave::` and `text::` codes in docs/diagnostics.md.
     pub diagnostics: Vec<Diagnostic>,
 }
 

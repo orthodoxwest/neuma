@@ -14,8 +14,11 @@ use crate::layout::Layout;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum ElementKind {
+    /// A note: its notehead.
     Note,
+    /// A bar.
     Bar,
+    /// A syllable: its notation and lyric, as a column of its line.
     Syllable,
 }
 
@@ -23,6 +26,7 @@ pub enum ElementKind {
 #[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
 pub struct Element {
+    /// What it is.
     pub kind: ElementKind,
     /// The note id ([`crate::NoteRef`]), or the bar's or syllable's index, counted from 0
     /// in source order.
@@ -30,14 +34,19 @@ pub struct Element {
     /// UTF-8 byte range in the source. A syllable's runs from its text through its closing
     /// parenthesis.
     pub span: Range<usize>,
+    /// The line it is drawn on, from 0. A syllable a line break splits is an element on each
+    /// line.
     pub line: u32,
-    /// The box's left, top, width and height, in output units. A note's is its notehead,
-    /// less a porrectus end's overlap with its neighbours; a bar's its ink; and a syllable's
-    /// runs from the line's top to its bottom across the syllable's notation and lyric (or
-    /// across the initial, for the syllable it starts).
+    /// The box's left edge, in output units. A note's box is its notehead, less a porrectus
+    /// end's overlap with its neighbours; a bar's its ink; and a syllable's runs from the
+    /// line's top to its bottom across the syllable's notation and lyric (or across the
+    /// initial, for the syllable it starts).
     pub x: f32,
+    /// The box's top edge, in output units.
     pub y: f32,
+    /// The box's width, in output units.
     pub w: f32,
+    /// The box's height, in output units.
     pub h: f32,
     /// The x of a note's notehead center, as [`crate::TimelineNote::cx`] (the box can be
     /// trimmed off center); for a bar or syllable, the box's center. A tap between notes

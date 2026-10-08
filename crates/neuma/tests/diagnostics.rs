@@ -52,7 +52,10 @@ fn every_code_is_documented() {
     codes.dedup();
     assert!(codes.len() > 50, "{codes:?}");
     for prefix in PREFIXES {
-        assert!(codes.iter().any(|c| c.starts_with(&format!("{prefix}::"))), "no {prefix}:: code found");
+        assert!(
+            codes.iter().any(|c| c.starts_with(&format!("{prefix}::"))),
+            "no {prefix}:: code found"
+        );
     }
     for code in &codes {
         assert!(doc.contains(&format!("| `{code}` |")), "{code} isn't in docs/diagnostics.md");

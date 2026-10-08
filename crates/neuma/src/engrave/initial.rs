@@ -126,6 +126,7 @@ const RISE: [u8; 623] = [
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Initial {
+    /// No initial: the first syllable is set as the others are.
     None,
     /// The initial spans this many staves (at most 4, and no more than the layout has): its
     /// cap height runs from the top line of the first staff to the bottom line of the last.

@@ -32,6 +32,7 @@ use crate::tone::{Cadence, Slot, Tone};
 pub struct HalfPointing {
     /// The verse's index in the text.
     pub verse: usize,
+    /// Which half-verse (or the flex) it is.
     pub part: VersePart,
     /// The model's probability for the chosen pointing, from 0 to 1; 1 for a half that was
     /// kept as written, and 0 for one too short for the tone, which accents every syllable.

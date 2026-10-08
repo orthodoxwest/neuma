@@ -412,6 +412,10 @@ impl Chant {
     }
 
     /// The score.
+    ///
+    /// # Panics
+    ///
+    /// Never: a chant is engraved when it is made, and keeps its score.
     #[must_use]
     pub fn score(&self) -> &Score {
         self.engraved.score().expect("a chant is engraved when made")

@@ -29,11 +29,14 @@ pub struct Cadence {
 }
 
 impl Cadence {
+    /// How many accents the cadence has.
+    #[must_use]
     pub fn accents(&self) -> usize {
         self.slots.iter().filter(|s| matches!(s, Slot::Accent(_))).count()
     }
 
     /// Preparatory syllables: the fixed slots before the first accent.
+    #[must_use]
     pub fn preparatory(&self) -> usize {
         self.slots
             .iter()
@@ -42,7 +45,15 @@ impl Cadence {
             .count()
     }
 
-    /// Parses a formula such as `g h jr 'k jr j.`.
+    /// Parses a formula such as `g h jr 'k jr j.`: neumes separated by spaces, each a GABC
+    /// neume. The first that ends in `r` is the reciting note, and those before it are the
+    /// lead. After it, a neume with a `'` before it is an accent, one ending in `r` an open
+    /// slot, and any other a fixed one. A final `.` ends the formula.
+    ///
+    /// # Errors
+    ///
+    /// [`ToneError::Invalid`] if a word isn't a neume (it must start with a pitch, `a` to
+    /// `m`), an accent comes before the reciting note, or there is no reciting note.
     pub fn parse(formula: &str) -> Result<Cadence, ToneError> {
         let mut lead = Vec::new();
         let mut tenor = None;
@@ -110,7 +121,9 @@ impl fmt::Display for Cadence {
 pub struct Tone {
     /// Such as `8.G` or `1.D2`.
     pub name: String,
+    /// The clef the formulas are written for: do or fa.
     pub clef: ClefKind,
+    /// The clef's staff line, 1 (the bottom) to 4.
     pub clef_line: u8,
     /// The first half-verse: intonation (its `lead`), tenor and mediant cadence.
     pub mediant: Cadence,
@@ -126,9 +139,15 @@ pub struct Tone {
 #[non_exhaustive]
 pub enum ToneError {
     /// No built-in tone has this name ([`Tone::named`]).
-    Unknown { name: String },
+    Unknown {
+        /// The name asked for.
+        name: String,
+    },
     /// A tone block can't be read ([`Tone::parse`]); `reason` says why.
-    Invalid { reason: String },
+    Invalid {
+        /// What is wrong with the block, in a sentence for people.
+        reason: String,
+    },
 }
 
 impl ToneError {
@@ -150,7 +169,20 @@ impl std::error::Error for ToneError {}
 
 impl Tone {
     /// Parses one tone block: `name:`, `clef:`, `mediant:`, `termination:` and optionally
-    /// `flex:` lines (see the built-in table for the formula syntax).
+    /// `flex:` lines, each formula as [`Cadence::parse`] reads it. `#` starts a comment line.
+    ///
+    /// ```
+    /// let tone = neuma_tones::Tone::parse("name: 8.G\nclef: c4\nmediant: g h jr 'k jr j.\ntermination: jr i 'j hr 'g.")?;
+    /// assert_eq!((tone.mediant.accents(), tone.termination.accents()), (1, 2));
+    /// # Ok::<(), neuma_tones::ToneError>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// [`ToneError::Invalid`] if a line isn't `key: value`, a key is unknown or given twice,
+    /// `name:`, `mediant:` or `termination:` is missing, a formula can't be read, a half or
+    /// the flex has no accent, or there is no `flex:` and the tenor is too low for the usual
+    /// one.
     pub fn parse(block: &str) -> Result<Tone, ToneError> {
         let mut name = None;
         let mut clef = None;
@@ -205,6 +237,10 @@ impl Tone {
     }
 
     /// Parses several tone blocks separated by blank lines.
+    ///
+    /// # Errors
+    ///
+    /// The first block's error that [`Tone::parse`] gives.
     pub fn parse_all(src: &str) -> Result<Vec<Tone>, ToneError> {
         let mut out = Vec::new();
         let mut block = String::new();

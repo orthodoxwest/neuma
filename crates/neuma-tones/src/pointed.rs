@@ -39,6 +39,7 @@ pub struct Verse {
     pub span: Range<usize>,
 }
 
+/// A part of a verse: the flex, the first half up to the mediant, or the second half.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum VersePart {
     /// Up to the flex `†`.
