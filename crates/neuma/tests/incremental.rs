@@ -5,7 +5,7 @@
 //! some rarer notation. `NEUMA_CORPUS=<dir>` runs every `.gabc` in a directory as well (the
 //! GregoBase corpus takes a few minutes in release); `NEUMA_EDITS=<n>` sets the edits per score.
 
-use neuma::{ApproxMeasure, Chant, ChantOptions, Initial, LastLine, LayoutOptions, StyleOptions, SvgOptions, SvgParts, parse};
+use neuma::{ApproxMeasure, Chant, ChantOptions, Initial, LastLine, LayoutOptions, StyleOptions, SvgOptions, SvgParts, Utf16Index, parse};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -215,6 +215,7 @@ fn check(name: &str, src: &str, seed: u64, edits: usize) {
     let style = StyleOptions::default().with_initial(initial);
     let mut chant = chant(&style);
     let mut shown: Option<SvgParts> = None;
+    let mut _held = None;
     let mut width = WIDTHS[rng.below(WIDTHS.len())];
     for step in 0..edits {
         // Now and then the column changes too, as when a window is resized.
@@ -223,8 +224,13 @@ fn check(name: &str, src: &str, seed: u64, edits: usize) {
         }
         let opts = LayoutOptions::default().with_last_line(if rng.below(5) == 0 { LastLine::Justified } else { LastLine::Ragged });
         let what = || format!("{name}, seed {seed}, edit {step}, width {width}:\n{src}");
-        let eng = parse(&src).score.engrave(&ApproxMeasure, &style);
+        let parsed = parse(&src);
+        let eng = parsed.score.engrave(&ApproxMeasure, &style);
         chant.update(&src);
+        // Parsed again around the edit, as a fresh parse reads it.
+        assert!(chant.score() == &parsed.score, "{}", what());
+        let found: Vec<_> = parsed.diagnostics.iter().chain(&eng.diagnostics).cloned().collect();
+        assert_eq!(chant.diagnostics(), &found[..], "{}", what());
         assert!(chant.engraving() == &*eng, "{}", what());
         let cached = chant.layout_with(width, &opts);
         let fresh = eng.layout_with(width, &opts);
@@ -241,6 +247,10 @@ fn check(name: &str, src: &str, seed: u64, edits: usize) {
         shown = Some(cached_parts);
         assert_eq!(cached.timeline(), fresh.timeline(), "{}", what());
         assert_eq!(cached.source_map(), fresh.source_map(), "{}", what());
+        assert_eq!(cached.utf16(), Some(&Utf16Index::new(&src)), "{}", what());
+        // A page still showing the layout shares its engraving, which the next edit then
+        // reads rather than takes.
+        _held = (rng.below(2) == 0).then_some(cached);
         src = edit(&src, &mut rng);
     }
 }
@@ -301,19 +311,36 @@ fn edits_whose_effects_reach_past_them() {
         ("(c4) Al(g)le(h) c(g)", "(c4) Bl(g)le(h) c(g)"),
         ("(c4) A(g) b(h) c(g)", "x(c4) A(g) b(h) c(g)"),
         ("name: a;\n%%\n(c4) a(g) b(h)", "name: ab;\n%%\n(c4) a(g) b(h)"),
+        // The header, which reaches the engraving through the vowel rules and the
+        // annotations over the initial, and the initial itself.
+        ("mode: 1;\n%%\n(c4) Al(g)le(h) c(g)", "mode: 2;\n%%\n(c4) Al(g)le(h) c(g)"),
+        ("mode: 1;\n%%\n(c4) Al(g)le(h) c(g)", "mode: 12;\n%%\n(c4) Al(g)le(h) c(g)"),
+        (
+            "annotation: Ant.;\n%%\n(c4) Al(g)le(h)",
+            "annotation: Antiphona;\n%%\n(c4) Al(g)le(h)",
+        ),
+        ("language: la;\n%%\n(c4) quae(g) yes(h)", "language: en;\n%%\n(c4) quae(g) yes(h)"),
+        ("language: xx;\n%%\n(c4) a(g) b(h)", "name: n;\nlanguage: xx;\n%%\n(c4) a(g) b(h)"),
+        ("language: xx;\n%%\n(c4) a(g) b(h)", "language: la;\n%%\n(c4) a(g) b(h)"),
+        ("(c4) Al(g)le(h) c(g)", "(c4) Ál(g)le(h) c(g)"),
+        ("(c4) Al(g)le(h) c(g)", "(c4) Alle(g)le(h) c(g)"),
+        ("(c4) Al(g)le(h) c(g)", "(c4) W(g)le(h) c(g)"),
         ("(c4) a(g) <i>b(h) c(g)", "(c4) a(g) b(h) c(g)"),
         ("(c4) a*(g) b(h) c(g)", "(c4) a(g) b(h) c(g)"),
     ];
     let styles = [Initial::Lines(1), Initial::None, Initial::Lines(2)];
-    for (before, after) in cases {
+    // Each with a header too, which is what lets a chant parse only around the edit.
+    for (header, (before, after)) in ["", "name: x;\n%%\n"].into_iter().flat_map(|h| cases.iter().map(move |c| (h, c))) {
         for initial in styles {
             let style = StyleOptions::default().with_initial(initial);
-            let (before, after) = (format!("{before}{tail}"), format!("{after}{tail}"));
+            let (before, after) = (format!("{header}{before}{tail}"), format!("{header}{after}{tail}"));
             let mut chant = chant(&style);
             let mut shown: Option<SvgParts> = None;
             for src in [&before, &after, &before] {
-                let fresh = parse(src).score.engrave(&ApproxMeasure, &style);
+                let parsed = parse(src);
+                let fresh = parsed.score.engrave(&ApproxMeasure, &style);
                 chant.update(src);
+                assert!(chant.score() == &parsed.score, "{initial:?}: {before:?} to {src:?}");
                 assert!(chant.engraving() == &*fresh, "{initial:?}: {before:?} to {src:?}");
                 let opts = LayoutOptions::default();
                 let svg = SvgOptions::default();

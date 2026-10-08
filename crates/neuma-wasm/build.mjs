@@ -1,4 +1,5 @@
-// Builds dist/neuma.mjs: the wasm module, optimized and gzipped, inlined into the glue.
+// Builds dist/neuma.mjs: the wasm module, optimized and gzipped, inlined into the glue; and
+// dist/neuma-external.mjs, the glue alone, which fetches dist/neuma.wasm.
 //
 //   cargo build -p neuma-wasm --target wasm32-unknown-unknown --profile wasm
 //   node crates/neuma-wasm/build.mjs [path/to/wasm-opt]
@@ -31,7 +32,15 @@ if (wasmOpt) {
 const wasm = readFileSync(wasmPath);
 const packed = gzipSync(wasm, { level: 9 }).toString("base64");
 const glue = readFileSync(join(here, "js/neuma.mjs"), "utf8");
-const marker = '/*__NEUMA_WASM__*/\nconst WASM_GZIP_BASE64 = "";';
+const marker = '/*__NEUMA_WASM__*/\nconst WASM_GZIP_BASE64 = "";\nconst wasmUrl = () => null;';
 if (!glue.includes(marker)) throw new Error("marker missing from js/neuma.mjs");
-writeFileSync(join(dist, "neuma.mjs"), glue.replace(marker, `const WASM_GZIP_BASE64 = "${packed}";`));
-console.log(`dist/neuma.mjs: ${(packed.length / 1024).toFixed(0)} KB of inlined wasm (${(wasm.length / 1024).toFixed(0)} KB raw)`);
+// One self-contained module, the wasm inlined; and one that fetches neuma.wasm beside it.
+writeFileSync(join(dist, "neuma.mjs"), glue.replace(marker, `const WASM_GZIP_BASE64 = "${packed}";\nconst wasmUrl = () => null;`));
+writeFileSync(
+  join(dist, "neuma-external.mjs"),
+  glue.replace(marker, 'const WASM_GZIP_BASE64 = "";\nconst wasmUrl = () => new URL("./neuma.wasm", import.meta.url);'),
+);
+const types = readFileSync(join(here, "js/neuma.d.mts"), "utf8");
+writeFileSync(join(dist, "neuma.d.mts"), types);
+writeFileSync(join(dist, "neuma-external.d.mts"), types);
+console.log(`dist/neuma.mjs: ${(packed.length / 1024).toFixed(0)} KB of inlined wasm (${(wasm.length / 1024).toFixed(0)} KB raw, ${(gzipSync(wasm, { level: 9 }).length / 1024).toFixed(0)} KB gzipped)`);

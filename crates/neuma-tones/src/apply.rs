@@ -57,8 +57,8 @@ pub struct PsalmOptions {
     pub accents: Accents,
     /// The score's `name:` header.
     pub name: Option<String>,
-    /// Point half-verses that carry no marks with [`point`](crate::point()) first; default
-    /// true. Without it their cadence falls on the last syllables.
+    /// Point half-verses that carry no marks with `point` first; default true. Without it
+    /// (or without the `pointing` feature) their cadence falls on the last syllables.
     pub auto_point: bool,
 }
 
@@ -188,15 +188,18 @@ pub(crate) struct SungPsalm {
 /// Sets each syllable of `pointed` to `tone`'s notes, as [`psalm`] and
 /// [`PsalmDisplay`](crate::PsalmDisplay) both need.
 pub(crate) fn sing(pointed: &Pointed, tone: &Tone, options: &PsalmOptions) -> SungPsalm {
-    let mut unsure = Vec::new();
-    let text = if !options.auto_point {
-        pointed.syllabified()
-    } else {
-        let (text, halves) = crate::point::point_parsed(pointed, tone);
-        for h in halves.iter().filter(|h| !h.kept && h.confidence < UNSURE && !h.span.is_empty()) {
-            unsure.push((h.span.clone(), h.confidence));
+    #[cfg_attr(not(feature = "pointing"), allow(unused_mut))]
+    let mut unsure: Vec<(std::ops::Range<usize>, f32)> = Vec::new();
+    let text = match options.auto_point {
+        #[cfg(feature = "pointing")]
+        true => {
+            let (text, halves) = crate::point::point_parsed(pointed, tone);
+            for h in halves.iter().filter(|h| !h.kept && h.confidence < UNSURE && !h.span.is_empty()) {
+                unsure.push((h.span.clone(), h.confidence));
+            }
+            text
         }
-        text
+        _ => pointed.syllabified(),
     };
     let mut diags = Vec::new();
     if text.verses.is_empty() {

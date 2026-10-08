@@ -2,13 +2,13 @@
 //! theme staff, notes and rubrics (and dark mode) with CSS alone. Coordinates are written with
 //! exactly two decimals.
 
-use std::collections::BTreeSet;
+use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::sync::Arc;
 
 use crate::display::{DisplayList, Item, TextRole};
-use crate::glyphs::GlyphId;
-use crate::layout::Layout;
+use crate::glyphs::{GlyphId, UNITS_PER_SPACE};
+use crate::layout::{Layout, LineShape, PlacedLine};
 
 /// How to write SVG. Build it with the `with_*` setters:
 /// `SvgOptions::default().with_prefix("intro").with_ids(false)`.
@@ -165,73 +165,92 @@ impl Layout {
         // Only what the parts keep privately is read: the caller may have taken or changed
         // the public lines.
         let previous = previous.map(|q| &q.drawn).filter(|d| d.prefix == p && d.ids == opts.ids);
-        let mut taken = vec![false; previous.map_or(0, |d| d.lines.len())];
-        let mut by_hash: std::collections::HashMap<u64, Vec<usize>> = std::collections::HashMap::new();
-        if let Some(d) = previous {
-            for (k, line) in d.lines.iter().enumerate() {
-                by_hash.entry(line.hash).or_default().push(k);
-            }
+        let old: &[DrawnLine] = previous.map_or(&[], |d| &d.lines);
+        let mut taken = vec![false; old.len()];
+        // The previous lines by what they draw from, and by their SVG.
+        let mut by_key: HashMap<u64, Vec<usize>> = HashMap::new();
+        let mut by_svg: HashMap<u64, Vec<usize>> = HashMap::new();
+        for (k, line) in old.iter().enumerate() {
+            by_key.entry(line.key.hash).or_default().push(k);
+            by_svg.entry(line.svg_hash).or_default().push(k);
         }
         let s = self.scale;
-        let one = |line: crate::layout::PlacedLine, initial| {
-            Layout::new(self.eng.clone(), vec![line], initial, self.width, self.height, self.scale)
-        };
-        let mut used = BTreeSet::new();
-        let mut glyph_scale = None;
+        let mut used = Glyphs::default();
         let mut lines = Vec::with_capacity(self.lines.len());
         let mut drawn = Vec::with_capacity(self.lines.len());
-        for line in &self.lines {
+        let mut items = Vec::new();
+        for line in self.lines.iter() {
             let top = line.top;
-            let mut items = Vec::new();
-            self.push_line(&mut items, line, top);
-            note_glyphs(&items, &mut used, &mut glyph_scale);
-            if !opts.ids {
-                // Without ids, a line draws the same whatever its notes' and syllables'
-                // numbers, which an edit before it changes.
-                strip_ids(&mut items);
-            }
-            let hash = hash_items(&items);
-            let seen = previous.and_then(|d| {
-                by_hash
-                    .get(&hash)?
-                    .iter()
-                    .copied()
-                    .find(|&k| !taken[k] && d.lines[k].items == items)
-            });
-            let svg: Arc<str> = match (previous, seen) {
-                (Some(d), Some(k)) => {
-                    taken[k] = true;
-                    Arc::clone(&d.lines[k].svg)
-                }
-                _ => {
+            let key = self.line_key(line, opts.ids);
+            // A previous line drawn from the same segments, placed alike, draws the same.
+            let same = by_key
+                .get(&key.hash)
+                .and_then(|ks| ks.iter().map(|&k| &old[k]).find(|o| o.key == key));
+            let (svg, svg_hash, glyphs) = match same {
+                Some(o) => (Arc::clone(&o.svg), o.svg_hash, o.glyphs),
+                None => {
+                    items.clear();
+                    self.push_line(&mut items, line, top);
+                    let mut glyphs = Glyphs::default();
+                    glyphs.add(&items);
                     let mut svg = String::with_capacity(items.len() * 96);
                     write_items(&mut svg, &items, &p, opts.ids);
-                    svg.into()
+                    let svg_hash = hash_str(&svg);
+                    (Arc::<str>::from(svg), svg_hash, glyphs)
                 }
+            };
+            used.union(&glyphs);
+            // Which previous line, not yet taken, wrote the same SVG.
+            let seen = by_svg
+                .get(&svg_hash)
+                .and_then(|ks| ks.iter().copied().find(|&k| !taken[k] && *old[k].svg == *svg));
+            let svg = match seen {
+                Some(k) => {
+                    taken[k] = true;
+                    Arc::clone(&old[k].svg)
+                }
+                None => svg,
             };
             lines.push(SvgLine {
                 top: top * s,
                 svg: Arc::clone(&svg),
                 reused_from: seen,
             });
-            drawn.push(DrawnLine { hash, items, svg });
+            drawn.push(DrawnLine {
+                key,
+                svg,
+                svg_hash,
+                glyphs,
+            });
         }
         // The initial and annotations, which hang beside the first lines.
         let mut rest = String::new();
-        if let Some(first) = self.lines.first()
-            && self.initial.is_some()
-        {
-            let on_line = one(first.clone(), None).display().items.len();
-            let items = one(first.clone(), self.initial).display().items;
-            let items = &items[on_line.min(items.len())..];
-            note_glyphs(items, &mut used, &mut glyph_scale);
-            write_items(&mut rest, items, &p, opts.ids);
+        if self.initial.is_some() && !self.lines.is_empty() {
+            items.clear();
+            self.push_initial(&mut items);
+            used.add(&items);
+            write_items(&mut rest, &items, &p, opts.ids);
         }
         let (width, height) = self.size();
-        let mut head = String::new();
-        write_head(&mut head, width, height, &self.eng.alt_text, &p, opts);
+        let head_of = HeadOf {
+            width: width.to_bits(),
+            height: height.to_bits(),
+            style: opts.style,
+            font_family: opts.font_family.clone(),
+            alt_text: self.eng.alt_text.clone(),
+        };
+        // The head writes the score's text, as its label, so is kept when that is unchanged.
+        let head = match previous {
+            Some(d) if d.head_of == head_of => d.head.clone(),
+            _ => {
+                let mut head = String::new();
+                write_head(&mut head, width, height, &self.eng.alt_text, &p, opts);
+                head
+            }
+        };
+        let kept_head = head.clone();
         let mut defs = String::new();
-        write_defs(&mut defs, &used, glyph_scale.unwrap_or(1.0), &p);
+        write_defs(&mut defs, &used, s / UNITS_PER_SPACE, &p);
         SvgParts {
             width,
             height,
@@ -243,75 +262,142 @@ impl Layout {
                 prefix: p,
                 ids: opts.ids,
                 lines: drawn,
+                head: kept_head,
+                head_of,
             },
+        }
+    }
+
+    /// What a line's SVG is made from: how it is set across (shared between layouts that set
+    /// it alike, from the same segments' ink), and where it is placed. Two lines with equal
+    /// keys draw the same.
+    fn line_key(&self, line: &PlacedLine, ids: bool) -> LineKey {
+        let eng = &*self.eng;
+        let f = |x: f32| x.to_bits();
+        let mut words = Vec::with_capacity(if ids { 6 + 2 * (line.last + 1 - line.first) } else { 6 });
+        words.extend([
+            f(self.scale),
+            f(self.width),
+            f(eng.lyric_size),
+            f(eng.hyphen),
+            f(line.staff - line.top),
+            f(line.baseline - line.top),
+        ]);
+        if ids {
+            // The note and syllable numbers the ids write.
+            for seg in &eng.segments[line.first..=line.last] {
+                words.extend([seg.note_base, seg.syllable]);
+            }
+        }
+        let mut h = Arc::as_ptr(&line.shape) as usize as u64;
+        for &x in &words {
+            h = (h.rotate_left(5) ^ u64::from(x)).wrapping_mul(0x517c_c1b7_2722_0a95);
+        }
+        LineKey {
+            hash: h,
+            words,
+            shape: Arc::clone(&line.shape),
         }
     }
 }
 
-/// What each line of [`SvgParts`] draws and its SVG, kept apart from the public lines (which
-/// the caller may take or change) so that the next parts can tell which lines draw the same
-/// and share their strings.
+/// What each line of [`SvgParts`] was drawn from and its SVG, kept apart from the public
+/// lines (which the caller may take or change) so that the next parts can tell which lines
+/// draw the same and share their strings.
 #[derive(Clone, Default)]
 struct Drawn {
     prefix: String,
     ids: bool,
     lines: Vec<DrawnLine>,
+    head: String,
+    head_of: HeadOf,
+}
+
+/// What the head was written from.
+#[derive(Clone, Default, PartialEq)]
+struct HeadOf {
+    width: u32,
+    height: u32,
+    style: bool,
+    font_family: String,
+    alt_text: String,
 }
 
 #[derive(Clone)]
 struct DrawnLine {
-    hash: u64,
-    items: Vec<Item>,
+    key: LineKey,
     svg: Arc<str>,
+    svg_hash: u64,
+    glyphs: Glyphs,
 }
 
-/// Clears the note and syllable numbers, which only ids write.
-fn strip_ids(items: &mut [Item]) {
-    for i in items {
-        match i {
-            Item::Glyph { note, through, .. } | Item::Rect { note, through, .. } => {
-                *note = None;
-                *through = None;
-            }
-            Item::Text { syllable, .. } => *syllable = None,
-        }
+/// See [`Layout::line_key`]. A layout shares a line's shape only with lines set from the same
+/// segments' ink, which it holds while it does; the key holds the shape, so no other shape
+/// takes its address while the key is kept.
+#[derive(Clone)]
+struct LineKey {
+    hash: u64,
+    words: Vec<u32>,
+    shape: Arc<LineShape>,
+}
+
+impl PartialEq for LineKey {
+    fn eq(&self, other: &LineKey) -> bool {
+        self.hash == other.hash && Arc::ptr_eq(&self.shape, &other.shape) && self.words == other.words
     }
 }
 
-/// A hash of `items` that agrees with their equality (numbers equal as floats hash alike),
-/// quick rather than strong: a match is confirmed by comparing the items.
-fn hash_items(items: &[Item]) -> u64 {
-    let mut h = items.len() as u64;
-    let mut mix = |v: u64| h = (h.rotate_left(5) ^ v).wrapping_mul(0x517c_c1b7_2722_0a95);
-    let f = |v: f32| if v == 0.0 { 0 } else { v.to_bits() as u64 };
-    for i in items {
-        match i {
-            Item::Glyph { glyph, x, y, .. } => {
-                mix(*glyph as u64);
-                mix(f(*x) << 32 | f(*y));
-            }
-            Item::Rect { x, y, w, h, .. } => {
-                mix(f(*x) << 32 | f(*y));
-                mix(f(*w) << 32 | f(*h));
-            }
-            Item::Text { x, baseline, runs, .. } => {
-                mix(f(*x) << 32 | f(*baseline));
-                for r in runs {
-                    for b in r.text.bytes() {
-                        mix(b as u64);
-                    }
-                }
-            }
-        }
+/// A quick hash of `s`, to find a line's SVG among others: a match is confirmed by comparing
+/// the strings.
+fn hash_str(s: &str) -> u64 {
+    let mut h = s.len() as u64;
+    let mut mix = |x: u64| h = (h.rotate_left(5) ^ x).wrapping_mul(0x517c_c1b7_2722_0a95);
+    let (chunks, rest) = s.as_bytes().as_chunks::<8>();
+    for c in chunks {
+        mix(u64::from_le_bytes(*c));
+    }
+    for &b in rest {
+        mix(u64::from(b));
     }
     h
 }
 
+/// A set of glyphs, by id.
+#[derive(Clone, Copy, Default)]
+struct Glyphs([u64; GlyphId::ALL.len().div_ceil(64)]);
+
+impl Glyphs {
+    /// Adds the glyphs `items` use.
+    fn add(&mut self, items: &[Item]) {
+        for i in items {
+            if let Item::Glyph { glyph, .. } = i {
+                let g = usize::from(*glyph);
+                if let Some(w) = self.0.get_mut(g / 64) {
+                    *w |= 1 << (g % 64);
+                }
+            }
+        }
+    }
+
+    fn union(&mut self, other: &Glyphs) {
+        for (a, b) in self.0.iter_mut().zip(other.0) {
+            *a |= b;
+        }
+    }
+
+    fn ids(&self) -> impl Iterator<Item = u16> + '_ {
+        (0..self.0.len() * 64)
+            .filter(|&g| self.0[g / 64] >> (g % 64) & 1 == 1)
+            .map(|g| g as u16)
+    }
+}
+
 /// A layout's SVG in parts (see [`Layout::svg_parts`]).
 ///
-/// Besides the strings, parts keep what each line draws, so that
-/// [`Layout::svg_parts_reusing`] can tell which lines of the next layout draw the same: about
-/// two thirds again the memory of the strings. Keep only the parts a page shows.
+/// Besides the strings, parts keep what each line was drawn from (a few numbers, and a share
+/// of the engraving's ink for its segments), so that [`Layout::svg_parts_reusing`] can tell
+/// which lines of the next layout draw the same without drawing them. That share keeps the
+/// ink of the chant's version they were written from: keep only the parts a page shows.
 #[derive(Clone)]
 #[non_exhaustive]
 pub struct SvgParts {
@@ -407,16 +493,6 @@ fn prefix(opts: &SvgOptions) -> String {
     if p.is_empty() { "neuma".into() } else { p }
 }
 
-/// Adds the glyphs `items` use to `used`, and notes their scale.
-fn note_glyphs(items: &[Item], used: &mut BTreeSet<u16>, scale: &mut Option<f32>) {
-    for i in items {
-        if let Item::Glyph { glyph, scale: s, .. } = i {
-            used.insert(*glyph);
-            scale.get_or_insert(*s);
-        }
-    }
-}
-
 fn write_head(out: &mut String, width: f32, height: f32, alt_text: &str, p: &str, opts: &SvgOptions) {
     let _ = write!(
         out,
@@ -439,9 +515,9 @@ fn write_head(out: &mut String, width: f32, height: f32, alt_text: &str, p: &str
     }
 }
 
-fn write_defs(out: &mut String, used: &BTreeSet<u16>, scale: f32, p: &str) {
-    for id in used {
-        if let Some(g) = GlyphId::from_id(*id) {
+fn write_defs(out: &mut String, used: &Glyphs, scale: f32, p: &str) {
+    for id in used.ids() {
+        if let Some(g) = GlyphId::from_id(id) {
             let _ = write!(
                 out,
                 r#"<path id="{p}-s{}-g{id}" transform="scale({})" d="{}"/>"#,
@@ -466,12 +542,16 @@ impl DisplayList {
         let p = prefix(opts);
         let mut out = String::with_capacity(1024 + self.items.len() * 96);
         write_head(&mut out, self.width, self.height, &self.alt_text, &p, opts);
-        let mut used = BTreeSet::new();
-        let mut scale = None;
-        note_glyphs(&self.items, &mut used, &mut scale);
-        if !used.is_empty() {
+        let mut used = Glyphs::default();
+        used.add(&self.items);
+        // The scale of the first glyph (a layout's are all alike).
+        let scale = self.items.iter().find_map(|i| match i {
+            Item::Glyph { scale, .. } => Some(*scale),
+            _ => None,
+        });
+        if let Some(scale) = scale {
             out.push_str("<defs>");
-            write_defs(&mut out, &used, scale.unwrap_or(1.0), &p);
+            write_defs(&mut out, &used, scale, &p);
             out.push_str("</defs>");
         }
         write_items(&mut out, &self.items, &p, opts.ids);

@@ -525,6 +525,7 @@ fn word(
 
 impl Pointed {
     /// The canonical text form.
+    #[cfg_attr(not(feature = "pointing"), allow(dead_code))]
     pub fn to_text(&self) -> String {
         let mut out = String::new();
         for v in &self.verses {

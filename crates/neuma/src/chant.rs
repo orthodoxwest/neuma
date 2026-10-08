@@ -6,8 +6,9 @@ use std::sync::{Arc, Mutex, MutexGuard, TryLockError};
 
 use crate::diag::Diagnostic;
 use crate::engrave::{AlterationScope, CustosPolicy, EngraveCache, Engraving, Initial, StyleOptions};
-#[cfg(feature = "fonts")]
+#[cfg(any(feature = "font-google", feature = "font-garamond12"))]
 use crate::fonts::LyricFont;
+use crate::gabc::{Diff, ParseMarks};
 use crate::layout::{Layout, LayoutCache, LayoutOptions, usable_width};
 use crate::score::Score;
 use crate::source::Utf16Index;
@@ -22,7 +23,7 @@ use crate::vowel::VowelRules;
 #[non_exhaustive]
 pub struct ChantOptions {
     /// The EB Garamond the lyrics will be drawn with; default [`LyricFont::Google`].
-    #[cfg(feature = "fonts")]
+    #[cfg(any(feature = "font-google", feature = "font-garamond12"))]
     pub font: LyricFont,
     /// Everything else about the engraving. A lyric size that isn't positive and finite
     /// falls back to the default.
@@ -33,7 +34,7 @@ pub struct ChantOptions {
 
 impl ChantOptions {
     /// Sets [`font`](Self::font).
-    #[cfg(feature = "fonts")]
+    #[cfg(any(feature = "font-google", feature = "font-garamond12"))]
     #[must_use]
     pub fn with_font(mut self, font: LyricFont) -> ChantOptions {
         self.font = font;
@@ -100,9 +101,9 @@ impl ChantOptions {
     fn measure(&self) -> &dyn TextMeasure {
         match &self.measure {
             Some(m) => m.as_ref(),
-            #[cfg(feature = "fonts")]
+            #[cfg(any(feature = "font-google", feature = "font-garamond12"))]
             None => self.font.metrics(),
-            #[cfg(not(feature = "fonts"))]
+            #[cfg(not(any(feature = "font-google", feature = "font-garamond12")))]
             None => &crate::text::ApproxMeasure,
         }
     }
@@ -129,7 +130,7 @@ impl ChantOptions {
 
 impl PartialEq for ChantOptions {
     fn eq(&self, other: &ChantOptions) -> bool {
-        #[cfg(feature = "fonts")]
+        #[cfg(any(feature = "font-google", feature = "font-garamond12"))]
         if self.font != other.font {
             return false;
         }
@@ -145,7 +146,7 @@ impl PartialEq for ChantOptions {
 impl fmt::Debug for ChantOptions {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut d = f.debug_struct("ChantOptions");
-        #[cfg(feature = "fonts")]
+        #[cfg(any(feature = "font-google", feature = "font-garamond12"))]
         d.field("font", &self.font);
         d.field("style", &self.style)
             .field("measure", &self.measure.as_ref().map(|_| "custom"))
@@ -190,6 +191,9 @@ pub struct Chant {
     engraved: EngraveCache,
     /// What reading the score found (parse or psalm-setting diagnostics).
     read: Vec<Diagnostic>,
+    /// What parsing the source kept, to parse the next edit of it around the edit; none for a
+    /// score built some other way.
+    parsed: Option<ParseMarks>,
     /// `read`, then the engraving's.
     diagnostics: Vec<Diagnostic>,
     caches: Caches,
@@ -275,6 +279,7 @@ impl Chant {
             utf16: Arc::default(),
             engraved: EngraveCache::default(),
             read: Vec::new(),
+            parsed: None,
             diagnostics: Vec::new(),
             caches: Caches::default(),
             version: next_version(),
@@ -286,12 +291,13 @@ impl Chant {
     /// breaks again only the lines they are on. Layouts made before keep showing the old
     /// score.
     ///
-    /// A layout still held shares the engraving, which the update must then copy rather than
-    /// change in place. In an editor the layout on screen is always held when the next edit
-    /// comes, so this copy is part of an edit's cost: on the longest scores (about 4,900
-    /// notes) about 1.7 ms of a 5 ms update, on typical ones next to nothing. Dropping the
-    /// layouts a view has replaced doesn't avoid it, but bounds memory: each layout kept past
-    /// an edit keeps a whole engraving alive.
+    /// A layout still held shares the engraving, which the update must then copy up to the
+    /// edit rather than change in place (what follows the edit, and every syllable's drawing,
+    /// is shared). In an editor the layout on screen is always held when the next edit comes,
+    /// so this copy is part of an edit's cost: on the longest scores (about 4,900 notes) about
+    /// 0.1 ms of a 0.7 ms update, on typical ones next to nothing. Dropping the layouts a view
+    /// has replaced doesn't avoid it, but bounds memory: each layout kept past an edit keeps
+    /// the old engraving's lists alive.
     ///
     /// Returns whether anything changed: `false` when `gabc` is the current source, and the
     /// chant, its layouts, its memo and its [`version`](Self::version) stay as they were.
@@ -299,8 +305,21 @@ impl Chant {
         if self.engraved.score().is_some() && gabc == self.source {
             return false;
         }
-        let parsed = crate::parse(gabc);
-        self.update_score(parsed.score, gabc, parsed.diagnostics)
+        // An edit of the GABC the chant was parsed from is read again only around the edit.
+        if let (Some(marks), Some(old)) = (self.parsed.as_mut(), self.engraved.score_mut())
+            && let Some((parsed, diff)) = crate::gabc::reparse(&self.source, old, marks, gabc)
+        {
+            self.read = parsed.diagnostics;
+            self.edit_source(gabc);
+            self.engrave(parsed.score, Some(diff));
+            self.version = next_version();
+            return true;
+        }
+        let mut marks = ParseMarks::default();
+        let parsed = crate::gabc::parse_keeping(gabc, &mut marks);
+        let changed = self.update_score(parsed.score, gabc, parsed.diagnostics);
+        self.parsed = Some(marks);
+        changed
     }
 
     /// [`update`](Self::update) with a score built some other way (see
@@ -310,18 +329,31 @@ impl Chant {
         if self.engraved.score().is_some_and(|s| *s == score) && source == self.source && diagnostics == self.read {
             return false;
         }
+        self.parsed = None;
         self.read = diagnostics;
-        self.source.clear();
-        self.source.push_str(source);
-        self.utf16 = Arc::new(Utf16Index::new(source));
-        self.engrave(score);
+        self.set_source(source);
+        self.engrave(score, None);
         self.version = next_version();
         true
     }
 
+    fn set_source(&mut self, source: &str) {
+        self.source.clear();
+        self.source.push_str(source);
+        self.utf16 = Arc::new(Utf16Index::new(source));
+    }
+
+    /// [`set_source`](Self::set_source) for an edit of the current source.
+    fn edit_source(&mut self, source: &str) {
+        self.utf16 = Arc::new(self.utf16.edited(&self.source, source));
+        self.source.clear();
+        self.source.push_str(source);
+    }
+
     /// Engraves the score with new options, as when the reader changes the lyric font or
-    /// size (Dynamic Type, say) or the initial. Options that engrave the same as the current
-    /// ones change nothing; others engrave the score again, and the next layout reuses
+    /// size (Dynamic Type, say) or the initial. They replace the current ones whole, as on
+    /// mobile and in the browser. Options that engrave the same as the current ones change
+    /// nothing; others engrave the score again, and the next layout reuses
     /// whatever lines still come out the same.
     ///
     /// Returns whether it engraved again, which is when layouts made before are out of date.
@@ -332,7 +364,7 @@ impl Chant {
             return false;
         }
         if let Some(score) = self.engraved.take_score() {
-            self.engrave(score);
+            self.engrave(score, None);
         }
         self.version = next_version();
         true
@@ -350,12 +382,12 @@ impl Chant {
         self.version
     }
 
-    fn engrave(&mut self, score: Score) {
+    fn engrave(&mut self, score: Score, diff: Option<Diff>) {
         // Layouts in the memo share the old engraving; dropping them lets the cache take it
         // back without a copy.
         lock(&self.caches.recent).clear();
         let style = self.options.sanitized_style();
-        let engraving = self.engraved.engrave(score, self.options.measure(), &style);
+        let engraving = self.engraved.engrave(score, self.options.measure(), &style, diff);
         self.diagnostics.clear();
         self.diagnostics.extend(self.read.iter().cloned());
         self.diagnostics.extend(engraving.diagnostics.iter().cloned());
@@ -530,6 +562,37 @@ mod tests {
         // `é` is two bytes and one UTF-16 unit: `b`'s note `h` is at byte 13, unit 12.
         let at = after.elements_at(after.utf16().unwrap().to_utf8(12));
         assert_eq!((at[0].kind, at[0].index, at[0].span.clone()), (ElementKind::Note, 1, 13..14));
+    }
+
+    #[test]
+    fn a_tail_clears_the_next_line_after_an_edit() {
+        // A one-line Q's tail hangs below the first line's lyrics, and the second line keeps
+        // clear of it. That clearance depends on the first line, so a second line set as
+        // before (its shape reused) must still be placed afresh after an edit above it.
+        let body = "(g)a(h) ve(g)ni(h)et(g) Do(h)mi(g)nus(h) (,) et(g) om(h)nes(g) san(h)cti(g) e(h)jus(g) (;) \
+                    cum(h) e(g)o(h) in(g) di(h)e(g) il(h)la(g) (:) lux(h) ma(g)gna(h) (::)";
+        let width = 240.0;
+        let staff = |src: &str, i: usize| Chant::new(src).layout(width).timeline().lines[i].staff;
+        let q = format!("(c4) Qui{body}");
+        assert!(Chant::new(&q).layout(width).line_count() > 2);
+        assert!(
+            staff(&q, 1) > staff(&format!("(c4) Hui{body}"), 1),
+            "the tail moves the second line down"
+        );
+        let mut chant = Chant::new(&q);
+        let _ = chant.layout(width);
+        let mut seconds = Vec::new();
+        for first in ["Qui(c)a(d)", "Qui(m)a(l)", "Jui(c)a(d)", "Hui(c)a(d)", "Qui(d)a(c)", "Qui(g)a(h)"] {
+            let src = format!("(c4) {first}{}", &body[7..]);
+            chant.update(&src);
+            let got = chant.layout(width);
+            let want = Chant::new(&src).layout(width);
+            assert_eq!(got.display(), want.display(), "{first}");
+            assert_eq!(got.svg(), want.svg(), "{first}");
+            seconds.push(got.timeline().lines[1].staff);
+        }
+        // From J to H the notes stay, so the second line's shape is reused: only the tail went.
+        assert!(seconds[2] > seconds[3] + 1.0, "{seconds:?}");
     }
 
     #[test]

@@ -215,7 +215,6 @@ pub(crate) struct LyricBox {
     /// Not the syllable's text but the hyphen GregorioTeX sets under a first syllable the
     /// initial took whole.
     pub lead_hyphen: bool,
-    pub syllable: u32,
     /// How high the letters reach: `(left, right, top)` in staff spaces, from the text's left
     /// edge and above its baseline (see `lyric_top::profile`).
     pub tops: Vec<(f32, f32, f32)>,
@@ -256,9 +255,30 @@ pub(crate) struct BarBox {
     pub bottom: f32,
 }
 
+/// A stretch of notation and the lyric under it, as the line breaker places it. What doesn't
+/// move with the segment's place in the score (its ink, measured from its own origin, and its
+/// text) is shared behind an [`Arc`], so engravings that differ only elsewhere share it: an
+/// edit copies the segments it touches, and moves the rest by their numbers here.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Segment {
     pub syllable: u32,
+    /// What the note numbers in the ink count from: a piece's or head's note is this plus
+    /// its own (see [`Segment::note`]).
+    pub note_base: u32,
+    /// What the bar numbers in the ink count from.
+    pub bar_base: u32,
+    pub after: Break,
+    /// The clef in force after this segment.
+    pub clef: Clef,
+    pub suppress_custos: bool,
+    pub body: Arc<SegmentInk>,
+}
+
+/// The part of a [`Segment`] that is the same wherever it stands in the score: its ink and
+/// text. Note and bar
+/// numbers count from the segment's `note_base` and `bar_base`.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct SegmentInk {
     /// The first segment of its syllable (only it carries the lyric).
     pub first: bool,
     pub word_start: bool,
@@ -272,18 +292,39 @@ pub(crate) struct Segment {
     /// custos, which keeps clear of ledger lines too.
     pub spacing: Option<(f32, f32)>,
     pub lyric: Option<LyricBox>,
-    pub after: Break,
     /// Space written before this segment inside its syllable (for segments after the first).
     pub space_before: f32,
-    /// The clef in force after this segment.
-    pub clef: Clef,
     pub starts_with_clef: bool,
     /// Position of the first note, for the custos that announces this segment.
     pub first_note: Option<StaffPosition>,
-    pub suppress_custos: bool,
+}
+
+impl std::ops::Deref for Segment {
+    type Target = SegmentInk;
+
+    fn deref(&self) -> &SegmentInk {
+        &self.body
+    }
 }
 
 impl Segment {
+    /// The body, to change: copied first if another engraving shares it.
+    pub(crate) fn body_mut(&mut self) -> &mut SegmentInk {
+        Arc::make_mut(&mut self.body)
+    }
+
+    /// A note number of the ink, score-wide.
+    pub(crate) fn note(&self, n: u32) -> u32 {
+        self.note_base + n
+    }
+
+    /// A bar number of the ink, score-wide.
+    pub(crate) fn bar(&self, b: u32) -> u32 {
+        self.bar_base + b
+    }
+}
+
+impl SegmentInk {
     /// A bar standing in a syllable of its own, its text (`*(;)`) or none.
     pub(crate) fn is_bar(&self) -> bool {
         !self.pieces.is_empty() && self.pieces.iter().all(|p| p.role == Ink::Bar)
@@ -295,6 +336,11 @@ impl Segment {
             Some(t) => r.max(t.ink_right()),
             None => r,
         }
+    }
+
+    /// Whether any piece or head belongs to a note.
+    pub(crate) fn has_notes(&self) -> bool {
+        !self.heads.is_empty() || self.pieces.iter().any(|p| p.note.is_some())
     }
 }
 
@@ -356,7 +402,7 @@ pub struct Engraving {
     pub(crate) initial: Option<InitialBox>,
     pub(crate) clef: Clef,
     pub(crate) notes: Vec<NoteInfo>,
-    pub(crate) syllable_text: Vec<String>,
+    pub(crate) syllable_text: Vec<Arc<str>>,
     pub(crate) syllable_word: Vec<u32>,
     /// Each syllable's source span, and each bar's, in source order.
     pub(crate) syllable_spans: Vec<std::ops::Range<usize>>,
@@ -709,24 +755,49 @@ impl Engraver<'_> {
         } else {
             neume::extent(open.pieces.iter().filter(|p| p.role != Ink::Ledger))
         };
+        // Numbers count from the segment's first note and bar, so the body reads the same
+        // wherever the segment stands.
+        let note_base = open
+            .pieces
+            .iter()
+            .flat_map(|p| p.note)
+            .chain(open.heads.iter().map(|h| h.note))
+            .min()
+            .unwrap_or(0);
+        let bar_base = open.bars.iter().map(|b| b.bar).min().unwrap_or(0);
+        for p in &mut open.pieces {
+            p.note = p.note.map(|n| n - note_base);
+            p.through = p.through.map(|n| n - note_base);
+        }
+        for h in &mut open.heads {
+            h.note -= note_base;
+        }
+        for b in &mut open.bars {
+            b.bar -= bar_base;
+        }
+        // The score's opening clef is drawn at the start of the first line even when a clef
+        // change follows it at once, as in `(c4) (c3)`: Gregorio shows both.
+        let starts_with_clef = open.starts_with_clef && !(self.segments.is_empty() && self.initial_clef.is_some());
         self.segments.push(Segment {
             syllable,
-            first,
-            word_start,
-            pieces: open.pieces,
-            heads: open.heads,
-            bars: open.bars,
-            ink,
-            spacing,
-            lyric: None,
+            note_base,
+            bar_base,
             after: Break::Allowed,
-            space_before,
             clef: self.clef.clone(),
-            // The score's opening clef is drawn at the start of the first line even when a clef
-            // change follows it at once, as in `(c4) (c3)`: Gregorio shows both.
-            starts_with_clef: open.starts_with_clef && !(self.segments.is_empty() && self.initial_clef.is_some()),
-            first_note: open.first_note,
             suppress_custos: false,
+            body: Arc::new(SegmentInk {
+                first,
+                word_start,
+                pieces: open.pieces,
+                heads: open.heads,
+                bars: open.bars,
+                ink,
+                spacing,
+                lyric: None,
+                space_before,
+                starts_with_clef,
+                first_note: open.first_note,
+            }),
         });
         Some(self.segments.len() - 1)
     }
@@ -912,7 +983,7 @@ struct Pass<'a> {
     initial: Option<InitialBox>,
     /// The syllable the initial came from, and the rest of its text.
     first_lyric: Option<(usize, Lyric)>,
-    syllable_text: Vec<String>,
+    syllable_text: Vec<Arc<str>>,
     syllable_spans: Vec<std::ops::Range<usize>>,
     bar_spans: Vec<std::ops::Range<usize>>,
     syllable_word: Vec<u32>,
@@ -987,7 +1058,7 @@ impl Pass<'_> {
             }
             self.alt_text.push_str(&plain);
         }
-        self.syllable_text.push(plain);
+        self.syllable_text.push(plain.into());
         self.syllable_spans.push(syl.span.clone());
         self.e.reset_alterations(syl.word_start, false);
         let pauses_before = self.e.pauses.len();
@@ -1173,7 +1244,7 @@ impl Pass<'_> {
             .rposition(|p| p.0 < end)
             .map_or(0, |i| i + 1)
             .max(pauses_before);
-        for c in self.syllable_text.last().map_or("", String::as_str).chars() {
+        for c in self.syllable_text.last().map_or("", |t| &**t).chars() {
             let kind = match c {
                 '*' => PauseKind::Mediant,
                 '†' => PauseKind::Flex,
@@ -1242,23 +1313,51 @@ impl Pass<'_> {
         };
         if !text.is_empty() {
             let runs = text.runs.clone();
-            let mut width = 0.0;
+            // Each run's advance up to the end of each of its characters, measured once for
+            // the width, the vowel's place and the letters' tops.
+            let mut advances = Vec::with_capacity(runs.iter().map(|r| r.text.len()).sum());
+            let mut starts = Vec::with_capacity(runs.len() + 1);
             for r in &runs {
-                width += self.measure.advance(&r.text, r.style) * self.size;
+                starts.push(advances.len());
+                self.measure.prefix_advances(&r.text, r.style, &mut advances);
+            }
+            starts.push(advances.len());
+            // A run's advance: the last of its prefixes'.
+            let full = |i: usize| match advances[starts[i]..starts[i + 1]].last() {
+                Some(&a) => a,
+                None => self.measure.advance(&runs[i].text, runs[i].style),
+            };
+            // The advance of the first `chars` characters of the runs, in ems.
+            let prefix = |chars: usize| {
+                let mut left = chars;
+                let mut w = 0.0;
+                for (i, r) in runs.iter().enumerate() {
+                    let n = starts[i + 1] - starts[i];
+                    if left >= n {
+                        w += full(i);
+                        left -= n;
+                    } else {
+                        w += match left {
+                            0 => self.measure.advance("", r.style),
+                            _ => advances[starts[i] + left - 1],
+                        };
+                        break;
+                    }
+                }
+                w
+            };
+            let mut width = 0.0;
+            for (i, r) in runs.iter().enumerate() {
+                width += full(i) * self.size;
                 if !self.measure.has_face(r.style) {
                     width += synthetic_face(self.measure, r, self.size, &mut self.e.sink, &mut self.warned_face, syl);
                 }
             }
-            let chars: Vec<char> = text.plain().chars().collect();
-            let mut masked = chars.clone();
-            let mut ci = 0;
+            // The text's characters, those of runs marked consonantal masked out for the
+            // vowel's search.
+            let mut masked: Vec<char> = Vec::with_capacity(advances.len());
             for r in &runs {
-                for _ in r.text.chars() {
-                    if r.consonant {
-                        masked[ci] = '\u{0}';
-                    }
-                    ci += 1;
-                }
+                masked.extend(r.text.chars().map(|c| if r.consonant { '\u{0}' } else { c }));
             }
             let nucleus = text.center.clone().or_else(|| self.e.rules.nucleus(&masked));
             let seg = &self.e.segments[k];
@@ -1268,25 +1367,25 @@ impl Pass<'_> {
             };
             let center = match &nucleus {
                 Some(r) => {
-                    let before = prefix_advance(&runs, r.start, self.measure) * self.size;
-                    let upto = prefix_advance(&runs, r.end, self.measure) * self.size;
+                    let before = prefix(r.start) * self.size;
+                    let upto = prefix(r.end) * self.size;
                     (before + upto) / 2.0
                 }
                 None => width / 2.0,
             };
             if let Some(r) = &nucleus
-                && let Some(c) = chars.get(r.start)
+                && let Some(c) = runs.iter().flat_map(|r| r.text.chars()).nth(r.start)
             {
                 for n in &mut self.e.notes[notes_from..] {
-                    n.vowel = Some(*c);
+                    n.vowel = Some(c);
                 }
             }
             let next_word = score.syllables.get(si as usize + 1).is_none_or(|s| s.word_start);
-            let tops = lyric_top::profile(&runs, self.measure, self.size);
+            let tops = lyric_top::profile(&runs, &advances, &starts, self.size);
             // The box holds the text's ink, which a letter at either end (the hook of an `f`)
             // can carry past its advance.
             let (lead, tail) = lyric_top::overhang(&runs, self.size);
-            self.e.segments[k].lyric = Some(LyricBox {
+            self.e.segments[k].body_mut().lyric = Some(LyricBox {
                 tops,
                 runs,
                 lead,
@@ -1294,28 +1393,32 @@ impl Pass<'_> {
                 left: anchor - center,
                 width,
                 word_end: next_word,
-                hyphenated: text.plain().ends_with(['-', '\u{2010}']),
+                hyphenated: text
+                    .runs
+                    .iter()
+                    .rev()
+                    .find_map(|r| r.text.chars().next_back())
+                    .is_some_and(|c| matches!(c, '-' | '\u{2010}')),
                 lead_hyphen: false,
-                syllable: si,
             });
         } else if self.first_lyric.as_ref().is_some_and(|(i, _)| *i == si as usize)
             && score.syllables.get(si as usize + 1).is_some_and(|s| !s.word_start)
         {
-            self.initial_hyphen(si, k);
+            self.initial_hyphen(k);
         }
     }
 
     /// The initial took the whole first syllable of a longer word (`E(f)o(g)dem`): GregorioTeX
     /// sets a hyphen under its notes, so the line doesn't seem to start a new word.
     #[cold]
-    fn initial_hyphen(&mut self, si: u32, k: usize) {
+    fn initial_hyphen(&mut self, k: usize) {
         let width = self.hyphen;
         let seg = &self.e.segments[k];
         let anchor = match seg.heads.first() {
             Some(h) => h.x,
             None => seg.ink.map_or(0.0, |(l, r)| (l + r) / 2.0),
         };
-        self.e.segments[k].lyric = Some(LyricBox {
+        self.e.segments[k].body_mut().lyric = Some(LyricBox {
             runs: vec![LyricRun {
                 text: "-".into(),
                 style: TextStyle::REGULAR,
@@ -1326,7 +1429,6 @@ impl Pass<'_> {
             word_end: false,
             hyphenated: true,
             lead_hyphen: true,
-            syllable: si,
             lead: 0.0,
             tail: 0.0,
             tops: vec![(0.0, width, lyric_top::HYPHEN_TOP * self.size)],
@@ -1394,24 +1496,6 @@ impl Pass<'_> {
         };
         (engraving, self.marks)
     }
-}
-
-/// Advance of the first `chars` characters of the runs, in ems.
-fn prefix_advance(runs: &[LyricRun], chars: usize, measure: &dyn TextMeasure) -> f32 {
-    let mut left = chars;
-    let mut w = 0.0;
-    for r in runs {
-        let n = r.text.chars().count();
-        if left >= n {
-            w += measure.advance(&r.text, r.style);
-            left -= n;
-        } else {
-            let part: String = r.text.chars().take(left).collect();
-            w += measure.advance(&part, r.style);
-            break;
-        }
-    }
-    w
 }
 
 #[cfg(test)]

@@ -20,6 +20,7 @@
 mod apply;
 mod chant;
 mod display;
+#[cfg(feature = "pointing")]
 mod point;
 mod pointed;
 mod syllable;
@@ -28,6 +29,7 @@ mod tone;
 pub use apply::{Accents, Intone, PsalmNote, PsalmOptions, PsalmSetting, ToneRole, UNSURE, psalm};
 pub use chant::{AnyChant, PsalmChant};
 pub use display::{PsalmDisplay, PsalmRun, PsalmRunKind, PsalmSyllable, PsalmVerse};
+#[cfg(feature = "pointing")]
 pub use point::{HalfPointing, Pointing, point};
 pub use pointed::VersePart;
 pub use tone::{Cadence, Slot, Tone, ToneError};

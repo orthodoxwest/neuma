@@ -7,6 +7,14 @@ engraving and layout. Then the API for 0.1: one front door (`neuma::Chant`) that
 browser, mobile and command-line front ends wrap, owned layouts that answer their own hit
 tests, and one name for each concept in Rust, JavaScript, Kotlin/Swift and the JSON.
 
+Editing is fast at any length: on the longest score in GregoBase (about 4,900 notes) a
+keystroke costs about 5 ms in the browser, update, layout and caret together (it was about
+13 ms), and one in the first syllable or a change of the `mode:` header about the same (it
+was about 30 ms). An edit reads, engraves and lays out again only around itself, wherever it
+is; a held layout shares the syllables the edit left alone; lines that didn't change keep
+their shape and their SVG. Engraving a whole score is about 10% faster, and in the browser
+engraving and laying one out about 20% faster.
+
 What renders is byte-identical to before for the same options (SVG, display lists,
 timelines, PDFs). Some behavior did change:
 
@@ -21,11 +29,12 @@ timelines, PDFs). Some behavior did change:
 - A page answers for the score it shows for as long as it is kept, whatever the chant has
   become since, in Rust, the browser and on mobile. `update` with the current source, or
   `set_options` with options that engrave the same, changes nothing and says so.
-- While a layout is held, the chant's next edit copies the engraving rather than changing
-  it in place. An editor always holds the layout on screen, so this is part of an edit's
-  cost: about 1.7 ms of a 5 ms update on the longest scores (4,900 notes), next to nothing on
-  typical ones. A layout kept past an edit keeps a whole engraving alive; dropping or freeing
-  the layouts a view has replaced bounds memory, though it doesn't make edits cheaper.
+- While a layout is held, the chant's next edit copies the engraving up to the edit rather
+  than changing it in place. An editor always holds the layout on screen, so this is part of
+  an edit's cost: about 0.1 ms of a 0.7 ms update on the longest scores (4,900 notes), next
+  to nothing on typical ones. A layout kept past an edit keeps the old engraving's lists
+  alive; dropping or freeing the layouts a view has replaced bounds memory, though it
+  doesn't make edits cheaper.
 - Weights follow one rule everywhere: a negative or non-finite weight keeps its default, and
   none goes above 1000.
 - `neuma book` reports `point::unsure` at the half-verse's syllables rather than the whole
@@ -142,9 +151,14 @@ timelines, PDFs). Some behavior did change:
   `FaceMetrics::set_*`, `MetricsTable::to_bytes` (for `neuma-metrics`), and
   `json::{string, number, span, source_span}` (for the bindings).
 - New `json` feature: `neuma::json`, the JSON the browser package and the CLI print.
+- The `fonts` feature is now `font-google` and `font-garamond12` together; either alone
+  builds in one table, and a `LyricFont` whose table is left out measures as the other.
 
 **Rust: `neuma-tones`**
 
+- New `pointing` feature (default on): `point` and `PsalmOptions::auto_point`, with the
+  stress dictionary and model. Without it, half-verses with no marks are set as with
+  `auto_point` off.
 - `apply_text(tone, text, &Options)` → **`psalm(text, tone, &PsalmOptions)`**,
   `point_text(tone, text)` → **`point(text, tone)`**: the text comes first.
   `PsalmSetting.text` is the text it was set from.
@@ -185,13 +199,17 @@ timelines, PDFs). Some behavior did change:
   `sourceAt(x, y)` and `elementsAt(caret, { unit })`, which answer for the score that page
   shows for as long as it is held, whatever the chant has laid out or become since (and
   after `chant.free()`); `page.source` is the source it shows. No page throws for its age:
-  the engine keeps the layouts behind pages in a cache of the most recently used (4 by
-  default, across every chant, view and page; **`setLayoutBudget(count)`**), and a page
+  the engine keeps the layouts behind pages in two pools of the most recently used, across
+  every chant, view and page: 64 of pages showing their chant as it is now, and 2 of pages
+  whose chant has changed or is gone (**`setLayoutBudget({ current, stale })`**), and a page
   whose layout was dropped, or freed with `page.free()` (or `Symbol.dispose`), lays itself
   out again when next asked, from its chant's source and options at the time, to the same
-  answers. A `FinalizationRegistry` only frees a collected page's layout sooner. New:
-  **`engineStats()`**, `{ memory, layouts, budget }`. `page.stale` says the chant has changed since the page was laid
-  out, and `page.version` is the chant's version it was laid out at. `chant.layout` makes a
+  answers. A `FinalizationRegistry` only frees a collected page's layout sooner. Each
+  pool's budget is a number at least 1 (capped at 2^32 − 1); 0, negatives and non-numbers
+  throw. New:
+  **`engineStats()`**, `{ memory, layouts, staleLayouts, budget }`. `page.stale` says the
+  chant has changed since the page was laid out, and `page.version` is the chant's version it
+  was laid out at. `chant.layout` makes a
   new page on each call. `chant.noteAt`, `sourceAt` and `elementsAt`, and
   `layout(…, { timeline: false })`, are gone.
 - New: **views**, for a place that shows the score and lays it out again on each change:
@@ -202,7 +220,24 @@ timelines, PDFs). Some behavior did change:
   the same state. After the engine restarts (`init()` after an internal error), chants,
   views and pages made before carry on.
 - `update` and `setOptions` return whether anything changed; `chant.version` names the
-  chant's state, unique across chants; `chant.source` is the source it was last given.
+  chant's state, unique across chants and growing across a restart of the engine;
+  `chant.source` is the source it was last given.
+- Options are checked: a key a call doesn't take (`{ intial: 1 }`, `{ timeline: false }`)
+  throws a `TypeError`, as does a value it doesn't know (`{ font: "EB Garamond" }`, `{ svg:
+  "parts" }`, `{ unit: "bytes" }`); both fell back to the default. `null` is the default, as
+  `undefined` is. `setOptions` and `setLayoutBudget` replace the last options, not merge
+  them in: one left out takes its default. The module's errors carry a **`code`**:
+  `invalid-option`, `tone`, `unsupported`, `not-initialized`, `engine-stopped`,
+  `no-constructor`, `fetch`.
+- Fixed: the glue read the engine's pointers as signed numbers, so every call failed once
+  the engine's memory passed 2 GiB.
+- `Chant` and `View` are disposable (`Symbol.dispose`), as `Page` is.
+- New: **TypeScript types** (`dist/neuma.d.mts`) and a `package.json` with an exports map;
+  **`dist/neuma-external.mjs`**, the module without the engine inlined, which fetches
+  `neuma.wasm` beside it (under Node, whose `fetch` takes no `file:` URL, pass its bytes to
+  `init`). Features of the `neuma-wasm` crate (`tones`, `pointing`,
+  `font-google`, `font-garamond12`) leave parts of the engine out for a smaller module; the
+  glue's functions for a part left out throw with the code `unsupported`.
 - New: `Chant.fromPsalm(text, tone, { intone, autoPoint, …chantOptions })`, with
   `chant.psalm` (the setting, `{ gabc, notes, diagnostics }`, as `psalm` returns it) and
   `update(text)` setting new text to the same tone;

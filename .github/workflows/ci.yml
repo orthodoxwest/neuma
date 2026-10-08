@@ -26,18 +26,27 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
+          components: clippy
       - uses: Swatinem/rust-cache@v2
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: cargo build -p neuma-wasm --target wasm32-unknown-unknown --profile wasm
-      - run: npm install --no-save binaryen@132.0.0
+      - run: npm install --no-save binaryen@132.0.0 typescript@6.0.2
       - run: node crates/neuma-wasm/build.mjs node_modules/binaryen/bin/wasm-opt
       - run: node crates/neuma-wasm/test.mjs
+      - run: node_modules/.bin/tsc -p crates/neuma-wasm/js
+      # The parts a build can leave out still build without them.
+      - run: cargo clippy -p neuma-wasm --target wasm32-unknown-unknown --no-default-features -- -D warnings
+      - run: cargo clippy -p neuma-wasm --target wasm32-unknown-unknown --no-default-features --features tones,font-garamond12 -- -D warnings
       - uses: actions/upload-artifact@v4
         with:
           name: neuma-browser
-          path: crates/neuma-wasm/dist/neuma.mjs
+          path: |
+            crates/neuma-wasm/dist/neuma.mjs
+            crates/neuma-wasm/dist/neuma-external.mjs
+            crates/neuma-wasm/dist/neuma.wasm
+            crates/neuma-wasm/dist/neuma.d.mts
   mobile:
     runs-on: ubuntu-latest
     steps:

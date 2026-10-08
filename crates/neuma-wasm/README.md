@@ -1,7 +1,9 @@
 # neuma for the browser
 
-One ES module, `dist/neuma.mjs`, with the engine inlined as gzipped WebAssembly (about
-190 KB). It fetches nothing, so it works inside sandboxed pages that block other origins.
+One ES module, `dist/neuma.mjs`, with the engine inlined as gzipped WebAssembly: 451 KB in
+all, 322 KB over the wire with the server's gzip (the engine is 309 KB gzipped, 753 KB
+raw). It fetches nothing, so it works inside sandboxed pages that block other origins; a
+Content Security Policy needs `'wasm-unsafe-eval'` in its `script-src` for it.
 
 ```sh
 cargo build -p neuma-wasm --target wasm32-unknown-unknown --profile wasm
@@ -9,7 +11,41 @@ node crates/neuma-wasm/build.mjs path/to/wasm-opt   # wasm-opt is optional
 node crates/neuma-wasm/test.mjs
 ```
 
-CI builds the module on every push and keeps it as the `neuma-browser` artifact.
+The build also writes `dist/neuma-external.mjs`, the same module without the engine inlined:
+it fetches `neuma.wasm` from beside itself (or takes its bytes, `init(bytes)`), for a site
+that would rather cache the engine as its own file. Node's `fetch` takes no `file:` URL, so
+under Node pass the bytes of `dist/neuma.wasm`, found through the package's
+`neuma/neuma.wasm` export; `init()` alone fails there with the code `fetch` and says so:
+
+```js
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { init } from "neuma/external";
+
+await init(readFileSync(createRequire(import.meta.url).resolve("neuma/neuma.wasm")));
+```
+
+`dist/neuma.d.mts` has the TypeScript types, with JSDoc, and `package.json` maps the
+package's entry points (`neuma`, `neuma/external`, `neuma/neuma.wasm`) to them. CI builds
+the module on every push and keeps it as the `neuma-browser` artifact.
+
+### Smaller builds
+
+The crate's features choose what the engine carries; the glue's functions for a part left
+out throw an error with the code `unsupported`. Build with
+`cargo build … --no-default-features --features …`, then `build.mjs` as above:
+
+| Features | `neuma.mjs` | gzipped engine |
+| --- | --- | --- |
+| all (the default): `tones`, `pointing`, `font-google`, `font-garamond12` | 451 KB | 309 KB |
+| without `pointing` (automatic pointing's dictionary and model) | 414 KB | 281 KB |
+| one lyric font: `font-google` or `font-garamond12` alone | 443 KB, 414 KB | 303 KB, 281 KB |
+| GABC only (no `tones`), with `font-google` or `font-garamond12` | 348 KB, 320 KB | 232 KB, 210 KB |
+| GABC only, no font tables (lyrics measured by an estimate) | 301 KB | 196 KB |
+
+A lyric font left out measures as the other one, so pick the one the page loads. The `wasm`
+profile optimizes for speed; `CARGO_PROFILE_WASM_OPT_LEVEL=s` makes the engine about 5%
+smaller and its engraving and layout about a quarter slower.
 
 ## Use
 
@@ -48,33 +84,54 @@ is on screen. `page.stale` is true once the chant has changed since the page was
 lay out again to show the new score. `update` and `setOptions` return whether anything
 changed, and `chant.version` names the chant's state (`page.version` is the chant's version
 the page was laid out at): a number no other state of any chant has had, which grows with
-each change, as in Rust and on mobile.
+each change (also across a restart of the engine), as in Rust and on mobile.
 
 ### Pages and memory
 
-**A page always answers.** The engine keeps the layouts behind pages in a cache of the
-most recently used: by default 4 across every chant, view and page, enough for an editor's
-page and thumbnail, each with the one before. A page whose layout was dropped (because
-newer ones pushed it out, or `page.free()`) lays itself out again the next time it is
-asked, from what it was made from: its chant's source and options at the time, its width
-and its weights. It gives the same answers, byte for byte. So no page throws for its age,
-nor after its chant is freed or changed.
+**A page always answers.** The engine keeps the layouts behind pages in two pools of the
+most recently used, across every chant, view and page: by default 64 of pages that show
+their chant as it is now, enough for a page of many chants and their thumbnails, all
+hovered and clicked without laying anything out again; and 2 of pages whose chant has
+changed since or is gone, for a click between an edit and the next frame. A page whose
+layout was dropped (because newer ones pushed it out, or `page.free()`) lays itself out
+again the next time it is asked, from what it was made from: its chant's source and
+options at the time, its width and its weights. It gives the same answers, byte for byte.
+So no page throws for its age, nor after its chant is freed or changed.
 
-- `setLayoutBudget(count)` sets how many layouts the engine keeps. Each holds an
-  engraving: under 200 KB for a typical score, about 4 MB for the longest (about 4,900
-  notes), so the default stays near 45 MB of engine memory there however pages are made.
-  Lower it for a phone. Raise it when many scores are shown and clicked at once: laying a
-  page out again costs little while its chant hasn't changed, but a full layout once it
-  has (tens of milliseconds on the longest scores). On the longest scores each layout kept
-  also slows an edit a little (a few tenths of a millisecond), the memory touched growing.
-- `engineStats()` returns `{ memory, layouts, budget }`: the WebAssembly memory's size in
-  bytes (which only grows), the layouts held and the budget.
-- `page.free()` and `chant.free()` drop the engine's copies now: hints, for when a page or
-  a chant goes away. Both still work after it: a freed chant engraves its source again when
+- `setLayoutBudget({ current, stale })` sets how many layouts each pool keeps. Layouts of a
+  chant as it is now share its engraving, so each costs only its lines: about 40 KB for a
+  typical score, about 1.4 MB for the longest (about 4,900 notes). A stale one also keeps
+  the engraving it was laid out from, up to about 4 MB for the longest. Typing into the
+  longest score with the defaults, the engine's memory levels off between about 25 and
+  40 MB: least through one view, a few MB more with `chant.layout` or a new view on each
+  change, and more for some runs of edits (about 30 MB through one view, 33 MB otherwise,
+  after 100 keystrokes that add and remove a letter in turn). Lower `current` for a phone
+  showing long scores. Laying a page out again costs little while its chant hasn't changed,
+  but a full layout once it has (tens of milliseconds on the longest scores).
+
+  **Set `current` above the number of pages shown at once.** With more pages than that
+  (80 against the default 64, say), a mouse moving across them in turn always reaches the
+  page dropped longest ago, so every hover lays a page out again.
+
+  Each pool takes a number at least 1, rounded down; `Infinity`, or anything past
+  2^32 − 1, keeps 2^32 − 1, which is no limit in practice. 0, a negative number, `NaN` or a
+  value that isn't a number throws (code `invalid-option`). Like every options object here,
+  the budget replaces the last one: a pool left out, `undefined` or `null` takes its default
+  (`setLayoutBudget({ stale: 4 })` sets `current` back to 64), `setLayoutBudget()` restores
+  both, and a number sets `current`, `stale` taking its default.
+- `engineStats()` returns `{ memory, layouts, staleLayouts, budget }`: the WebAssembly
+  memory's size in bytes (which only grows), the layouts held, how many of those are stale,
+  and the budget, `{ current, stale }`.
+- `page.free()`, `view.free()` and `chant.free()` drop the engine's copies now: hints, for
+  when a page, a view or a chant goes away (`using`, through `Symbol.dispose`, calls them at
+  the end of a block). Both still work after it: a freed chant engraves its source again when
   used, as the same state, so its pages stay current. A `FinalizationRegistry` drops the
   copies of pages and chants that are garbage collected. For pages that only frees memory
   sooner, since the budget bounds their layouts without it; a chant's own engraving lives
-  until it is freed or collected.
+  until it is freed or collected. **Free chants you're done with.** JavaScript collects
+  garbage when its own heap fills, and a chant is small there while its engraving in the
+  engine is not, so chants dropped without `free()` can fill the engine's memory long before
+  the collector runs, if it ever does.
 
 ### Views: pages for a place that shows the score
 
@@ -98,9 +155,12 @@ let page = view.layout(host.clientWidth);               // on each change and ea
 rendering, a print, a thumbnail drawn once.
 
 **Memory and time.** A page whose layout is held when the chant changes makes the update
-copy the engraving rather than change it in place, and an editor always holds the page on
-screen, so this copy is part of an edit's cost: on the longest scores about 1.7 ms of a 5 ms
-update, on typical ones next to nothing.
+copy the engraving up to the edit rather than change it in place, and an editor always
+holds the page on screen, so this copy is part of an edit's cost: on the longest scores
+about a tenth of a millisecond, on typical ones next to nothing. A keystroke on the longest
+score (about 4,900 notes) costs about 5 ms in all in V8 (Node 22), update, layout and
+caret together; one in the first syllable, or a change of the `mode:` header, about the
+same.
 
 - **`timeline.notes`**: one entry per note, in singing order, with these fields:
   - `id`: stable across layouts of one `Chant`. Each SVG element lists the notes it draws
@@ -145,7 +205,11 @@ Each diagnostic has a `code` that stays stable across versions (see
 
 `page.noteAt(x, y)` returns the note under a point, or the nearest note on that line, or
 `null`. `chant.setOptions({ lyricSize: 3 })` engraves again with new options (those the
-constructor takes).
+constructor takes). They replace the options the chant had, as the constructor takes them:
+an option left out takes its default, not its current value, so on a chant made with
+`{ initial: 0 }` that call brings the initial back. Pass every option you set, from one
+settings object. Rust's `set_options` and mobile's `setOptions` take a whole `ChantOptions`
+the same way.
 
 Weights default to `DEFAULT_WEIGHTS`: one pulse per note, two for a dotted note, and pauses
 that grow with the bar. Any key you pass with a number overrides its default, except a negative one; no weight
@@ -154,7 +218,29 @@ goes above 1000.
 If the engine ever stops on an internal error (a WebAssembly trap, or a `RangeError` for a
 stack overflow), that call throws and so does every later one until you call `init()` again,
 which starts a fresh engine. `Chant`s, views and pages made before carry on in it, engraved
-again when next used.
+again when next used, and versions keep growing from where they were.
+
+### Options and errors
+
+Every call takes its options as one object of the keys it lists. A key it doesn't list
+(`{ intial: 1 }`, `{ timeline: false }`) throws, as does a value not among those it takes
+(`{ font: "EB Garamond" }`, `{ svg: "parts" }`), rather than quietly falling back to the
+default. An option left out, `undefined` or `null` takes its default, and so does a missing
+or `null` options object. That holds for calls that change a setting too: `setOptions` and
+`setLayoutBudget` replace the last options with the ones given, not merge them in.
+
+The errors the module throws carry a `code`:
+
+- `invalid-option`: a `TypeError`, for the options above.
+- `tone`: a tone that can't be read (no built-in tone by that name, or a tone block in
+  error), from `psalm`, `point`, `psalmDisplay`, `toneLabel`, `Chant.fromPsalm` and
+  `Chant.fromTone`.
+- `unsupported`: this build of the module leaves the feature out (see Smaller builds).
+- `not-initialized`: `init()` hasn't run.
+- `engine-stopped`: the engine stopped on an internal error; `init()` starts a fresh one.
+- `no-constructor`: a `TypeError`, for `new View()` or `new Page()`: they come from a chant.
+- `fetch`: `init()` in `neuma-external.mjs` couldn't fetch `neuma.wasm`: an HTTP error (the
+  message gives the status), or a fetch that failed (the error's `cause`).
 
 ## Editors
 

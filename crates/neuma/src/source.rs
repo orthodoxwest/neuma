@@ -203,8 +203,11 @@ impl Layout {
         let eng = &*self.eng;
         let s = self.scale;
         let mut map = SourceMap {
+            notes: Vec::with_capacity(eng.notes.len()),
+            bars: Vec::with_capacity(eng.bar_spans.len()),
+            syllables: Vec::with_capacity(eng.syllable_spans.len() + self.lines.len() + 1),
+            lines: Vec::with_capacity(self.lines.len()),
             staff_space: s,
-            ..SourceMap::default()
         };
         for (li, line) in self.lines.iter().enumerate() {
             let li = li as u32;
@@ -236,10 +239,11 @@ impl Layout {
             for (i, seg) in eng.segments[line.first..=line.last].iter().enumerate() {
                 let x0 = line.xs[i];
                 for h in &seg.heads {
-                    let Some(info) = eng.notes.get(h.note as usize) else { continue };
+                    let note = seg.note(h.note);
+                    let Some(info) = eng.notes.get(note as usize) else { continue };
                     map.notes.push(Element {
                         kind: ElementKind::Note,
-                        index: h.note,
+                        index: note,
                         span: info.span.clone(),
                         line: li,
                         x: (x0 + h.hit[0]) * s,
@@ -250,10 +254,11 @@ impl Layout {
                     });
                 }
                 for b in &seg.bars {
-                    let Some(span) = eng.bar_spans.get(b.bar as usize) else { continue };
+                    let bar = seg.bar(b.bar);
+                    let Some(span) = eng.bar_spans.get(bar as usize) else { continue };
                     map.bars.push(Element {
                         kind: ElementKind::Bar,
-                        index: b.bar,
+                        index: bar,
                         span: span.clone(),
                         line: li,
                         x: (x0 + b.x) * s,
@@ -300,9 +305,12 @@ impl Layout {
                 cx: (placed.x + init.advance_em * placed.size / 2.0) * s,
             });
         }
-        map.notes.sort_by_key(|e| e.index);
-        map.bars.sort_by_key(|e| e.index);
-        map.syllables.sort_by_key(|e| e.index);
+        // Mostly in order already, as the lines are.
+        for list in [&mut map.notes, &mut map.bars, &mut map.syllables] {
+            if !list.is_sorted_by_key(|e| e.index) {
+                list.sort_by_key(|e| e.index);
+            }
+        }
         map
     }
 }
@@ -343,6 +351,45 @@ impl Utf16Index {
         self.len16
     }
 
+    /// The index of `new`, an edit of `old`, whose index this is: what the edit left alone
+    /// at either end is taken from this one, and only the rest is read.
+    pub(crate) fn edited(&self, old: &str, new: &str) -> Utf16Index {
+        let (a, b) = (old.as_bytes(), new.as_bytes());
+        debug_assert_eq!(a.len(), self.len);
+        let mut p = crate::gabc::common_prefix(a, b);
+        while !(old.is_char_boundary(p) && new.is_char_boundary(p)) {
+            p -= 1;
+        }
+        let mut q = crate::gabc::common_suffix(a, b, a.len().min(b.len()) - p);
+        while !(old.is_char_boundary(a.len() - q) && new.is_char_boundary(b.len() - q)) {
+            q -= 1;
+        }
+        let head = self.wide.partition_point(|w| w.0 < p);
+        let tail = self.wide.partition_point(|w| w.0 < a.len() - q);
+        let mut wide = Vec::with_capacity(self.wide.len() + 8);
+        wide.extend_from_slice(&self.wide[..head]);
+        let mut units = self.to_utf16(p);
+        for (i, c) in new[p..b.len() - q].char_indices() {
+            if !c.is_ascii() {
+                wide.push((p + i, units, c.len_utf8() as u8, c.len_utf16() as u8));
+            }
+            units += c.len_utf16();
+        }
+        // The unchanged end, moved.
+        let by = b.len() as isize - a.len() as isize;
+        let by16 = units as isize - self.to_utf16(a.len() - q) as isize;
+        wide.extend(
+            self.wide[tail..]
+                .iter()
+                .map(|&(byte, unit, bl, ul)| (byte.wrapping_add_signed(by), unit.wrapping_add_signed(by16), bl, ul)),
+        );
+        Utf16Index {
+            wide,
+            len: b.len(),
+            len16: self.len16.wrapping_add_signed(by16),
+        }
+    }
+
     /// The UTF-16 offset of byte `offset`. An offset inside a character maps to the
     /// character's start; one past the end, to the end.
     #[must_use]
@@ -380,6 +427,22 @@ impl Utf16Index {
 mod tests {
     use super::*;
     use crate::{ApproxMeasure, Initial, StyleOptions, parse};
+
+    #[test]
+    fn an_edited_index_is_a_fresh_ones() {
+        let base = "a\u{e9}b\u{1d11e}c\u{2020}de\u{e9}\u{e9}f";
+        let inserts = ["", "x", "\u{e9}", "\u{1d11e}z", "\u{2020}\u{e8}"];
+        let bounds: Vec<usize> = base.char_indices().map(|(i, _)| i).chain([base.len()]).collect();
+        for (k, &from) in bounds.iter().enumerate() {
+            for &to in &bounds[k..] {
+                for ins in inserts {
+                    let new = format!("{}{ins}{}", &base[..from], &base[to..]);
+                    let edited = Utf16Index::new(base).edited(base, &new);
+                    assert_eq!(edited, Utf16Index::new(&new), "{new:?}");
+                }
+            }
+        }
+    }
 
     #[test]
     fn utf16_round_trips() {

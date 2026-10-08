@@ -265,7 +265,7 @@ impl Layout {
         for (li, line) in self.lines.iter().enumerate() {
             for (i, seg) in eng.segments[line.first..=line.last].iter().enumerate() {
                 for h in &seg.heads {
-                    if let Some(slot) = placed.get_mut(h.note as usize) {
+                    if let Some(slot) = placed.get_mut(seg.note(h.note) as usize) {
                         let (x0, y0) = (line.xs[i], line.staff);
                         *slot = Some((li as u32, (x0 + h.x) * s, (y0 + h.y) * s, h.w * s, h.h * s));
                     }
@@ -288,7 +288,11 @@ impl Layout {
                 kept += 1;
             }
             let (degree, semitones) = pitch(info);
-            let syllable_text = eng.syllable_text.get(info.syllable as usize).cloned().unwrap_or_default();
+            let syllable_text = eng
+                .syllable_text
+                .get(info.syllable as usize)
+                .map(|t| t.to_string())
+                .unwrap_or_default();
             let accent = syllable_text.chars().any(|c| "áéíóúýǽÁÉÍÓÚÝǼ\u{0301}".contains(c));
             let new_syllable = id == 0 || eng.notes[id - 1].syllable != info.syllable;
             notes.push(TimelineNote {

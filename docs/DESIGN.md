@@ -82,7 +82,8 @@ neuma/
         metrics.rs           reader for prebuilt metrics tables (implements TextMeasure)
         svg.rs               SVG writer (feature "svg", default on)
       vowels/                la.vowels, en.vowels in Gregorio's vowel-file format
-      fonts/                 built-in EB Garamond metrics tables (feature "fonts", default on)
+      fonts/                 built-in EB Garamond metrics tables (features "font-google",
+                             "font-garamond12", both in "fonts", default on)
     neuma-metrics/           builds metrics tables from TTF/OTF (ttf-parser), pinned to the font
                              files' hashes; can also measure from font files at runtime
     neuma-tones/             psalm tones as data, the pointed-text parser and writer,

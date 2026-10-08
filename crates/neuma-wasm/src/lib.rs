@@ -9,10 +9,21 @@
 
 use std::fmt::Write as _;
 
-use neuma::{Element, Layout, LayoutOptions, SvgOptions, SvgParts, Utf16Index, Weights, json};
+#[cfg(feature = "tones")]
+use neuma::Utf16Index;
+use neuma::{Element, Layout, LayoutOptions, SvgOptions, SvgParts, Weights, json};
+#[cfg(feature = "tones")]
 use neuma_tones::{AnyChant, PsalmChant, PsalmNote};
 
-pub use neuma::{ChantOptions, Initial, LyricFont};
+#[cfg(any(feature = "font-google", feature = "font-garamond12"))]
+pub use neuma::LyricFont;
+pub use neuma::{ChantOptions, Initial};
+
+/// What a [`Chant`] engraves: GABC, or with psalm tones built in, a psalm set to a tone.
+#[cfg(feature = "tones")]
+type Source = AnyChant;
+#[cfg(not(feature = "tones"))]
+type Source = neuma::Chant;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SvgOutput {
@@ -30,7 +41,7 @@ pub enum SvgOutput {
 /// One score, with its answers kept as the JSON the glue reads.
 #[derive(Debug)]
 pub struct Chant {
-    source: AnyChant,
+    source: Source,
     /// Parse (or psalm-setting) and engrave diagnostics, as JSON.
     diagnostics: String,
     /// The library entry, as JSON, made when first asked for.
@@ -49,15 +60,19 @@ pub struct Page {
 
 impl Chant {
     pub fn new(gabc: &str, options: ChantOptions) -> Chant {
-        Chant::wrap(neuma::Chant::with_options(gabc, options).into())
+        let chant = neuma::Chant::with_options(gabc, options);
+        #[cfg(feature = "tones")]
+        let chant = chant.into();
+        Chant::wrap(chant)
     }
 
     /// Psalm text set to `tone` and engraved, its spans in the text.
+    #[cfg(feature = "tones")]
     pub fn from_psalm(text: &str, tone: &neuma_tones::Tone, psalm: &neuma_tones::PsalmOptions, options: ChantOptions) -> Chant {
         Chant::wrap(PsalmChant::new(text, tone, psalm, options).into())
     }
 
-    fn wrap(source: AnyChant) -> Chant {
+    fn wrap(source: Source) -> Chant {
         let mut out = Chant {
             source,
             diagnostics: String::new(),
@@ -104,11 +119,15 @@ impl Chant {
         json::diagnostics(&mut diagnostics, chant.diagnostics(), Some(chant.utf16()));
         self.diagnostics = diagnostics;
         self.summary = None;
-        self.psalm = self.source.psalm().map(|p| {
+        #[cfg(feature = "tones")]
+        let psalm = self.source.psalm().map(|p| {
             let mut out = String::new();
             setting_json(&mut out, p.gabc(), p.notes(), p.setting_diagnostics(), p.utf16());
             out
         });
+        #[cfg(not(feature = "tones"))]
+        let psalm = None;
+        self.psalm = psalm;
     }
 
     pub fn diagnostics_json(&self) -> &str {
@@ -235,6 +254,7 @@ fn element_json(out: &mut String, layout: &Layout, e: &Element) {
     json::element(out, e, index);
 }
 
+#[cfg(feature = "tones")]
 fn part_name(k: neuma_tones::VersePart) -> &'static str {
     match k {
         neuma_tones::VersePart::Flex => "flex",
@@ -243,6 +263,7 @@ fn part_name(k: neuma_tones::VersePart) -> &'static str {
     }
 }
 
+#[cfg(feature = "tones")]
 fn role_name(r: neuma_tones::ToneRole) -> &'static str {
     match r {
         neuma_tones::ToneRole::Intonation => "intonation",
@@ -258,6 +279,7 @@ fn role_name(r: neuma_tones::ToneRole) -> &'static str {
 /// sourceUtf16Start, sourceUtf16End }], diagnostics }`. `notes[i]` describes note `i` of the
 /// engraved score, and its source is the sung syllable's in `text`, named as the timeline
 /// names a note's.
+#[cfg(feature = "tones")]
 pub fn setting_json(out: &mut String, gabc: &str, notes: &[PsalmNote], diagnostics: &[neuma::Diagnostic], text: &Utf16Index) {
     out.push_str("{\"gabc\":");
     json::string(out, gabc);
@@ -267,6 +289,7 @@ pub fn setting_json(out: &mut String, gabc: &str, notes: &[PsalmNote], diagnosti
     out.push('}');
 }
 
+#[cfg(feature = "tones")]
 fn notes_json(out: &mut String, notes: &[PsalmNote], text: &Utf16Index) {
     out.push_str(",\"notes\":[");
     for (i, n) in notes.iter().enumerate() {
@@ -290,6 +313,7 @@ fn notes_json(out: &mut String, notes: &[PsalmNote], text: &Utf16Index) {
 /// A pointing: `{ text, halves: [{ verse, part, confidence, kept, sourceStart, sourceEnd,
 /// sourceUtf16Start, sourceUtf16End }], diagnostics }`, each half's source its sung
 /// syllables in the text given.
+#[cfg(feature = "pointing")]
 pub fn pointing_json(out: &mut String, p: &neuma_tones::Pointing, text: &Utf16Index) {
     out.push_str("{\"text\":");
     json::string(out, &p.text);
@@ -313,6 +337,7 @@ pub fn pointing_json(out: &mut String, p: &neuma_tones::Pointing, text: &Utf16In
 /// sourceUtf16End, runs: [{ text, kind }] }], diagnostics }`. A run's `kind` is `text`,
 /// `syllable`, `point`, `held`, `mediant`, `flex` or `rubric`; a syllable's run also has
 /// `part`, `role`, `accent`, `flexDrop`, `wordStart` and its source in the text.
+#[cfg(feature = "tones")]
 pub fn display_json(out: &mut String, d: &neuma_tones::PsalmDisplay, text: &Utf16Index) {
     use neuma_tones::PsalmRunKind as K;
     out.push_str("{\"toneLabel\":");
@@ -471,6 +496,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "tones")]
     fn a_psalm_display_counts_the_text_in_both_units() {
         let text = "1 Bléssed is he * that · cómeth. [Stand.]";
         let tone = neuma_tones::Tone::named("8.G").unwrap();
@@ -491,6 +517,7 @@ mod tests {
     }
 
     /// The JSON is well formed: brackets balance outside strings.
+    #[cfg(feature = "tones")]
     fn serde_check(json: &str) {
         let (mut depth, mut in_str, mut esc) = (0i32, false, false);
         for c in json.chars() {
@@ -508,6 +535,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "tones")]
     fn psalm_notes_count_the_text_in_both_units() {
         let text = "Bléssed is he * that cómeth.";
         let tone = neuma_tones::Tone::named("8.G").unwrap();

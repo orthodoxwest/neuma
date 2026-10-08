@@ -567,7 +567,9 @@ impl Chant {
     }
 
     /// Engraves the score again with new options, as when the reader changes the text size
-    /// (Dynamic Type, say). Options that engrave as the current ones change nothing.
+    /// (Dynamic Type, say). They replace the current ones whole: a field left at its default
+    /// is the default, not the value it had, as in Rust and in the browser. Options that
+    /// engrave as the current ones change nothing.
     pub fn set_options(&self, options: ChantOptions) {
         let mut inner = self.write();
         if inner.source.set_options(options.into()) {

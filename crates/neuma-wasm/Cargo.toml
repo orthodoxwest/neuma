@@ -11,9 +11,24 @@ publish = false
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+# What the module carries; each left out makes it smaller (see the README for the sizes).
+# The glue's functions for a part left out throw an error with the code `unsupported`.
+[features]
+default = ["tones", "pointing", "font-google", "font-garamond12"]
+# Psalm tones: `Chant.fromPsalm`, `Chant.fromTone`, `psalm`, `psalmDisplay`, `toneLabel`,
+# `toneNames`.
+tones = ["dep:neuma-tones"]
+# Automatic pointing of psalm text: `point`, and `autoPoint` (without it, unpointed halves
+# are set as with `autoPoint: false`).
+pointing = ["tones", "neuma-tones/pointing"]
+# The lyric fonts' metrics: `font: "google"` and `font: "eb-garamond-12"`. One left out measures
+# as the other; with neither, lyrics are measured by an estimate.
+font-google = ["neuma/font-google"]
+font-garamond12 = ["neuma/font-garamond12"]
+
 [dependencies]
-neuma = { path = "../neuma", features = ["json"] }
-neuma-tones = { path = "../neuma-tones" }
+neuma = { path = "../neuma", default-features = false, features = ["json", "svg"] }
+neuma-tones = { path = "../neuma-tones", default-features = false, optional = true }
 
 # The exports need `#[unsafe(no_mangle)]`, so this crate can't inherit the workspace's
 # `forbid(unsafe_code)`; it denies it instead and allows it only on those items.

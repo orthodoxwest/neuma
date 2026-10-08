@@ -10,15 +10,24 @@ use crate::metrics::MetricsTable;
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum LyricFont {
-    /// The version Google Fonts serves.
+    /// The version Google Fonts serves. Without the `font-google` feature it measures as
+    /// [`Garamond12`](Self::Garamond12).
     #[default]
     Google,
-    /// The EB Garamond 12 release (Debian's EBGaramond12 OTFs).
+    /// The EB Garamond 12 release (Debian's EBGaramond12 OTFs). Without the
+    /// `font-garamond12` feature it measures as [`Google`](Self::Google).
     Garamond12,
 }
 
+// A table left out of the build (see the crate's features) is the other one.
+#[cfg(feature = "font-google")]
 const GOOGLE: &[u8] = include_bytes!("../fonts/eb-garamond-google.bin");
+#[cfg(not(feature = "font-google"))]
+const GOOGLE: &[u8] = GARAMOND_12;
+#[cfg(feature = "font-garamond12")]
 const GARAMOND_12: &[u8] = include_bytes!("../fonts/eb-garamond-12.bin");
+#[cfg(not(feature = "font-garamond12"))]
+const GARAMOND_12: &[u8] = GOOGLE;
 
 impl LyricFont {
     /// The metrics table's bytes, in the format [`MetricsTable::from_bytes`] reads.

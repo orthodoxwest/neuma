@@ -26,6 +26,7 @@
 
 /*__NEUMA_WASM__*/
 const WASM_GZIP_BASE64 = "";
+const wasmUrl = () => null;
 
 let module = null;
 let wasm = null;
@@ -34,6 +35,20 @@ let generation = 0;
 let crashed = null;
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
+
+/**
+ * An error the glue throws, `code` saying which: "invalid-option" (a TypeError: an option
+ * this function doesn't take, or a value not among those it takes), "tone" (a tone that
+ * can't be read), "unsupported" (this build of the module leaves the feature out),
+ * "not-initialized" (`init()` hasn't run), "engine-stopped" (the engine stopped on an
+ * internal error: call `init()` again), "no-constructor" (a TypeError: views and pages come
+ * from a Chant), "fetch" (`init()` in `neuma-external.mjs` couldn't fetch `neuma.wasm`).
+ */
+function fail(Kind, code, message, cause) {
+  const e = new Kind(`neuma: ${message}`, cause === undefined ? undefined : { cause });
+  e.code = code;
+  return e;
+}
 
 // Errors thrown from inside an engine export, as opposed to by the glue or the caller's own
 // arguments (a `toString` that throws, a string too long to build) before the engine ran.
@@ -59,7 +74,9 @@ function instantiate() {
   wasm = exportsOf(new WebAssembly.Instance(module, {}));
   generation += 1;
   crashed = null;
-  if (layoutBudget !== DEFAULT_LAYOUT_BUDGET) wasm.neuma_set_layout_budget(layoutBudget);
+  if (layoutBudget.current !== DEFAULT_LAYOUT_BUDGET.current || layoutBudget.stale !== DEFAULT_LAYOUT_BUDGET.stale) {
+    wasm.neuma_set_layout_budget(layoutBudget.current, layoutBudget.stale);
+  }
 }
 
 /**
@@ -73,20 +90,76 @@ export function initSync(bytes) {
   instantiate();
 }
 
-/** Initializes from the module's inlined copy, or from `bytes` if given. */
+/**
+ * Initializes from the module's inlined copy (in `neuma-external.mjs`, from `neuma.wasm`
+ * beside it, failing with the code "fetch" if it can't be fetched), or from `bytes` if given.
+ * Under Node, whose fetch takes no file: URLs, `neuma-external.mjs` needs the bytes.
+ */
 export async function init(bytes) {
   if (wasm) return;
   if (module) return instantiate();
   if (bytes) return initSync(bytes);
+  const url = wasmUrl();
+  if (url) {
+    let response;
+    try {
+      response = await fetch(url);
+    } catch (e) {
+      // Node's fetch takes no file: URLs, so the module can't fetch its engine from disk there.
+      const hint = url.protocol === "file:" ? "; this runtime can't fetch a file: URL, so pass the bytes: init(readFileSync(<path to neuma.wasm>))" : "";
+      throw fail(Error, "fetch", `fetching ${url} failed${hint}`, e);
+    }
+    if (!response.ok) throw fail(Error, "fetch", `fetching ${url} failed: ${response.status}`);
+    return initSync(new Uint8Array(await response.arrayBuffer()));
+  }
   const packed = Uint8Array.from(atob(WASM_GZIP_BASE64), (c) => c.charCodeAt(0));
   const stream = new Blob([packed]).stream().pipeThrough(new DecompressionStream("gzip"));
   initSync(new Uint8Array(await new Response(stream).arrayBuffer()));
 }
 
 function ready() {
-  if (crashed) throw new Error("neuma: the engine stopped on an internal error; call init() again", { cause: crashed });
-  if (!wasm) throw new Error("neuma: call init() first");
+  if (crashed) throw fail(Error, "engine-stopped", "the engine stopped on an internal error; call init() again", crashed);
+  if (!wasm) throw fail(Error, "not-initialized", "call init() first");
   return wasm;
+}
+
+/** The engine's export `name`, or the error for a build that leaves `what` out. */
+function need(w, name, what) {
+  if (typeof w[name] !== "function") throw fail(Error, "unsupported", `this build of the module has no ${what}`);
+  return w[name];
+}
+
+/** The engine's `{ error }`, if it gave one, as an error to throw. */
+function engineResult(out) {
+  if (out.error) throw fail(Error, "tone", out.error);
+  return out;
+}
+
+const invalid = (message) => fail(TypeError, "invalid-option", message);
+
+/**
+ * `given`, an options object (or undefined or null, for none), over `defaults`: an option
+ * left out, undefined or null takes its default; one `defaults` doesn't have throws.
+ */
+function options(given, defaults, what) {
+  const out = { ...defaults };
+  if (given === undefined || given === null) return out;
+  if (typeof given !== "object") throw invalid(`${what} takes an options object; got ${JSON.stringify(given)}`);
+  for (const key of Object.keys(given)) {
+    if (!Object.hasOwn(defaults, key)) {
+      throw invalid(`${what} has no option ${JSON.stringify(key)}; its options are ${Object.keys(defaults).join(", ")}`);
+    }
+    const v = given[key];
+    if (v !== undefined && v !== null) out[key] = v;
+  }
+  return out;
+}
+
+/** The index of `value` among `allowed`, the values option `name` takes; else throws. */
+function oneOf(name, value, allowed) {
+  const i = allowed.indexOf(value);
+  if (i < 0) throw invalid(`${name} must be ${allowed.map((v) => `"${v}"`).join(", ")}; got ${JSON.stringify(value)}`);
+  return i;
 }
 
 /**
@@ -115,17 +188,20 @@ function guarded(f) {
   }
 }
 
+// A pointer or length from the engine arrives as a signed 32-bit number; `>>> 0` reads it as
+// the unsigned one it is, for memory past 2 GiB.
+
 function putInput(text) {
   const w = ready();
   const bytes = encoder.encode(text);
-  const ptr = w.neuma_input(bytes.length);
+  const ptr = w.neuma_input(bytes.length) >>> 0;
   new Uint8Array(w.memory.buffer, ptr, bytes.length).set(bytes);
 }
 
 function takeOutput() {
   const w = ready();
-  const ptr = w.neuma_output_ptr();
-  const len = w.neuma_output_len();
+  const ptr = w.neuma_output_ptr() >>> 0;
+  const len = w.neuma_output_len() >>> 0;
   return decoder.decode(new Uint8Array(w.memory.buffer, ptr, len));
 }
 
@@ -170,13 +246,13 @@ export function summarize(gabc) {
  *   the timeline names a note's. The diagnostics' offsets are in `text` too. To engrave the
  *   psalm with its spans in `text`, use `Chant.fromPsalm`.
  */
-export function psalm(text, tone, { intone = "first", autoPoint = true, accents = "all" } = {}) {
+export function psalm(text, tone, psalmOptions) {
+  const o = options(psalmOptions, PSALM_DEFAULTS, "psalm");
   return guarded((w) => {
+    const run = need(w, "neuma_psalm", "psalm tones");
     putInput(String(tone) + "\0" + String(text));
-    w.neuma_psalm(isBlock(tone), psalmFlags(intone, accents), autoPoint ? 1 : 0);
-    const out = JSON.parse(takeOutput());
-    if (out.error) throw new Error(out.error);
-    return out;
+    run(isBlock(tone), psalmFlags(o), o.autoPoint ? 1 : 0);
+    return engineResult(JSON.parse(takeOutput()));
   });
 }
 
@@ -193,11 +269,10 @@ export function psalm(text, tone, { intone = "first", autoPoint = true, accents 
  */
 export function point(text, tone) {
   return guarded((w) => {
+    const run = need(w, "neuma_point", "automatic pointing");
     putInput(String(tone) + "\0" + String(text));
-    w.neuma_point(isBlock(tone));
-    const out = JSON.parse(takeOutput());
-    if (out.error) throw new Error(out.error);
-    return out;
+    run(isBlock(tone));
+    return engineResult(JSON.parse(takeOutput()));
   });
 }
 
@@ -221,31 +296,26 @@ export function point(text, tone) {
  *   `psalm`'s notes name it), `accent`, `flexDrop` (in a flex, where the voice drops:
  *   italic), `wordStart`, and its source in `text`.
  */
-export function psalmDisplay(text, tone, { intone = "first", autoPoint = true, accents = "all" } = {}) {
+export function psalmDisplay(text, tone, psalmOptions) {
+  const o = options(psalmOptions, PSALM_DEFAULTS, "psalmDisplay");
   return guarded((w) => {
+    const run = need(w, "neuma_psalm_display", "psalm tones");
     putInput(String(tone) + "\0" + String(text));
-    w.neuma_psalm_display(isBlock(tone), psalmFlags(intone, accents), autoPoint ? 1 : 0);
-    const out = JSON.parse(takeOutput());
-    if (out.error) throw new Error(out.error);
-    return out;
+    run(isBlock(tone), psalmFlags(o), o.autoPoint ? 1 : 0);
+    return engineResult(JSON.parse(takeOutput()));
   });
 }
 
 // A tone block always has `key: value` lines; a tone name never has a colon.
 const isBlock = (tone) => (String(tone).includes(":") ? 1 : 0);
 
+const PSALM_DEFAULTS = { intone: "first", autoPoint: true, accents: "all" };
 const INTONE = ["first", "every", "never"];
 const ACCENTS = ["all", "none", "outsideFlex"];
 
 // `intone` and `accents` as the module takes them, in one number: bits 0–1 and 2–3. A value
 // that isn't one of the documented ones throws rather than falling back to the default.
-function psalmFlags(intone, accents) {
-  const i = INTONE.indexOf(intone);
-  if (i < 0) throw new TypeError(`intone must be ${INTONE.map((v) => `"${v}"`).join(", ")}; got ${JSON.stringify(intone)}`);
-  const a = ACCENTS.indexOf(accents);
-  if (a < 0) throw new TypeError(`accents must be ${ACCENTS.map((v) => `"${v}"`).join(", ")}; got ${JSON.stringify(accents)}`);
-  return i | (a << 2);
-}
+const psalmFlags = ({ intone, accents }) => oneOf("intone", intone, INTONE) | (oneOf("accents", accents, ACCENTS) << 2);
 
 /**
  * A tone's name as a psalter prints it beside the tone: "Tone 8 G" for "8.G", "Tonus
@@ -255,18 +325,17 @@ function psalmFlags(intone, accents) {
  */
 export function toneLabel(tone) {
   return guarded((w) => {
+    const run = need(w, "neuma_tone_label", "psalm tones");
     putInput(String(tone));
-    w.neuma_tone_label(isBlock(tone));
-    const out = JSON.parse(takeOutput());
-    if (out.error) throw new Error(out.error);
-    return out.label;
+    run(isBlock(tone));
+    return engineResult(JSON.parse(takeOutput())).label;
   });
 }
 
 /** The built-in psalm tones' names, such as "8.G". Call after `init()`. */
 export function toneNames() {
   return guarded((w) => {
-    w.neuma_tone_names();
+    need(w, "neuma_tone_names", "psalm tones")();
     return takeOutput().split("\n");
   });
 }
@@ -290,10 +359,17 @@ export function noteAtTime(timeline, t) {
   return note && t < note.start + note.duration ? note : null;
 }
 
-/** The engine's chant options from the glue's. */
-function chantArgs({ initial = 1, annotation = true, lyricSize = 2.45, font = "google" } = {}) {
-  return [Math.min(Math.max(Math.trunc(Number(initial)) || 0, 0), 255), annotation ? 1 : 0, lyricSize, font === "eb-garamond-12" ? 1 : 0];
+const CHANT_DEFAULTS = { initial: 1, annotation: true, lyricSize: 2.45, font: "google" };
+const FONTS = ["google", "eb-garamond-12"];
+
+/** The engine's chant options from the glue's, read as `what` takes them. */
+function chantArgs(given, what) {
+  const { initial, annotation, lyricSize, font } = options(given, CHANT_DEFAULTS, what);
+  return [Math.min(Math.max(Math.trunc(Number(initial)) || 0, 0), 255), annotation ? 1 : 0, lyricSize, oneOf("font", font, FONTS)];
 }
+
+/** Chant versions: counted here, so they keep growing across engine restarts. */
+let versions = 0;
 
 /** The diagnostics, then for a chant set from a psalm its `{ gabc, notes, diagnostics }`. */
 function diagnosticsAndPsalm(out) {
@@ -308,23 +384,26 @@ let relayOut;
 /** A chant's current version. */
 let versionOf;
 
+const VIEW_DEFAULTS = { scale: 6, lastLine: "ragged", maxLines: 0, prefix: "", svg: "whole", ids: true };
+
 /** The engine's layout arguments for a view's options. */
-function viewArgs({ scale = 6, lastLine = "ragged", maxLines = 0, prefix = "", svg = "whole", ids = true } = {}) {
+function viewArgs({ scale, lastLine, maxLines, prefix, svg, ids }) {
+  const lines = oneOf("svg", svg, ["whole", "lines"]) === 1;
   return {
     scale: Number(scale),
-    last: lastLine === "justified" ? 1 : 0,
+    last: oneOf("lastLine", lastLine, ["ragged", "justified"]),
     maxLines: maxLines >>> 0,
     prefix: String(prefix),
-    lines: svg === "lines",
-    flags: (svg === "lines" ? 2 | 8 : 0) | (ids ? 0 : 4),
+    lines,
+    flags: (lines ? 2 | 8 : 0) | (ids ? 0 : 4),
   };
 }
 
 /** The engine's ten weights, NaN for each one to keep at its default. */
-const weightArgs = (weights) => WEIGHTS.map((k) => {
-  const v = weights?.[k];
-  return typeof v === "number" ? v : NaN;
-});
+function weightArgs(weights) {
+  const given = options(weights, Object.fromEntries(WEIGHTS.map((k) => [k, undefined])), "weights");
+  return WEIGHTS.map((k) => (typeof given[k] === "number" ? given[k] : NaN));
+}
 
 /** Frees the engine's half of a chant or page JavaScript no longer holds. */
 const unheld = typeof FinalizationRegistry === "function"
@@ -355,9 +434,9 @@ export class Chant {
    *   font: which EB Garamond the page loads, "google" (Google Fonts, default) or
    *   "eb-garamond-12" (the EB Garamond 12 files), so lyrics are spaced for it.
    */
-  constructor(gabc, options = {}) {
+  constructor(gabc, options) {
     if (gabc === PSALM) return;
-    this.#engrave({ source: String(gabc), args: chantArgs(options), psalm: null });
+    this.#engrave({ source: String(gabc), args: chantArgs(options, "Chant"), psalm: null });
   }
 
   /**
@@ -372,15 +451,16 @@ export class Chant {
    *   annotation?: boolean, lyricSize?: number, font?: string }} [options] `psalm`'s options
    *   and the constructor's.
    */
-  static fromPsalm(text, tone, { intone = "first", autoPoint = true, accents = "all", ...options } = {}) {
+  static fromPsalm(text, tone, psalmOptions) {
+    const { intone, autoPoint, accents, ...rest } = options(psalmOptions, { ...PSALM_DEFAULTS, ...CHANT_DEFAULTS }, "Chant.fromPsalm");
     const psalm = {
       tone: String(tone),
       custom: isBlock(tone),
-      psalmFlags: psalmFlags(intone, accents),
+      psalmFlags: psalmFlags({ intone, accents }),
       autoPoint: autoPoint ? 1 : 0,
     };
     const chant = new Chant(PSALM);
-    chant.#engrave({ source: String(text), args: chantArgs(options), psalm });
+    chant.#engrave({ source: String(text), args: chantArgs(rest, "Chant.fromPsalm"), psalm });
     return chant;
   }
 
@@ -390,13 +470,15 @@ export class Chant {
    * @param {string} tone as for `psalm`
    * @param {object} [options] as the constructor takes (an initial has no words to drop).
    */
-  static fromTone(tone, options = {}) {
+  static fromTone(tone, options) {
+    chantArgs(options, "Chant.fromTone");
     const gabc = guarded((w) => {
+      const run = need(w, "neuma_tone_gabc", "psalm tones");
       putInput(String(tone));
-      w.neuma_tone_gabc(isBlock(tone));
+      run(isBlock(tone));
       return takeOutput();
     });
-    if (gabc.startsWith("{")) throw new Error(JSON.parse(gabc).error);
+    if (gabc.startsWith("{")) engineResult(JSON.parse(gabc));
     return new Chant(gabc, options);
   }
 
@@ -408,17 +490,18 @@ export class Chant {
   #engrave(recipe) {
     const { source, args, psalm } = recipe;
     const handle = guarded((w) => {
+      const make = psalm ? need(w, "chant_from_psalm", "psalm tones") : w.chant_new;
       putInput(psalm ? psalm.tone + "\0" + source : source);
-      return psalm ? w.chant_from_psalm(psalm.custom, psalm.psalmFlags, psalm.autoPoint, ...args) : w.chant_new(...args);
+      return psalm ? make(psalm.custom, psalm.psalmFlags, psalm.autoPoint, ...args) : make(...args);
     });
     const out = takeOutput();
-    if (handle < 0) throw new Error(JSON.parse(out).error);
+    if (handle < 0) engineResult(JSON.parse(out));
     this.#handle = handle;
     this.#generation = generation;
     unheld?.register(this, { handle, gen: generation, free: "chant_free" }, this);
     if (this.#state) return;
     [this.#diagnostics, this.#psalm] = diagnosticsAndPsalm(out);
-    this.#state = { version: guarded((w) => w.chant_version(handle)), recipe };
+    this.#state = { version: ++versions, recipe };
   }
 
   /** The engine's handle for this chant, engraving it again if the engine no longer has it. */
@@ -448,8 +531,9 @@ export class Chant {
 
   /**
    * Names the chant's current state, as in Rust and on mobile: a number no other state of
-   * any chant has had, which grows with each `update` or `setOptions` that changed anything.
-   * A page laid out at another version is `stale`; key a memo or a framework's render on it.
+   * any chant has had, which grows with each `update` or `setOptions` that changed anything,
+   * also across a restart of the engine. A page laid out at another version is `stale`; key
+   * a memo or a framework's render on it.
    */
   get version() {
     return this.#state.version;
@@ -465,7 +549,7 @@ export class Chant {
     if (status !== 2) return false;
     [this.#diagnostics, this.#psalm] = diagnosticsAndPsalm(takeOutput());
     this.#summary = undefined;
-    this.#state = { version: guarded((w) => w.chant_version(this.#handle)), recipe };
+    this.#state = { version: ++versions, recipe };
     return true;
   }
 
@@ -491,13 +575,16 @@ export class Chant {
 
   /**
    * Engraves the score again with new options (those the constructor takes), as when the
-   * reader changes the lyric size. Options that engrave as the current ones change nothing,
-   * and pages laid out before stay current. Returns whether anything changed.
+   * reader changes the lyric size. They replace the current options, as the constructor
+   * takes them: one left out takes its default, not its current value, as in Rust and on
+   * mobile, so `setOptions({ lyricSize: 3 })` on a chant made with `{ initial: 0 }` brings
+   * back the initial. Options that engrave as the current ones change nothing, and pages
+   * laid out before stay current. Returns whether anything changed.
    * @returns {boolean}
    */
-  setOptions(options = {}) {
+  setOptions(options) {
+    const args = chantArgs(options, "setOptions");
     const handle = this.#live();
-    const args = chantArgs(options);
     const status = guarded((w) => w.chant_set_options(handle, ...args));
     return this.#changed(status, { ...this.#state.recipe, args });
   }
@@ -522,8 +609,8 @@ export class Chant {
    *   prefix?: string, svg?: "whole"|"lines", ids?: boolean }} [options] as `layout` takes.
    * @returns {View}
    */
-  view(options = {}) {
-    return new View(VIEW, this, options);
+  view(viewOptions) {
+    return new View(VIEW, this, viewArgs(options(viewOptions, VIEW_DEFAULTS, "view")));
   }
 
   /**
@@ -543,8 +630,9 @@ export class Chant {
    *   line's SVG doesn't change when notes are added or removed above it.
    * @returns {Page}
    */
-  layout(width, { weights, ...options } = {}) {
-    return this.#make(Number(width), viewArgs(options), weightArgs(weights), undefined);
+  layout(width, layoutOptions) {
+    const { weights, ...rest } = options(layoutOptions, { ...VIEW_DEFAULTS, weights: undefined }, "layout");
+    return this.#make(Number(width), viewArgs(rest), weightArgs(weights), undefined);
   }
 
   /** Lays out a page, reusing the lines of `previous` (a page in parts) when given. */
@@ -597,7 +685,7 @@ export class Chant {
     return guarded((w) => {
       putInput(psalm ? psalm.tone + "\0" + source : source);
       const made = w.page_rebuild(psalm ? 1 : 0, psalm?.custom ?? 0, psalm?.psalmFlags ?? 0, psalm?.autoPoint ?? 0, ...args, ...at);
-      if (made < 0) throw new Error("neuma: a psalm page's tone could not be read again");
+      if (made < 0) throw fail(Error, "tone", "a psalm page's tone could not be read again");
       return made;
     });
   }
@@ -641,10 +729,10 @@ export class View {
   #previous = null;
 
   /** Views come from `Chant.view`. */
-  constructor(token, chant, options) {
-    if (token !== VIEW) throw new TypeError("neuma: views come from Chant.view");
+  constructor(token, chant, args) {
+    if (token !== VIEW) throw fail(TypeError, "no-constructor", "views come from Chant.view");
     this.#chant = chant;
-    this.#args = viewArgs(options);
+    this.#args = args;
   }
 
   /** The page this view last gave, or null. */
@@ -659,9 +747,9 @@ export class View {
    * @param {{ weights?: object }} [options] the page's timeline's weights, as `layout` takes.
    * @returns {Page}
    */
-  layout(width, { weights } = {}) {
+  layout(width, layoutOptions) {
     const at = Number(width);
-    const values = weightArgs(weights);
+    const values = weightArgs(options(layoutOptions, { weights: undefined }, "view.layout").weights);
     const same = (p) => p && !p.stale && pageAsked(p) === at && sameWeights(pageWeights(p), values);
     if (same(this.#current)) return this.#current;
     if (same(this.#previous)) {
@@ -720,7 +808,7 @@ export class Page {
 
   /** Pages come from `Chant.layout` and `View.layout`. */
   constructor(token, chant, state, at, weights, handle, width, height) {
-    if (token !== PAGE) throw new TypeError("neuma: pages come from Chant.layout or View.layout");
+    if (token !== PAGE) throw fail(TypeError, "no-constructor", "pages come from Chant.layout or View.layout");
     this.#chant = chant;
     this.#state = state;
     this.#at = at;
@@ -810,11 +898,12 @@ export class Page {
    * @param {{ unit?: "utf16"|"utf8" }} [options] `unit: "utf8"` takes a byte offset instead.
    * @returns {Array<object>} elements as `sourceAt` returns them
    */
-  elementsAt(caret, { unit = "utf16" } = {}) {
+  elementsAt(caret, elementsOptions) {
+    const utf16 = 1 - oneOf("unit", options(elementsOptions, { unit: "utf16" }, "elementsAt").unit, ["utf16", "utf8"]);
     // Past either end means at it: saturate to a u32 (the engine clamps to the source's
     // length) rather than let `>>>` wrap, and read NaN as 0.
     const at = Math.min(Math.max(Math.trunc(Number(caret)) || 0, 0), 0xffffffff);
-    this.#ask((w, h) => w.page_elements_at(h, at, unit === "utf8" ? 0 : 1), 0);
+    this.#ask((w, h) => w.page_elements_at(h, at, utf16), 0);
     return JSON.parse(takeOutput());
   }
 
@@ -831,37 +920,66 @@ export class Page {
   }
 }
 
+// `using page = chant.layout(…)` frees at the end of the block, where `Symbol.dispose` is.
 if (typeof Symbol.dispose === "symbol") {
-  Page.prototype[Symbol.dispose] = function () {
-    this.free();
-  };
+  for (const Class of [Chant, View, Page]) {
+    Class.prototype[Symbol.dispose] = function () {
+      this.free();
+    };
+  }
 }
 
 /** The layouts the engine keeps, when not set. */
-const DEFAULT_LAYOUT_BUDGET = 4;
+const DEFAULT_LAYOUT_BUDGET = Object.freeze({ current: 64, stale: 2 });
 let layoutBudget = DEFAULT_LAYOUT_BUDGET;
 
+/** The most a pool can be set to keep: the engine takes it as a u32. */
+const MAX_LAYOUT_BUDGET = 0xffffffff;
+
+/** One pool's budget: a number at least 1, rounded down and capped at 2^32 − 1. */
+function poolBudget(name, value) {
+  if (typeof value !== "number" || !(value >= 1)) {
+    throw invalid(`setLayoutBudget's ${name} must be a number at least 1 (or undefined or null for the default, ${DEFAULT_LAYOUT_BUDGET[name]}); got ${String(value)}`);
+  }
+  return Math.min(MAX_LAYOUT_BUDGET, Math.floor(value));
+}
+
 /**
- * Sets how many pages' layouts the engine keeps, across every chant, view and page (default
- * 4: an editor's page and thumbnail, each with the one before). Past it the least recently
- * used is dropped, and its page lays itself out again if it is asked again, to the same
- * answers. Each layout can hold an engraving of its own: under
- * 200 KB for a typical score, about 4 MB for the longest. Laying a page out again costs
- * little while its chant is still in the page's state, and a full layout (tens of
- * milliseconds for the longest scores) once the chant has moved on. Lower it for a phone;
- * raise it for many long scores shown and clicked at once.
- * @param {number} count at least 1
+ * Sets how many pages' layouts the engine keeps, in two pools across every chant, view and
+ * page: `current`, of pages showing their chant as it is now (default 64, enough for a page
+ * of many chants and their thumbnails, all hovered and clicked), and `stale`, of pages whose
+ * chant has changed since or is gone (default 2). Past either, the least recently used is
+ * dropped, and its page lays itself out again if it is asked again, to the same answers.
+ * Layouts of a chant's current state share its engraving; a stale one holds the engraving
+ * it was laid out from (under 200 KB for a typical score, about 4 MB for the longest). Laying
+ * a page out again costs little while its chant is still in the page's state, and a full
+ * layout (tens of milliseconds for the longest scores) once the chant has moved on.
+ *
+ * Set `current` above the number of pages shown at once: with more, a mouse moving across
+ * them in turn always reaches the one dropped longest ago, so every hover lays a page out
+ * again.
+ *
+ * Like every options object here, the budget replaces the last one: a pool left out,
+ * undefined or null takes its default, and `setLayoutBudget()` restores both. A number sets
+ * `current`, `stale` taking its default.
+ * @param {number | { current?: number, stale?: number }} budget each pool a number at least
+ *   1 (a page laid out again lives to answer), rounded down; `Infinity` or anything past
+ *   2^32 − 1 keeps 2^32 − 1, no limit in practice. 0, a negative number, `NaN` or a value
+ *   that isn't a number throws (code "invalid-option").
  */
-export function setLayoutBudget(count) {
-  layoutBudget = Math.max(1, Math.trunc(Number(count)) || DEFAULT_LAYOUT_BUDGET);
-  if (wasm) wasm.neuma_set_layout_budget(layoutBudget);
+export function setLayoutBudget(budget) {
+  const given = typeof budget === "number" ? { current: budget } : budget;
+  const { current, stale } = options(given, DEFAULT_LAYOUT_BUDGET, "setLayoutBudget");
+  layoutBudget = Object.freeze({ current: poolBudget("current", current), stale: poolBudget("stale", stale) });
+  if (wasm) wasm.neuma_set_layout_budget(layoutBudget.current, layoutBudget.stale);
 }
 
 /**
  * The engine's memory: `memory` (the WebAssembly memory's size in bytes, which only grows),
- * `layouts` (the pages' layouts it holds) and `budget` (see `setLayoutBudget`).
+ * `layouts` (the pages' layouts it holds), `staleLayouts` (how many of those are stale) and
+ * `budget` (`{ current, stale }`, see `setLayoutBudget`).
  */
 export function engineStats() {
   const w = ready();
-  return { memory: w.memory.buffer.byteLength, layouts: w.neuma_layouts(), budget: layoutBudget };
+  return { memory: w.memory.buffer.byteLength, layouts: w.neuma_layouts(0) >>> 0, staleLayouts: w.neuma_layouts(1) >>> 0, budget: layoutBudget };
 }

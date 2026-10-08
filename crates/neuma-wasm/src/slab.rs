@@ -59,14 +59,22 @@ impl<T> Slab<T> {
         ((u64::from(slot.generation) << SLOT_BITS) | i as u64) as f64
     }
 
-    fn slot(&mut self, handle: f64) -> Option<&mut Slot<T>> {
+    /// The index of the slot holding `handle`'s item.
+    fn find(&self, handle: f64) -> Option<usize> {
         // Anything but a whole number in range (a NaN, a negative, a fraction) finds nothing.
         if !(handle >= 0.0 && handle < (1u64 << 52) as f64 && handle.fract() == 0.0) {
             return None;
         }
         let h = handle as u64;
         let (generation, i) = ((h >> SLOT_BITS) as u32, (h & SLOT_MASK) as usize);
-        self.slots.get_mut(i).filter(|s| s.generation == generation && s.item.is_some())
+        self.slots
+            .get(i)
+            .filter(|s| s.generation == generation && s.item.is_some())
+            .map(|_| i)
+    }
+
+    fn slot(&mut self, handle: f64) -> Option<&mut Slot<T>> {
+        self.find(handle).map(|i| &mut self.slots[i])
     }
 
     /// The item, marked as just used.
@@ -91,14 +99,32 @@ impl<T> Slab<T> {
         self.live
     }
 
-    /// Frees the least recently used items until at most `budget` are held.
-    pub(crate) fn evict_to(&mut self, budget: usize) {
-        while self.live > budget {
-            let Some(lru) = self.slots.iter_mut().filter(|s| s.item.is_some()).min_by_key(|s| s.used) else {
+    /// The item, without marking it used.
+    pub(crate) fn peek(&self, handle: f64) -> Option<&T> {
+        self.find(handle).and_then(|i| self.slots[i].item.as_ref())
+    }
+
+    /// How many of the items held `which` picks.
+    pub(crate) fn count(&self, mut which: impl FnMut(&T) -> bool) -> usize {
+        self.slots.iter().filter(|s| s.item.as_ref().is_some_and(&mut which)).count()
+    }
+
+    /// Frees the least recently used of the items `which` picks until at most `budget` of
+    /// them are held.
+    pub(crate) fn evict_to(&mut self, budget: usize, mut which: impl FnMut(&T) -> bool) {
+        let mut held = self.count(&mut which);
+        while held > budget {
+            let Some(lru) = self
+                .slots
+                .iter_mut()
+                .filter(|s| s.item.as_ref().is_some_and(&mut which))
+                .min_by_key(|s| s.used)
+            else {
                 return;
             };
             lru.item = None;
             self.live -= 1;
+            held -= 1;
         }
     }
 }
@@ -142,10 +168,21 @@ mod tests {
         let mut slab = Slab::new();
         let handles: Vec<f64> = (0..5).map(|i| slab.put(i)).collect();
         slab.get_mut(handles[0]);
-        slab.evict_to(3);
+        slab.evict_to(3, |_| true);
         assert_eq!(slab.live(), 3);
         assert!(slab.get_mut(handles[0]).is_some(), "used last, so kept");
         assert!(slab.get_mut(handles[1]).is_none() && slab.get_mut(handles[2]).is_none());
         assert!(slab.get_mut(handles[3]).is_some() && slab.get_mut(handles[4]).is_some());
+    }
+
+    #[test]
+    fn evicts_only_among_those_picked() {
+        let mut slab = Slab::new();
+        let handles: Vec<f64> = (0..6).map(|i| slab.put(i)).collect();
+        // Of the odd ones, keep the last used.
+        slab.evict_to(1, |i| i % 2 == 1);
+        assert_eq!(slab.live(), 4);
+        assert!(slab.peek(handles[5]).is_some() && slab.peek(handles[1]).is_none() && slab.peek(handles[3]).is_none());
+        assert!([0, 2, 4].iter().all(|&i| slab.peek(handles[i]).is_some()));
     }
 }

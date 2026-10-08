@@ -229,12 +229,23 @@ pub(super) fn parse(text: &str, map: &TextMap, state: &mut LyricState, sink: &mu
 }
 
 /// A style tag not yet closed, and how to close it in its syllable, if that can be done.
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct OpenTag {
     pub name: &'static str,
     pub span: Range<usize>,
     syllable_end: usize,
     pub fix: Option<Fix>,
+}
+
+impl OpenTag {
+    /// Moves the tag's source offsets with `at`.
+    pub(crate) fn moved(&mut self, at: impl Fn(usize) -> usize) {
+        self.span = at(self.span.start)..at(self.span.end);
+        self.syllable_end = at(self.syllable_end);
+        if let Some(f) = &mut self.fix {
+            f.span = at(f.span.start)..at(f.span.end);
+        }
+    }
 }
 
 /// Points the fixes of tags opened in a syllable past which text runs to its end at where that

@@ -7,19 +7,29 @@ use std::cell::{Cell, RefCell};
 use neuma::{LastLine, LayoutOptions, SvgOptions, Weights};
 
 use crate::slab::{NONE, Slab};
-use crate::{Chant, ChantOptions, Initial, LyricFont, Page, SvgOutput};
+use crate::{Chant, ChantOptions, Initial, Page, SvgOutput};
 
 thread_local! {
     static INPUT: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
     static OUTPUT: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
     static CHANTS: RefCell<Slab<Chant>> = const { RefCell::new(Slab::new()) };
-    static PAGES: RefCell<Slab<Page>> = const { RefCell::new(Slab::new()) };
-    /// How many pages' layouts the engine keeps; see [`neuma_set_layout_budget`].
-    static BUDGET: Cell<usize> = const { Cell::new(DEFAULT_BUDGET) };
+    static PAGES: RefCell<Slab<Held>> = const { RefCell::new(Slab::new()) };
+    /// How many pages' layouts the engine keeps, current and stale; see
+    /// [`neuma_set_layout_budget`].
+    static BUDGET: Cell<[usize; 2]> = const { Cell::new(DEFAULT_BUDGET) };
 }
 
-/// Layouts kept by default: an editor's page and thumbnail, each with the one before.
-const DEFAULT_BUDGET: usize = 4;
+/// Layouts kept by default: of chants as they are now, enough for a page of many chants and
+/// their thumbnails, all hovered and clicked; of chants that have changed since or are gone,
+/// a few, for a click between an edit and the next frame.
+const DEFAULT_BUDGET: [usize; 2] = [64, 2];
+
+/// A page's layout, and the chant and version it shows.
+struct Held {
+    page: Page,
+    chant: f64,
+    version: u64,
+}
 
 fn input() -> String {
     INPUT.with(|b| String::from_utf8_lossy(&b.borrow()).into_owned())
@@ -38,11 +48,19 @@ fn with_chant<R>(handle: f64, f: impl FnOnce(&mut Chant) -> R) -> Option<R> {
 }
 
 fn chant_options(initial: i32, annotation: u32, lyric_size: f32, font: u32) -> ChantOptions {
-    ChantOptions::default()
+    let options = ChantOptions::default()
         .with_initial(Initial::from_staves(initial.into()))
         .with_annotation(annotation != 0)
-        .with_lyric_size(lyric_size)
-        .with_font(if font == 1 { LyricFont::Garamond12 } else { LyricFont::Google })
+        .with_lyric_size(lyric_size);
+    #[cfg(any(feature = "font-google", feature = "font-garamond12"))]
+    let options = options.with_font(if font == 1 {
+        crate::LyricFont::Garamond12
+    } else {
+        crate::LyricFont::Google
+    });
+    #[cfg(not(any(feature = "font-google", feature = "font-garamond12")))]
+    let _ = font;
+    options
 }
 
 /// The layout a page was made with: `last` 1 for a justified last line, `max_lines` 0 for
@@ -59,18 +77,34 @@ fn keep(chant: Chant) -> f64 {
 }
 
 fn with_page<R>(handle: f64, f: impl FnOnce(&Page) -> R) -> Option<R> {
-    PAGES.with(|p| p.borrow_mut().get_mut(handle).map(|page| f(page)))
+    PAGES.with(|p| p.borrow_mut().get_mut(handle).map(|held| f(&held.page)))
 }
 
-/// Keeps `page`, evicting the least recently used layouts beyond the budget, and returns its
-/// handle.
-fn keep_page(page: Page) -> f64 {
-    PAGES.with(|p| {
-        let mut pages = p.borrow_mut();
-        let handle = pages.put(page);
-        pages.evict_to(BUDGET.with(Cell::get));
-        handle
-    })
+/// Keeps `page`, laid out from `chant` (or [`NONE`]) at `version`, evicting layouts beyond
+/// the budget, and returns its handle.
+fn keep_page(page: Page, chant: f64, version: u64) -> f64 {
+    let handle = PAGES.with(|p| p.borrow_mut().put(Held { page, chant, version }));
+    evict();
+    handle
+}
+
+/// Drops the least recently used layouts beyond the budget: of those showing their chant as
+/// it is now, and of those whose chant has changed since or is gone.
+fn evict() {
+    let [current, stale] = BUDGET.with(Cell::get);
+    CHANTS.with(|c| {
+        let chants = c.borrow();
+        PAGES.with(|p| {
+            let mut pages = p.borrow_mut();
+            pages.evict_to(stale, |h| is_stale(&chants, h));
+            pages.evict_to(current, |h| !is_stale(&chants, h));
+        });
+    });
+}
+
+/// Whether `held` shows its chant as it was, not as it is now, or a chant now gone.
+fn is_stale(chants: &Slab<Chant>, held: &Held) -> bool {
+    chants.peek(held.chant).is_none_or(|c| c.version() != held.version)
 }
 
 /// The diagnostics JSON, then for a chant set from a psalm a NUL and its `{ gabc, notes }`.
@@ -118,6 +152,7 @@ pub extern "C" fn chant_new(initial: i32, annotation: u32, lyric_size: f32, font
 /// Sets psalm text to a tone (see [`tone_and_text`] and [`neuma_psalm`]) and engraves it.
 /// Returns a handle and leaves the diagnostics JSON, a NUL and the setting's `{ gabc, notes }`
 /// in the output buffer; or returns -1 and leaves `{"error": …}` there.
+#[cfg(feature = "tones")]
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
 #[allow(clippy::too_many_arguments)]
@@ -150,7 +185,7 @@ pub extern "C" fn chant_from_psalm(
 /// nothing changed, 2 when the chant changed and its diagnostics (and psalm) are in the
 /// output buffer.
 fn changed(handle: f64, f: impl FnOnce(&mut Chant) -> bool) -> u32 {
-    with_chant(handle, |c| {
+    let status = with_chant(handle, |c| {
         if f(c) {
             diagnostics_and_psalm(c);
             2
@@ -158,7 +193,12 @@ fn changed(handle: f64, f: impl FnOnce(&mut Chant) -> bool) -> u32 {
             1
         }
     })
-    .unwrap_or(0)
+    .unwrap_or(0);
+    if status == 2 {
+        // The chant's pages are stale now.
+        evict();
+    }
+    status
 }
 
 /// Engraves the chant again with new options; returns as [`changed`] says.
@@ -172,14 +212,7 @@ pub extern "C" fn chant_set_options(handle: f64, initial: i32, annotation: u32, 
 #[unsafe(no_mangle)]
 pub extern "C" fn chant_free(handle: f64) {
     CHANTS.with(|c| c.borrow_mut().free(handle));
-}
-
-/// The chant's version (see `neuma::Chant::version`), as a float so it crosses whole; -1 for
-/// an unknown handle.
-#[allow(unsafe_code)]
-#[unsafe(no_mangle)]
-pub extern "C" fn chant_version(handle: f64) -> f64 {
-    with_chant(handle, |c| c.version() as f64).unwrap_or(-1.0)
+    evict();
 }
 
 /// Lays out at `width` with the SVG class prefix in the input buffer. `flags`: 2 makes the
@@ -207,14 +240,14 @@ pub extern "C" fn chant_layout(handle: f64, width: f32, scale: f32, last: u32, m
     let made = with_chant(handle, |c| {
         PAGES.with(|p| {
             let mut pages = p.borrow_mut();
-            let previous = pages.get_mut(previous).map(|page| &*page);
-            c.layout(width, &opts, &svg, mode, previous)
+            let previous = pages.get_mut(previous).map(|held| &held.page);
+            (c.layout(width, &opts, &svg, mode, previous), c.version())
         })
     });
     match made {
-        Some((page, out)) => {
+        Some(((page, out), version)) => {
             output(&out);
-            keep_page(page)
+            keep_page(page, handle, version)
         }
         None => NONE,
     }
@@ -245,33 +278,44 @@ pub extern "C" fn page_rebuild(
 ) -> f64 {
     let options = chant_options(initial, annotation, lyric_size, font);
     let chant = if psalm == 1 {
+        #[cfg(feature = "tones")]
         match psalm_input(custom, psalm_flags, auto_point) {
             Ok((tone, text, psalm)) => Chant::from_psalm(&text, &tone, &psalm, options),
             Err(_) => return NONE,
+        }
+        #[cfg(not(feature = "tones"))]
+        {
+            let _ = (custom, psalm_flags, auto_point);
+            return NONE;
         }
     } else {
         Chant::new(&input(), options)
     };
     let opts = layout_options(scale, last, max_lines);
     let (page, _) = chant.layout(width, &opts, &SvgOptions::default(), SvgOutput::None, None);
-    keep_page(page)
+    // No chant shows what it shows any more.
+    keep_page(page, NONE, 0)
 }
 
-/// Sets how many pages' layouts the engine keeps (at least 1). Past it, the least recently
-/// used is dropped; its page lays itself out again when next asked.
+/// Sets how many pages' layouts the engine keeps: `current` of pages that show their chant
+/// as it is now, and `stale` of the others, whose chant has changed since or is gone; each
+/// at least 1, so a page laid out again lives to answer. Past either, the least recently used is dropped; its page lays itself out again
+/// when next asked.
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
-pub extern "C" fn neuma_set_layout_budget(budget: u32) {
-    let budget = (budget as usize).max(1);
-    BUDGET.with(|b| b.set(budget));
-    PAGES.with(|p| p.borrow_mut().evict_to(budget));
+pub extern "C" fn neuma_set_layout_budget(current: u32, stale: u32) {
+    BUDGET.with(|b| b.set([(current as usize).max(1), (stale as usize).max(1)]));
+    evict();
 }
 
-/// How many pages' layouts the engine holds.
+/// How many pages' layouts the engine holds; with `stale` 1, how many of them are stale.
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
-pub extern "C" fn neuma_layouts() -> u32 {
-    PAGES.with(|p| p.borrow().live() as u32)
+pub extern "C" fn neuma_layouts(stale: u32) -> u32 {
+    if stale == 0 {
+        return PAGES.with(|p| p.borrow().live() as u32);
+    }
+    CHANTS.with(|c| PAGES.with(|p| p.borrow().count(|h| is_stale(&c.borrow(), h)) as u32))
 }
 
 /// Frees a page.
@@ -369,6 +413,7 @@ pub extern "C" fn neuma_summarize() {
 
 /// The tone and text in the input buffer, separated by a NUL: the tone is a built-in name
 /// (`8.G`) when `custom` is 0, else a tone block in the tone file syntax.
+#[cfg(feature = "tones")]
 fn tone_and_text(custom: u32) -> Result<(neuma_tones::Tone, String), String> {
     let all = input();
     let (tone_src, text) = all.split_once('\0').unwrap_or((all.as_str(), ""));
@@ -381,6 +426,7 @@ fn tone_and_text(custom: u32) -> Result<(neuma_tones::Tone, String), String> {
     Ok((tone, text.to_string()))
 }
 
+#[cfg(feature = "tones")]
 fn error(out: &mut String, e: &str) {
     out.push_str("{\"error\":");
     neuma::json::string(out, e);
@@ -389,6 +435,7 @@ fn error(out: &mut String, e: &str) {
 
 /// Sets psalm text to a tone (see [`psalm_input`] for the arguments). Leaves the setting
 /// JSON, or `{"error": …}`, in the output buffer.
+#[cfg(feature = "tones")]
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
 pub extern "C" fn neuma_psalm(custom: u32, psalm_flags: u32, auto_point: u32) {
@@ -408,6 +455,7 @@ pub extern "C" fn neuma_psalm(custom: u32, psalm_flags: u32, auto_point: u32) {
 /// `psalm_flags` holds when the intonation is sung in bits 0–1 (0 the first verse, 1 every
 /// verse, 2 never) and the accents printed in bits 2–3 (0 all, 1 none, 2 none in a flex);
 /// any other value is an error. `auto_point` 0 leaves unpointed halves unpointed.
+#[cfg(feature = "tones")]
 fn psalm_input(custom: u32, psalm_flags: u32, auto_point: u32) -> Result<(neuma_tones::Tone, String, neuma_tones::PsalmOptions), String> {
     let intone = match psalm_flags & 3 {
         0 => neuma_tones::Intone::FirstVerse,
@@ -431,6 +479,7 @@ fn psalm_input(custom: u32, psalm_flags: u32, auto_point: u32) -> Result<(neuma_
 
 /// Points psalm text for a tone (see [`tone_and_text`]), leaving the pointing JSON, or
 /// `{"error": …}`, in the output buffer.
+#[cfg(feature = "pointing")]
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
 pub extern "C" fn neuma_point(custom: u32) {
@@ -447,6 +496,7 @@ pub extern "C" fn neuma_point(custom: u32) {
 
 /// Points psalm text for a tone, verse by verse, for display (see [`psalm_input`] for the
 /// arguments), leaving the display JSON, or `{"error": …}`, in the output buffer.
+#[cfg(feature = "tones")]
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
 pub extern "C" fn neuma_psalm_display(custom: u32, psalm_flags: u32, auto_point: u32) {
@@ -464,6 +514,7 @@ pub extern "C" fn neuma_psalm_display(custom: u32, psalm_flags: u32, auto_point:
 
 /// The tone in the input buffer (a name when `custom` is 0, else a tone block) as one line
 /// of notes with no words (`Tone::gabc`), or `{"error": …}`.
+#[cfg(feature = "tones")]
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
 pub extern "C" fn neuma_tone_gabc(custom: u32) {
@@ -479,6 +530,7 @@ pub extern "C" fn neuma_tone_gabc(custom: u32) {
 
 /// The tone in the input buffer (as [`neuma_tone_gabc`] reads it) named as a psalter prints
 /// it beside the tone (`Tone::label`), or `{"error": …}`.
+#[cfg(feature = "tones")]
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
 pub extern "C" fn neuma_tone_label(custom: u32) {
@@ -495,6 +547,7 @@ pub extern "C" fn neuma_tone_label(custom: u32) {
 }
 
 /// Leaves the built-in tone names, one per line, in the output buffer.
+#[cfg(feature = "tones")]
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
 pub extern "C" fn neuma_tone_names() {

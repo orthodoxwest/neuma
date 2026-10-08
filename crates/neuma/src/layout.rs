@@ -4,11 +4,12 @@
 //! and an optimal-fit breaker picks the breaks with the least total demerits. Arithmetic is
 //! limited to add, subtract, multiply, divide and comparison (DESIGN section 13).
 
+use std::collections::HashMap;
 use std::fmt;
 use std::sync::{Arc, OnceLock};
 
 use crate::engrave::{
-    Break, CAP_HEIGHT, Engraving, HYPHEN_TOP, InitialBox, Ink, LEDGER_GAP, Mark, Piece, STEM, Segment, clef_pieces, clef_width,
+    Break, CAP_HEIGHT, Engraving, HYPHEN_TOP, InitialBox, Ink, LEDGER_GAP, Mark, Piece, STEM, Segment, SegmentInk, clef_pieces, clef_width,
     custos_piece,
 };
 use crate::score::{Clef, CustosRule};
@@ -183,9 +184,29 @@ const BREAK_WEIGHT: f64 = 0.5;
 pub(crate) struct PlacedLine {
     pub first: usize,
     pub last: usize,
+    pub clef: Option<Clef>,
+    /// Top of the line box and the staff's center, in staff spaces from the layout's top.
+    pub top: f32,
+    pub staff: f32,
+    pub baseline: f32,
+    pub bottom: f32,
+    /// How the line is set across, shared with the lines of other layouts set the same.
+    pub shape: Arc<LineShape>,
+}
+
+impl std::ops::Deref for PlacedLine {
+    type Target = LineShape;
+
+    fn deref(&self) -> &LineShape {
+        &self.shape
+    }
+}
+
+/// How a line is set across the page, and what its height on the page is worked out from.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct LineShape {
     /// x of each segment origin, in staff spaces from the line's left edge.
     pub xs: Vec<f32>,
-    pub clef: Option<Clef>,
     /// Where the staff starts: past the initial's column on the first lines, else 0.
     pub indent: f32,
     pub custos: Option<(i8, f32)>,
@@ -193,11 +214,6 @@ pub(crate) struct PlacedLine {
     pub hyphen: Option<f32>,
     /// Hyphens between syllables of a word on this line: (x of the hyphen's center).
     pub hyphens: Vec<f32>,
-    /// Top of the line box and the staff's center, in staff spaces from the layout's top.
-    pub top: f32,
-    pub staff: f32,
-    pub baseline: f32,
-    pub bottom: f32,
     /// The line has text and no ink, so it draws no staff (and `staff` is its top).
     pub staffless: bool,
     /// How far a gap between words stretched to fill the column, in staff spaces.
@@ -205,6 +221,66 @@ pub(crate) struct PlacedLine {
     /// Ledger lines drawn across the gap between neighbouring notes' own, as `(y, left,
     /// right)` from the staff's center and the line's left edge.
     pub bridges: Vec<(f32, f32, f32)>,
+    /// The ink's top and bottom from the staff's center, the clef's and custos's counted.
+    ink_top: f32,
+    ink_bottom: f32,
+    has_lyrics: bool,
+    /// On a staffless line, the tallest letter's top above the baseline.
+    tops: f32,
+    /// How far below the staff's center the baseline must be to clear the ink.
+    clear: f32,
+    /// The line's right end, as set.
+    right: f32,
+}
+
+/// What setting a line across hangs on beyond its segments' ink.
+struct LineSet<'a> {
+    first: usize,
+    last: usize,
+    indent: f32,
+    /// The column's width less the indent.
+    target: f32,
+    ragged: bool,
+    clef: Option<&'a Clef>,
+    /// Where the notes start, after the clef.
+    start: f32,
+    /// The custos's pitch, if the line ends with one.
+    custos: Option<i8>,
+}
+
+/// Which line a [`LineShape`] is of: its segments' ink, and the numbers it was set with.
+/// The ink is held, so none of it is freed and its address taken by other ink while the key
+/// is kept.
+#[derive(Clone, Debug)]
+struct ShapeKey {
+    hash: u64,
+    words: Vec<u32>,
+    ink: Vec<Arc<SegmentInk>>,
+}
+
+impl PartialEq for ShapeKey {
+    fn eq(&self, other: &ShapeKey) -> bool {
+        self.hash == other.hash
+            && self.words == other.words
+            && self.ink.len() == other.ink.len()
+            && self.ink.iter().zip(&other.ink).all(|(a, b)| Arc::ptr_eq(a, b))
+    }
+}
+
+/// The shapes of a layout's lines, by key.
+#[derive(Clone, Debug, Default)]
+struct Shapes {
+    by_hash: HashMap<u64, Vec<(ShapeKey, Arc<LineShape>)>>,
+}
+
+impl Shapes {
+    fn get(&self, key: &ShapeKey) -> Option<&Arc<LineShape>> {
+        self.by_hash.get(&key.hash)?.iter().find(|(k, _)| k == key).map(|(_, s)| s)
+    }
+
+    fn insert(&mut self, key: ShapeKey, shape: Arc<LineShape>) {
+        self.by_hash.entry(key.hash).or_default().push((key, shape));
+    }
 }
 
 /// Where the initial's capital goes, in staff spaces.
@@ -358,22 +434,22 @@ struct Spot {
 #[inline(always)]
 fn place(cur: &Cursor, seg: &Space, hyphen: f32, word_space: f32, line_start: f32) -> Spot {
     let mut x = cur.x;
-    match (cur.ink_right, seg.ink) {
+    match (cur.ink_right, seg.ink()) {
         (Some(r), Some((l, _))) => {
             // Notes are spaced by their heads, their ledger lines left to reach toward each
             // other. A bar, a clef or a custos is spaced from the notes beside it as from
             // ledger lines that reach [`LEDGER_NEAR`] past them, so a longer one may come nearer
             // it than the gap, but stay clear of it.
-            let (r, l) = match (cur.spacing_right, seg.spacing) {
+            let (r, l) = match (cur.spacing_right, seg.spacing()) {
                 (Some(r), Some((l, _))) => (r, l),
                 (Some(sr), None) => (r.min(sr + LEDGER_NEAR), l),
                 (None, Some((sl, _))) => (r, l.max(sl - LEDGER_NEAR)),
                 (None, None) => (r, l),
             };
-            let gap = if seg.first {
-                if seg.is_bar || cur.after_bar {
+            let gap = if seg.first() {
+                if seg.is_bar() || cur.after_bar {
                     BAR_GAP
-                } else if seg.word_start {
+                } else if seg.word_start() {
                     NOTES_WORD_GAP
                 } else {
                     NOTES_SYLLABLE_GAP
@@ -386,7 +462,7 @@ fn place(cur: &Cursor, seg: &Space, hyphen: f32, word_space: f32, line_start: f3
         // The notes that start a line after a clef keep the same distance from it, whether
         // they have ledger lines or not; with no clef, their ledger lines start the line.
         (None, Some((l, _))) => {
-            let l = match seg.spacing {
+            let l = match seg.spacing() {
                 Some((sl, _)) if line_start > 0.0 => l.max(sl - LEDGER_NEAR),
                 _ => l,
             };
@@ -395,10 +471,10 @@ fn place(cur: &Cursor, seg: &Space, hyphen: f32, word_space: f32, line_start: f3
         _ => {}
     }
     let mut touching = false;
-    if let Some(t) = &seg.lyric {
+    if let Some(t) = &seg.lyric() {
         // A word ending in a syllable with no text (`quam(e)(/) *()`) leaves the text before
         // it unended; the next word's text still keeps a word space from it.
-        let word_continues = cur.word_continues && !seg.word_start;
+        let word_continues = cur.word_continues && !seg.word_start();
         match cur.lyric_right {
             // A text with its own hyphen may touch the next one, and needs no other.
             Some(r) if word_continues && cur.own_hyphen => {
@@ -420,7 +496,7 @@ fn place(cur: &Cursor, seg: &Space, hyphen: f32, word_space: f32, line_start: f3
             None => x = x.max(-t.ink_left()),
         }
     }
-    let weight = if !seg.first {
+    let weight = if !seg.first() {
         STRETCH_IN_SYLLABLE
     } else if touching {
         0.0
@@ -428,7 +504,7 @@ fn place(cur: &Cursor, seg: &Space, hyphen: f32, word_space: f32, line_start: f3
         1.0
     };
     // Nothing shrinks before a line's first text, which may sit right at the line's start.
-    let shrink = if seg.first && seg.word_start && !seg.is_bar && !cur.after_bar && cur.lyric_right.is_some() {
+    let shrink = if seg.first() && seg.word_start() && !seg.is_bar() && !cur.after_bar && cur.lyric_right.is_some() {
         SHRINK.min(word_space * SHRINK_OF_WORD_SPACE)
     } else {
         0.0
@@ -444,14 +520,14 @@ fn place(cur: &Cursor, seg: &Space, hyphen: f32, word_space: f32, line_start: f3
 fn advance(cur: &Cursor, seg: &Space, x: f32) -> Cursor {
     let mut next = *cur;
     next.x = x;
-    if seg.ink.is_some() {
-        next.after_bar = seg.is_bar;
+    if seg.ink().is_some() {
+        next.after_bar = seg.is_bar();
     }
-    if let Some((_, r)) = seg.ink {
+    if let Some((_, r)) = seg.ink() {
         next.ink_right = Some(x + r);
-        next.spacing_right = seg.spacing.map(|(_, r)| x + r);
+        next.spacing_right = seg.spacing().map(|(_, r)| x + r);
     }
-    if let Some(t) = &seg.lyric {
+    if let Some(t) = &seg.lyric() {
         next.lyric_right = Some(x + t.left + t.width);
         next.lyric_tail = t.tail;
         next.word_continues = !t.word_end;
@@ -484,17 +560,16 @@ struct Closing {
 }
 
 /// What spacing reads of a segment, gathered so the breaker's inner loop needn't reach into
-/// the segment for it.
+/// the segment for it, packed: what is absent reads as zero, and flags say what is present.
 #[derive(Clone, Copy, Debug)]
 struct Space {
-    first: bool,
-    word_start: bool,
-    is_bar: bool,
-    ink: Option<(f32, f32)>,
-    spacing: Option<(f32, f32)>,
+    ink: [f32; 2],
+    spacing: [f32; 2],
     space_before: f32,
-    lyric: Option<Text>,
     right: f32,
+    /// The text's left, width, lead and tail (see [`Text`]).
+    text: [f32; 4],
+    flags: u8,
 }
 
 /// What spacing reads of a segment's text (see [`LyricBox`](crate::engrave::LyricBox)).
@@ -514,47 +589,96 @@ impl Text {
     }
 }
 
+const FIRST: u8 = 1;
+const WORD_START: u8 = 2;
+const IS_BAR: u8 = 4;
+const HAS_INK: u8 = 8;
+const HAS_SPACING: u8 = 16;
+const HAS_TEXT: u8 = 32;
+const WORD_END: u8 = 64;
+const HYPHENATED: u8 = 128;
+
 impl Space {
+    #[inline(always)]
+    fn has(&self, flag: u8) -> bool {
+        self.flags & flag != 0
+    }
+
+    #[inline(always)]
+    fn first(&self) -> bool {
+        self.has(FIRST)
+    }
+
+    #[inline(always)]
+    fn word_start(&self) -> bool {
+        self.has(WORD_START)
+    }
+
+    #[inline(always)]
+    fn is_bar(&self) -> bool {
+        self.has(IS_BAR)
+    }
+
+    #[inline(always)]
+    fn ink(&self) -> Option<(f32, f32)> {
+        self.has(HAS_INK).then_some((self.ink[0], self.ink[1]))
+    }
+
+    #[inline(always)]
+    fn spacing(&self) -> Option<(f32, f32)> {
+        self.has(HAS_SPACING).then_some((self.spacing[0], self.spacing[1]))
+    }
+
+    #[inline(always)]
+    fn lyric(&self) -> Option<Text> {
+        self.has(HAS_TEXT).then_some(Text {
+            left: self.text[0],
+            width: self.text[1],
+            lead: self.text[2],
+            tail: self.text[3],
+            word_end: self.has(WORD_END),
+            hyphenated: self.has(HYPHENATED),
+        })
+    }
+
     /// Where a custos after it is spaced from: the right end of its ink, its ledger lines
     /// counted only [`LEDGER_NEAR`] past its notes.
     fn wall_right(&self) -> Option<f32> {
-        let (_, r) = self.ink?;
-        Some(self.spacing.map_or(r, |(_, s)| r.min(s + LEDGER_NEAR)))
+        let (_, r) = self.ink()?;
+        Some(self.spacing().map_or(r, |(_, s)| r.min(s + LEDGER_NEAR)))
     }
 
     fn of(seg: &Segment) -> Space {
+        let flag = |on: bool, f: u8| if on { f } else { 0 };
+        let pair = |p: Option<(f32, f32)>| p.map_or([0.0; 2], |(a, b)| [a, b]);
+        let t = seg.lyric.as_ref();
         Space {
-            first: seg.first,
-            word_start: seg.word_start,
-            is_bar: seg.is_bar(),
-            ink: seg.ink,
-            spacing: seg.spacing,
+            ink: pair(seg.ink),
+            spacing: pair(seg.spacing),
             space_before: seg.space_before,
-            lyric: seg.lyric.as_ref().map(|t| Text {
-                left: t.left,
-                width: t.width,
-                lead: t.lead,
-                tail: t.tail,
-                word_end: t.word_end,
-                hyphenated: t.hyphenated,
-            }),
             right: seg.right(),
+            text: t.map_or([0.0; 4], |t| [t.left, t.width, t.lead, t.tail]),
+            flags: flag(seg.first, FIRST)
+                | flag(seg.word_start, WORD_START)
+                | flag(seg.is_bar(), IS_BAR)
+                | flag(seg.ink.is_some(), HAS_INK)
+                | flag(seg.spacing.is_some(), HAS_SPACING)
+                | flag(t.is_some(), HAS_TEXT)
+                | flag(t.is_some_and(|t| t.word_end), WORD_END)
+                | flag(t.is_some_and(|t| t.hyphenated), HYPHENATED),
         }
     }
 }
 
 impl PartialEq for Space {
+    /// Floats compare by their bits; what is absent is zero in both.
     fn eq(&self, o: &Space) -> bool {
         let b = f32::to_bits;
-        let pair = |p: Option<(f32, f32)>| p.map(|(x, y)| (b(x), b(y)));
-        let text = |t: Option<Text>| t.map(|t| (b(t.left), b(t.width), b(t.lead), b(t.tail), t.word_end, t.hyphenated));
-        self.first == o.first
-            && self.word_start == o.word_start
-            && self.is_bar == o.is_bar
-            && pair(self.ink) == pair(o.ink)
-            && pair(self.spacing) == pair(o.spacing)
+        self.flags == o.flags
+            && self.ink.map(b) == o.ink.map(b)
+            && self.spacing.map(b) == o.spacing.map(b)
             && b(self.space_before) == b(o.space_before)
-            && text(self.lyric) == text(o.lyric)
+            && self.text.map(b) == o.text.map(b)
             && b(self.right) == b(o.right)
     }
 }
@@ -564,28 +688,51 @@ impl PartialEq for Space {
 #[derive(Clone, Copy, Debug)]
 struct Fit {
     space: Space,
-    end_of_score: bool,
     after: Break,
     /// Where a line starting here starts, after its clef.
     start: f32,
-    closing: Closing,
-    /// The extra demerits for a break after the segment, which hang on the next one too.
-    cost: f64,
-    /// The segment starts the initial's syllable.
-    initial: bool,
+    /// The custos's width, for a line ending here, or 0 if it has none.
+    custos: f32,
+    /// The extra demerits for a break after the segment, which hang on the next one too
+    /// (each a whole number, so as exact in an f32 as in the f64 they are added in).
+    cost: f32,
+    flags: u8,
+}
+
+const END_OF_SCORE: u8 = 1;
+/// The segment starts the initial's syllable.
+const INITIAL: u8 = 2;
+const HAS_CUSTOS: u8 = 4;
+/// A line ending here ends inside a word that goes on.
+const WORD_GOES_ON: u8 = 8;
+
+impl Fit {
+    fn closing(&self) -> Closing {
+        Closing {
+            custos: (self.flags & HAS_CUSTOS != 0).then_some(self.custos),
+            word_goes_on: self.flags & WORD_GOES_ON != 0,
+        }
+    }
+
+    fn initial(&self) -> bool {
+        self.flags & INITIAL != 0
+    }
+
+    #[cfg(test)]
+    fn cost(&self) -> f64 {
+        f64::from(self.cost)
+    }
 }
 
 impl PartialEq for Fit {
     fn eq(&self, o: &Fit) -> bool {
         let b = f32::to_bits;
         self.space == o.space
-            && self.end_of_score == o.end_of_score
             && self.after == o.after
             && b(self.start) == b(o.start)
-            && self.closing.custos.map(b) == o.closing.custos.map(b)
-            && self.closing.word_goes_on == o.closing.word_goes_on
-            && self.cost.to_bits() == o.cost.to_bits()
-            && self.initial == o.initial
+            && b(self.custos) == b(o.custos)
+            && b(self.cost) == b(o.cost)
+            && self.flags == o.flags
     }
 }
 
@@ -606,7 +753,7 @@ struct Candidate {
     /// an edit before it keeps its candidates as they are.
     end: u32,
     demerits: f64,
-    break_cost: f64,
+    break_cost: f32,
 }
 
 /// One line start's candidates in `BreakTable::cands`, and the last segment they read.
@@ -626,6 +773,9 @@ struct BreakTable {
     /// By line start, then whether the line is indented for the initial.
     lines: Vec<[Option<Span>; 2]>,
     cands: Vec<Candidate>,
+    /// The breaker's least demerits (see `Engraving::lay_out`), `width` to a segment.
+    best: Vec<Option<Best>>,
+    width: usize,
     /// The previous layout's table, while this one takes what it can from it.
     old: Option<Box<BreakTable>>,
     /// How many leading fits the old table shares, and how many trailing ones.
@@ -640,6 +790,8 @@ impl BreakTable {
             fits: Vec::new(),
             lines: Vec::new(),
             cands: Vec::new(),
+            best: Vec::new(),
+            width: 0,
             old: None,
             same_head: 0,
             same_tail: 0,
@@ -668,11 +820,11 @@ impl BreakTable {
     }
 
     /// The candidates of a line starting at `first`, from the old table if its segments are
-    /// unchanged there, else worked out now.
-    fn candidates(&mut self, eng: &Engraving, first: usize, indented: bool, target: f32, opts: &LayoutOptions) -> (usize, usize) {
+    /// unchanged there, else worked out now, and the last segment they read.
+    fn candidates(&mut self, eng: &Engraving, first: usize, indented: bool, target: f32, opts: &LayoutOptions) -> Span {
         let c = usize::from(indented);
         if let Some(sp) = self.lines[first][c] {
-            return (sp.from as usize, sp.to as usize);
+            return sp;
         }
         let n = self.fits.len();
         let from = self.cands.len();
@@ -703,14 +855,31 @@ impl BreakTable {
             None => eng.line_candidates(first, target, opts, &self.fits, &mut self.cands),
         };
         let to = self.cands.len();
-        self.lines[first][c] = Some(Span {
+        let sp = Span {
             from: from as u32,
             to: to as u32,
             reach: reach as u32,
-        });
-        (from, to)
+        };
+        self.lines[first][c] = Some(sp);
+        sp
+    }
+
+    /// How many rows of the old table's `best`, for lines ending before each segment, hold
+    /// for this one: those before the first segment whose fit changed, since a line's
+    /// candidates ending there read only the fits up to it.
+    fn same_best(&self, width: usize) -> usize {
+        match &self.old {
+            Some(old) if old.width == width && old.best.len() == (old.fits.len() + 1) * width => {
+                self.same_head.min(old.fits.len() + 1).min(self.fits.len() + 1)
+            }
+            _ => 0,
+        }
     }
 }
+
+/// The least demerits for the lines up to a segment, and where the last of them started and
+/// how many lines came before it (see `Engraving::lay_out`).
+type Best = (f64, u32, u32);
 
 /// What [`Engraving::layout_cached`] keeps between layouts: the line breaker's work, so a
 /// layout after a small edit redoes only the lines the edit touched.
@@ -718,6 +887,10 @@ impl BreakTable {
 pub(crate) struct LayoutCache {
     /// Most recent last; one per column and indent the breaker has run with lately.
     tables: Vec<BreakTable>,
+    /// How the last layout's lines were set across.
+    shapes: Shapes,
+    /// For one layout only, with nothing to keep for the next.
+    once: bool,
 }
 
 impl LayoutCache {
@@ -731,7 +904,10 @@ impl LayoutCache {
 
     fn put(&mut self, mut table: BreakTable) {
         table.old = None;
-        // A layout with a wide initial breaks up to three times, at different indents.
+        // A layout with a wide initial breaks up to three times, at different indents; tables
+        // for another width wait for a layout at that width, which seldom comes.
+        let target = table.key.map(|k| k.target);
+        self.tables.retain(|t| t.key.map(|k| k.target) == target);
         if self.tables.len() >= 3 {
             self.tables.remove(0);
         }
@@ -788,7 +964,7 @@ impl Engraving {
         self.next_note.get(last).copied().flatten()
     }
 
-    fn trial(&self, first: usize, last: usize, start: f32) -> Trial {
+    fn trial(&self, fits: &[Fit], first: usize, last: usize, start: f32) -> Trial {
         let mut cur = Cursor {
             ink_right: None,
             spacing_right: None,
@@ -812,8 +988,8 @@ impl Engraving {
         let mut cur_shrunk = cur;
         let mut right_shrunk = 0.0f32;
         let mut ink_end_shrunk = start;
-        for seg in &self.segments[first..=last] {
-            let seg = &Space::of(seg);
+        for fit in &fits[first..=last] {
+            let seg = &fit.space;
             let spot = place(&cur, seg, self.hyphen, self.word_space, start);
             let x = spot.x;
             xs.push(x);
@@ -824,7 +1000,7 @@ impl Engraving {
                 }
             }
             weights.push(if xs.len() == 1 { 0.0 } else { spot.weight });
-            if seg.lyric.is_some() {
+            if seg.lyric().is_some() {
                 last_lyric = xs.len() - 1;
             }
             shrinks.push(if xs.len() == 1 { 0.0 } else { spot.shrink });
@@ -843,13 +1019,13 @@ impl Engraving {
             weights,
             touching,
             shrinks,
-            natural: self.natural(&cur, right, ink_end, self.closing(last)),
-            shrunk: self.natural(&cur_shrunk, right_shrunk, ink_end_shrunk, self.closing(last)),
+            natural: self.natural(&cur, right, ink_end, fits[last].closing()),
+            shrunk: self.natural(&cur_shrunk, right_shrunk, ink_end_shrunk, fits[last].closing()),
         }
     }
 
     /// The width of the line `first..=last` set at `xs`, and its ink's right end.
-    fn extent(&self, first: usize, last: usize, xs: &[f32], start: f32) -> (f32, f32) {
+    fn extent(&self, fits: &[Fit], first: usize, last: usize, xs: &[f32], start: f32) -> (f32, f32) {
         let mut cur = Cursor {
             ink_right: None,
             spacing_right: None,
@@ -862,15 +1038,15 @@ impl Engraving {
         };
         let mut right = 0.0f32;
         let mut ink_end = start;
-        for (seg, &x) in self.segments[first..=last].iter().zip(xs) {
-            let seg = &Space::of(seg);
+        for (fit, &x) in fits[first..=last].iter().zip(xs) {
+            let seg = &fit.space;
             cur = advance(&cur, seg, x);
             right = right.max(x + seg.right);
             if let Some(r) = seg.wall_right() {
                 ink_end = ink_end.max(x + r);
             }
         }
-        (self.natural(&cur, right, ink_end, self.closing(last)), ink_end)
+        (self.natural(&cur, right, ink_end, fits[last].closing()), ink_end)
     }
 
     /// Whether the next text after segment `last` is in the same word, so a line ending there
@@ -898,7 +1074,9 @@ impl Engraving {
         right
     }
 
-    /// How a line ending after segment `last` closes, for its width.
+    /// How a line ending after segment `last` closes, for its width: what
+    /// [`closings`](Self::closings) works out for every segment at once.
+    #[cfg(test)]
     fn closing(&self, last: usize) -> Closing {
         Closing {
             custos: self.custos_width(last),
@@ -922,14 +1100,24 @@ impl Engraving {
             .into_iter()
             .zip(&self.segments)
             .enumerate()
-            .map(|(k, (closing, seg))| Fit {
-                space: Space::of(seg),
-                end_of_score: k + 1 == n,
-                after: seg.after,
-                start: self.start_x(k),
-                closing,
-                cost: self.break_cost(k),
-                initial: self.initial.as_ref().is_some_and(|i| i.syllable == seg.syllable && seg.first),
+            .map(|(k, (closing, seg))| {
+                let cost = self.break_cost(k);
+                debug_assert_eq!(f64::from(cost as f32), cost);
+                let flag = |on: bool, f: u8| if on { f } else { 0 };
+                Fit {
+                    space: Space::of(seg),
+                    after: seg.after,
+                    start: self.start_x(k),
+                    custos: closing.custos.unwrap_or(0.0),
+                    cost: cost as f32,
+                    flags: flag(k + 1 == n, END_OF_SCORE)
+                        | flag(
+                            self.initial.as_ref().is_some_and(|i| i.syllable == seg.syllable && seg.first),
+                            INITIAL,
+                        )
+                        | flag(closing.custos.is_some(), HAS_CUSTOS)
+                        | flag(closing.word_goes_on, WORD_GOES_ON),
+                }
             })
             .collect()
     }
@@ -1155,7 +1343,7 @@ impl Engraving {
                 since_text += spot.weight;
                 gone += spot.shrink;
             }
-            if seg.lyric.is_some() {
+            if seg.lyric().is_some() {
                 since_text = 0.0;
             }
             cur = advance(&cur, seg, x);
@@ -1166,7 +1354,7 @@ impl Engraving {
                 ink_end = ink_end.max(x + r);
                 ink_end_shrunk = ink_end_shrunk.max(x - gone + r);
             }
-            let close = fit.closing;
+            let close = fit.closing();
             let natural = self.natural(&cur, right, ink_end, close);
             let shrink = natural - self.natural(&cur_shrunk, right_shrunk, ink_end_shrunk, close);
             // A line may be a little wider than the column: its word gaps shrink, as
@@ -1181,7 +1369,7 @@ impl Engraving {
             if breakable || stuck {
                 // The initial's syllable keeps to the first line even when too wide for it:
                 // ending before it would part it from the bar or clef written before it.
-                let end = if stuck && last > first && !fit.initial { last - 1 } else { last };
+                let end = if stuck && last > first && !fit.initial() { last - 1 } else { last };
                 let gaps = (last - first) as f32;
                 // A stuck line ends before this segment, so the break it takes is `end`'s.
                 let (ragged, break_cost) = (self.ragged(end, opts), fits[end].cost);
@@ -1224,6 +1412,174 @@ impl Engraving {
         n - 1
     }
 
+    /// The key of the line `set` describes: every number its shape is worked out from.
+    fn shape_key(&self, set: &LineSet) -> ShapeKey {
+        let segments = &self.segments[set.first..=set.last];
+        let f = f32::to_bits;
+        let mut words = Vec::with_capacity(16);
+        words.extend([
+            f(set.indent),
+            f(set.target),
+            u32::from(set.ragged),
+            f(set.start),
+            set.custos.map_or(u32::MAX, |p| p as u8 as u32),
+            u32::from(set.first >= self.inkless_from),
+            u32::from(self.continues_past(set.last)),
+            f(self.hyphen),
+            f(self.word_space),
+            f(self.lyric_size),
+            self.lowest as u32,
+        ]);
+        match set.clef {
+            Some(c) => words.extend([1 + c.kind as u32, u32::from(c.line), u32::from(c.flat)]),
+            None => words.push(0),
+        }
+        let ink: Vec<Arc<SegmentInk>> = segments.iter().map(|s| Arc::clone(&s.body)).collect();
+        let mut h = words.len() as u64;
+        let mut mix = |x: u64| h = (h.rotate_left(5) ^ x).wrapping_mul(0x517c_c1b7_2722_0a95);
+        for &w in &words {
+            mix(u64::from(w));
+        }
+        for i in &ink {
+            mix(Arc::as_ptr(i) as usize as u64);
+        }
+        ShapeKey { hash: h, words, ink }
+    }
+
+    /// Sets the line `set` describes across the page.
+    fn shape(&self, fits: &[Fit], set: &LineSet) -> LineShape {
+        let LineSet {
+            first,
+            last,
+            indent: line_indent,
+            target,
+            ragged,
+            start,
+            ..
+        } = *set;
+        let trial = self.trial(fits, first, last, start);
+        let mut xs = trial.xs.clone();
+        let gaps = last - first;
+        let mut stretch = 0.0;
+        let mut word_gap_stretch = 0.0;
+        // Whether the slack went evenly into every gap, touching ones included.
+        let mut spread = false;
+        if !ragged && gaps > 0 && trial.natural < target {
+            // Each gap takes its share of the slack. A line whose gaps can't stretch (one
+            // word, its syllables touching) spreads it evenly when that leaves room for a
+            // hyphen in every gap; less slack stays at the line's end, as in GregorioTeX,
+            // whose touching syllables have no glue.
+            let total: f32 = trial.weights.iter().sum();
+            let even = total <= 0.0;
+            let per = (target - trial.natural) / if even { gaps as f32 } else { total };
+            if !even || per >= self.hyphen + HYPHEN_MIN_GAP {
+                spread = even;
+                word_gap_stretch = per;
+                for (i, x) in xs.iter_mut().enumerate().skip(1) {
+                    stretch += per * if even { 1.0 } else { trial.weights[i] };
+                    *x += stretch;
+                }
+            }
+        }
+        let capacity = trial.natural - trial.shrunk;
+        if gaps > 0 && trial.natural > target && capacity > 0.0 {
+            // Too wide by no more than its word gaps can give: they shrink alike. The
+            // line's width is the most of linear functions of how far they shrink, so
+            // shrinking them by this part of their all narrows it at least as much.
+            let part = ((trial.natural - target) / capacity).min(1.0);
+            for (i, x) in xs.iter_mut().enumerate().skip(1) {
+                stretch -= part * trial.shrinks[i];
+                *x += stretch;
+            }
+        }
+        // The line's extent as set.
+        let (natural, ink_end) = self.extent(fits, first, last, &xs, start);
+        let custos = set.custos.map(|p| (p, ink_end + CUSTOS_GAP));
+        // Hyphens.
+        let mut hyphens = Vec::new();
+        let mut prev_lyric: Option<(f32, bool)> = None;
+        for (i, s) in self.segments[first..=last].iter().enumerate() {
+            if let Some(t) = &s.lyric {
+                // Wherever a word's syllables are apart, right after the first text, as
+                // GregorioTeX sets it. Placing them decided that, unless an even spread
+                // parted touching ones, which leaves room for it between their advances
+                // (so it keeps off the next text's ink); the final positions' floats
+                // aren't tested again.
+                if let Some((r, true)) = prev_lyric
+                    && !s.word_start
+                    && (!trial.touching[i] || spread)
+                {
+                    hyphens.push((r + self.hyphen / 2.0).min(xs[i] + t.ink_left() - self.hyphen / 2.0));
+                }
+                prev_lyric = Some((xs[i] + t.ink_right(), !t.word_end && !t.hyphenated));
+            }
+        }
+        let hyphen = match prev_lyric {
+            Some((r, true)) if self.continues_past(last) => Some(r + self.hyphen / 2.0),
+            _ => None,
+        };
+        for x in xs.iter_mut().chain(hyphens.iter_mut()) {
+            *x += line_indent;
+        }
+        let hyphen = hyphen.map(|h| h + line_indent);
+        let custos = custos.map(|(p, x)| (p, x + line_indent));
+        let bridges = self.ledger_bridges(first, last, &xs);
+        // Vertical extent.
+        let custos_ink = custos.map(|(p, x)| custos_piece(p, x).0);
+        let mut ink_top = -3.0f32;
+        let mut ink_bottom = 3.0f32;
+        // A clef rises above the staff: on the top line it must not be clipped, and on a
+        // later one it must clear the descenders of the lyrics above.
+        let clef_ink = set.clef.map(|c| clef_pieces(c, 0.0).0).unwrap_or_default();
+        let line_ink = self.segments[first..=last].iter().flat_map(|s| &s.pieces);
+        // The custos counts too: one announcing a high note rises above the staff.
+        for p in clef_ink.iter().chain(line_ink).chain(&custos_ink) {
+            let (a, b) = p.y_extent();
+            ink_top = ink_top.min(a);
+            ink_bottom = ink_bottom.max(b);
+        }
+        let has_lyrics = self.segments[first..=last].iter().any(|s| s.lyric.is_some());
+        let staffless = has_lyrics && first >= self.inkless_from;
+        let tops = if staffless {
+            self.segments[first..=last]
+                .iter()
+                .filter_map(|s| s.lyric.as_ref())
+                .flat_map(|t| &t.tops)
+                .fold(0.0f32, |a, e| a.max(e.2))
+        } else {
+            0.0
+        };
+        let clear = if has_lyrics && !staffless {
+            let others: Vec<Piece> = clef_ink.iter().map(|p| p.shifted(line_indent)).chain(custos_ink).collect();
+            self.text_clearance(first, &xs, &hyphens, hyphen, &others)
+        } else {
+            0.0
+        };
+        // Shrinking to the column can land a rounding error past it; that is the column.
+        let natural = if natural > target && natural < target + 1e-3 {
+            target
+        } else {
+            natural
+        };
+        let right = line_indent + if ragged { natural } else { target.max(natural) };
+        LineShape {
+            xs,
+            indent: line_indent,
+            custos,
+            hyphen,
+            hyphens,
+            staffless,
+            stretch: word_gap_stretch,
+            bridges,
+            ink_top,
+            ink_bottom,
+            has_lyrics,
+            tops,
+            clear,
+            right,
+        }
+    }
+
     /// Lays the engraving out at `width` output units, with the default [`LayoutOptions`]. The
     /// layout shares the engraving, so it is laid out from an `Arc`:
     /// `Arc::new(score.engrave(metrics, &style)).layout(600.0)`. A
@@ -1242,7 +1598,11 @@ impl Engraving {
     /// tell.
     #[must_use]
     pub fn layout_with(self: &Arc<Self>, width: f32, opts: &LayoutOptions) -> Layout {
-        self.layout_cached(width, opts, &mut LayoutCache::default())
+        let mut once = LayoutCache {
+            once: true,
+            ..LayoutCache::default()
+        };
+        self.layout_cached(width, opts, &mut once)
     }
 
     /// Lays the engraving out as [`layout_with`](Self::layout_with) does, reusing the line breaker's
@@ -1279,9 +1639,9 @@ impl Engraving {
         let indented = self.initial.as_ref().map_or(0, |i| i.lines);
         let column = self.initial.as_ref().map_or(0.0, |i| column.unwrap_or(0.0).max(i.column()));
         let indent = if indented > 0 { INITIAL_BEFORE + column + INITIAL_GAP } else { 0.0 };
-        // best[k][j]: least demerits for lines ending just before segment k, with j lines so
-        // far (capped at `indented`), and where the last line started and its own j.
-        let mut best: Vec<Vec<Option<(f64, usize, usize)>>> = vec![vec![None; indented + 1]; n + 1];
+        // best[k * w + j]: least demerits for lines ending just before segment k, with j lines
+        // so far (capped at `indented`), and where the last line started and its own j.
+        let w = indented + 1;
         // Each line's candidate breaks depend only on its own segments, so they come from the
         // cache when those are unchanged (see `BreakTable`).
         let key = BreakKey {
@@ -1293,39 +1653,56 @@ impl Engraving {
         };
         let mut table = cache.take(&key);
         table.refit(self, key);
-        best[0][0] = Some((0.0, 0, 0));
+        // The rows before the edit come out as last time: lines ending there read only
+        // segments before it.
+        let same = table.same_best(w);
+        let mut best: Vec<Option<Best>> = Vec::with_capacity((n + 1) * w);
+        if let Some(old) = &mut table.old {
+            best.extend_from_slice(&old.best[..same * w]);
+            old.best = Vec::new();
+        }
+        best.resize((n + 1) * w, None);
+        best[0] = Some((0.0, 0, 0));
         for first in 0..n {
             for j in 0..=indented {
-                let Some((base, _, _)) = best[first][j] else { continue };
+                let Some((base, _, _)) = best[first * w + j] else { continue };
                 let next = (j + 1).min(indented);
                 let indented_line = j < indented;
                 let line_target = if indented_line { target - indent } else { target };
-                let (from, to) = table.candidates(self, first, indented_line, line_target, opts);
-                for c in &table.cands[from..to] {
-                    let total = base + c.demerits + c.break_cost;
+                let sp = table.candidates(self, first, indented_line, line_target, opts);
+                if (sp.reach as usize) + 1 < same {
+                    continue;
+                }
+                for c in &table.cands[sp.from as usize..sp.to as usize] {
+                    let total = base + c.demerits + f64::from(c.break_cost);
                     let end = first + c.end as usize;
-                    let better = best[end + 1][next].is_none_or(|(b, _, _)| total < b);
-                    if better {
-                        best[end + 1][next] = Some((total, first, j));
+                    if end + 1 < same {
+                        continue;
+                    }
+                    let row = &mut best[(end + 1) * w + next];
+                    if row.is_none_or(|(b, _, _)| total < b) {
+                        *row = Some((total, first as u32, j as u32));
                     }
                 }
             }
         }
-        cache.put(table);
         // Walk back from the end, from the cheapest final state.
         let mut ranges = Vec::new();
         let mut k = n;
+        let last_row = &best[n * w..];
         let mut j = (0..=indented)
-            .filter(|&j| best[n][j].is_some())
-            .min_by(|&a, &b| best[n][a].unwrap().0.total_cmp(&best[n][b].unwrap().0))
+            .filter(|&j| last_row[j].is_some())
+            .min_by(|&a, &b| last_row[a].unwrap().0.total_cmp(&last_row[b].unwrap().0))
             .unwrap_or(indented);
         while k > 0 {
-            let (first, pj) = best[k][j].map_or((k - 1, j), |(_, f, pj)| (f, pj));
+            let (first, pj) = best[k * w + j].map_or((k - 1, j), |(_, f, pj)| (f as usize, pj as usize));
             ranges.push((first, k - 1));
             k = first;
             j = pj;
         }
         ranges.reverse();
+        table.best = best;
+        table.width = w;
 
         let size = self.lyric_size;
         let mut lines: Vec<PlacedLine> = Vec::new();
@@ -1340,98 +1717,40 @@ impl Engraving {
         let placed = kept.max(indented).min(ranges.len());
         let mut rights = Vec::with_capacity(placed);
         let mut prev_baseline: Option<f32> = None;
+        // A line set from the same segments as one of the last layout's, under the same
+        // conditions, is set the same: only how far down the page it goes is worked out again.
+        let old_shapes = std::mem::take(&mut cache.shapes);
+        let mut shapes = Shapes::default();
         for (li, &(first, last)) in ranges.iter().take(placed).enumerate() {
             let line_indent = if li < indented { indent } else { 0.0 };
-            let target = target - line_indent;
             let (clef, start) = self.line_start(first);
-            let trial = self.trial(first, last, start);
             let ragged = self.ragged(last, opts);
-            let mut xs = trial.xs.clone();
-            let gaps = last - first;
-            let mut stretch = 0.0;
-            let mut word_gap_stretch = 0.0;
-            // Whether the slack went evenly into every gap, touching ones included.
-            let mut spread = false;
-            if !ragged && gaps > 0 && trial.natural < target {
-                // Each gap takes its share of the slack. A line whose gaps can't stretch (one
-                // word, its syllables touching) spreads it evenly when that leaves room for a
-                // hyphen in every gap; less slack stays at the line's end, as in GregorioTeX,
-                // whose touching syllables have no glue.
-                let total: f32 = trial.weights.iter().sum();
-                let even = total <= 0.0;
-                let per = (target - trial.natural) / if even { gaps as f32 } else { total };
-                if !even || per >= self.hyphen + HYPHEN_MIN_GAP {
-                    spread = even;
-                    word_gap_stretch = per;
-                    for (i, x) in xs.iter_mut().enumerate().skip(1) {
-                        stretch += per * if even { 1.0 } else { trial.weights[i] };
-                        *x += stretch;
-                    }
-                }
-            }
-            let capacity = trial.natural - trial.shrunk;
-            if gaps > 0 && trial.natural > target && capacity > 0.0 {
-                // Too wide by no more than its word gaps can give: they shrink alike. The
-                // line's width is the most of linear functions of how far they shrink, so
-                // shrinking them by this part of their all narrows it at least as much.
-                let part = ((trial.natural - target) / capacity).min(1.0);
-                for (i, x) in xs.iter_mut().enumerate().skip(1) {
-                    stretch -= part * trial.shrinks[i];
-                    *x += stretch;
-                }
-            }
-            // The line's extent as set.
-            let (natural, ink_end) = self.extent(first, last, &xs, start);
-            let custos = if last + 1 < self.segments.len() {
-                self.custos_for(last).map(|p| (p, ink_end + CUSTOS_GAP))
+            let custos = if last + 1 < n { self.custos_for(last) } else { None };
+            let set = LineSet {
+                first,
+                last,
+                indent: line_indent,
+                target: target - line_indent,
+                ragged,
+                clef: clef.as_ref(),
+                start,
+                custos,
+            };
+            let shape = if cache.once {
+                Arc::new(self.shape(&table.fits, &set))
             } else {
-                None
+                let key = self.shape_key(&set);
+                let shape = match old_shapes.get(&key) {
+                    Some(shape) => Arc::clone(shape),
+                    None => Arc::new(self.shape(&table.fits, &set)),
+                };
+                shapes.insert(key, Arc::clone(&shape));
+                shape
             };
-            // Hyphens.
-            let mut hyphens = Vec::new();
-            let mut prev_lyric: Option<(f32, bool)> = None;
-            for (i, s) in self.segments[first..=last].iter().enumerate() {
-                if let Some(t) = &s.lyric {
-                    // Wherever a word's syllables are apart, right after the first text, as
-                    // GregorioTeX sets it. Placing them decided that, unless an even spread
-                    // parted touching ones, which leaves room for it between their advances
-                    // (so it keeps off the next text's ink); the final positions' floats
-                    // aren't tested again.
-                    if let Some((r, true)) = prev_lyric
-                        && !s.word_start
-                        && (!trial.touching[i] || spread)
-                    {
-                        hyphens.push((r + self.hyphen / 2.0).min(xs[i] + t.ink_left() - self.hyphen / 2.0));
-                    }
-                    prev_lyric = Some((xs[i] + t.ink_right(), !t.word_end && !t.hyphenated));
-                }
-            }
-            let hyphen = match prev_lyric {
-                Some((r, true)) if self.continues_past(last) => Some(r + self.hyphen / 2.0),
-                _ => None,
-            };
-            for x in xs.iter_mut().chain(hyphens.iter_mut()) {
-                *x += line_indent;
-            }
-            let hyphen = hyphen.map(|h| h + line_indent);
-            let custos = custos.map(|(p, x)| (p, x + line_indent));
-            let bridges = self.ledger_bridges(first, last, &xs);
-            // Vertical extent.
-            let custos_ink = custos.map(|(p, x)| custos_piece(p, x).0);
-            let mut ink_top = -3.0f32;
-            let mut ink_bottom = 3.0f32;
-            // A clef rises above the staff: on the top line it must not be clipped, and on a
-            // later one it must clear the descenders of the lyrics above.
-            let clef_ink = clef.as_ref().map(|c| clef_pieces(c, 0.0).0).unwrap_or_default();
-            let line_ink = self.segments[first..=last].iter().flat_map(|s| &s.pieces);
-            // The custos counts too: one announcing a high note rises above the staff.
-            for p in clef_ink.iter().chain(line_ink).chain(&custos_ink) {
-                let (a, b) = p.y_extent();
-                ink_top = ink_top.min(a);
-                ink_bottom = ink_bottom.max(b);
-            }
-            let has_lyrics = self.segments[first..=last].iter().any(|s| s.lyric.is_some());
-            let staffless = has_lyrics && first >= self.inkless_from;
+            let has_lyrics = shape.has_lyrics;
+            let staffless = shape.staffless;
+            let ink_bottom = shape.ink_bottom;
+            let mut ink_top = shape.ink_top;
             // The annotations sit above the first staff, over the initial and any accent on it:
             // the capital's top is the first staff's top line.
             if li == 0
@@ -1447,23 +1766,10 @@ impl Engraving {
             let mut top = y;
             let mut staff = top + (-ink_top) + 0.5;
             let mut baseline = if staffless {
-                // Text alone, as a rubric after the final bar: a line of text under the last
-                // staff's lyrics, set off from them by a little more than a line of text.
-                let tops = self.segments[first..=last]
-                    .iter()
-                    .filter_map(|s| s.lyric.as_ref())
-                    .flat_map(|t| &t.tops)
-                    .fold(0.0f32, |a, e| a.max(e.2));
                 staff = top;
-                top + TEXT_LINE_GAP + tops
+                top + TEXT_LINE_GAP + shape.tops
             } else if has_lyrics {
-                // GregorioTeX's lyric line: a fixed drop below the staff, more for a score that
-                // goes below the staff, the same on every line. Ink hanging lower still over a
-                // letter (a low note over a capital or an accent, a sign under a note) pushes
-                // it down rather than into the text.
-                let others: Vec<Piece> = clef_ink.iter().map(|p| p.shifted(line_indent)).chain(custos_ink).collect();
-                let clear = self.text_clearance(first, &xs, &hyphens, hyphen, &others);
-                (staff + 3.0 + self.text_drop()).max(staff + clear)
+                (staff + 3.0 + self.text_drop()).max(staff + shape.clear)
             } else {
                 staff + ink_bottom + 0.4
             };
@@ -1489,7 +1795,7 @@ impl Engraving {
                 let clef_ink = clef.as_ref().map(|c| clef_pieces(c, 0.0).0).unwrap_or_default();
                 let seg_ink = self.segments[first..=last]
                     .iter()
-                    .zip(&xs)
+                    .zip(&shape.xs)
                     .flat_map(|(s, &x)| s.pieces.iter().map(move |p| p.shifted(x)));
                 let under = clef_ink
                     .into_iter()
@@ -1512,33 +1818,20 @@ impl Engraving {
             } else {
                 baseline + 0.5
             };
-            // Shrinking to the column can land a rounding error past it; that is the column.
-            let natural = if natural > target && natural < target + 1e-3 {
-                target
-            } else {
-                natural
-            };
-            let right = line_indent + if ragged { natural } else { target.max(natural) };
-            rights.push(right);
+            rights.push(shape.right);
             lines.push(PlacedLine {
                 first,
                 last,
-                xs,
                 clef,
-                indent: line_indent,
-                custos,
-                hyphen,
-                hyphens,
                 top,
                 staff,
                 baseline,
                 bottom,
-                staffless,
-                stretch: word_gap_stretch,
-                bridges,
+                shape,
             });
             y = bottom + LINE_GAP;
         }
+        cache.shapes = shapes;
         let mut height = lines.get(kept.wrapping_sub(1)).map_or(0.0, |l| l.bottom);
         // The capital runs from the first staff's top line to the bottom line of the last
         // staff it spans, narrowed if need be to fit the column the breaker left for it.
@@ -1589,7 +1882,7 @@ impl Engraving {
         // out of a preview count too, so its staves are drawn as in the whole score.
         for &(first, last) in ranges.iter().skip(placed) {
             let start = self.start_x(first);
-            let trial = self.trial(first, last, start);
+            let trial = self.trial(&table.fits, first, last, start);
             let natural = if trial.natural > target {
                 target.max(trial.shrunk)
             } else {
@@ -1598,6 +1891,7 @@ impl Engraving {
             let ragged = self.ragged(last, opts);
             rights.push(if ragged { natural } else { target.max(natural) });
         }
+        cache.put(table);
         let max_width = rights.iter().fold(0.0f32, |a, &b| a.max(b));
         Layout::new(Arc::clone(self), lines, initial, target.max(max_width), height, scale)
     }
@@ -1627,7 +1921,7 @@ mod tests {
         let (_, clef_right) = clef_pieces(&clef.unwrap(), 0.0);
         assert!((start - clef_right - 1.5).abs() < 1e-6);
         // The first note's ink starts there.
-        let x = eng.trial(0, 0, start).xs[0];
+        let x = eng.trial(&eng.fits(), 0, 0, start).xs[0];
         let (left, _) = eng.segments[0].ink.unwrap();
         assert!((x + left - start).abs() < 1e-6);
     }
@@ -1644,7 +1938,7 @@ mod tests {
         ] {
             let eng = parse(src).score.engrave(&ApproxMeasure, &style);
             assert_eq!(eng.segments.len(), 3, "{src}");
-            let t = eng.trial(0, 2, 0.0);
+            let t = eng.trial(&eng.fits(), 0, 2, 0.0);
             let ink = |i: usize| {
                 let (l, r) = eng.segments[i].ink.unwrap();
                 (t.xs[i] + l, t.xs[i] + r)
@@ -1665,7 +1959,7 @@ mod tests {
         let src = format!("(c4) {} (::)", ["Mag(ghg)da(g) le(g)na(h)"; 8].join(" "));
         let base = parse(&src).score.engrave(&ApproxMeasure, &style);
         let n = base.segments.len();
-        let natural = base.trial(0, n - 1, 0.0);
+        let natural = base.trial(&base.fits(), 0, n - 1, 0.0);
         let opts = LayoutOptions::default().with_last_line(LastLine::Justified);
         let mut steps = 0;
         for k in 1..n {
@@ -1682,7 +1976,7 @@ mod tests {
             for j in 0..8 {
                 let mut eng = (*base).clone();
                 // A gap just under or at the threshold, in steps finer than f32's rounding.
-                eng.segments[k].lyric.as_mut().unwrap().left += HYPHEN_MIN_GAP * (1.0 - j as f32 * 1.0e-4) - gap;
+                eng.segments[k].body_mut().lyric.as_mut().unwrap().left += HYPHEN_MIN_GAP * (1.0 - j as f32 * 1.0e-4) - gap;
                 let eng = Arc::new(eng);
                 for width in (60..400).step_by(5) {
                     let layout = eng.layout_with(width as f32, &opts);
@@ -1735,7 +2029,7 @@ mod tests {
     /// How often lines break inside a word, and how far justified lines stretch, over the
     /// reference scores at five widths: (mid-word breaks, breaks, mean stretch of a word gap,
     /// lines stretched more than a staff space a gap), counting the breaks the breaker chose.
-    #[cfg(feature = "fonts")]
+    #[cfg(any(feature = "font-google", feature = "font-garamond12"))]
     fn break_stats() -> (usize, usize, f32, usize) {
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
         let mut paths: Vec<_> = ["tests/golden", "tests/corpus", "../../examples/compline"]
@@ -1770,7 +2064,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "fonts")]
+    #[cfg(any(feature = "font-google", feature = "font-garamond12"))]
     fn lines_break_between_words_where_that_costs_little() {
         // GregorioTeX breaks about a quarter of its lines inside a word across GregoBase. Over
         // the reference scores at five widths (136 breaks), this breaker cuts 24% of them
@@ -1799,7 +2093,7 @@ mod tests {
         let (apart, joined) = (fits("(c4) a(g) (hg) (fg) c(g) (::)"), fits("(c4) a(g) (hg)(fg) c(g) (::)"));
         assert_eq!(apart.len(), joined.len());
         let k = 1;
-        assert_eq!((apart[k].cost, joined[k].cost), (WORD_END_DEMERITS, 0.0));
+        assert_eq!((apart[k].cost(), joined[k].cost()), (WORD_END_DEMERITS, 0.0));
         assert!(apart[k] != joined[k]);
         // The cost is all that tells them apart.
         let same_cost = Fit {
