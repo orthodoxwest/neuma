@@ -33,8 +33,10 @@ and `neuma-book` APIs, the browser module, the mobile bindings and the command l
 - **A blowup**: memory, layout or output (SVG, JSON, PDF) far out of proportion to the input.
 - **Escaping the output's context**: text from the input that ends up as markup or attributes
   in the SVG, or breaks the JSON or PDF, rather than appearing as text.
-- **Memory unsafety.** The crates forbid `unsafe` code apart from the browser module's exports
-  and the bindings that UniFFI generates; a way to misuse either from safe code is in scope.
+- **Memory unsafety.** Apart from the browser module's exports, the crates have no `unsafe`
+  code of their own: the compiler forbids it in the other crates, and denies it in the browser
+  module and in the mobile bindings, whose FFI code UniFFI generates. A way to misuse the
+  exports or the generated bindings, from Rust, JavaScript, Swift or Kotlin, is in scope.
 
 Out of scope: engraving that is wrong but harmless (open an ordinary issue), output that is
 large because the input is (a whole antiphonary in one file), the fonts or pages that an app
@@ -42,5 +44,6 @@ pairs with neuma, and problems in dependencies that neuma's use of them doesn't 
 those upstream).
 
 The parser, layout and GABC round trip are fuzzed, and a nightly run puts every score in
-GregoBase through the whole pipeline with time limits; [CONTRIBUTING.md](CONTRIBUTING.md)
-describes both. Adding the input that found a bug to those tests is part of every fix.
+GregoBase that isn't marked as under copyright through the whole pipeline with time limits;
+[CONTRIBUTING.md](CONTRIBUTING.md) describes both. Adding the input that found a bug to those
+tests is part of every fix.

@@ -6,7 +6,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-readme.workspace = true
+readme = "README.md"
 keywords = ["gabc", "gregorian", "chant", "cli", "engraving"]
 categories = ["command-line-utilities", "multimedia"]
 # The tests read files elsewhere in the repository, so they stay out of the package.

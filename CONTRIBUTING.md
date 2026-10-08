@@ -14,8 +14,10 @@ cargo deny --all-features check    # after changing a dependency; see deny.toml
 
 CI also runs the tests on the oldest supported Rust, the `rust-version` in
 [Cargo.toml](Cargo.toml).
-[clippy.toml](clippy.toml) bans `mul_add` and `powf`, whose results vary between platforms,
-because the engraving must come out byte-identical everywhere.
+[clippy.toml](clippy.toml) bans `mul_add` and the libm functions (`powf`, `exp`, `ln`, `sin`
+and the rest), whose results vary between platforms, because the engraving must come out
+byte-identical everywhere. A use whose result can't reach the output, or that has no
+deterministic replacement, needs an `#[allow(clippy::disallowed_methods)]` that says why.
 
 The browser package has its own build and smoke test (see
 [crates/neuma-wasm](crates/neuma-wasm/README.md)):

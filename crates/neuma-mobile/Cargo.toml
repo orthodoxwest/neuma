@@ -27,9 +27,11 @@ neuma = { workspace = true, features = ["fonts"] }
 neuma-tones = { workspace = true, default-features = true }
 uniffi.workspace = true
 
-# No workspace lint table: UniFFI's generated scaffolding is `unsafe` FFI glue, which the
-# workspace's `unsafe_code = "forbid"` would reject. This crate's own code stays safe.
+# No workspace lint table: UniFFI's generated scaffolding is `unsafe` FFI glue that allows
+# itself `unsafe_code`, which the workspace's `forbid` would reject. `deny` still rejects
+# `unsafe` in this crate's own code.
 [lints.rust]
+unsafe_code = "deny"
 missing_debug_implementations = "warn"
 
 [lints.clippy]

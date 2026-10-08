@@ -719,7 +719,12 @@ mod tests {
     fn no_staff_is_left_alone() {
         let fonts = Fonts::standard();
         let m = Metrics::new(&Settings::default());
-        let parsed = neuma::parse(include_str!("../../neuma/tests/corpus/puer-natus.gabc"));
+        // neuma's tests/corpus/puer-natus.gabc, here so the test runs from the published crate.
+        let parsed = neuma::parse(
+            "(c3) PU(ei)ER(i) *() na(iji)tus(h) est(hhh) no(ih/ji)bis,(i) (;) et(ei~) fí(iji)li(hg)us(f) da(hhi)tus(h) est(h) no(hihh)bis:(efe) (:) \
+             cu(e)jus(f) im(h)pé(gi!jk)ri(ih)um(h) (,) su(h)per(h) hú(ih/ji)me(hg)rum(hhh) e(hf//hghvGF)jus:(gf) (:) \
+             et(hg) vo(h)cá(hji)bi(h)tur(hhh) no(h)men(hhh) e(highvGF)jus,(gf) (;) ma(hj)gni(i) con(eh~)sí(h)li(hhhf)i(f) An(fhf!gwh)ge(efe)lus.(e) (::)",
+        );
         let mut diags = Vec::new();
         let blocks = score_blocks(&parsed.score, &fonts, &m, 1, m.width / 2.0, 0.0, 0.0, &mut diags);
         let n = blocks.len();

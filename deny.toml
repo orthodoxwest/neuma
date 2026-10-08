@@ -16,11 +16,21 @@ ignore = [
     { id = "RUSTSEC-2026-0192", reason = "ttf-parser unmaintained; no known vulnerability" },
 ]
 
-# Every dependency's license must be one of these (an `OR` needs only one of them). MPL-2.0 is
-# UniFFI's, in neuma-mobile only.
+# Every dependency's license must be one of these (an `OR` needs only one of them).
 [licenses]
-allow = ["Apache-2.0", "MIT", "MPL-2.0", "Unicode-3.0"]
+allow = ["Apache-2.0", "MIT", "Unicode-3.0"]
 confidence-threshold = 0.93
+# UniFFI, in neuma-mobile only, is MPL-2.0; no other crate may be.
+exceptions = [
+    { crate = "uniffi", allow = ["MPL-2.0"] },
+    { crate = "uniffi_bindgen", allow = ["MPL-2.0"] },
+    { crate = "uniffi_core", allow = ["MPL-2.0"] },
+    { crate = "uniffi_internal_macros", allow = ["MPL-2.0"] },
+    { crate = "uniffi_macros", allow = ["MPL-2.0"] },
+    { crate = "uniffi_meta", allow = ["MPL-2.0"] },
+    { crate = "uniffi_pipeline", allow = ["MPL-2.0"] },
+    { crate = "uniffi_udl", allow = ["MPL-2.0"] },
+]
 
 [bans]
 # Two versions of a crate are worth a look, not a failure.

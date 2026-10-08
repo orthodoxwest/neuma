@@ -127,6 +127,10 @@ fn point_part(part: &mut Part, cadence: &Cadence, zero: bool) -> f32 {
     let (confidence, chosen) = match scored.iter().cloned().reduce(|a, b| if b.0 > a.0 { b } else { a }) {
         Some((best, c)) => {
             let t = temperature();
+            // `exp` can differ in its last bits between platforms' libms. Only the confidence
+            // reads it, never which syllables are chosen, and a deterministic `exp` of our own
+            // would change the confidences already reported by an ulp or so; keep the libm's.
+            #[allow(clippy::disallowed_methods)]
             let total: f32 = scored.iter().map(|(s, _)| ((s - best) / t).exp()).sum();
             (1.0 / total, c)
         }
