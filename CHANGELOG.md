@@ -37,8 +37,9 @@ in the browser and on iOS and Android.
 - The browser package (`neuma-wasm`): one self-contained ES module with the engine inlined,
   and TypeScript types.
 - Bindings for Swift and Kotlin (`neuma-mobile`), through UniFFI.
-- Documentation: rustdoc for every public item, `docs/DESIGN.md` on the architecture, and
-  `docs/diagnostics.md`, which lists every diagnostic code (a test keeps it complete).
+- Documentation: rustdoc for every public item of `neuma` and `neuma-tones`,
+  `docs/DESIGN.md` on the architecture, and `docs/diagnostics.md`, which lists every
+  diagnostic code (a test keeps it complete).
 - Packaging and CI:
   - The published crates carry license files (MIT OR Apache-2.0, plus NOTICE) and crates.io
     metadata, and CI packages each one.

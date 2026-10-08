@@ -80,7 +80,7 @@ pub(crate) fn usable_width(width: f32) -> f32 {
 }
 
 /// From the staff's middle to its top or bottom line: the lines are at −3, −1, 1 and 3.
-const HALF_STAFF: f32 = 3.0;
+const HALF_STAFF: f32 = crate::engrave::STAFF_HEIGHT / 2.0;
 
 /// The least space between the notes of two syllables, and of two words: GregorioTeX's
 /// `intersyllablespacenotes` (0.24 cm) and `interwordspacenotes` (0.29 cm) on its default

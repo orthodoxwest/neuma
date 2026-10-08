@@ -1,7 +1,7 @@
 # neuma for the browser
 
-One ES module, `dist/neuma.mjs`, with the engine inlined as gzipped WebAssembly: 456 KB in
-all, 325 KB over the wire with the server's gzip (the engine is 311 KB gzipped, 756 KB
+One ES module, `dist/neuma.mjs`, with the engine inlined as gzipped WebAssembly: 459 KB in
+all, 326 KB over the wire with the server's gzip (the engine is 314 KB gzipped, 759 KB
 raw). It fetches nothing, so it works inside sandboxed pages that block other origins; a
 Content Security Policy needs `'wasm-unsafe-eval'` in its `script-src` for it.
 
@@ -37,11 +37,11 @@ out throw an error with the code `unsupported`. Build with
 
 | Features | `neuma.mjs` | gzipped engine |
 | --- | --- | --- |
-| all (the default): `tones`, `pointing`, `font-google`, `font-garamond12` | 456 KB | 311 KB |
-| without `pointing` (automatic pointing's dictionary and model) | 419 KB | 283 KB |
-| one lyric font: `font-google` or `font-garamond12` alone | 448 KB, 419 KB | 305 KB, 284 KB |
-| GABC only (no `tones`), with `font-google` or `font-garamond12` | 353 KB, 324 KB | 234 KB, 212 KB |
-| GABC only, no font tables (lyrics measured by an estimate) | 306 KB | 199 KB |
+| all (the default): `tones`, `pointing`, `font-google`, `font-garamond12` | 459 KB | 314 KB |
+| without `pointing` (automatic pointing's dictionary and model) | 422 KB | 286 KB |
+| one lyric font: `font-google` or `font-garamond12` alone | 451 KB, 422 KB | 308 KB, 286 KB |
+| GABC only (no `tones`), with `font-google` or `font-garamond12` | 356 KB, 327 KB | 236 KB, 215 KB |
+| GABC only, no font tables (lyrics measured by an estimate) | 309 KB | 201 KB |
 
 A lyric font left out measures as the other one, so pick the one the page loads. The `wasm`
 profile optimizes for speed; `CARGO_PROFILE_WASM_OPT_LEVEL=s` makes the engine about 5%

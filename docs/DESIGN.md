@@ -303,9 +303,11 @@ glyph definitions, one string per line and the rest (the initial).
   `annotation:` headers (or the mode) centered above it. Its size comes from the face's cap
   height, and its ink from small per-letter tables: how far a Q's tail or an accent reaches past the
   letter's box, so the capital clears the staff and the line below. The initial takes the
-  marks after its letter (any Unicode mark), with room for an accent above it, or for two
-  stacked. A letter outside Latin, Greek and Cyrillic, which the built-in faces lack and a
-  fallback font draws, is given at least an em of width and a quarter em of room above.
+  marks after its letter (any Unicode mark), and after a virama or stacker the letter it
+  joins on (क्ष, ស្រ), with room for an accent above it, or for two stacked. A letter
+  outside Latin, Greek and Cyrillic, which the built-in faces lack and a fallback font draws,
+  is measured without its marks and given at least an em of width and a quarter em of room
+  above.
 
 `TextMeasure` is the engine's only text dependency. Widths are right only if every renderer
 sets text the way it was measured, so neuma fixes the shaping:

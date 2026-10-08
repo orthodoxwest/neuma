@@ -458,7 +458,7 @@ const MELISMA_END_NOTES: usize = 4;
 /// set words ran together.
 const WORD_SPACE: f32 = 0.48;
 /// A staff's height from its top line to its bottom line, in staff spaces.
-const STAFF_HEIGHT: f32 = 6.0;
+pub(crate) const STAFF_HEIGHT: f32 = 6.0;
 /// Annotation size relative to the lyrics.
 const ANNOTATION_RATIO: f32 = 0.75;
 const DEFAULT_CLEF: Clef = Clef {
@@ -965,7 +965,7 @@ impl Score {
             };
             // The column holds the capital's ink, which for a few letters runs past its advance.
             let (lead, tail) = initial::overhang(&text);
-            let advance_em = initial::advance(&text, measure.advance(&text, TextStyle::REGULAR)) + lead + tail;
+            let advance_em = initial::advance(&text, |t| measure.advance(t, TextStyle::REGULAR)) + lead + tail;
             initial = Some(InitialBox {
                 width: advance_em * initial_size,
                 advance_em,

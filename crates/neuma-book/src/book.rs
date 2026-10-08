@@ -150,12 +150,20 @@ impl Default for Settings {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Default)]
+/// Two books are equal when their settings and pieces are: where the pieces were in a file
+/// doesn't count.
+#[derive(Clone, Debug, Default)]
 pub struct Book {
     pub settings: Settings,
     pub pieces: Vec<Piece>,
     /// Where each parsed piece is in the file, by index ([`Book::origin`]).
     origins: Vec<Origin>,
+}
+
+impl PartialEq for Book {
+    fn eq(&self, other: &Book) -> bool {
+        self.settings == other.settings && self.pieces == other.pieces
+    }
 }
 
 /// Where a piece is in its `.book` file, so that a problem in it can be reported at the
@@ -552,7 +560,8 @@ impl Book {
     }
 
     /// Where piece `piece` is in the file it was parsed from, or `None` for a piece the
-    /// parser didn't make.
+    /// parser didn't make. It counts pieces as [`Book::parse`] made them: adding, removing or
+    /// reordering `pieces` afterwards doesn't move the origins with them.
     #[must_use]
     pub fn origin(&self, piece: usize) -> Option<&Origin> {
         self.origins.get(piece)
@@ -825,5 +834,7 @@ mod tests {
     fn a_byte_order_mark_is_skipped() {
         let src = "title: A\nscore:\n    (c4) A(g)\n";
         assert_eq!(Book::parse(&format!("\u{feff}{src}")).unwrap(), Book::parse(src).unwrap());
+        // Where the pieces were doesn't count: the same book laid out otherwise is equal.
+        assert_eq!(Book::parse(&format!("\n\n{src}")).unwrap(), Book::parse(src).unwrap());
     }
 }

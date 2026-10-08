@@ -41,6 +41,7 @@
 //!
 //! let chant = Chant::new("(c4) Al(f)le(gf)lú(gh)ia.(g.) (::)");
 //! let list = chant.layout(600.0).display();
+//! let (mut glyphs, mut rects) = (0, 0);
 //! for item in &list.items {
 //!     match item {
 //!         // An outline in glyph units: scale it by `scale` and draw its origin at (x, y).
@@ -48,9 +49,11 @@
 //!         Item::Glyph { glyph, x, y, scale, .. } => {
 //!             let outline = glyph_outline(*glyph).expect("a glyph the engine drew");
 //!             let _ = (outline.d, x, y, scale); // fill the SVG path data `d`, nonzero
+//!             glyphs += 1;
 //!         }
 //!         Item::Rect { x, y, w, h, .. } => {
 //!             let _ = (x, y, w, h); // staff and ledger lines, stems, bars, episemata
+//!             rects += 1;
 //!         }
 //!         Item::Text { x, baseline, size, runs, .. } => {
 //!             let _ = (x, baseline, size); // each run's text in its style, one after another
@@ -59,6 +62,7 @@
 //!         _ => {} // kinds added later
 //!     }
 //! }
+//! assert!(glyphs > 0 && rects > 0); // the notes and clef; the staff lines and the bar
 //! ```
 //!
 //! # Concepts
