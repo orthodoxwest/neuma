@@ -6,6 +6,11 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+readme = "README.md"
+keywords.workspace = true
+categories = ["multimedia", "rendering", "parser-implementations"]
+# The tests read files elsewhere in the repository, so they stay out of the package.
+exclude = ["tests/"]
 
 [features]
 default = ["svg", "fonts"]
@@ -19,6 +24,10 @@ fonts = ["font-google", "font-garamond12"]
 font-google = []
 # The table for the EB Garamond 12 release (about 23 KB).
 font-garamond12 = []
+
+# Document `neuma::json` too.
+[package.metadata.docs.rs]
+all-features = true
 
 [lints]
 workspace = true

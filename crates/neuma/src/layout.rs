@@ -2045,12 +2045,18 @@ mod tests {
     /// How often lines break inside a word, and how far justified lines stretch, over the
     /// reference scores at five widths: (mid-word breaks, breaks, mean stretch of a word gap,
     /// lines stretched more than a staff space a gap), counting the breaks the breaker chose.
+    /// None outside the repository, as in the published crate, which leaves the scores out.
     #[cfg(any(feature = "font-google", feature = "font-garamond12"))]
-    fn break_stats() -> (usize, usize, f32, usize) {
+    fn break_stats() -> Option<(usize, usize, f32, usize)> {
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-        let mut paths: Vec<_> = ["tests/golden", "tests/corpus", "../../examples/compline"]
+        // A published crate has no tests/ folder; in the repo, every folder must be there.
+        if !dir.join("tests").is_dir() {
+            return None;
+        }
+        let dirs = ["tests/golden", "tests/corpus", "../../examples/compline"].map(|d| dir.join(d));
+        let mut paths: Vec<_> = dirs
             .iter()
-            .flat_map(|d| std::fs::read_dir(dir.join(d)).expect("reference scores"))
+            .flat_map(|d| std::fs::read_dir(d).expect("reference scores"))
             .map(|e| e.expect("entry").path())
             .filter(|p| p.extension().is_some_and(|e| e == "gabc"))
             .collect();
@@ -2076,7 +2082,7 @@ mod tests {
                 }
             }
         }
-        (mid, breaks, stretch / breaks as f32, loose)
+        Some((mid, breaks, stretch / breaks as f32, loose))
     }
 
     #[test]
@@ -2088,7 +2094,9 @@ mod tests {
         // more than a staff space. One blind to words cuts 43% inside one; one that holds out
         // for words and bars at any cost (TeX's weights) cuts 8%, stretches 0.52 and leaves 15%
         // of its lines loose.
-        let (mid, breaks, stretch, loose) = break_stats();
+        let Some((mid, breaks, stretch, loose)) = break_stats() else {
+            return;
+        };
         assert!(breaks > 100, "{breaks} breaks");
         let mid = mid as f32 / breaks as f32;
         let loose = loose as f32 / breaks as f32;
