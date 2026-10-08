@@ -330,8 +330,9 @@ pub(crate) struct InitialBox {
     /// How far its ink reaches left of where it is set, and below its baseline, in ems.
     pub lead_em: f32,
     pub depth_em: f32,
-    /// Room above the first staff for an accent on the capital, in staff spaces.
-    pub accent_room: f32,
+    /// How far the capital's ink rises above its cap height, and so above the first staff's
+    /// top line (an accent, an ascender, the apex of an A), in staff spaces.
+    pub above: f32,
     /// The face's descent in ems, for a capital with a tail.
     pub descent: f32,
     pub lines: usize,
@@ -392,8 +393,6 @@ const MELISMA_END_NOTES: usize = 4;
 /// `interwordspacetext` (0.17 cm against 10 pt lyrics). The font's own space is narrower, and
 /// set words ran together.
 const WORD_SPACE: f32 = 0.48;
-/// A one-staff initial's size relative to the lyrics (GregorioTeX's 40 pt and 10 pt).
-const INITIAL_SCALE: f32 = 4.0;
 /// Annotation size relative to the lyrics.
 const ANNOTATION_RATIO: f32 = 0.75;
 const DEFAULT_CLEF: Clef = Clef {
@@ -833,13 +832,18 @@ impl Score {
         {
             // A nominal staff-to-staff distance (the staff, lyrics below it, and the gaps)
             // sizes the column the breaker indents for; layout sizes the capital itself to
-            // the staves it actually spans.
+            // the staves it actually spans. A one-staff initial runs from the staff's top line
+            // down to the lyric baseline, as in Solesmes books, so the lyrics' drop (more for
+            // a score that goes below the staff) counts too.
             let line_pitch = crate::layout::BASELINE_PITCH;
             let lines = n.min(initial::MAX_LINES) as usize;
-            let cap = 6.0 + line_pitch * (lines - 1) as f32;
-            // A one-staff initial is GregorioTeX's default: 40 pt against 10 pt lyrics, set on
-            // the lyric line rather than spanning the staff.
-            let initial_size = if lines == 1 { INITIAL_SCALE * size } else { cap / CAP_HEIGHT };
+            let cap = if lines == 1 {
+                let lowest = e.note_positions.iter().copied().min().unwrap_or(0);
+                6.0 + crate::layout::text_drop(lowest)
+            } else {
+                6.0 + line_pitch * (lines - 1) as f32
+            };
+            let initial_size = cap / CAP_HEIGHT;
             let annotation_size = size * ANNOTATION_RATIO;
             let annotations = if style.annotation {
                 initial::annotations(&self.header)
@@ -855,16 +859,12 @@ impl Score {
             // The column holds the capital's ink, which for a few letters runs past its advance.
             let (lead, tail) = initial::overhang(&text);
             let advance_em = measure.advance(&text, TextStyle::REGULAR) + lead + tail;
-            // An accent on the capital rises above its cap height; leave room for it.
-            let accented = !text.is_ascii();
             initial = Some(InitialBox {
                 width: advance_em * initial_size,
                 advance_em,
                 lead_em: lead,
                 depth_em: initial::depth(&text),
-                // A one-staff initial's accent stays below the staff's top, but the annotation
-                // over it goes higher.
-                accent_room: if accented { 0.25 * initial_size } else { 0.0 },
+                above: initial::rise(&text) * initial_size,
                 descent,
                 text,
                 syllable: si as u32,

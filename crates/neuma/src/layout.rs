@@ -8,7 +8,8 @@ use std::fmt;
 use std::sync::{Arc, OnceLock};
 
 use crate::engrave::{
-    Break, CAP_HEIGHT, Engraving, HYPHEN_TOP, Ink, LEDGER_GAP, Mark, Piece, STEM, Segment, clef_pieces, clef_width, custos_piece,
+    Break, CAP_HEIGHT, Engraving, HYPHEN_TOP, InitialBox, Ink, LEDGER_GAP, Mark, Piece, STEM, Segment, clef_pieces, clef_width,
+    custos_piece,
 };
 use crate::score::{Clef, CustosRule};
 use crate::source::{SourceMap, Utf16Index};
@@ -90,13 +91,15 @@ const BAR_GAP: f32 = 1.6;
 const CLEF_GAP: f32 = 1.5;
 /// Gap between the first staff line and the lowest annotation's baseline.
 const ANNOTATION_GAP: f32 = 1.0;
-/// Gap between the top of a one-staff initial and the baseline of the annotation over it,
-/// as GregorioTeX sets them.
-const INITIAL_ANNOTATION_GAP: f32 = 1.6;
 /// Space before the initial's column: GregorioTeX's `beforeinitialshift` (0.2 cm).
 pub(crate) const INITIAL_BEFORE: f32 = 1.39;
-/// Gap between the initial's column and the staff.
-const INITIAL_GAP: f32 = 1.0;
+/// Gap between the initial's column and the staff: GregorioTeX's `afterinitialshift` (0.2 cm).
+const INITIAL_GAP: f32 = 1.39;
+/// How much wider than its column a one-staff initial may grow, half into the space before
+/// it and half into the gap after: the column is sized for the lyrics' usual drop, and ink
+/// hanging low over the first line's text lowers them a little in about a quarter of
+/// scores. Only a capital wider still breaks the lines again with a wider column.
+const INITIAL_SLACK: f32 = 0.8;
 /// Gap between the tail of a one-staff initial and the ink of the line under it.
 const INITIAL_TAIL_GAP: f32 = 0.5;
 /// Gap before an end-of-line custos: GregorioTeX's `spacebeforeeolcustos` (0.23 cm).
@@ -122,6 +125,12 @@ const STRETCH: f32 = 1.5;
 /// than its ledger lines' overhang, so a ledger line may reach nearer it than the gap, though
 /// never to it.
 const LEDGER_NEAR: f32 = 0.25;
+/// The lyric baseline's drop below the staff's bottom line, for a score whose lowest note is
+/// at `lowest`.
+pub(crate) fn text_drop(lowest: crate::score::StaffPosition) -> f32 {
+    TEXT_DROP + LOW_NOTE_DROP * (BELOW_STAFF - lowest).max(0) as f32
+}
+
 /// The widest column laid out, in output units and in staff spaces; wider requests are
 /// clamped to it.
 const MAX_WIDTH: f32 = 1.0e6;
@@ -1039,7 +1048,29 @@ impl Engraving {
 
     /// How far the lyric baseline lies below the staff's bottom line.
     fn text_drop(&self) -> f32 {
-        TEXT_DROP + LOW_NOTE_DROP * (BELOW_STAFF - self.lowest).max(0) as f32
+        text_drop(self.lowest)
+    }
+
+    /// How much wider than its column the initial may be drawn (see [`INITIAL_SLACK`]).
+    fn initial_slack(&self) -> f32 {
+        if self.initial.as_ref().is_some_and(|i| i.lines == 1) {
+            INITIAL_SLACK
+        } else {
+            0.0
+        }
+    }
+
+    /// The size a one-staff initial takes to run from the first line's top staff line down to
+    /// its lyric baseline, `baseline` below the staff's center, narrowed if need be to the
+    /// column the breaker left for it. Also its size before narrowing.
+    fn one_staff_initial(&self, init: &InitialBox, baseline: f32, column: f32) -> (f32, f32) {
+        let natural = (baseline + 3.0) / CAP_HEIGHT;
+        let size = if init.advance_em > 0.0 {
+            natural.min((column + INITIAL_SLACK) / init.advance_em)
+        } else {
+            natural
+        };
+        (size, natural)
     }
 
     /// How a line ending after segment `end` closes: whether it is set ragged, and the extra
@@ -1220,12 +1251,13 @@ impl Engraving {
     /// rather than the score's.
     pub(crate) fn layout_cached(self: &Arc<Self>, width: f32, opts: &LayoutOptions, cache: &mut LayoutCache) -> Layout {
         let mut layout = self.lay_out(width, opts, None, cache);
-        // A capital spanning staves farther apart than the nominal pitch is wider than the
-        // column the breaker left for it; break again with room for it. A new break can
-        // change the span, so allow one more try before narrowing the capital to fit.
+        // A capital spanning staves farther apart than the nominal pitch, or standing on
+        // lyrics set lower than usual, is wider than the column the breaker left for it;
+        // break again with room for it. A new break can change the span, so allow one more
+        // try before narrowing the capital to fit.
         for _ in 0..2 {
             match layout.initial {
-                Some(placed) if placed.natural_width > placed.column + 0.01 => {
+                Some(placed) if placed.natural_width > placed.column + self.initial_slack() + 0.01 => {
                     layout = self.lay_out(width, opts, Some(placed.natural_width), cache);
                 }
                 _ => break,
@@ -1400,28 +1432,16 @@ impl Engraving {
             }
             let has_lyrics = self.segments[first..=last].iter().any(|s| s.lyric.is_some());
             let staffless = has_lyrics && first >= self.inkless_from;
-            // The annotations sit above the first staff, over the initial and any accent on it.
-            // Above a one-staff initial, which stands on the lyric line, they sit over the
-            // capital, beside the staff.
+            // The annotations sit above the first staff, over the initial and any accent on it:
+            // the capital's top is the first staff's top line.
             if li == 0
                 && let Some(init) = &self.initial
-                && init.lines == 1
             {
-                let cap_top = 3.0 + self.text_drop() - CAP_HEIGHT * init.size - init.accent_room;
+                ink_top = ink_top.min(-3.0 - init.above);
                 if !init.annotations.is_empty() {
                     let lines = init.annotations.len() as f32;
-                    ink_top =
-                        ink_top.min(cap_top - INITIAL_ANNOTATION_GAP - init.annotation_ascent - (lines - 1.0) * init.annotation_size * 1.1);
-                }
-            } else if li == 0
-                && let Some(init) = &self.initial
-            {
-                ink_top = ink_top.min(-3.0 - init.accent_room);
-                if !init.annotations.is_empty() {
-                    let lines = init.annotations.len() as f32;
-                    ink_top = ink_top.min(
-                        -3.0 - init.accent_room - ANNOTATION_GAP - init.annotation_ascent - (lines - 1.0) * init.annotation_size * 1.1,
-                    );
+                    ink_top = ink_top
+                        .min(-3.0 - init.above - ANNOTATION_GAP - init.annotation_ascent - (lines - 1.0) * init.annotation_size * 1.1);
                 }
             }
             let mut top = y;
@@ -1460,7 +1480,7 @@ impl Engraving {
                 baseline += shift;
             }
             // Under a one-staff initial, which stands on the first line's lyric baseline, the
-            // second line's ink keeps clear of its tail (a Q's).
+            // second line's ink keeps clear of its tail (a Q's), its staff lines included.
             if li == 1
                 && let Some(init) = self.initial.as_ref().filter(|i| i.lines == 1)
                 && let Some(line0) = lines.first()
@@ -1476,8 +1496,9 @@ impl Engraving {
                     .chain(seg_ink)
                     .filter(|p| p.ink_box()[0] < reach)
                     .map(|p| p.ink_box()[1])
-                    .fold(f32::INFINITY, f32::min);
-                let tail = line0.baseline + init.depth_em * init.size + INITIAL_TAIL_GAP;
+                    .fold(if staffless { f32::INFINITY } else { -3.0 - STEM / 2.0 }, f32::min);
+                let (size, _) = self.one_staff_initial(init, line0.baseline - line0.staff, column);
+                let tail = line0.baseline + init.depth_em * size + INITIAL_TAIL_GAP;
                 let shift = tail - (staff + under);
                 if shift > 0.0 {
                     top += shift;
@@ -1524,15 +1545,15 @@ impl Engraving {
         let initial = self.initial.as_ref().and_then(|init| {
             let first = lines.first()?;
             if init.lines == 1 {
-                // GregorioTeX's default initial: a fixed size, standing on the first line's
-                // lyric baseline, the lyrics running on beside it.
+                // Standing on the first line's lyric baseline, the lyrics running on beside it,
+                // and reaching up to the staff's top line.
                 let has_lyrics = self.segments[first.first..=first.last].iter().any(|s| s.lyric.is_some());
                 let baseline = if has_lyrics {
                     first.baseline
                 } else {
                     first.staff + 3.0 + self.text_drop()
                 };
-                let size = init.size;
+                let (size, natural) = self.one_staff_initial(init, baseline - first.staff, column);
                 let width = init.advance_em * size;
                 height = height.max(baseline + init.descent * size);
                 return Some(PlacedInitial {
@@ -1540,8 +1561,8 @@ impl Engraving {
                     baseline,
                     size,
                     column,
-                    natural_width: width,
-                    annotation_baseline: baseline - CAP_HEIGHT * size - init.accent_room - INITIAL_ANNOTATION_GAP,
+                    natural_width: init.advance_em * natural,
+                    annotation_baseline: first.staff - 3.0 - init.above - ANNOTATION_GAP,
                 });
             }
             let last = &lines[init.lines.min(lines.len()) - 1];
@@ -1560,7 +1581,7 @@ impl Engraving {
                 size,
                 column,
                 natural_width: init.advance_em * natural,
-                annotation_baseline: first.staff - 3.0 - init.accent_room - ANNOTATION_GAP,
+                annotation_baseline: first.staff - 3.0 - init.above - ANNOTATION_GAP,
             })
         });
         lines.truncate(kept);

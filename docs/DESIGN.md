@@ -453,6 +453,12 @@ shaping.
   for `smcp`). Renderers use the font feature: `font-variant-caps:
   small-caps` on web, and the `smcp` support the apps already use, such as
   Android's `ALL_SMALL_CAPS`.
+- **Advances aren't rounded.** SVG output sets `text-rendering:
+  geometricPrecision` on its text. Without it, a browser that hints the face
+  (Chrome on Linux and Windows) rounds every glyph's advance to a whole pixel
+  at the size drawn, and since each syllable is its own `<text>`, the
+  syllables of a word that touch by their measured advances come apart (or
+  overlap) by up to a pixel or more, by an amount that changes with scale.
 - **Kerning is on.** The table holds GPOS pair adjustments (formats 1 and 2)
   and legacy `kern`, which is what browsers, Core Text and Android apply to
   plain Latin text. If the conformance test below shows a renderer diverging,

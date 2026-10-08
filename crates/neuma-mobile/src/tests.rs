@@ -443,5 +443,6 @@ fn updates_in_place() {
         ..ChantOptions::default()
     });
     assert!(c.version() > edited);
-    assert!(c.layout(400.0, options()).page().height > page.height);
+    let bottom = |p: &Page| p.lines.last().unwrap().bottom;
+    assert!(bottom(&c.layout(400.0, options()).page()) > bottom(&page));
 }

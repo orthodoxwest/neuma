@@ -55,7 +55,7 @@ pub fn page(p: &Page, fonts: &Fonts, red: [u8; 3], text_as_paths: bool) -> Strin
     };
     let _ = write!(
         out,
-        "<style>text{{font-family:{family};font-variant-ligatures:none;font-kerning:normal;white-space:pre}}.r{{fill:{}}}</style>",
+        "<style>text{{font-family:{family};font-variant-ligatures:none;font-kerning:normal;text-rendering:geometricPrecision;white-space:pre}}.r{{fill:{}}}</style>",
         hex(red)
     );
     let _ = write!(out, r#"<rect width="{}" height="{}" fill="white"/>"#, num(p.width), num(p.height));

@@ -8,7 +8,8 @@
 //! Every `.gabc` file named, or found in a directory named, is engraved with the built-in
 //! Google Fonts metrics and laid out at each width. Then its display list is checked for:
 //!
-//! - `NT`: a note, stem, ledger line or other musical ink overlapping a lyric's letter;
+//! - `NT`: a note, stem, ledger line or other musical ink overlapping a lyric's letter, or a
+//!   staff line crossing the initial (a Q's tail reaching the staff below);
 //! - `TT`: two texts' letters overlapping, a hyphen included (syllables of a word that touch
 //!   by their advances are left out: their letters meet as in any word);
 //! - `OOB`: ink outside the page.
@@ -27,6 +28,9 @@ use rustybuzz::ttf_parser::Face;
 enum Kind {
     Music,
     Text,
+    /// A staff line: an obstacle for the initial only, as lyrics sit off the staff and
+    /// everything else is drawn on it.
+    Staff,
 }
 
 struct Box {
@@ -188,18 +192,15 @@ fn check(src: &str, name: &str, widths: &[f32], scale: f32, faces: &[Face; 2], d
                     });
                 }
                 Item::Rect { x, y, w, h, role, .. } => {
-                    // Staff lines run under everything.
-                    if *role != Ink::Staff {
-                        boxes.push(Box {
-                            x0: *x,
-                            y0: *y,
-                            x1: x + w,
-                            y1: y + h,
-                            kind: Kind::Music,
-                            item: i,
-                            label: format!("{role:?}"),
-                        });
-                    }
+                    boxes.push(Box {
+                        x0: *x,
+                        y0: *y,
+                        x1: x + w,
+                        y1: y + h,
+                        kind: if *role == Ink::Staff { Kind::Staff } else { Kind::Music },
+                        item: i,
+                        label: format!("{role:?}"),
+                    });
                 }
                 Item::Text {
                     x,
@@ -282,6 +283,12 @@ fn check(src: &str, name: &str, widths: &[f32], scale: f32, faces: &[Face; 2], d
                     break;
                 }
                 if a.item == b.item || (a.kind == Kind::Music && b.kind == Kind::Music) || touching.contains(&(a.item, b.item)) {
+                    continue;
+                }
+                // Staff lines run under the notes and beside the lyrics; only the initial,
+                // which hangs beside the staves, may not cross one.
+                let initial = |x: &Box| x.kind == Kind::Text && x.label.starts_with("Initial");
+                if (a.kind == Kind::Staff || b.kind == Kind::Staff) && !(initial(a) || initial(b)) {
                     continue;
                 }
                 let pen = (a.x1.min(b.x1) - a.x0.max(b.x0)).min(a.y1.min(b.y1) - a.y0.max(b.y0));

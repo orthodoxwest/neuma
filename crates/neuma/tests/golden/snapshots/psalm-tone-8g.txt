@@ -1,354 +1,354 @@
 
 # width 360
-size 360.00 x 314.81, staff space 6.00
-line top 0.00 bottom 73.07 staff 30.89 baseline 68.69
-line top 80.58 bottom 153.65 staff 111.47 baseline 149.27
-line top 161.16 bottom 234.23 staff 192.05 baseline 229.85
-line top 241.74 bottom 314.81 staff 272.63 baseline 310.43
-staff rect 48.68 12.51 311.32 0.77
-staff rect 48.68 24.51 311.32 0.77
-staff rect 48.68 36.51 311.32 0.77
-staff rect 48.68 48.51 311.32 0.77
-clef DoClef 48.68 12.89
-note PunctumQuadratum 66.68 30.89 n0
-Lyric 56.17 68.69 14.70 s1 "AU"
-note PodatusLowerShort 87.56 30.89 n1
-note PodatusUpperShort 90.56 24.89 n2
-Lyric 77.19 68.69 14.70 s2 "dá"
-note PunctumQuadratum 104.79 24.89 n3
-Lyric 97.31 68.69 14.70 s3 "te"
-note PunctumQuadratum 130.65 24.89 n4
-Lyric 115.93 68.69 14.70 s4 "Dó"
-note PunctumQuadratum 147.53 24.89 n5
-Lyric 134.29 68.69 14.70 s5 "mi"
-note PunctumQuadratum 166.21 24.89 n6
-Lyric 154.57 68.69 14.70 s6 "num,"
-note PunctumQuadratum 196.80 24.89 n7
-Lyric 193.17 68.69 14.70 s7 "om"
-note PunctumQuadratum 222.51 24.89 n8
-Lyric 211.88 68.69 14.70 s8 "nes"
-note PunctumQuadratum 247.65 24.89 n9
-Lyric 238.39 68.69 14.70 s9 "gen"
-note PunctumQuadratum 265.76 24.89 n10
-Lyric 258.28 68.69 14.70 s10 "tes:"
-bar rect 288.14 6.89 0.77 12.00
-Lyric 285.29 68.69 14.70 s11 "†"
-note PunctumQuadratum 310.36 24.89 n11
-Lyric 300.03 68.69 14.70 s12 "lau"
-note PunctumQuadratum 327.54 24.89 n12
-Lyric 317.17 68.69 14.70 s13 "dá"
-note PunctumQuadratum 344.78 30.89 n13
-Lyric 337.29 68.69 14.70 s14 "te"
-Hyphen 90.49 68.69 14.70 "-"
-Hyphen 149.33 68.69 14.70 "-"
-Hyphen 330.47 68.69 14.70 "-"
-custos CustosShort 357.38 30.89
-staff rect 0.00 93.09 360.00 0.77
-staff rect 0.00 105.09 360.00 0.77
-staff rect 0.00 117.09 360.00 0.77
-staff rect 0.00 129.09 360.00 0.77
-clef DoClef 0.00 93.47
-note PunctumQuadratum 18.00 111.47 n14
-Lyric 15.13 149.27 14.70 s15 "e"
-note PunctumQuadratum 36.31 111.47 n15
-Lyric 32.44 149.27 14.70 s16 "um,"
-bar rect 66.46 99.47 0.77 24.00
-Lyric 64.35 149.27 14.70 s17 "*"
-note PunctumQuadratum 82.33 105.47 n16
-Lyric 78.69 149.27 14.70 s18 "om"
-note PunctumQuadratum 108.03 105.47 n17
-Lyric 97.41 149.27 14.70 s19 "nes"
-note PunctumQuadratum 136.26 105.47 n18
-Lyric 124.99 149.27 14.70 s20 "pó"
-note PunctumQuadratum 157.72 105.47 n19
-Lyric 146.22 149.27 14.70 s21 "pu"
-note PunctumQuadratum 176.03 105.47 n20
-Lyric 170.70 149.27 14.70 s22 "li."
-bar rect 190.92 93.47 0.77 36.00
-note PunctumQuadratum 215.45 105.47 n21
-Lyric 192.85 149.27 14.70 s24 "Quó"
-note PunctumQuadratum 234.97 105.47 n22
-Lyric 225.41 149.27 14.70 s25 "ni"
-note PunctumQuadratum 253.28 105.47 n23
-Lyric 250.35 149.27 14.70 s26 "am"
-note PunctumQuadratum 286.47 105.47 n24
-Lyric 277.00 149.27 14.70 s27 "con"
-note PunctumQuadratum 304.71 105.47 n25
-Lyric 297.72 149.27 14.70 s28 "fir"
-note PunctumQuadratum 326.31 105.47 n26
-Lyric 311.94 149.27 14.70 s29 "má"
-note PunctumQuadratum 344.62 105.47 n27
-Lyric 337.07 149.27 14.70 s30 "ta"
-Hyphen 20.87 149.27 14.70 "-"
-Hyphen 139.90 149.27 14.70 "-"
-Hyphen 161.60 149.27 14.70 "-"
-Hyphen 219.09 149.27 14.70 "-"
-Hyphen 236.77 149.27 14.70 "-"
-Hyphen 329.24 149.27 14.70 "-"
-custos CustosLong 357.22 105.47
-staff rect 0.00 173.67 360.00 0.77
-staff rect 0.00 185.67 360.00 0.77
-staff rect 0.00 197.67 360.00 0.77
-staff rect 0.00 209.67 360.00 0.77
-clef DoClef 0.00 174.05
-note PunctumQuadratum 18.00 186.05 n28
-Lyric 15.13 229.85 14.70 s31 "est"
-note PunctumQuadratum 47.19 174.05 n29
-Lyric 38.56 229.85 14.70 s32 "su"
-note PunctumQuadratum 66.86 180.05 n30
-Lyric 56.36 229.85 14.70 s33 "per"
-note PunctumQuadratum 94.37 186.05 n31
-Lyric 82.97 229.85 14.70 s34 "nos"
-note PunctumQuadratum 124.33 180.05 n32
-Lyric 111.09 229.85 14.70 s35 "mi"
-note PunctumQuadratum 141.62 192.05 n33
-Lyric 134.01 229.85 14.70 s36 "se"
-note PunctumQuadratum 158.92 186.05 n34
-Lyric 152.21 229.85 14.70 s37 "ri"
-note PunctumQuadratum 176.22 186.05 n35
-Lyric 166.74 229.85 14.70 s38 "cór"
-note PunctumQuadratum 193.86 186.05 n36
-Lyric 184.62 229.85 14.70 s39 "di"
-note PunctumQuadratum 211.15 186.05 n37
-Lyric 208.22 229.85 14.70 s40 "a"
-note PunctumQuadratum 230.43 186.05 n38
-Lyric 227.56 229.85 14.70 s41 "e"
-note PunctumQuadratum 247.73 186.05 n39
-Lyric 240.53 229.85 14.70 s42 "jus:"
-bar rect 270.44 180.05 0.77 24.00
-Lyric 268.33 229.85 14.70 s43 "*"
-note PunctumQuadratum 285.09 186.05 n40
-Lyric 282.22 229.85 14.70 s44 "et"
-note PunctumQuadratum 310.02 186.05 n41
-Lyric 300.90 229.85 14.70 s45 "vé"
-note PunctumQuadratum 327.32 186.05 n42
-Lyric 320.61 229.85 14.70 s46 "ri"
-note PunctumQuadratum 344.62 186.05 n43
-Lyric 337.07 229.85 14.70 s47 "tas"
-Hyphen 51.06 229.85 14.70 "-"
-Hyphen 126.13 229.85 14.70 "-"
-Hyphen 144.49 229.85 14.70 "-"
-Hyphen 160.72 229.85 14.70 "-"
-Hyphen 195.66 229.85 14.70 "-"
-Hyphen 233.30 229.85 14.70 "-"
-Hyphen 312.71 229.85 14.70 "-"
-Hyphen 329.12 229.85 14.70 "-"
-custos CustosLong 357.22 186.05
-staff rect 0.00 254.25 360.00 0.77
-staff rect 0.00 266.25 360.00 0.77
-staff rect 0.00 278.25 360.00 0.77
-staff rect 0.00 290.25 360.00 0.77
-clef DoClef 0.00 254.63
-note PunctumQuadratum 18.00 266.63 n44
-Lyric 3.28 310.43 14.70 s48 "Dó"
-note PunctumQuadratum 34.88 266.63 n45
-Lyric 21.64 310.43 14.70 s49 "mi"
-note PunctumQuadratum 50.90 266.63 n46
-Lyric 41.33 310.43 14.70 s50 "ni"
-note PunctumQuadratum 74.12 266.63 n47
-Lyric 59.75 310.43 14.70 s51 "ma"
-note PunctumQuadratum 91.71 266.63 n48
-Lyric 81.08 310.43 14.70 s52 "net"
-note PunctumQuadratum 109.71 272.63 n49
-Lyric 107.91 310.43 14.70 s53 "in"
-note PunctumQuadratum 132.13 266.63 n50
-Lyric 126.33 310.43 14.70 s54 "ae"
-note PunctumQuadratum 149.44 254.63 n51
-Lyric 141.95 310.43 14.70 s55 "tér"
-note PunctumQuadratum 168.85 266.63 n52
-Lyric 157.21 310.43 14.70 s56 "num."
-bar rect 181.45 254.63 0.77 36.00
-note PunctumQuadratum 198.74 266.63 n53
-Lyric 194.60 310.43 14.70 s58 "E"
-note PunctumQuadratum 214.76 272.63 n54
-Lyric 210.89 310.43 14.70 s59 "u"
-note PunctumQuadratum 230.78 266.63 n55
-Lyric 227.14 310.43 14.70 s60 "o"
-note PunctumQuadratum 246.80 266.63 n56
-Lyric 242.93 310.43 14.70 s61 "u"
-note PunctumQuadratum 262.82 272.63 n57
-Lyric 259.89 310.43 14.70 s62 "a"
-note PunctumQuadratum 278.84 272.63 n58
-Lyric 275.97 310.43 14.70 s63 "e."
-bar rect 291.44 254.63 0.77 36.00
-bar rect 296.77 254.63 0.77 36.00
-Hyphen 36.68 310.43 14.70 "-"
-Hyphen 77.05 310.43 14.70 "-"
-Hyphen 137.93 310.43 14.70 "-"
-Hyphen 202.89 310.43 14.70 "-"
-Hyphen 218.63 310.43 14.70 "-"
-Hyphen 234.42 310.43 14.70 "-"
-Hyphen 250.67 310.43 14.70 "-"
-Hyphen 265.75 310.43 14.70 "-"
-Initial 8.34 68.69 58.80 s1 "L"
-Annotation 17.74 20.87 11.03 "8 G"
+size 360.00 x 323.31, staff space 6.00
+line top 0.00 bottom 81.57 staff 39.39 baseline 77.19
+line top 89.08 bottom 162.15 staff 119.97 baseline 157.77
+line top 169.66 bottom 242.73 staff 200.55 baseline 238.35
+line top 250.24 bottom 323.31 staff 281.13 baseline 318.93
+staff rect 66.81 21.01 293.19 0.77
+staff rect 66.81 33.01 293.19 0.77
+staff rect 66.81 45.01 293.19 0.77
+staff rect 66.81 57.01 293.19 0.77
+clef DoClef 66.81 21.39
+note PunctumQuadratum 84.81 39.39 n0
+Lyric 74.30 77.19 14.70 s1 "AU"
+note PodatusLowerShort 105.70 39.39 n1
+note PodatusUpperShort 108.70 33.39 n2
+Lyric 95.32 77.19 14.70 s2 "dá"
+note PunctumQuadratum 122.80 33.39 n3
+Lyric 115.32 77.19 14.70 s3 "te"
+note PunctumQuadratum 148.53 33.39 n4
+Lyric 133.81 77.19 14.70 s4 "Dó"
+note PunctumQuadratum 165.41 33.39 n5
+Lyric 152.17 77.19 14.70 s5 "mi"
+note PunctumQuadratum 183.95 33.39 n6
+Lyric 172.32 77.19 14.70 s6 "num,"
+note PunctumQuadratum 214.42 33.39 n7
+Lyric 210.79 77.19 14.70 s7 "om"
+note PunctumQuadratum 240.13 33.39 n8
+Lyric 229.50 77.19 14.70 s8 "nes"
+note PunctumQuadratum 265.14 33.39 n9
+Lyric 255.88 77.19 14.70 s9 "gen"
+note PunctumQuadratum 283.25 33.39 n10
+Lyric 275.77 77.19 14.70 s10 "tes:"
+bar rect 305.51 15.39 0.77 12.00
+Lyric 302.66 77.19 14.70 s11 "†"
+note PunctumQuadratum 327.60 33.39 n11
+Lyric 317.26 77.19 14.70 s12 "lau"
+note PunctumQuadratum 344.78 33.39 n12
+Lyric 334.40 77.19 14.70 s13 "dá"
+Hyphen 108.63 77.19 14.70 "-"
+Hyphen 167.21 77.19 14.70 "-"
+Hyphen 347.71 77.19 14.70 "-"
+custos CustosShort 357.38 39.39
+staff rect 0.00 101.59 360.00 0.77
+staff rect 0.00 113.59 360.00 0.77
+staff rect 0.00 125.59 360.00 0.77
+staff rect 0.00 137.59 360.00 0.77
+clef DoClef 0.00 101.97
+note PunctumQuadratum 18.00 119.97 n13
+Lyric 10.52 157.77 14.70 s14 "te"
+note PunctumQuadratum 36.73 119.97 n14
+Lyric 33.86 157.77 14.70 s15 "e"
+note PunctumQuadratum 53.48 119.97 n15
+Lyric 49.61 157.77 14.70 s16 "um,"
+bar rect 82.07 107.97 0.77 24.00
+Lyric 79.96 157.77 14.70 s17 "*"
+note PunctumQuadratum 96.38 113.97 n16
+Lyric 92.74 157.77 14.70 s18 "om"
+note PunctumQuadratum 122.08 113.97 n17
+Lyric 111.45 157.77 14.70 s19 "nes"
+note PunctumQuadratum 148.75 113.97 n18
+Lyric 137.48 157.77 14.70 s20 "pó"
+note PunctumQuadratum 168.65 113.97 n19
+Lyric 157.14 157.77 14.70 s21 "pu"
+note PunctumQuadratum 185.40 113.97 n20
+Lyric 180.07 157.77 14.70 s22 "li."
+bar rect 198.73 101.97 0.77 36.00
+note PunctumQuadratum 221.70 113.97 n21
+Lyric 199.09 157.77 14.70 s24 "Quó"
+note PunctumQuadratum 239.65 113.97 n22
+Lyric 230.09 157.77 14.70 s25 "ni"
+note PunctumQuadratum 256.40 113.97 n23
+Lyric 253.47 157.77 14.70 s26 "am"
+note PunctumQuadratum 288.03 113.97 n24
+Lyric 278.56 157.77 14.70 s27 "con"
+note PunctumQuadratum 306.27 113.97 n25
+Lyric 299.29 157.77 14.70 s28 "fir"
+note PunctumQuadratum 327.87 113.97 n26
+Lyric 313.50 157.77 14.70 s29 "má"
+note PunctumQuadratum 344.62 113.97 n27
+Lyric 337.07 157.77 14.70 s30 "ta"
+Hyphen 39.60 157.77 14.70 "-"
+Hyphen 152.39 157.77 14.70 "-"
+Hyphen 172.52 157.77 14.70 "-"
+Hyphen 225.33 157.77 14.70 "-"
+Hyphen 241.45 157.77 14.70 "-"
+Hyphen 330.80 157.77 14.70 "-"
+custos CustosLong 357.22 113.97
+staff rect 0.00 182.17 360.00 0.77
+staff rect 0.00 194.17 360.00 0.77
+staff rect 0.00 206.17 360.00 0.77
+staff rect 0.00 218.17 360.00 0.77
+clef DoClef 0.00 182.55
+note PunctumQuadratum 18.00 194.55 n28
+Lyric 15.13 238.35 14.70 s31 "est"
+note PunctumQuadratum 47.19 182.55 n29
+Lyric 38.56 238.35 14.70 s32 "su"
+note PunctumQuadratum 66.86 188.55 n30
+Lyric 56.36 238.35 14.70 s33 "per"
+note PunctumQuadratum 94.37 194.55 n31
+Lyric 82.97 238.35 14.70 s34 "nos"
+note PunctumQuadratum 124.33 188.55 n32
+Lyric 111.09 238.35 14.70 s35 "mi"
+note PunctumQuadratum 141.62 200.55 n33
+Lyric 134.01 238.35 14.70 s36 "se"
+note PunctumQuadratum 158.92 194.55 n34
+Lyric 152.21 238.35 14.70 s37 "ri"
+note PunctumQuadratum 176.22 194.55 n35
+Lyric 166.74 238.35 14.70 s38 "cór"
+note PunctumQuadratum 193.86 194.55 n36
+Lyric 184.62 238.35 14.70 s39 "di"
+note PunctumQuadratum 211.15 194.55 n37
+Lyric 208.22 238.35 14.70 s40 "a"
+note PunctumQuadratum 230.43 194.55 n38
+Lyric 227.56 238.35 14.70 s41 "e"
+note PunctumQuadratum 247.73 194.55 n39
+Lyric 240.53 238.35 14.70 s42 "jus:"
+bar rect 270.44 188.55 0.77 24.00
+Lyric 268.33 238.35 14.70 s43 "*"
+note PunctumQuadratum 285.09 194.55 n40
+Lyric 282.22 238.35 14.70 s44 "et"
+note PunctumQuadratum 310.02 194.55 n41
+Lyric 300.90 238.35 14.70 s45 "vé"
+note PunctumQuadratum 327.32 194.55 n42
+Lyric 320.61 238.35 14.70 s46 "ri"
+note PunctumQuadratum 344.62 194.55 n43
+Lyric 337.07 238.35 14.70 s47 "tas"
+Hyphen 51.06 238.35 14.70 "-"
+Hyphen 126.13 238.35 14.70 "-"
+Hyphen 144.49 238.35 14.70 "-"
+Hyphen 160.72 238.35 14.70 "-"
+Hyphen 195.66 238.35 14.70 "-"
+Hyphen 233.30 238.35 14.70 "-"
+Hyphen 312.71 238.35 14.70 "-"
+Hyphen 329.12 238.35 14.70 "-"
+custos CustosLong 357.22 194.55
+staff rect 0.00 262.75 360.00 0.77
+staff rect 0.00 274.75 360.00 0.77
+staff rect 0.00 286.75 360.00 0.77
+staff rect 0.00 298.75 360.00 0.77
+clef DoClef 0.00 263.13
+note PunctumQuadratum 18.00 275.13 n44
+Lyric 3.28 318.93 14.70 s48 "Dó"
+note PunctumQuadratum 34.88 275.13 n45
+Lyric 21.64 318.93 14.70 s49 "mi"
+note PunctumQuadratum 50.90 275.13 n46
+Lyric 41.33 318.93 14.70 s50 "ni"
+note PunctumQuadratum 74.12 275.13 n47
+Lyric 59.75 318.93 14.70 s51 "ma"
+note PunctumQuadratum 91.71 275.13 n48
+Lyric 81.08 318.93 14.70 s52 "net"
+note PunctumQuadratum 109.71 281.13 n49
+Lyric 107.91 318.93 14.70 s53 "in"
+note PunctumQuadratum 132.13 275.13 n50
+Lyric 126.33 318.93 14.70 s54 "ae"
+note PunctumQuadratum 149.44 263.13 n51
+Lyric 141.95 318.93 14.70 s55 "tér"
+note PunctumQuadratum 168.85 275.13 n52
+Lyric 157.21 318.93 14.70 s56 "num."
+bar rect 181.45 263.13 0.77 36.00
+note PunctumQuadratum 198.74 275.13 n53
+Lyric 194.60 318.93 14.70 s58 "E"
+note PunctumQuadratum 214.76 281.13 n54
+Lyric 210.89 318.93 14.70 s59 "u"
+note PunctumQuadratum 230.78 275.13 n55
+Lyric 227.14 318.93 14.70 s60 "o"
+note PunctumQuadratum 246.80 275.13 n56
+Lyric 242.93 318.93 14.70 s61 "u"
+note PunctumQuadratum 262.82 281.13 n57
+Lyric 259.89 318.93 14.70 s62 "a"
+note PunctumQuadratum 278.84 281.13 n58
+Lyric 275.97 318.93 14.70 s63 "e."
+bar rect 291.44 263.13 0.77 36.00
+bar rect 296.77 263.13 0.77 36.00
+Hyphen 36.68 318.93 14.70 "-"
+Hyphen 77.05 318.93 14.70 "-"
+Hyphen 137.93 318.93 14.70 "-"
+Hyphen 202.89 318.93 14.70 "-"
+Hyphen 218.63 318.93 14.70 "-"
+Hyphen 234.42 318.93 14.70 "-"
+Hyphen 250.67 318.93 14.70 "-"
+Hyphen 265.75 318.93 14.70 "-"
+Initial 8.34 77.19 85.85 s1 "L"
+Annotation 25.64 14.10 11.03 "8 G"
 
 # width 720
-size 720.00 x 153.65, staff space 6.00
-line top 0.00 bottom 73.07 staff 30.89 baseline 68.69
-line top 80.58 bottom 153.65 staff 111.47 baseline 149.27
-staff rect 48.68 12.51 671.32 0.77
-staff rect 48.68 24.51 671.32 0.77
-staff rect 48.68 36.51 671.32 0.77
-staff rect 48.68 48.51 671.32 0.77
-clef DoClef 48.68 12.89
-note PunctumQuadratum 66.68 30.89 n0
-Lyric 56.17 68.69 14.70 s1 "AU"
-note PodatusLowerShort 87.56 30.89 n1
-note PodatusUpperShort 90.56 24.89 n2
-Lyric 77.19 68.69 14.70 s2 "dá"
-note PunctumQuadratum 105.15 24.89 n3
-Lyric 97.66 68.69 14.70 s3 "te"
-note PunctumQuadratum 131.35 24.89 n4
-Lyric 116.63 68.69 14.70 s4 "Dó"
-note PunctumQuadratum 148.23 24.89 n5
-Lyric 134.99 68.69 14.70 s5 "mi"
-note PunctumQuadratum 167.26 24.89 n6
-Lyric 155.62 68.69 14.70 s6 "num,"
-note PunctumQuadratum 198.21 24.89 n7
-Lyric 194.57 68.69 14.70 s7 "om"
-note PunctumQuadratum 223.91 24.89 n8
-Lyric 213.28 68.69 14.70 s8 "nes"
-note PunctumQuadratum 249.41 24.89 n9
-Lyric 240.15 68.69 14.70 s9 "gen"
-note PunctumQuadratum 267.52 24.89 n10
-Lyric 260.04 68.69 14.70 s10 "tes:"
-bar rect 290.25 6.89 0.77 12.00
-Lyric 287.40 68.69 14.70 s11 "†"
-note PunctumQuadratum 312.82 24.89 n11
-Lyric 302.49 68.69 14.70 s12 "lau"
-note PunctumQuadratum 330.00 24.89 n12
-Lyric 319.63 68.69 14.70 s13 "dá"
-note PunctumQuadratum 347.58 30.89 n13
-Lyric 340.10 68.69 14.70 s14 "te"
-note PunctumQuadratum 367.15 30.89 n14
-Lyric 364.28 68.69 14.70 s15 "e"
-note PunctumQuadratum 384.73 30.89 n15
-Lyric 380.86 68.69 14.70 s16 "um,"
-bar rect 414.16 18.89 0.77 24.00
-Lyric 412.04 68.69 14.70 s17 "*"
-note PunctumQuadratum 429.30 24.89 n16
-Lyric 425.66 68.69 14.70 s18 "om"
-note PunctumQuadratum 455.00 24.89 n17
-Lyric 444.37 68.69 14.70 s19 "nes"
-note PunctumQuadratum 482.51 24.89 n18
-Lyric 471.24 68.69 14.70 s20 "pó"
-note PunctumQuadratum 503.24 24.89 n19
-Lyric 491.74 68.69 14.70 s21 "pu"
-note PunctumQuadratum 520.82 24.89 n20
-Lyric 515.49 68.69 14.70 s22 "li."
-bar rect 534.99 12.89 0.77 36.00
-note PunctumQuadratum 558.79 24.89 n21
-Lyric 536.19 68.69 14.70 s24 "Quó"
-note PunctumQuadratum 577.58 24.89 n22
-Lyric 568.02 68.69 14.70 s25 "ni"
-note PunctumQuadratum 595.17 24.89 n23
-Lyric 592.24 68.69 14.70 s26 "am"
-note PunctumQuadratum 627.63 24.89 n24
-Lyric 618.16 68.69 14.70 s27 "con"
-note PunctumQuadratum 645.88 24.89 n25
-Lyric 638.89 68.69 14.70 s28 "fir"
-note PunctumQuadratum 667.47 24.89 n26
-Lyric 653.10 68.69 14.70 s29 "má"
-note PunctumQuadratum 685.05 24.89 n27
-Lyric 677.51 68.69 14.70 s30 "ta"
-note PunctumQuadratum 704.62 24.89 n28
-Lyric 701.75 68.69 14.70 s31 "est"
-Hyphen 90.49 68.69 14.70 "-"
-Hyphen 150.03 68.69 14.70 "-"
-Hyphen 332.93 68.69 14.70 "-"
-Hyphen 370.01 68.69 14.70 "-"
-Hyphen 486.14 68.69 14.70 "-"
-Hyphen 507.11 68.69 14.70 "-"
-Hyphen 562.43 68.69 14.70 "-"
-Hyphen 579.39 68.69 14.70 "-"
-Hyphen 670.40 68.69 14.70 "-"
-custos CustosDescLong 717.22 12.89
-staff rect 0.00 93.09 720.00 0.77
-staff rect 0.00 105.09 720.00 0.77
-staff rect 0.00 117.09 720.00 0.77
-staff rect 0.00 129.09 720.00 0.77
-clef DoClef 0.00 93.47
-note PunctumQuadratum 18.00 93.47 n29
-Lyric 9.38 149.27 14.70 s32 "su"
-note PunctumQuadratum 36.40 99.47 n30
-Lyric 25.90 149.27 14.70 s33 "per"
-note PunctumQuadratum 62.63 105.47 n31
-Lyric 51.23 149.27 14.70 s34 "nos"
-note PunctumQuadratum 91.31 99.47 n32
-Lyric 78.07 149.27 14.70 s35 "mi"
-note PunctumQuadratum 107.33 111.47 n33
-Lyric 99.71 149.27 14.70 s36 "se"
-note PunctumQuadratum 123.35 105.47 n34
-Lyric 116.64 149.27 14.70 s37 "ri"
-note PunctumQuadratum 139.37 105.47 n35
-Lyric 129.89 149.27 14.70 s38 "cór"
-note PunctumQuadratum 157.01 105.47 n36
-Lyric 147.77 149.27 14.70 s39 "di"
-note PunctumQuadratum 173.03 105.47 n37
-Lyric 170.10 149.27 14.70 s40 "a"
-note PunctumQuadratum 191.03 105.47 n38
-Lyric 188.16 149.27 14.70 s41 "e"
-note PunctumQuadratum 207.05 105.47 n39
-Lyric 199.85 149.27 14.70 s42 "jus:"
-bar rect 228.49 99.47 0.77 24.00
-Lyric 226.37 149.27 14.70 s43 "*"
-note PunctumQuadratum 241.86 105.47 n40
-Lyric 238.99 149.27 14.70 s44 "et"
-note PunctumQuadratum 265.51 105.47 n41
-Lyric 256.39 149.27 14.70 s45 "vé"
-note PunctumQuadratum 281.53 105.47 n42
-Lyric 274.82 149.27 14.70 s46 "ri"
-note PunctumQuadratum 297.55 105.47 n43
-Lyric 290.01 149.27 14.70 s47 "tas"
-note PunctumQuadratum 327.01 105.47 n44
-Lyric 312.29 149.27 14.70 s48 "Dó"
-note PunctumQuadratum 343.89 105.47 n45
-Lyric 330.65 149.27 14.70 s49 "mi"
-note PunctumQuadratum 359.91 105.47 n46
-Lyric 350.35 149.27 14.70 s50 "ni"
-note PunctumQuadratum 383.14 105.47 n47
-Lyric 368.77 149.27 14.70 s51 "ma"
-note PunctumQuadratum 400.72 105.47 n48
-Lyric 390.10 149.27 14.70 s52 "net"
-note PunctumQuadratum 418.72 111.47 n49
-Lyric 416.92 149.27 14.70 s53 "in"
-note PunctumQuadratum 441.14 105.47 n50
-Lyric 435.34 149.27 14.70 s54 "ae"
-note PunctumQuadratum 458.45 93.47 n51
-Lyric 450.97 149.27 14.70 s55 "tér"
-note PunctumQuadratum 477.86 105.47 n52
-Lyric 466.23 149.27 14.70 s56 "num."
-bar rect 490.46 93.47 0.77 36.00
-note PunctumQuadratum 507.75 105.47 n53
-Lyric 503.61 149.27 14.70 s58 "E"
-note PunctumQuadratum 523.77 111.47 n54
-Lyric 519.90 149.27 14.70 s59 "u"
-note PunctumQuadratum 539.79 105.47 n55
-Lyric 536.16 149.27 14.70 s60 "o"
-note PunctumQuadratum 555.81 105.47 n56
-Lyric 551.94 149.27 14.70 s61 "u"
-note PunctumQuadratum 571.83 111.47 n57
-Lyric 568.90 149.27 14.70 s62 "a"
-note PunctumQuadratum 587.85 111.47 n58
-Lyric 584.99 149.27 14.70 s63 "e."
-bar rect 600.45 93.47 0.77 36.00
-bar rect 605.78 93.47 0.77 36.00
-Hyphen 21.87 149.27 14.70 "-"
-Hyphen 93.11 149.27 14.70 "-"
-Hyphen 110.20 149.27 14.70 "-"
-Hyphen 125.15 149.27 14.70 "-"
-Hyphen 158.81 149.27 14.70 "-"
-Hyphen 193.90 149.27 14.70 "-"
-Hyphen 268.20 149.27 14.70 "-"
-Hyphen 283.34 149.27 14.70 "-"
-Hyphen 345.69 149.27 14.70 "-"
-Hyphen 386.07 149.27 14.70 "-"
-Hyphen 446.94 149.27 14.70 "-"
-Hyphen 511.90 149.27 14.70 "-"
-Hyphen 527.65 149.27 14.70 "-"
-Hyphen 543.43 149.27 14.70 "-"
-Hyphen 559.69 149.27 14.70 "-"
-Hyphen 574.77 149.27 14.70 "-"
-Initial 8.34 68.69 58.80 s1 "L"
-Annotation 17.74 20.87 11.03 "8 G"
+size 720.00 x 162.15, staff space 6.00
+line top 0.00 bottom 81.57 staff 39.39 baseline 77.19
+line top 89.08 bottom 162.15 staff 119.97 baseline 157.77
+staff rect 66.81 21.01 653.19 0.77
+staff rect 66.81 33.01 653.19 0.77
+staff rect 66.81 45.01 653.19 0.77
+staff rect 66.81 57.01 653.19 0.77
+clef DoClef 66.81 21.39
+note PunctumQuadratum 84.81 39.39 n0
+Lyric 74.30 77.19 14.70 s1 "AU"
+note PodatusLowerShort 105.70 39.39 n1
+note PodatusUpperShort 108.70 33.39 n2
+Lyric 95.32 77.19 14.70 s2 "dá"
+note PunctumQuadratum 122.46 33.39 n3
+Lyric 114.97 77.19 14.70 s3 "te"
+note PunctumQuadratum 147.84 33.39 n4
+Lyric 133.12 77.19 14.70 s4 "Dó"
+note PunctumQuadratum 164.72 33.39 n5
+Lyric 151.48 77.19 14.70 s5 "mi"
+note PunctumQuadratum 182.92 33.39 n6
+Lyric 171.28 77.19 14.70 s6 "num,"
+note PunctumQuadratum 213.05 33.39 n7
+Lyric 209.41 77.19 14.70 s7 "om"
+note PunctumQuadratum 238.75 33.39 n8
+Lyric 228.12 77.19 14.70 s8 "nes"
+note PunctumQuadratum 263.42 33.39 n9
+Lyric 254.16 77.19 14.70 s9 "gen"
+note PunctumQuadratum 281.53 33.39 n10
+Lyric 274.05 77.19 14.70 s10 "tes:"
+bar rect 303.44 15.39 0.77 12.00
+Lyric 300.59 77.19 14.70 s11 "†"
+note PunctumQuadratum 325.19 33.39 n11
+Lyric 314.85 77.19 14.70 s12 "lau"
+note PunctumQuadratum 342.36 33.39 n12
+Lyric 331.99 77.19 14.70 s13 "dá"
+note PunctumQuadratum 359.12 39.39 n13
+Lyric 351.64 77.19 14.70 s14 "te"
+note PunctumQuadratum 377.86 39.39 n14
+Lyric 375.00 77.19 14.70 s15 "e"
+note PunctumQuadratum 394.62 39.39 n15
+Lyric 390.75 77.19 14.70 s16 "um,"
+bar rect 423.23 27.39 0.77 24.00
+Lyric 421.11 77.19 14.70 s17 "*"
+note PunctumQuadratum 437.54 33.39 n16
+Lyric 433.90 77.19 14.70 s18 "om"
+note PunctumQuadratum 463.25 33.39 n17
+Lyric 452.62 77.19 14.70 s19 "nes"
+note PunctumQuadratum 489.92 33.39 n18
+Lyric 478.66 77.19 14.70 s20 "pó"
+note PunctumQuadratum 509.83 33.39 n19
+Lyric 498.33 77.19 14.70 s21 "pu"
+note PunctumQuadratum 526.59 33.39 n20
+Lyric 521.26 77.19 14.70 s22 "li."
+bar rect 539.93 21.39 0.77 36.00
+note PunctumQuadratum 562.91 33.39 n21
+Lyric 540.31 77.19 14.70 s24 "Quó"
+note PunctumQuadratum 580.88 33.39 n22
+Lyric 571.32 77.19 14.70 s25 "ni"
+note PunctumQuadratum 597.64 33.39 n23
+Lyric 594.71 77.19 14.70 s26 "am"
+note PunctumQuadratum 629.28 33.39 n24
+Lyric 619.81 77.19 14.70 s27 "con"
+note PunctumQuadratum 647.52 33.39 n25
+Lyric 640.53 77.19 14.70 s28 "fir"
+note PunctumQuadratum 669.12 33.39 n26
+Lyric 654.75 77.19 14.70 s29 "má"
+note PunctumQuadratum 685.88 33.39 n27
+Lyric 678.33 77.19 14.70 s30 "ta"
+note PunctumQuadratum 704.62 33.39 n28
+Lyric 701.75 77.19 14.70 s31 "est"
+Hyphen 108.63 77.19 14.70 "-"
+Hyphen 166.52 77.19 14.70 "-"
+Hyphen 345.30 77.19 14.70 "-"
+Hyphen 380.73 77.19 14.70 "-"
+Hyphen 493.56 77.19 14.70 "-"
+Hyphen 513.71 77.19 14.70 "-"
+Hyphen 566.55 77.19 14.70 "-"
+Hyphen 582.68 77.19 14.70 "-"
+Hyphen 672.05 77.19 14.70 "-"
+custos CustosDescLong 717.22 21.39
+staff rect 0.00 101.59 720.00 0.77
+staff rect 0.00 113.59 720.00 0.77
+staff rect 0.00 125.59 720.00 0.77
+staff rect 0.00 137.59 720.00 0.77
+clef DoClef 0.00 101.97
+note PunctumQuadratum 18.00 101.97 n29
+Lyric 9.38 157.77 14.70 s32 "su"
+note PunctumQuadratum 36.40 107.97 n30
+Lyric 25.90 157.77 14.70 s33 "per"
+note PunctumQuadratum 62.63 113.97 n31
+Lyric 51.23 157.77 14.70 s34 "nos"
+note PunctumQuadratum 91.31 107.97 n32
+Lyric 78.07 157.77 14.70 s35 "mi"
+note PunctumQuadratum 107.33 119.97 n33
+Lyric 99.71 157.77 14.70 s36 "se"
+note PunctumQuadratum 123.35 113.97 n34
+Lyric 116.64 157.77 14.70 s37 "ri"
+note PunctumQuadratum 139.37 113.97 n35
+Lyric 129.89 157.77 14.70 s38 "cór"
+note PunctumQuadratum 157.01 113.97 n36
+Lyric 147.77 157.77 14.70 s39 "di"
+note PunctumQuadratum 173.03 113.97 n37
+Lyric 170.10 157.77 14.70 s40 "a"
+note PunctumQuadratum 191.03 113.97 n38
+Lyric 188.16 157.77 14.70 s41 "e"
+note PunctumQuadratum 207.05 113.97 n39
+Lyric 199.85 157.77 14.70 s42 "jus:"
+bar rect 228.49 107.97 0.77 24.00
+Lyric 226.37 157.77 14.70 s43 "*"
+note PunctumQuadratum 241.86 113.97 n40
+Lyric 238.99 157.77 14.70 s44 "et"
+note PunctumQuadratum 265.51 113.97 n41
+Lyric 256.39 157.77 14.70 s45 "vé"
+note PunctumQuadratum 281.53 113.97 n42
+Lyric 274.82 157.77 14.70 s46 "ri"
+note PunctumQuadratum 297.55 113.97 n43
+Lyric 290.01 157.77 14.70 s47 "tas"
+note PunctumQuadratum 327.01 113.97 n44
+Lyric 312.29 157.77 14.70 s48 "Dó"
+note PunctumQuadratum 343.89 113.97 n45
+Lyric 330.65 157.77 14.70 s49 "mi"
+note PunctumQuadratum 359.91 113.97 n46
+Lyric 350.35 157.77 14.70 s50 "ni"
+note PunctumQuadratum 383.14 113.97 n47
+Lyric 368.77 157.77 14.70 s51 "ma"
+note PunctumQuadratum 400.72 113.97 n48
+Lyric 390.10 157.77 14.70 s52 "net"
+note PunctumQuadratum 418.72 119.97 n49
+Lyric 416.92 157.77 14.70 s53 "in"
+note PunctumQuadratum 441.14 113.97 n50
+Lyric 435.34 157.77 14.70 s54 "ae"
+note PunctumQuadratum 458.45 101.97 n51
+Lyric 450.97 157.77 14.70 s55 "tér"
+note PunctumQuadratum 477.86 113.97 n52
+Lyric 466.23 157.77 14.70 s56 "num."
+bar rect 490.46 101.97 0.77 36.00
+note PunctumQuadratum 507.75 113.97 n53
+Lyric 503.61 157.77 14.70 s58 "E"
+note PunctumQuadratum 523.77 119.97 n54
+Lyric 519.90 157.77 14.70 s59 "u"
+note PunctumQuadratum 539.79 113.97 n55
+Lyric 536.16 157.77 14.70 s60 "o"
+note PunctumQuadratum 555.81 113.97 n56
+Lyric 551.94 157.77 14.70 s61 "u"
+note PunctumQuadratum 571.83 119.97 n57
+Lyric 568.90 157.77 14.70 s62 "a"
+note PunctumQuadratum 587.85 119.97 n58
+Lyric 584.99 157.77 14.70 s63 "e."
+bar rect 600.45 101.97 0.77 36.00
+bar rect 605.78 101.97 0.77 36.00
+Hyphen 21.87 157.77 14.70 "-"
+Hyphen 93.11 157.77 14.70 "-"
+Hyphen 110.20 157.77 14.70 "-"
+Hyphen 125.15 157.77 14.70 "-"
+Hyphen 158.81 157.77 14.70 "-"
+Hyphen 193.90 157.77 14.70 "-"
+Hyphen 268.20 157.77 14.70 "-"
+Hyphen 283.34 157.77 14.70 "-"
+Hyphen 345.69 157.77 14.70 "-"
+Hyphen 386.07 157.77 14.70 "-"
+Hyphen 446.94 157.77 14.70 "-"
+Hyphen 511.90 157.77 14.70 "-"
+Hyphen 527.65 157.77 14.70 "-"
+Hyphen 543.43 157.77 14.70 "-"
+Hyphen 559.69 157.77 14.70 "-"
+Hyphen 574.77 157.77 14.70 "-"
+Initial 8.34 77.19 85.85 s1 "L"
+Annotation 25.64 14.10 11.03 "8 G"

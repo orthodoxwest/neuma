@@ -610,7 +610,7 @@ mod tests {
         chant.set_options(ChantOptions::default().with_lyric_size(4.0));
         let style = StyleOptions::default().with_lyric_size(4.0);
         assert_eq!(chant.engraving(), &*pipeline(src, &style));
-        assert_ne!(chant.layout(600.0).size(), small.size());
+        assert_ne!(chant.layout(600.0).display(), small.display());
     }
 
     #[test]
