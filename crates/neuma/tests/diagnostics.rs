@@ -13,6 +13,9 @@ fn diagnostics(src: &str) -> Vec<Diagnostic> {
     parsed.diagnostics.into_iter().chain(eng.diagnostics.iter().cloned()).collect()
 }
 
+/// The namespaces of diagnostic codes, one per stage that reports them.
+const PREFIXES: &[&str] = &["gabc", "engrave", "text", "pointed", "apply", "point", "book"];
+
 /// Every `"prefix::code"` string literal in a crate's sources.
 fn codes_in(dir: &Path, out: &mut Vec<String>) {
     for entry in fs::read_dir(dir).unwrap() {
@@ -26,7 +29,7 @@ fn codes_in(dir: &Path, out: &mut Vec<String>) {
                 let end = text[i..].find('"').map_or(i, |q| i + q);
                 let code = &text[start..end];
                 let (prefix, name) = code.split_once("::").unwrap_or(("", ""));
-                let known = ["gabc", "engrave", "text", "pointed", "apply", "point"].contains(&prefix);
+                let known = PREFIXES.contains(&prefix);
                 if known && !name.is_empty() && name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') {
                     out.push(code.to_string());
                 }
@@ -40,12 +43,17 @@ fn every_code_is_documented() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let doc = fs::read_to_string(root.join("docs/diagnostics.md")).unwrap();
     let mut codes = Vec::new();
-    for krate in ["neuma", "neuma-tones"] {
+    // Every crate that reports a diagnostic: the engine, the psalm tones, booklets, and the
+    // command line, which reports `point::unsure` for `neuma point`.
+    for krate in ["neuma", "neuma-tones", "neuma-book", "neuma-cli"] {
         codes_in(&root.join("crates").join(krate).join("src"), &mut codes);
     }
     codes.sort();
     codes.dedup();
-    assert!(codes.len() > 40, "{codes:?}");
+    assert!(codes.len() > 50, "{codes:?}");
+    for prefix in PREFIXES {
+        assert!(codes.iter().any(|c| c.starts_with(&format!("{prefix}::"))), "no {prefix}:: code found");
+    }
     for code in &codes {
         assert!(doc.contains(&format!("| `{code}` |")), "{code} isn't in docs/diagnostics.md");
     }
