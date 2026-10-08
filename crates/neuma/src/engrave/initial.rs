@@ -59,16 +59,17 @@ pub(crate) fn rise(initial: &str) -> f32 {
 /// other scripts up to that (Unifont draws Khmer a full em too).
 const OTHER_SCRIPT_ADVANCE: f32 = 1.0;
 
-/// The advance of `initial` in ems, as `measure` gives it. A letter outside the Latin, Greek
-/// and Cyrillic scripts is measured without its marks, which a font shapes onto the letters
-/// but a table without them counts as missing characters half an em each, and is given at
-/// least [`OTHER_SCRIPT_ADVANCE`].
+/// The advance of `initial` in ems, as `measure` gives it, measured without its marks: a font
+/// shapes them onto the letters, but a table without them (a titlo, or a Brahmic vowel sign)
+/// counts each as a missing character, half an em. A letter outside the Latin, Greek and
+/// Cyrillic scripts is given at least [`OTHER_SCRIPT_ADVANCE`].
 pub(crate) fn advance(initial: &str, measure: impl Fn(&str) -> f32) -> f32 {
+    let letters: String = initial.chars().filter(|&c| !is_mark(c)).collect();
+    let width = measure(&letters);
     if initial.chars().next().is_some_and(|c| !latin_greek_or_cyrillic(c)) {
-        let letters: String = initial.chars().filter(|&c| !is_mark(c)).collect();
-        measure(&letters).max(OTHER_SCRIPT_ADVANCE)
+        width.max(OTHER_SCRIPT_ADVANCE)
     } else {
-        measure(initial)
+        width
     }
 }
 
@@ -504,7 +505,9 @@ mod tests {
         assert_eq!(advance("क्ष", missing), OTHER_SCRIPT_ADVANCE);
         assert_eq!(advance("स्त्री", missing), 1.5);
         assert_eq!(advance("天", |_| 1.2), 1.2);
-        assert_eq!(advance("A\u{0301}", missing), 1.0);
+        assert_eq!(advance("A\u{0301}", missing), 0.5);
+        // A Church Slavonic titlo is drawn over its letter, not beside it.
+        assert_eq!(advance("Г\u{0483}", missing), 0.5);
         assert_eq!(advance("Ж", |_| 0.7), 0.7);
     }
 
