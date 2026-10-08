@@ -439,7 +439,7 @@ neuma info FILE...                  one library entry per file, as JSON lines
 neuma tones                         the built-in psalm tones
 neuma point --tone TONE FILE        psalm text with pointing marks added
 neuma psalm --tone TONE FILE        psalm text set to a tone, as GABC
-neuma book FILE.book [-o OUT.pdf] [--svg DIR] [--text-as-paths]
+neuma book FILE.book|- [-o OUT.pdf] [--svg DIR] [--text-as-paths]
 neuma --help | --version
 ```
 
@@ -447,13 +447,15 @@ A file named `-` is stdin, and without a file every command but `tones` and `boo
 stdin (`neuma book -` needs `-o`). `--` ends the options, for a file whose name starts with
 `-`. `--help` and `--version` answer without reading stdin, after any command. Each command
 takes only its own options (`neuma COMMAND --help` lists them). An unknown command or option,
-an option without its value, or a width or scale out of range (above 0 and at most 1000000
-and 1000) is an error.
+an option without its value, or a width or scale out of range (a width above 0 and at most
+1000000, a scale from 0.01 to 1000) is an error.
 
 Diagnostics come one to a line as `FILE:LINE:COL: SEVERITY: CODE: MESSAGE`, with the fix, if
 there is one, on the next line: from `neuma check` on stdout, in order of position, and from
-`psalm`, `point` and `book` on stderr. `FILE` is `<stdin>` for stdin, and for a book's piece
-its file (or the book and the piece's number). Lines and columns count from 1, the column in
+`psalm`, `point` and `book` on stderr. `FILE` is `<stdin>` for stdin. In `neuma book` it is
+a piece's own file, or the book for text written in it; a problem with a whole piece, such as
+an unknown tone or a line past the margin, is at the piece's line in the book and names the
+piece (`compline.book:12:1: error: book::psalm: piece 5 (psalm-4.txt): …`). Lines and columns count from 1, the column in
 characters (Unicode scalar values, so a tab or an accented letter is one), not counting a
 byte-order mark at the start of the file. The exit status is 1 when the input has errors and
 2 for a usage error or a file that can't be read or written; output to a reader that stops

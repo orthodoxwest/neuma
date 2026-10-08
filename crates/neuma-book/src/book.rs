@@ -156,6 +156,30 @@ pub struct Book {
     pub pieces: Vec<Piece>,
 }
 
+/// Where a piece is in its `.book` file, so that a problem in it can be reported at the
+/// book's own lines ([`Book::parse_with_origins`]).
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+#[non_exhaustive]
+pub struct Origin {
+    /// The 1-based line of the piece's entry.
+    pub line: usize,
+    /// Each line of the piece's text on indented lines under its entry, if it has any: its
+    /// 1-based line in the book, and the bytes of indentation taken off it.
+    pub body: Vec<(usize, usize)>,
+}
+
+impl Origin {
+    /// The 1-based line and column in the book (the column in characters) of byte `offset`
+    /// in `text`, the piece's text from the indented lines under its entry; `None` if the
+    /// piece has no such text.
+    #[must_use]
+    pub fn position(&self, text: &str, offset: usize) -> Option<(usize, usize)> {
+        let (line, col) = neuma::diag::line_col(text, offset);
+        let &(at, indent) = self.body.get(line - 1)?;
+        Some((at, col + indent))
+    }
+}
+
 /// A problem in a `.book` file, with its 1-based line.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BookError {
@@ -251,6 +275,8 @@ struct Entry {
     value: String,
     /// The indented lines under it, with the common indentation removed.
     body: Vec<String>,
+    /// Each line of `body`'s 1-based line in the file, and the bytes of indentation removed.
+    body_lines: Vec<(usize, usize)>,
 }
 
 /// Bytes of leading spaces and tabs.
@@ -268,11 +294,15 @@ fn entries(src: &str) -> Result<Vec<Entry>, BookError> {
             if raw.trim_matches([' ', '\t']).is_empty() {
                 if let Some(e) = out.last_mut() {
                     e.body.push(String::new());
+                    e.body_lines.push((line, 0));
                 }
                 continue;
             }
             match out.last_mut() {
-                Some(e) => e.body.push(raw.to_string()),
+                Some(e) => {
+                    e.body.push(raw.to_string());
+                    e.body_lines.push((line, 0));
+                }
                 None => {
                     return Err(BookError {
                         line,
@@ -288,6 +318,7 @@ fn entries(src: &str) -> Result<Vec<Entry>, BookError> {
             // ones are dropped below.
             if let Some(e) = out.last_mut() {
                 e.body.push(String::new());
+                e.body_lines.push((line, 0));
             }
             continue;
         }
@@ -312,18 +343,21 @@ fn entries(src: &str) -> Result<Vec<Entry>, BookError> {
             options,
             value: value.to_string(),
             body: Vec::new(),
+            body_lines: Vec::new(),
         });
     }
     for e in &mut out {
         while e.body.last().is_some_and(|l| l.is_empty()) {
             e.body.pop();
+            e.body_lines.pop();
         }
         let indent = e.body.iter().filter(|l| !l.is_empty()).map(|l| indent_of(l)).min().unwrap_or(0);
-        for l in &mut e.body {
+        for (l, (_, removed)) in e.body.iter_mut().zip(&mut e.body_lines) {
             if !l.is_empty() {
                 // Only ASCII spaces and tabs indent, so `indent` is a char boundary; other
                 // whitespace (a no-break space) is text.
-                *l = l[indent.min(indent_of(l))..].trim_end_matches([' ', '\t']).to_string();
+                *removed = indent.min(indent_of(l));
+                *l = l[*removed..].trim_end_matches([' ', '\t']).to_string();
             }
         }
     }
@@ -387,7 +421,13 @@ impl Entry {
 impl Book {
     /// Parses a `.book` file. File names in it stay as written; [`Book::resolve`] reads them.
     pub fn parse(src: &str) -> Result<Book, BookError> {
+        Book::parse_with_origins(src).map(|(book, _)| book)
+    }
+
+    /// Parses a `.book` file as [`Book::parse`] does, with each piece's [`Origin`] in it.
+    pub fn parse_with_origins(src: &str) -> Result<(Book, Vec<Origin>), BookError> {
         let mut book = Book::default();
+        let mut origins = Vec::new();
         let mut started = false;
         for e in entries(src)? {
             let s = &mut book.settings;
@@ -483,6 +523,10 @@ impl Book {
                 _ => {
                     started = true;
                     book.pieces.push(piece(&e)?);
+                    origins.push(Origin {
+                        line: e.line,
+                        body: e.body_lines.clone(),
+                    });
                 }
             }
         }
@@ -501,7 +545,7 @@ impl Book {
                 ),
             });
         }
-        Ok(book)
+        Ok((book, origins))
     }
 
     /// Reads every file the book names, relative to `base` (the book's directory), so the
@@ -742,5 +786,27 @@ mod tests {
         assert!(Book::parse("page: 300in 10in").unwrap_err().message.contains("200in"));
         let err = Book::parse("page: a6\nmargins: 60mm").unwrap_err();
         assert!(err.message.contains("margins leave"), "{err}");
+    }
+
+    #[test]
+    fn origins_place_inline_text_in_the_book() {
+        let src = "page: a5\ntitle: A\nscore: a.gabc\nscore:\n    name: x;\n\n# a comment\n      %%\n    (c4) A(g\nbreak\n";
+        let (book, origins) = Book::parse_with_origins(src).unwrap();
+        assert_eq!(origins.len(), book.pieces.len());
+        assert_eq!(origins.iter().map(|o| o.line).collect::<Vec<_>>(), [2, 3, 4, 10]);
+        assert!(origins[1].body.is_empty());
+        let Piece::Score {
+            source: Source::Inline(text),
+            ..
+        } = &book.pieces[2]
+        else {
+            panic!("{:?}", book.pieces[2]);
+        };
+        // The comment line isn't part of the text; the indentation is counted back in.
+        let at = |needle: &str| origins[2].position(text, text.find(needle).unwrap());
+        assert_eq!(at("name"), Some((5, 5)));
+        assert_eq!(at("%%"), Some((8, 7)));
+        assert_eq!(at("A(g"), Some((9, 10)));
+        assert_eq!(origins[1].position("", 0), None);
     }
 }

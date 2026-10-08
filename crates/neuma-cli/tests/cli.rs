@@ -166,16 +166,60 @@ fn width_and_scale_are_bounded() {
     for (flag, ok, too_big, max) in [("--width", "1000000", "1000001", "1000000"), ("--scale", "1000", "1000.5", "1000")] {
         let out = run(&["render", flag, too_big], "(c4) a(f)");
         assert_eq!(out.status.code(), Some(2), "{flag}");
-        assert!(
-            stderr(&out).contains(&format!("at most {max}, not `{too_big}`")),
-            "{}",
-            stderr(&out)
-        );
+        assert!(stderr(&out).contains(&format!(" {max}, not `{too_big}`")), "{}", stderr(&out));
         let out = run(&["render", "--width", "1000000", flag, ok], "(c4) a(f) b(g) c(h) (::)");
         assert!(out.status.success(), "{flag}: {}", stderr(&out));
         let svg = stdout(&out);
         assert!(!svg.contains("inf") && !svg.contains("NaN"), "{flag}");
     }
+}
+
+/// The scale has a lower bound too, with an error that says so.
+#[test]
+fn scale_has_a_lower_bound() {
+    for v in ["0.009", "0.001", "1e-30"] {
+        let out = run(&["render", "--scale", v], "(c4) a(f)");
+        assert_eq!(out.status.code(), Some(2), "{v}");
+        assert!(
+            stderr(&out).contains(&format!("--scale takes a number of pixels from 0.01 to 1000, not `{v}`")),
+            "{}",
+            stderr(&out)
+        );
+    }
+    let out = run(&["render", "--scale", "0.01"], "(c4) a(f) (::)");
+    assert!(out.status.success(), "{}", stderr(&out));
+}
+
+/// `point` words an unsure half-verse as `psalm` and `book` do.
+#[test]
+fn point_words_unsure_pointing_as_psalm_does() {
+    let text = "Blessed is the man that hath not walked in the counsel of the ungodly * nor stood in the way of sinners\n";
+    let point = stderr(&run(&["point", "--tone", "1.D"], text));
+    let psalm = stderr(&run(&["psalm", "--tone", "1.D"], text));
+    assert!(point.contains("point::unsure: pointed automatically, but only "), "{point}");
+    let unsure = |s: &str| {
+        s.lines()
+            .filter(|l| l.contains("point::unsure"))
+            .map(str::to_string)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(unsure(&point), unsure(&psalm));
+}
+
+/// A failed write to stderr is no panic.
+#[cfg(target_os = "linux")]
+#[test]
+fn stderr_write_errors_are_no_panic() {
+    let full = || std::fs::OpenOptions::new().write(true).open("/dev/full").unwrap();
+    let out = neuma()
+        .args(["render", "--scale", "0"])
+        .stdin(Stdio::null())
+        .stderr(full())
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(2));
+    let out = neuma().args(["check", "/nonexistent.gabc"]).stderr(full()).output().unwrap();
+    assert_eq!(out.status.code(), Some(2));
 }
 
 #[test]
