@@ -1,5 +1,5 @@
 //! Text measurement. The engine measures lyrics only through [`TextMeasure`], so every
-//! renderer gets the widths it will draw (DESIGN section 11).
+//! renderer gets the widths it will draw (docs/DESIGN.md, "Lyrics and text measurement").
 
 use crate::score::TextStyle;
 

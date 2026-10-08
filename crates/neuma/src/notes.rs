@@ -1,5 +1,5 @@
 //! The timeline: where each note is drawn, its pitch and its relative duration, for practice
-//! and playback tools (DESIGN section 12).
+//! and playback tools (docs/DESIGN.md, "Timeline").
 
 use std::ops::Range;
 

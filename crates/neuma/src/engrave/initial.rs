@@ -1,4 +1,5 @@
-//! The drop-cap initial and the annotations above it (DESIGN sections 5 and 6.1).
+//! The drop-cap initial and the annotations above it (docs/DESIGN.md,
+//! "Lyrics and text measurement", under Initials).
 
 use crate::score::{Header, Lyric};
 

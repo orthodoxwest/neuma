@@ -1,6 +1,7 @@
 //! A compact table of font metrics, built offline by `neuma-metrics` and read here with no
 //! dependencies. It measures text the way the renderers set lyrics: per-character advances,
-//! pair kerning, and small-cap advances, with ligatures off (DESIGN section 11).
+//! pair kerning, and small-cap advances, with ligatures off
+//! (docs/DESIGN.md, "Lyrics and text measurement").
 //!
 //! Format (little-endian): `b"NMET"`, `u16` version (1), `u16` face count, then per face:
 //! `u8` style flags (1 italic, 2 bold), 32-byte SHA-256 of the font file, `f32` ascent and

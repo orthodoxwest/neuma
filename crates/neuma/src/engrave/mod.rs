@@ -129,7 +129,7 @@ impl Piece {
     }
 }
 
-/// How long an alteration lasts (DESIGN section 6.4).
+/// How long an alteration lasts (docs/DESIGN.md, "Alteration scope").
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum AlterationScope {

@@ -2,7 +2,7 @@
 //!
 //! Segments are packed left to right with minimum gaps (notation to notation, lyric to lyric),
 //! and an optimal-fit breaker picks the breaks with the least total demerits. Arithmetic is
-//! limited to add, subtract, multiply, divide and comparison (DESIGN section 13).
+//! limited to add, subtract, multiply, divide and comparison (docs/DESIGN.md, "Determinism").
 
 use std::collections::HashMap;
 use std::fmt;

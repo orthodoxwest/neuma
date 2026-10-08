@@ -488,14 +488,14 @@ alleluia.gabc:3:8: warning: gabc::hyphen-in-syllable: a hyphen at the end of a s
 
 ## Status and roadmap
 
-neuma is young but already tested hard: golden snapshots of about 30 reference scores, fuzzing
+neuma is young but already tested hard: golden snapshots of 22 reference scores, fuzzing
 of the parser and layout, and a nightly run of every score in
 [GregoBase](https://gregobase.selapa.net/) (about 18,800) through parsing, engraving, layout at
 three widths, SVG and a GABC round trip. Next:
 
 - publishing to crates.io and npm;
 - reading tones, for collects and chapters;
-- the open questions in [docs/DESIGN.md](docs/DESIGN.md#18-open-questions), such as vowel
+- the open questions in [docs/DESIGN.md](docs/DESIGN.md#open-questions), such as vowel
   centring for English and a core SVG mode with text as outlines.
 
 Out of scope: NABC (adiastematic neumes), polyphony, modern notation and staves other than four
