@@ -23,7 +23,7 @@ check(timeline.pauses.map { $0.kind } == [.mediant, .double], "pause kinds")
 check(timeline.pauses[0].duration == 3, "caller weight")
 check(timeline.pauses[0].bar == nil, "a mediant without a bar")
 if let bar = timeline.pauses[1].bar {
-    check(Int(bar.line) == page.lines.count - 1 && bar.left < bar.right, "pause bar")
+    check(Int(bar.line) == page.lines.count - 1 && bar.w > 0, "pause bar")
 } else {
     check(false, "pause bar")
 }

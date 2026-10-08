@@ -23,7 +23,7 @@ fun main() {
     check(timeline.pauses.map { it.kind } == listOf(PauseKind.MEDIANT, PauseKind.DOUBLE), "pause kinds")
     check(timeline.pauses[0].duration == 3f, "caller weight")
     val bar = timeline.pauses[1].bar!!
-    check(timeline.pauses[0].bar == null && bar.line == page.lines.size - 1 && bar.left < bar.right, "pause bars")
+    check(timeline.pauses[0].bar == null && bar.line == page.lines.size - 1 && bar.w > 0, "pause bars")
     check(narrow.noteAtTime(notes[2].start, weights) == notes[2], "playhead")
     // A one-line preview laid out since leaves each layout's hit tests alone.
     val preview = chant.layout(120f, LayoutOptions(lastLine = LastLine.JUSTIFIED, maxLines = 1))

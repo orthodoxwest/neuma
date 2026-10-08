@@ -108,12 +108,15 @@ pub struct Pause {
     /// When the pause starts, in weight units.
     pub start: f32,
     /// Where the pause's bar is drawn: its own for a bar, and for a mediant or flex the bar
-    /// it sits at, if one is written there. None when no bar is drawn for it.
+    /// it sits at, if one is written there. None when no bar is drawn for it, as for a mediant
+    /// or flex marked by its text alone: a cursor then stays at the note before the pause.
     pub bar: Option<PauseBar>,
 }
 
 /// Where a [`Pause`]'s bar is drawn, in output units: the box of its ink, both strokes of a
-/// double bar, so a player can draw over it without reading the drawing.
+/// double bar, so a player can draw over it without reading the drawing. The box is the
+/// bar's [`Element`](crate::Element) in the [`SourceMap`](crate::SourceMap), with the same
+/// fields, so code that hit-tests the source map can take it as it is.
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[non_exhaustive]
 pub struct PauseBar {
@@ -121,16 +124,16 @@ pub struct PauseBar {
     pub index: u32,
     /// The line it is drawn on, from 0.
     pub line: u32,
-    /// The left edge of its ink.
-    pub left: f32,
-    /// The right edge of its ink.
-    pub right: f32,
-    /// Its center, halfway between `left` and `right`.
+    /// The box's left edge.
+    pub x: f32,
+    /// The box's top edge.
+    pub y: f32,
+    /// The box's width.
+    pub w: f32,
+    /// The box's height.
+    pub h: f32,
+    /// The box's center, `x + w / 2`.
     pub cx: f32,
-    /// The top of its ink.
-    pub top: f32,
-    /// The bottom of its ink.
-    pub bottom: f32,
 }
 
 /// Relative durations: multipliers per sign, in weight units. Not beats; tools choose the
@@ -431,16 +434,16 @@ impl Layout {
                 for b in &seg.bars {
                     let index = seg.bar(b.bar);
                     if let Some(slot) = drawn.get_mut(index as usize) {
-                        let left = (line.xs[i] + b.x) * s;
-                        let right = (line.xs[i] + b.x + b.w) * s;
+                        // As the source map draws its box.
+                        let x0 = line.xs[i];
                         *slot = Some(PauseBar {
                             index,
                             line: li as u32,
-                            left,
-                            right,
-                            cx: (left + right) / 2.0,
-                            top: (line.staff + b.top) * s,
-                            bottom: (line.staff + b.bottom) * s,
+                            x: (x0 + b.x) * s,
+                            y: (line.staff + b.top) * s,
+                            w: b.w * s,
+                            h: (b.bottom - b.top) * s,
+                            cx: (x0 + b.x + b.w / 2.0) * s,
                         });
                     }
                 }

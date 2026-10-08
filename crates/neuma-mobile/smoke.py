@@ -25,7 +25,7 @@ assert timeline.pauses[0].duration == 3.0
 # The mediant here has no bar; the double bar says where it is drawn.
 assert timeline.pauses[0].bar is None
 bar = timeline.pauses[1].bar
-assert bar.line == len(page.lines) - 1 and bar.left < bar.cx < bar.right and bar.top < bar.bottom
+assert bar.line == len(page.lines) - 1 and bar.x < bar.cx < bar.x + bar.w and bar.h > 0
 assert timeline.notes[3].half == 1
 assert narrow.note_at_time(timeline.notes[2].start, weights) == timeline.notes[2]
 

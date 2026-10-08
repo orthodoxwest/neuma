@@ -36,23 +36,23 @@ stem rect 69.15 186.05 0.77 14.83 n5
 note PunctumQuadratum 72.15 186.05 n5
 note PunctumQuadratum 78.15 192.05 n6
 Lyric 65.40 229.85 14.70 s8 "ly"
-bar rect 90.75 168.05 0.77 12.00
-note PunctumQuadratum 104.12 192.05 n7
-note PunctumQuadratum 122.12 186.05 n8
-note PunctumQuadratum 140.12 192.05 n9
-Lyric 126.59 229.85 14.70 s12 "word"
-note PunctumQuadratum 171.08 186.05 n10
-Lyric 155.92 229.85 14.70 s13 "space"
-note PunctumQuadratum 199.96 192.05 n11
-Lyric 192.34 229.85 14.70 s14 "sep"
-note PunctumQuadratum 220.44 186.05 n12
-Lyric 217.51 229.85 14.70 s15 "a"
-note PunctumQuadratum 238.44 192.05 n13
-Lyric 230.60 229.85 14.70 s16 "ra"
-note PunctumQuadratum 256.44 186.05 n14
-Lyric 248.96 229.85 14.70 s17 "te"
-bar rect 269.04 174.05 0.77 36.00
-bar rect 274.37 174.05 0.77 36.00
+bar rect 89.49 168.05 0.77 12.00
+note PunctumQuadratum 101.60 192.05 n7
+note PunctumQuadratum 119.60 186.05 n8
+note PunctumQuadratum 137.60 192.05 n9
+Lyric 124.07 229.85 14.70 s12 "word"
+note PunctumQuadratum 168.56 186.05 n10
+Lyric 153.40 229.85 14.70 s13 "space"
+note PunctumQuadratum 197.44 192.05 n11
+Lyric 189.82 229.85 14.70 s14 "sep"
+note PunctumQuadratum 217.92 186.05 n12
+Lyric 214.99 229.85 14.70 s15 "a"
+note PunctumQuadratum 235.92 192.05 n13
+Lyric 228.08 229.85 14.70 s16 "ra"
+note PunctumQuadratum 253.92 186.05 n14
+Lyric 246.44 229.85 14.70 s17 "te"
+bar rect 266.58 174.05 0.77 36.00
+bar rect 271.91 174.05 0.77 36.00
 Initial 8.34 68.69 85.85 s2 "A"
 
 # width 720
@@ -85,21 +85,21 @@ stem rect 69.15 105.47 0.77 14.83 n5
 note PunctumQuadratum 72.15 105.47 n5
 note PunctumQuadratum 78.15 111.47 n6
 Lyric 65.40 149.27 14.70 s8 "ly"
-bar rect 90.75 87.47 0.77 12.00
-note PunctumQuadratum 104.12 111.47 n7
-note PunctumQuadratum 122.12 105.47 n8
-note PunctumQuadratum 140.12 111.47 n9
-Lyric 126.59 149.27 14.70 s12 "word"
-note PunctumQuadratum 171.08 105.47 n10
-Lyric 155.92 149.27 14.70 s13 "space"
-note PunctumQuadratum 199.96 111.47 n11
-Lyric 192.34 149.27 14.70 s14 "sep"
-note PunctumQuadratum 220.44 105.47 n12
-Lyric 217.51 149.27 14.70 s15 "a"
-note PunctumQuadratum 238.44 111.47 n13
-Lyric 230.60 149.27 14.70 s16 "ra"
-note PunctumQuadratum 256.44 105.47 n14
-Lyric 248.96 149.27 14.70 s17 "te"
-bar rect 269.04 93.47 0.77 36.00
-bar rect 274.37 93.47 0.77 36.00
+bar rect 89.49 87.47 0.77 12.00
+note PunctumQuadratum 101.60 111.47 n7
+note PunctumQuadratum 119.60 105.47 n8
+note PunctumQuadratum 137.60 111.47 n9
+Lyric 124.07 149.27 14.70 s12 "word"
+note PunctumQuadratum 168.56 105.47 n10
+Lyric 153.40 149.27 14.70 s13 "space"
+note PunctumQuadratum 197.44 111.47 n11
+Lyric 189.82 149.27 14.70 s14 "sep"
+note PunctumQuadratum 217.92 105.47 n12
+Lyric 214.99 149.27 14.70 s15 "a"
+note PunctumQuadratum 235.92 111.47 n13
+Lyric 228.08 149.27 14.70 s16 "ra"
+note PunctumQuadratum 253.92 105.47 n14
+Lyric 246.44 149.27 14.70 s17 "te"
+bar rect 266.58 93.47 0.77 36.00
+bar rect 271.91 93.47 0.77 36.00
 Initial 8.34 68.69 85.85 s2 "A"

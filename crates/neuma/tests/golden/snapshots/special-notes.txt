@@ -91,7 +91,7 @@ note PodatusLower 262.49 139.73 n40
 stem rect 264.72 127.73 0.77 12.00 n41
 note PodatusUpper 265.49 127.73 n41
 Lyric 252.18 183.53 14.70 s20 "vum"
-bar rect 276.47 109.73 0.77 12.00
+bar rect 275.21 109.73 0.77 12.00
 note PunctumQuadratum 295.86 127.73 n42
 stem rect 298.09 127.73 0.77 16.20 n42
 Lyric 287.62 183.53 14.70 s22 "vir"
@@ -153,8 +153,8 @@ note PunctumQuadratumDesLiquescent 176.59 242.26 n65
 Lyric 163.10 292.06 14.70 s32 "tes"
 note PunctumQuadratumLiquescent 191.41 248.26 n66
 Lyric 182.70 292.06 14.70 s33 "cens"
-bar rect 202.81 224.26 0.77 36.00
-bar rect 208.13 224.26 0.77 36.00
+bar rect 202.87 224.26 0.77 36.00
+bar rect 208.19 224.26 0.77 36.00
 Hyphen 112.21 292.06 14.70 "-"
 Hyphen 134.16 292.06 14.70 "-"
 Hyphen 159.05 292.06 14.70 "-"
@@ -241,7 +241,7 @@ note PodatusLower 597.33 54.35 n40
 stem rect 599.57 42.35 0.77 12.00 n41
 note PodatusUpper 600.33 42.35 n41
 Lyric 587.02 98.15 14.70 s20 "vum"
-bar rect 611.71 24.35 0.77 12.00
+bar rect 610.45 24.35 0.77 12.00
 note PunctumQuadratum 631.50 42.35 n42
 stem rect 633.73 42.35 0.77 16.20 n42
 Lyric 623.26 98.15 14.70 s22 "vir"
@@ -306,8 +306,8 @@ note PunctumQuadratumDesLiquescent 154.09 139.42 n65
 Lyric 140.60 189.22 14.70 s32 "tes"
 note PunctumQuadratumLiquescent 168.91 145.42 n66
 Lyric 160.20 189.22 14.70 s33 "cens"
-bar rect 180.31 121.42 0.77 36.00
-bar rect 185.63 121.42 0.77 36.00
+bar rect 180.37 121.42 0.77 36.00
+bar rect 185.69 121.42 0.77 36.00
 Hyphen 89.71 189.22 14.70 "-"
 Hyphen 111.66 189.22 14.70 "-"
 Hyphen 136.55 189.22 14.70 "-"

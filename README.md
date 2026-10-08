@@ -265,7 +265,7 @@ requestAnimationFrame(function tick(now) {
 ```
 
 `page.noteAt(x, y)` answers the reverse question for a tap or a click. Each pause at a bar
-says where the bar is drawn (`bar`: its line, `left`, `right`, `top` and `bottom`), so a
+says where the bar is drawn (`bar`: its line and its box, as the source map gives it), so a
 cursor can stop on it. The timeline also marks recitation, accents, the start of each
 syllable, and the verse and half-verse.
 

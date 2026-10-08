@@ -312,10 +312,12 @@ pub(crate) struct SegmentInk {
     /// Space written before this segment inside its syllable (for segments after the first).
     pub space_before: f32,
     pub starts_with_clef: bool,
-    /// It has a bar before any note (after a custos or a clef at most), so no line breaks
-    /// before it: a line ends with its bar, as in GregorioTeX, which sets no break before a
-    /// bar.
+    /// It has a bar before any note (after a custos or a clef at most), so a line that starts
+    /// with it starts with a bar, which GregorioTeX never sets and the line breaker avoids.
     pub starts_with_bar: bool,
+    /// It has bars, and all of them are virgulae, minimis bars or quarter bars, which
+    /// GregorioTeX spaces closer than the others when they stand without text.
+    pub light_bars: bool,
     /// Position of the first note, for the custos that announces this segment.
     pub first_note: Option<StaffPosition>,
 }
@@ -677,6 +679,7 @@ struct Open {
     gap: Option<f32>,
     starts_with_clef: bool,
     starts_with_bar: bool,
+    light_bars: bool,
     first_note: Option<StaffPosition>,
     empty: bool,
 }
@@ -691,6 +694,7 @@ impl Open {
             gap: None,
             starts_with_clef: false,
             starts_with_bar: false,
+            light_bars: true,
             first_note: None,
             empty: true,
         }
@@ -820,6 +824,7 @@ impl Engraver<'_> {
         // The score's opening clef is drawn at the start of the first line even when a clef
         // change follows it at once, as in `(c4) (c3)`: Gregorio shows both.
         let starts_with_clef = open.starts_with_clef && !(self.segments.is_empty() && self.initial_clef.is_some());
+        let light_bars = open.light_bars && !open.bars.is_empty();
         self.segments.push(Segment {
             syllable,
             note_base,
@@ -839,6 +844,7 @@ impl Engraver<'_> {
                 space_before,
                 starts_with_clef,
                 starts_with_bar: open.starts_with_bar,
+                light_bars,
                 first_note: open.first_note,
             }),
         });
@@ -1221,6 +1227,7 @@ impl Pass<'_> {
                     if open.pieces.iter().all(|p| matches!(p.role, Ink::Custos | Ink::Clef)) {
                         open.starts_with_bar = true;
                     }
+                    open.light_bars &= matches!(b.kind, BarKind::Virgula | BarKind::Minimis | BarKind::Quarter);
                     let x = open.advance(SYLLABLE_GAP);
                     let (pieces, w) = bar_pieces(b.kind, b.high, x);
                     let (top, bottom) = pieces

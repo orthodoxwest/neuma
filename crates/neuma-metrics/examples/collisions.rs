@@ -13,8 +13,10 @@
 //! - `TT`: two texts' letters overlapping, a hyphen included (syllables of a word that touch
 //!   by their advances are left out: their letters meet as in any word);
 //! - `OOB`: ink outside the page;
-//! - `BAR`: a line that starts with a bar, which the line breaker never does unless the
-//!   score writes a break (`z`, `Z`) before the bar.
+//! - `BAR`: a line that starts with a bar, where the score writes no break (`z`, `Z`) before
+//!   it and the bar's text doesn't lead into what follows (a ℣ or ℟, a verse number, or a
+//!   rubric such as `Ps.`). The line breaker does this only when every other way sets a line
+//!   extremely loose, so this is a count to watch rather than a fault.
 //!
 //! Boxes overlap when they share more than a twentieth of a staff space both ways. Letters are
 //! boxed by their outlines in the fonts given, which should be the ones the metrics describe.
@@ -272,7 +274,7 @@ fn check(src: &str, name: &str, widths: &[f32], scale: f32, faces: &[Face; 2], d
         };
         let mut findings: Vec<(f32, String)> = Vec::new();
         for line in &bar_led {
-            findings.push((f32::INFINITY, format!("BAR line {line} starts with a bar")));
+            findings.push((0.0, format!("BAR line {line} starts with a bar")));
         }
         let slack = 0.25 * sp;
         for b in &boxes {
@@ -347,7 +349,8 @@ fn check(src: &str, name: &str, widths: &[f32], scale: f32, faces: &[Face; 2], d
 
 /// The lines after the first that start with a bar: one drawn before every note on its
 /// line, with no syllable of the line before it in the source (a cue of text alone may lead
-/// it), and no break written between the line before and the bar.
+/// it), no break written between the line before and the bar, and no text under the bar
+/// that leads into what follows.
 fn lines_led_by_a_bar(src: &str, layout: &neuma::Layout) -> Vec<u32> {
     let map = layout.source_map();
     (1..map.lines.len() as u32)
@@ -369,9 +372,43 @@ fn lines_led_by_a_bar(src: &str, layout: &neuma::Layout) -> Vec<u32> {
                 .map(|s| s.span.start)
                 .max()
                 .unwrap_or(0);
-            bar.x < first_note && !text_first && !written_break(src.get(before..bar.span.start).unwrap_or(""))
+            let leads = map
+                .syllables
+                .iter()
+                .find(|s| s.span.start <= bar.span.start && bar.span.end <= s.span.end)
+                .is_some_and(|s| text_leads(src.get(s.span.start..bar.span.start).unwrap_or("")));
+            bar.x < first_note && !text_first && !leads && !written_break(src.get(before..bar.span.start).unwrap_or(""))
         })
         .collect()
+}
+
+/// Whether a bar's syllable text, as written, leads into what follows: a ℣ or ℟
+/// (`<sp>V/</sp>`), a verse number (`2.`), or a rubric (`Ps.`, `Ant.`, `T. P.`), as the line
+/// breaker reads it.
+fn text_leads(gabc: &str) -> bool {
+    let text = gabc.split('(').next().unwrap_or("");
+    // Without tags, the text above the staff (`<alt>`) or centering braces.
+    let text = match (text.find("<alt>"), text.find("</alt>")) {
+        (Some(a), Some(b)) if a < b => format!("{}{}", &text[..a], &text[b..]),
+        _ => text.to_string(),
+    };
+    let mut plain = String::new();
+    let mut tag = false;
+    for c in text.chars() {
+        match c {
+            '<' => tag = true,
+            '>' => tag = false,
+            '{' | '}' => {}
+            _ if !tag => plain.push(c),
+            _ => {}
+        }
+    }
+    let plain = plain.trim_start();
+    let numbered = plain.trim_start_matches(|c: char| c.is_ascii_digit());
+    ["V/", "R/", "℣", "℟", "Ps.", "Ant.", "T. P.", "T.P."]
+        .iter()
+        .any(|p| plain.starts_with(p))
+        || numbered.len() < plain.len() && numbered.starts_with('.')
 }
 
 /// Whether GABC holds a line break in its notation: a `z` or `Z` (not the custos `z0`) in

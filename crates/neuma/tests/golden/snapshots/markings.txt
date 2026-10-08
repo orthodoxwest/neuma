@@ -79,44 +79,44 @@ note PunctumQuadratum 18.00 117.47 n23
 mora Mora 21.12 112.97 n23
 mora Mora 24.72 112.97 n23
 Lyric 4.26 149.27 14.70 s14 "ble"
-bar rect 38.64 87.47 0.77 12.00
-note PunctumQuadratum 52.01 105.47 n24
-accidental Flat 62.57 99.47
-note PunctumQuadratum 74.38 105.47 n25
-Lyric 40.87 149.27 14.70 s16 "flat"
-accidental Flat 88.12 99.47
-note PunctumQuadratum 99.93 105.47 n26
-accidental Natural 110.45 99.47
-note PunctumQuadratum 120.65 105.47 n27
-Lyric 89.24 149.27 14.70 s17 "na"
-accidental Natural 133.69 105.47
-note PunctumQuadratum 143.89 105.47 n28
-Lyric 135.40 149.27 14.70 s18 "tu"
-accidental Natural 156.93 99.47
-note PunctumQuadratum 167.13 99.47 n29
-Lyric 159.28 149.27 14.70 s19 "ral"
-accidental Sharp 181.07 111.47
-note PunctumQuadratum 196.60 111.47 n30
-Lyric 181.35 149.27 14.70 s20 "sharp"
-accidental Flat 220.21 99.47
-note PodatusLowerShort 232.02 105.47 n31
-note PodatusUpperShort 235.02 99.47 n32
-Lyric 217.80 149.27 14.70 s21 "scope"
-bar rect 244.62 99.47 0.77 24.00
-note PunctumQuadratum 266.56 99.47 n33
-Lyric 255.93 149.27 14.70 s23 "next"
-accidental Flat 284.41 99.47
-note PunctumQuadratum 296.23 105.47 n34
-Lyric 285.87 149.27 14.70 s24 "bar"
-bar rect 308.83 87.47 0.77 12.00
-note PunctumQuadratum 322.19 99.47 n35
-Lyric 313.39 149.27 14.70 s26 "car"
-note PunctumQuadratum 341.30 105.47 n36
-Lyric 329.93 149.27 14.70 s27 "ries"
+bar rect 37.34 87.47 0.77 12.00
+note PunctumQuadratum 49.41 105.47 n24
+accidental Flat 59.97 99.47
+note PunctumQuadratum 71.78 105.47 n25
+Lyric 38.27 149.27 14.70 s16 "flat"
+accidental Flat 86.77 99.47
+note PunctumQuadratum 98.58 105.47 n26
+accidental Natural 109.10 99.47
+note PunctumQuadratum 119.30 105.47 n27
+Lyric 87.88 149.27 14.70 s17 "na"
+accidental Natural 132.34 105.47
+note PunctumQuadratum 142.54 105.47 n28
+Lyric 134.05 149.27 14.70 s18 "tu"
+accidental Natural 155.57 99.47
+note PunctumQuadratum 165.77 99.47 n29
+Lyric 157.93 149.27 14.70 s19 "ral"
+accidental Sharp 180.97 111.47
+note PunctumQuadratum 196.50 111.47 n30
+Lyric 181.25 149.27 14.70 s20 "sharp"
+accidental Flat 221.35 99.47
+note PodatusLowerShort 233.17 105.47 n31
+note PodatusUpperShort 236.17 99.47 n32
+Lyric 218.94 149.27 14.70 s21 "scope"
+bar rect 245.79 99.47 0.77 24.00
+note PunctumQuadratum 267.70 99.47 n33
+Lyric 257.07 149.27 14.70 s23 "next"
+accidental Flat 286.80 99.47
+note PunctumQuadratum 298.62 105.47 n34
+Lyric 288.26 149.27 14.70 s24 "bar"
+bar rect 309.92 87.47 0.77 12.00
+note PunctumQuadratum 322.17 99.47 n35
+Lyric 313.37 149.27 14.70 s26 "car"
+note PunctumQuadratum 341.28 105.47 n36
+Lyric 329.91 149.27 14.70 s27 "ries"
 bar rect 353.90 93.47 0.77 36.00
 bar rect 359.23 93.47 0.77 36.00
-Hyphen 102.86 149.27 14.70 "-"
-Hyphen 147.76 149.27 14.70 "-"
+Hyphen 101.51 149.27 14.70 "-"
+Hyphen 146.41 149.27 14.70 "-"
 Initial 8.34 68.69 85.85 s1 "e"
 
 # width 720
@@ -185,42 +185,42 @@ note PunctumQuadratum 352.12 36.89 n23
 mora Mora 355.24 32.39 n23
 mora Mora 358.84 32.39 n23
 Lyric 338.37 68.69 14.70 s14 "ble"
-bar rect 372.76 6.89 0.77 12.00
-note PunctumQuadratum 386.12 24.89 n24
-accidental Flat 396.69 18.89
-note PunctumQuadratum 408.50 24.89 n25
-Lyric 374.99 68.69 14.70 s16 "flat"
-accidental Flat 423.56 18.89
-note PunctumQuadratum 435.37 24.89 n26
-accidental Natural 445.89 18.89
-note PunctumQuadratum 456.09 24.89 n27
-Lyric 424.68 68.69 14.70 s17 "na"
-accidental Natural 469.13 24.89
-note PunctumQuadratum 479.33 24.89 n28
-Lyric 470.84 68.69 14.70 s18 "tu"
-accidental Natural 492.37 18.89
-note PunctumQuadratum 502.57 18.89 n29
-Lyric 494.73 68.69 14.70 s19 "ral"
-accidental Sharp 517.84 30.89
-note PunctumQuadratum 533.37 30.89 n30
-Lyric 518.12 68.69 14.70 s20 "sharp"
-accidental Flat 558.31 18.89
-note PodatusLowerShort 570.12 24.89 n31
-note PodatusUpperShort 573.12 18.89 n32
-Lyric 555.90 68.69 14.70 s21 "scope"
-bar rect 582.72 18.89 0.77 24.00
-note PunctumQuadratum 604.66 18.89 n33
-Lyric 594.03 68.69 14.70 s23 "next"
-accidental Flat 623.84 18.89
-note PunctumQuadratum 635.66 24.89 n34
-Lyric 625.30 68.69 14.70 s24 "bar"
-bar rect 648.26 6.89 0.77 12.00
-note PunctumQuadratum 661.62 18.89 n35
-Lyric 652.82 68.69 14.70 s26 "car"
-note PunctumQuadratum 680.73 24.89 n36
-Lyric 669.36 68.69 14.70 s27 "ries"
-bar rect 693.33 12.89 0.77 36.00
-bar rect 698.66 12.89 0.77 36.00
+bar rect 371.50 6.89 0.77 12.00
+note PunctumQuadratum 383.60 24.89 n24
+accidental Flat 394.17 18.89
+note PunctumQuadratum 405.98 24.89 n25
+Lyric 372.47 68.69 14.70 s16 "flat"
+accidental Flat 421.04 18.89
+note PunctumQuadratum 432.85 24.89 n26
+accidental Natural 443.37 18.89
+note PunctumQuadratum 453.57 24.89 n27
+Lyric 422.16 68.69 14.70 s17 "na"
+accidental Natural 466.61 24.89
+note PunctumQuadratum 476.81 24.89 n28
+Lyric 468.32 68.69 14.70 s18 "tu"
+accidental Natural 489.85 18.89
+note PunctumQuadratum 500.05 18.89 n29
+Lyric 492.21 68.69 14.70 s19 "ral"
+accidental Sharp 515.32 30.89
+note PunctumQuadratum 530.85 30.89 n30
+Lyric 515.60 68.69 14.70 s20 "sharp"
+accidental Flat 555.79 18.89
+note PodatusLowerShort 567.60 24.89 n31
+note PodatusUpperShort 570.60 18.89 n32
+Lyric 553.38 68.69 14.70 s21 "scope"
+bar rect 580.26 18.89 0.77 24.00
+note PunctumQuadratum 602.14 18.89 n33
+Lyric 591.51 68.69 14.70 s23 "next"
+accidental Flat 621.32 18.89
+note PunctumQuadratum 633.14 24.89 n34
+Lyric 622.78 68.69 14.70 s24 "bar"
+bar rect 644.48 6.89 0.77 12.00
+note PunctumQuadratum 656.69 18.89 n35
+Lyric 647.89 68.69 14.70 s26 "car"
+note PunctumQuadratum 675.80 24.89 n36
+Lyric 664.43 68.69 14.70 s27 "ries"
+bar rect 688.46 12.89 0.77 36.00
+bar rect 693.79 12.89 0.77 36.00
 Hyphen 85.98 68.69 14.70 "-"
 Hyphen 103.07 68.69 14.70 "-"
 Hyphen 125.15 68.69 14.70 "-"
@@ -228,6 +228,6 @@ Hyphen 171.17 68.69 14.70 "-"
 Hyphen 241.30 68.69 14.70 "-"
 Hyphen 282.09 68.69 14.70 "-"
 Hyphen 327.17 68.69 14.70 "-"
-Hyphen 438.31 68.69 14.70 "-"
-Hyphen 483.21 68.69 14.70 "-"
+Hyphen 435.79 68.69 14.70 "-"
+Hyphen 480.69 68.69 14.70 "-"
 Initial 8.34 68.69 85.85 s1 "e"

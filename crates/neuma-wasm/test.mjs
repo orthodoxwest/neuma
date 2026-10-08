@@ -47,10 +47,10 @@ assert.deepEqual(t.pauses[0].bar, t.pauses[1].bar);
 const verseBars = verse.layout(600);
 for (const p of verseBars.timeline().pauses) {
   const b = p.bar;
-  assert.ok(b && b.left < b.cx && b.cx < b.right && b.top < b.bottom, p.kind);
-  const hit = verseBars.sourceAt(b.cx, (b.top + b.bottom) / 2);
+  assert.ok(b && b.w > 0 && b.h > 0, p.kind);
+  const hit = verseBars.sourceAt(b.cx, b.y + b.h / 2);
   assert.equal(hit.kind, "bar");
-  assert.equal(hit.index, b.index);
+  assert.deepEqual([hit.index, hit.line, hit.x, hit.y, hit.w, hit.h, hit.cx], [b.index, b.line, b.x, b.y, b.w, b.h, b.cx]);
 }
 assert.equal(new Chant("(c4) a(g) *() b(g)", { initial: 0 }).layout(400).timeline().pauses[0].bar, null);
 // Recitation doesn't run across a bar.

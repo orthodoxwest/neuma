@@ -27,7 +27,7 @@ note PunctumQuadratum 257.76 39.52 n7
 Lyric 238.87 89.32 14.70 s7 "wak"
 note PunctumQuadratum 273.78 45.52 n8
 Lyric 271.98 89.32 14.70 s8 "ing,"
-bar rect 286.38 27.52 0.77 12.00
+bar rect 284.81 27.52 0.77 12.00
 note PunctumQuadratum 303.11 45.52 n9
 Lyric 300.18 89.32 14.70 s10 "and"
 note PunctumQuadratum 344.72 33.52 n10
@@ -49,7 +49,7 @@ note PodatusUpperShort 92.94 126.10 n14
 Lyric 76.01 169.90 14.70 s14 "sleep"
 note PunctumQuadratum 111.45 132.10 n15
 Lyric 109.65 169.90 14.70 s15 "ing:"
-bar rect 126.43 120.10 0.77 24.00
+bar rect 126.49 120.10 0.77 24.00
 note PunctumQuadratum 158.00 132.10 n16
 Lyric 142.88 169.90 14.70 s17 "that"
 note PunctumQuadratum 178.38 126.10 n17
@@ -76,28 +76,28 @@ staff rect 0.00 230.29 360.00 0.77
 clef DoClef 0.00 194.68
 note PunctumQuadratum 24.72 206.68 n24
 Lyric 0.00 250.48 14.70 s24 "Christ,"
-bar rect 37.32 188.68 0.77 12.00
-note PunctumQuadratum 50.69 206.68 n25
-Lyric 47.75 250.48 14.70 s26 "and"
-note PunctumQuadratum 78.81 194.68 n26
-Lyric 75.87 250.48 14.70 s27 "a"
-note PunctumQuadratum 95.68 200.68 n27
-Lyric 81.74 250.48 14.70 s28 "sleep"
-note PunctumQuadratum 128.77 206.68 n28
-Lyric 116.02 250.48 14.70 s29 "we"
-note PunctumQuadratum 156.03 212.68 n29
-Lyric 138.51 250.48 14.70 s30 "may"
-note PunctumQuadratum 176.94 218.68 n30
-Lyric 169.16 250.48 14.70 s31 "rest"
-note PunctumQuadratum 198.02 212.68 n31
-Lyric 196.22 250.48 14.70 s32 "in"
-stem rect 225.07 212.68 0.77 8.83 n32
-note PunctumQuadratum 228.07 212.68 n32
-note PunctumQuadratum 234.07 218.68 n33
-note PunctumQuadratum 243.07 224.68 n34
-Lyric 214.64 250.48 14.70 s33 "peace."
-bar rect 255.67 194.68 0.77 36.00
-bar rect 261.00 194.68 0.77 36.00
+bar rect 36.06 188.68 0.77 12.00
+note PunctumQuadratum 49.25 206.68 n25
+Lyric 46.32 250.48 14.70 s26 "and"
+note PunctumQuadratum 77.37 194.68 n26
+Lyric 74.44 250.48 14.70 s27 "a"
+note PunctumQuadratum 94.24 200.68 n27
+Lyric 80.31 250.48 14.70 s28 "sleep"
+note PunctumQuadratum 127.34 206.68 n28
+Lyric 114.59 250.48 14.70 s29 "we"
+note PunctumQuadratum 154.59 212.68 n29
+Lyric 137.08 250.48 14.70 s30 "may"
+note PunctumQuadratum 175.50 218.68 n30
+Lyric 167.73 250.48 14.70 s31 "rest"
+note PunctumQuadratum 196.59 212.68 n31
+Lyric 194.79 250.48 14.70 s32 "in"
+stem rect 223.64 212.68 0.77 8.83 n32
+note PunctumQuadratum 226.64 212.68 n32
+note PunctumQuadratum 232.64 218.68 n33
+note PunctumQuadratum 241.64 224.68 n34
+Lyric 213.21 250.48 14.70 s33 "peace."
+bar rect 254.30 194.68 0.77 36.00
+bar rect 259.63 194.68 0.77 36.00
 Initial 8.34 89.32 85.85 s1 "P"
 Annotation 22.31 14.10 11.03 "Ant."
 Annotation 26.09 26.23 11.03 "3 a"
@@ -129,7 +129,7 @@ note PunctumQuadratum 269.04 39.52 n7
 Lyric 250.15 89.32 14.70 s7 "wak"
 note PunctumQuadratum 286.40 45.52 n8
 Lyric 284.60 89.32 14.70 s8 "ing,"
-bar rect 300.34 27.52 0.77 12.00
+bar rect 299.08 27.52 0.77 12.00
 note PunctumQuadratum 318.40 45.52 n9
 Lyric 315.47 89.32 14.70 s10 "and"
 note PunctumQuadratum 362.00 33.52 n10
@@ -143,7 +143,7 @@ note PodatusUpperShort 462.39 45.52 n14
 Lyric 445.45 89.32 14.70 s14 "sleep"
 note PunctumQuadratum 479.84 51.52 n15
 Lyric 478.04 89.32 14.70 s15 "ing:"
-bar rect 493.78 39.52 0.77 24.00
+bar rect 493.84 39.52 0.77 24.00
 note PunctumQuadratum 524.29 51.52 n16
 Lyric 509.17 89.32 14.70 s17 "that"
 note PunctumQuadratum 543.63 45.52 n17
@@ -172,28 +172,28 @@ staff rect 0.00 149.71 720.00 0.77
 clef DoClef 0.00 114.10
 note PunctumQuadratum 24.72 126.10 n24
 Lyric 0.00 169.90 14.70 s24 "Christ,"
-bar rect 37.32 108.10 0.77 12.00
-note PunctumQuadratum 50.69 126.10 n25
-Lyric 47.75 169.90 14.70 s26 "and"
-note PunctumQuadratum 78.81 114.10 n26
-Lyric 75.87 169.90 14.70 s27 "a"
-note PunctumQuadratum 95.68 120.10 n27
-Lyric 81.74 169.90 14.70 s28 "sleep"
-note PunctumQuadratum 128.77 126.10 n28
-Lyric 116.02 169.90 14.70 s29 "we"
-note PunctumQuadratum 156.03 132.10 n29
-Lyric 138.51 169.90 14.70 s30 "may"
-note PunctumQuadratum 176.94 138.10 n30
-Lyric 169.16 169.90 14.70 s31 "rest"
-note PunctumQuadratum 198.02 132.10 n31
-Lyric 196.22 169.90 14.70 s32 "in"
-stem rect 225.07 132.10 0.77 8.83 n32
-note PunctumQuadratum 228.07 132.10 n32
-note PunctumQuadratum 234.07 138.10 n33
-note PunctumQuadratum 243.07 144.10 n34
-Lyric 214.64 169.90 14.70 s33 "peace."
-bar rect 255.67 114.10 0.77 36.00
-bar rect 261.00 114.10 0.77 36.00
+bar rect 36.06 108.10 0.77 12.00
+note PunctumQuadratum 49.25 126.10 n25
+Lyric 46.32 169.90 14.70 s26 "and"
+note PunctumQuadratum 77.37 114.10 n26
+Lyric 74.44 169.90 14.70 s27 "a"
+note PunctumQuadratum 94.24 120.10 n27
+Lyric 80.31 169.90 14.70 s28 "sleep"
+note PunctumQuadratum 127.34 126.10 n28
+Lyric 114.59 169.90 14.70 s29 "we"
+note PunctumQuadratum 154.59 132.10 n29
+Lyric 137.08 169.90 14.70 s30 "may"
+note PunctumQuadratum 175.50 138.10 n30
+Lyric 167.73 169.90 14.70 s31 "rest"
+note PunctumQuadratum 196.59 132.10 n31
+Lyric 194.79 169.90 14.70 s32 "in"
+stem rect 223.64 132.10 0.77 8.83 n32
+note PunctumQuadratum 226.64 132.10 n32
+note PunctumQuadratum 232.64 138.10 n33
+note PunctumQuadratum 241.64 144.10 n34
+Lyric 213.21 169.90 14.70 s33 "peace."
+bar rect 254.30 114.10 0.77 36.00
+bar rect 259.63 114.10 0.77 36.00
 Initial 8.34 89.32 85.85 s1 "P"
 Annotation 22.31 14.10 11.03 "Ant."
 Annotation 26.09 26.23 11.03 "3 a"

@@ -49,7 +49,7 @@ note PunctumQuadratum 81.43 111.47 n12
 Lyric 68.97 149.27 14.70 s13 "transla"
 note PunctumQuadratum 118.12 117.47 n13
 Lyric 106.26 149.27 14.70 s14 "tion"
-bar rect 131.85 99.47 0.77 24.00
+bar rect 131.91 99.47 0.77 24.00
 note PunctumQuadratum 162.04 111.47 n14
 Lyric 138.84 149.27 14.70 s16 "℟":r ". re"
 note PunctumQuadratum 180.92 105.47 n15
@@ -87,8 +87,8 @@ Lyric 64.94 229.85 14.70 s28 "fí"
 note PunctumQuadratum 87.95 192.05 n24
 mora Mora 91.07 192.05 n24
 Lyric 78.39 229.85 14.70 s29 "nis."
-bar rect 104.99 174.05 0.77 36.00
-bar rect 110.32 174.05 0.77 36.00
+bar rect 105.05 174.05 0.77 36.00
+bar rect 110.38 174.05 0.77 36.00
 Hyphen 74.25 229.85 14.70 "-"
 Initial 8.34 68.69 85.85 s1 "I"
 
@@ -129,7 +129,7 @@ note PunctumQuadratum 434.89 30.89 n12
 Lyric 422.43 68.69 14.70 s13 "transla"
 note PunctumQuadratum 471.58 36.89 n13
 Lyric 459.72 68.69 14.70 s14 "tion"
-bar rect 486.13 18.89 0.77 24.00
+bar rect 486.19 18.89 0.77 24.00
 note PunctumQuadratum 517.13 30.89 n14
 Lyric 493.93 68.69 14.70 s16 "℟":r ". re"
 note PunctumQuadratum 536.01 24.89 n15
@@ -169,7 +169,7 @@ Lyric 64.94 149.27 14.70 s28 "fí"
 note PunctumQuadratum 87.95 111.47 n24
 mora Mora 91.07 111.47 n24
 Lyric 78.39 149.27 14.70 s29 "nis."
-bar rect 104.99 93.47 0.77 36.00
-bar rect 110.32 93.47 0.77 36.00
+bar rect 105.05 93.47 0.77 36.00
+bar rect 110.38 93.47 0.77 36.00
 Hyphen 74.25 149.27 14.70 "-"
 Initial 8.34 68.69 85.85 s1 "I"

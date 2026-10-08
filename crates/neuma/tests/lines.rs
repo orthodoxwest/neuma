@@ -112,16 +112,28 @@ fn lines_led_by_a_bar(layout: &neuma::Layout) -> Vec<u32> {
 }
 
 #[test]
-fn no_line_starts_with_a_bar() {
+fn lines_start_with_a_bar_only_when_nothing_else_will_do() {
     // A bar ends the line of the syllable before it, as in GregorioTeX and printed books,
-    // at any width; none of these scores writes a break before a bar.
+    // unless every other way leaves a line far too loose: here, only at the narrowest widths,
+    // where one syllable fills a line, or a line beside an initial. None of these scores
+    // writes a break before a bar.
+    let mut led = Vec::new();
     for (name, src) in reference_scores() {
         let eng = parse(&src).score.engrave(LyricFont::Google.metrics(), &StyleOptions::default());
         for width in (160..1400).step_by(20) {
             let layout = eng.layout(width as f32);
-            assert_eq!(lines_led_by_a_bar(&layout), [0u32; 0], "{name} at {width}");
+            for line in lines_led_by_a_bar(&layout) {
+                let name = std::path::Path::new(&name).file_name().unwrap().to_string_lossy().into_owned();
+                led.push((name, width, line));
+            }
         }
     }
+    let expected = [
+        ("psalm-134.gabc", 180, 1),
+        ("long-melisma.gabc", 220, 1),
+        ("long-melisma.gabc", 240, 1),
+    ];
+    assert_eq!(led, expected.map(|(n, w, l)| (n.to_string(), w, l)));
 }
 
 #[test]
@@ -141,9 +153,7 @@ fn the_timeline_says_where_each_bar_is_drawn() {
                     neuma::PauseKind::Bar(_) => {
                         let (bar, e) = (p.bar.expect(&ctx), bars.next().expect(&ctx));
                         assert_eq!((bar.index, bar.line), (e.index, e.line), "{ctx}");
-                        let close = |a: f32, b: f32| (a - b).abs() < 1e-3;
-                        assert!(close(bar.left, e.x) && close(bar.right, e.x + e.w) && close(bar.cx, e.cx), "{ctx}");
-                        assert!(close(bar.top, e.y) && close(bar.bottom, e.y + e.h), "{ctx}");
+                        assert_eq!((bar.x, bar.y, bar.w, bar.h, bar.cx), (e.x, e.y, e.w, e.h, e.cx), "{ctx}");
                     }
                     _ => {
                         let at = timeline.pauses.iter().filter(|q| q.before_note == p.before_note);

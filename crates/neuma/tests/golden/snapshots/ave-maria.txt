@@ -11,46 +11,46 @@ staff rect 76.09 71.28 283.91 0.77
 clef DoClef 76.09 35.66
 note PunctumQuadratum 94.09 71.66 n0
 Hyphen 92.07 91.46 14.70 "-"
-stem rect 107.86 71.66 0.77 8.83 n1
-note PunctumQuadratum 110.86 71.66 n1
-note PunctumQuadratum 116.86 77.66 n2
-Lyric 101.74 91.46 14.70 s2 "ve"
-stem rect 134.39 59.66 0.77 14.83 n3
-note PunctumQuadratum 137.39 59.66 n3
-note PunctumQuadratum 143.39 65.66 n4
-Lyric 121.36 91.46 14.70 s3 "Ma"
-note PodatusLowerShort 160.17 53.66 n5
-note PodatusUpperShort 163.17 47.66 n6
-Lyric 153.46 91.46 14.70 s4 "rí"
-note PunctumQuadratum 176.95 53.66 n7
-mora Mora 180.07 53.66 n7
-Lyric 174.02 91.46 14.70 s5 "a,"
-bar rect 194.75 29.66 0.77 12.00
-note PunctumQuadratum 208.88 53.66 n8
-Lyric 194.64 91.46 14.70 s7 "grá"
-note PunctumQuadratum 225.66 47.66 n9
-Lyric 219.24 91.46 14.70 s8 "ti"
-note PunctumQuadratum 242.44 53.66 n10
-note PunctumQuadratum 248.44 47.66 n11
-note PunctumQuadratum 254.44 53.66 n12
-Lyric 239.50 91.46 14.70 s9 "a"
-stem rect 270.19 59.66 0.77 14.83 n13
-note PunctumQuadratum 273.19 59.66 n13
-note PunctumQuadratum 279.19 65.66 n14
-Lyric 259.39 91.46 14.70 s10 "ple"
-note PunctumQuadratum 295.97 59.66 n15
-mora Mora 299.09 55.16 n15
-Lyric 285.28 91.46 14.70 s11 "na,"
-bar rect 313.77 41.66 0.77 24.00
+stem rect 108.06 71.66 0.77 8.83 n1
+note PunctumQuadratum 111.06 71.66 n1
+note PunctumQuadratum 117.06 77.66 n2
+Lyric 101.94 91.46 14.70 s2 "ve"
+stem rect 134.79 59.66 0.77 14.83 n3
+note PunctumQuadratum 137.79 59.66 n3
+note PunctumQuadratum 143.79 65.66 n4
+Lyric 121.76 91.46 14.70 s3 "Ma"
+note PodatusLowerShort 160.77 53.66 n5
+note PodatusUpperShort 163.77 47.66 n6
+Lyric 154.06 91.46 14.70 s4 "rí"
+note PunctumQuadratum 177.75 53.66 n7
+mora Mora 180.87 53.66 n7
+Lyric 174.82 91.46 14.70 s5 "a,"
+bar rect 194.49 29.66 0.77 12.00
+note PunctumQuadratum 207.56 53.66 n8
+Lyric 193.32 91.46 14.70 s7 "grá"
+note PunctumQuadratum 224.54 47.66 n9
+Lyric 218.12 91.46 14.70 s8 "ti"
+note PunctumQuadratum 241.52 53.66 n10
+note PunctumQuadratum 247.52 47.66 n11
+note PunctumQuadratum 253.52 53.66 n12
+Lyric 238.58 91.46 14.70 s9 "a"
+stem rect 269.47 59.66 0.77 14.83 n13
+note PunctumQuadratum 272.47 59.66 n13
+note PunctumQuadratum 278.47 65.66 n14
+Lyric 258.67 91.46 14.70 s10 "ple"
+note PunctumQuadratum 295.45 59.66 n15
+mora Mora 298.57 55.16 n15
+Lyric 284.76 91.46 14.70 s11 "na,"
+bar rect 313.51 41.66 0.77 24.00
 note PunctumQuadratum 327.90 59.66 n16
 Lyric 313.18 91.46 14.70 s13 "Dó"
 note PunctumQuadratum 344.78 71.66 n17
 Lyric 331.54 91.46 14.70 s14 "mi"
-Hyphen 140.18 91.46 14.70 "-"
-Hyphen 161.97 91.46 14.70 "-"
-Hyphen 211.81 91.46 14.70 "-"
-Hyphen 227.46 91.46 14.70 "-"
-Hyphen 276.06 91.46 14.70 "-"
+Hyphen 140.58 91.46 14.70 "-"
+Hyphen 162.57 91.46 14.70 "-"
+Hyphen 210.49 91.46 14.70 "-"
+Hyphen 226.34 91.46 14.70 "-"
+Hyphen 275.34 91.46 14.70 "-"
 Hyphen 346.58 91.46 14.70 "-"
 custos CustosShort 357.38 65.66
 staff rect 0.00 114.35 360.00 0.77
@@ -63,49 +63,49 @@ Lyric 6.36 172.57 14.70 s15 "nus"
 stem rect 39.78 150.74 0.77 8.83 n19
 note PunctumQuadratum 42.78 150.74 n19
 note PunctumQuadratum 48.78 156.74 n20
-Lyric 35.30 172.57 14.70 s16 "te"
-note PunctumQuadratum 66.42 156.74 n21
-mora Mora 69.54 156.74 n21
-Lyric 56.57 172.57 14.70 s17 "cum:"
-bar rect 85.08 114.74 0.77 36.00
-note PunctumQuadratum 106.11 156.74 n22
-Lyric 95.68 172.57 14.70 s19 "be"
-note PunctumQuadratum 125.26 150.74 n23
-Lyric 114.63 172.57 14.70 s20 "ne"
-note PunctumQuadratum 143.01 138.74 n24
-Lyric 133.77 172.57 14.70 s21 "dí"
-note PunctumQuadratum 163.99 138.74 n25
-note PunctumQuadratum 172.99 138.74 n26
-Lyric 150.46 172.57 14.70 s22 "cta"
-note PunctumQuadratum 192.61 126.74 n27
-note Quilisma 198.61 120.74 n28
-note PodatusUpperShort 201.61 114.74 n29
-Lyric 184.12 172.57 14.70 s23 "tu"
-note PunctumQuadratum 218.23 126.74 n30
-Lyric 216.43 172.57 14.70 s24 "in"
-note PunctumQuadratum 251.78 132.74 n31
-Lyric 236.47 172.57 14.70 s25 "mu"
-note PunctumQuadratum 269.42 138.74 n32
-Lyric 264.09 172.57 14.70 s26 "li"
-note PodatusLowerShort 287.06 132.74 n33
-note PodatusUpperShort 290.06 126.74 n34
-Lyric 284.20 172.57 14.70 s27 "é"
-stem rect 301.71 132.74 0.77 8.83 n35
-note PunctumQuadratum 304.71 132.74 n35
-note PunctumQuadratum 310.71 138.74 n36
-Lyric 297.99 172.57 14.70 s28 "ri"
-note PunctumQuadratum 328.35 144.74 n37
-mora Mora 331.47 144.74 n37
-Lyric 316.90 172.57 14.70 s29 "bus,"
+Lyric 35.29 172.57 14.70 s16 "te"
+note PunctumQuadratum 66.41 156.74 n21
+mora Mora 69.53 156.74 n21
+Lyric 56.56 172.57 14.70 s17 "cum:"
+bar rect 85.13 114.74 0.77 36.00
+note PunctumQuadratum 106.10 156.74 n22
+Lyric 95.66 172.57 14.70 s19 "be"
+note PunctumQuadratum 125.24 150.74 n23
+Lyric 114.61 172.57 14.70 s20 "ne"
+note PunctumQuadratum 142.99 138.74 n24
+Lyric 133.75 172.57 14.70 s21 "dí"
+note PunctumQuadratum 163.96 138.74 n25
+note PunctumQuadratum 172.96 138.74 n26
+Lyric 150.43 172.57 14.70 s22 "cta"
+note PunctumQuadratum 192.58 126.74 n27
+note Quilisma 198.58 120.74 n28
+note PodatusUpperShort 201.58 114.74 n29
+Lyric 184.09 172.57 14.70 s23 "tu"
+note PunctumQuadratum 218.20 126.74 n30
+Lyric 216.40 172.57 14.70 s24 "in"
+note PunctumQuadratum 251.74 132.74 n31
+Lyric 236.43 172.57 14.70 s25 "mu"
+note PunctumQuadratum 269.38 138.74 n32
+Lyric 264.05 172.57 14.70 s26 "li"
+note PodatusLowerShort 287.02 132.74 n33
+note PodatusUpperShort 290.02 126.74 n34
+Lyric 284.15 172.57 14.70 s27 "é"
+stem rect 301.65 132.74 0.77 8.83 n35
+note PunctumQuadratum 304.65 132.74 n35
+note PunctumQuadratum 310.65 138.74 n36
+Lyric 297.94 172.57 14.70 s28 "ri"
+note PunctumQuadratum 328.29 144.74 n37
+mora Mora 331.41 144.74 n37
+Lyric 316.85 172.57 14.70 s29 "bus,"
 bar rect 347.01 120.74 0.77 24.00
-Hyphen 45.65 172.57 14.70 "-"
-Hyphen 108.98 172.57 14.70 "-"
-Hyphen 128.12 172.57 14.70 "-"
-Hyphen 144.81 172.57 14.70 "-"
-Hyphen 255.66 172.57 14.70 "-"
-Hyphen 271.22 172.57 14.70 "-"
-Hyphen 289.93 172.57 14.70 "-"
-Hyphen 306.51 172.57 14.70 "-"
+Hyphen 45.64 172.57 14.70 "-"
+Hyphen 108.96 172.57 14.70 "-"
+Hyphen 128.10 172.57 14.70 "-"
+Hyphen 144.79 172.57 14.70 "-"
+Hyphen 255.62 172.57 14.70 "-"
+Hyphen 271.18 172.57 14.70 "-"
+Hyphen 289.88 172.57 14.70 "-"
+Hyphen 306.45 172.57 14.70 "-"
 custos CustosShort 357.38 144.74
 staff rect 0.00 196.97 360.00 0.77
 staff rect 0.00 208.97 360.00 0.77
@@ -137,8 +137,8 @@ Lyric 204.59 253.15 14.70 s40 "tu"
 note PunctumQuadratum 229.10 233.35 n49
 mora Mora 232.22 228.85 n49
 Lyric 227.30 253.15 14.70 s41 "i."
-bar rect 246.14 197.35 0.77 36.00
-bar rect 251.46 197.35 0.77 36.00
+bar rect 246.20 197.35 0.77 36.00
+bar rect 251.52 197.35 0.77 36.00
 Hyphen 45.84 253.15 14.70 "-"
 Hyphen 63.36 253.15 14.70 "-"
 Hyphen 175.63 253.15 14.70 "-"
@@ -158,95 +158,95 @@ staff rect 76.09 71.28 643.91 0.77
 clef DoClef 76.09 35.66
 note PunctumQuadratum 94.09 71.66 n0
 Hyphen 92.07 93.50 14.70 "-"
-stem rect 108.86 71.66 0.77 8.83 n1
-note PunctumQuadratum 111.86 71.66 n1
-note PunctumQuadratum 117.86 77.66 n2
-Lyric 102.74 93.50 14.70 s2 "ve"
-stem rect 136.39 59.66 0.77 14.83 n3
-note PunctumQuadratum 139.39 59.66 n3
-note PunctumQuadratum 145.39 65.66 n4
-Lyric 123.36 93.50 14.70 s3 "Ma"
-note PodatusLowerShort 163.16 53.66 n5
-note PodatusUpperShort 166.16 47.66 n6
-Lyric 156.45 93.50 14.70 s4 "rí"
-note PunctumQuadratum 180.94 53.66 n7
-mora Mora 184.06 53.66 n7
-Lyric 178.01 93.50 14.70 s5 "a,"
-bar rect 199.74 29.66 0.77 12.00
-note PunctumQuadratum 214.86 53.66 n8
-Lyric 200.63 93.50 14.70 s7 "grá"
-note PunctumQuadratum 232.64 47.66 n9
-Lyric 226.22 93.50 14.70 s8 "ti"
-note PunctumQuadratum 250.42 53.66 n10
-note PunctumQuadratum 256.42 47.66 n11
-note PunctumQuadratum 262.42 53.66 n12
-Lyric 247.48 93.50 14.70 s9 "a"
-stem rect 279.17 59.66 0.77 14.83 n13
-note PunctumQuadratum 282.17 59.66 n13
-note PunctumQuadratum 288.17 65.66 n14
-Lyric 268.37 93.50 14.70 s10 "ple"
-note PunctumQuadratum 305.95 59.66 n15
-mora Mora 309.07 55.16 n15
-Lyric 295.25 93.50 14.70 s11 "na,"
-bar rect 324.75 41.66 0.77 24.00
-note PunctumQuadratum 339.87 59.66 n16
-Lyric 325.15 93.50 14.70 s13 "Dó"
-note PunctumQuadratum 356.75 71.66 n17
-Lyric 343.51 93.50 14.70 s14 "mi"
-note PunctumQuadratum 375.97 65.66 n18
-Lyric 364.33 93.50 14.70 s15 "nus"
-stem rect 397.88 71.66 0.77 8.83 n19
-note PunctumQuadratum 400.88 71.66 n19
-note PunctumQuadratum 406.88 77.66 n20
-Lyric 393.40 93.50 14.70 s16 "te"
-note PunctumQuadratum 424.66 77.66 n21
-mora Mora 427.78 77.66 n21
-Lyric 414.80 93.50 14.70 s17 "cum:"
-bar rect 443.46 35.66 0.77 36.00
-note PunctumQuadratum 464.62 77.66 n22
-Lyric 454.18 93.50 14.70 s19 "be"
-note PunctumQuadratum 483.90 71.66 n23
-Lyric 473.27 93.50 14.70 s20 "ne"
-note PunctumQuadratum 501.79 59.66 n24
-Lyric 492.55 93.50 14.70 s21 "dí"
-note PunctumQuadratum 522.91 59.66 n25
-note PunctumQuadratum 531.91 59.66 n26
-Lyric 509.37 93.50 14.70 s22 "cta"
-note PunctumQuadratum 551.66 47.66 n27
-note Quilisma 557.66 41.66 n28
-note PodatusUpperShort 560.66 35.66 n29
-Lyric 543.17 93.50 14.70 s23 "tu"
-note PunctumQuadratum 577.42 47.66 n30
-Lyric 575.62 93.50 14.70 s24 "in"
-note PunctumQuadratum 611.10 53.66 n31
-Lyric 595.79 93.50 14.70 s25 "mu"
-note PunctumQuadratum 628.88 59.66 n32
-Lyric 623.55 93.50 14.70 s26 "li"
-note PodatusLowerShort 646.66 53.66 n33
-note PodatusUpperShort 649.66 47.66 n34
-Lyric 643.79 93.50 14.70 s27 "é"
-stem rect 661.43 53.66 0.77 8.83 n35
-note PunctumQuadratum 664.43 53.66 n35
-note PunctumQuadratum 670.43 59.66 n36
-Lyric 657.72 93.50 14.70 s28 "ri"
-note PunctumQuadratum 688.21 65.66 n37
-mora Mora 691.33 65.66 n37
-Lyric 676.77 93.50 14.70 s29 "bus,"
+stem rect 108.95 71.66 0.77 8.83 n1
+note PunctumQuadratum 111.95 71.66 n1
+note PunctumQuadratum 117.95 77.66 n2
+Lyric 102.82 93.50 14.70 s2 "ve"
+stem rect 136.55 59.66 0.77 14.83 n3
+note PunctumQuadratum 139.55 59.66 n3
+note PunctumQuadratum 145.55 65.66 n4
+Lyric 123.52 93.50 14.70 s3 "Ma"
+note PodatusLowerShort 163.42 53.66 n5
+note PodatusUpperShort 166.42 47.66 n6
+Lyric 156.70 93.50 14.70 s4 "rí"
+note PunctumQuadratum 181.28 53.66 n7
+mora Mora 184.40 53.66 n7
+Lyric 178.34 93.50 14.70 s5 "a,"
+bar rect 198.90 29.66 0.77 12.00
+note PunctumQuadratum 212.84 53.66 n8
+Lyric 198.61 93.50 14.70 s7 "grá"
+note PunctumQuadratum 230.70 47.66 n9
+Lyric 224.29 93.50 14.70 s8 "ti"
+note PunctumQuadratum 248.56 53.66 n10
+note PunctumQuadratum 254.56 47.66 n11
+note PunctumQuadratum 260.56 53.66 n12
+Lyric 245.63 93.50 14.70 s9 "a"
+stem rect 277.40 59.66 0.77 14.83 n13
+note PunctumQuadratum 280.40 59.66 n13
+note PunctumQuadratum 286.40 65.66 n14
+Lyric 266.60 93.50 14.70 s10 "ple"
+note PunctumQuadratum 304.26 59.66 n15
+mora Mora 307.38 55.16 n15
+Lyric 293.57 93.50 14.70 s11 "na,"
+bar rect 323.20 41.66 0.77 24.00
+note PunctumQuadratum 338.47 59.66 n16
+Lyric 323.75 93.50 14.70 s13 "Dó"
+note PunctumQuadratum 355.35 71.66 n17
+Lyric 342.11 93.50 14.70 s14 "mi"
+note PunctumQuadratum 374.65 65.66 n18
+Lyric 363.02 93.50 14.70 s15 "nus"
+stem rect 396.65 71.66 0.77 8.83 n19
+note PunctumQuadratum 399.65 71.66 n19
+note PunctumQuadratum 405.65 77.66 n20
+Lyric 392.17 93.50 14.70 s16 "te"
+note PunctumQuadratum 423.51 77.66 n21
+mora Mora 426.63 77.66 n21
+Lyric 413.66 93.50 14.70 s17 "cum:"
+bar rect 442.45 35.66 0.77 36.00
+note PunctumQuadratum 463.64 77.66 n22
+Lyric 453.20 93.50 14.70 s19 "be"
+note PunctumQuadratum 483.00 71.66 n23
+Lyric 472.38 93.50 14.70 s20 "ne"
+note PunctumQuadratum 500.98 59.66 n24
+Lyric 491.74 93.50 14.70 s21 "dí"
+note PunctumQuadratum 522.18 59.66 n25
+note PunctumQuadratum 531.18 59.66 n26
+Lyric 508.65 93.50 14.70 s22 "cta"
+note PunctumQuadratum 551.02 47.66 n27
+note Quilisma 557.02 41.66 n28
+note PodatusUpperShort 560.02 35.66 n29
+Lyric 542.53 93.50 14.70 s23 "tu"
+note PunctumQuadratum 576.86 47.66 n30
+Lyric 575.06 93.50 14.70 s24 "in"
+note PunctumQuadratum 610.63 53.66 n31
+Lyric 595.32 93.50 14.70 s25 "mu"
+note PunctumQuadratum 628.49 59.66 n32
+Lyric 623.16 93.50 14.70 s26 "li"
+note PodatusLowerShort 646.35 53.66 n33
+note PodatusUpperShort 649.35 47.66 n34
+Lyric 643.48 93.50 14.70 s27 "é"
+stem rect 661.21 53.66 0.77 8.83 n35
+note PunctumQuadratum 664.21 53.66 n35
+note PunctumQuadratum 670.21 59.66 n36
+Lyric 657.50 93.50 14.70 s28 "ri"
+note PunctumQuadratum 688.07 65.66 n37
+mora Mora 691.19 65.66 n37
+Lyric 676.62 93.50 14.70 s29 "bus,"
 bar rect 707.01 41.66 0.77 24.00
-Hyphen 142.17 93.50 14.70 "-"
-Hyphen 164.97 93.50 14.70 "-"
-Hyphen 217.79 93.50 14.70 "-"
-Hyphen 234.44 93.50 14.70 "-"
-Hyphen 285.04 93.50 14.70 "-"
-Hyphen 358.55 93.50 14.70 "-"
-Hyphen 403.75 93.50 14.70 "-"
-Hyphen 467.49 93.50 14.70 "-"
-Hyphen 486.77 93.50 14.70 "-"
-Hyphen 503.59 93.50 14.70 "-"
-Hyphen 614.98 93.50 14.70 "-"
-Hyphen 630.68 93.50 14.70 "-"
-Hyphen 649.52 93.50 14.70 "-"
-Hyphen 666.23 93.50 14.70 "-"
+Hyphen 142.34 93.50 14.70 "-"
+Hyphen 165.22 93.50 14.70 "-"
+Hyphen 215.78 93.50 14.70 "-"
+Hyphen 232.50 93.50 14.70 "-"
+Hyphen 283.27 93.50 14.70 "-"
+Hyphen 357.15 93.50 14.70 "-"
+Hyphen 402.52 93.50 14.70 "-"
+Hyphen 466.51 93.50 14.70 "-"
+Hyphen 485.87 93.50 14.70 "-"
+Hyphen 502.78 93.50 14.70 "-"
+Hyphen 614.50 93.50 14.70 "-"
+Hyphen 630.29 93.50 14.70 "-"
+Hyphen 649.21 93.50 14.70 "-"
+Hyphen 666.01 93.50 14.70 "-"
 custos CustosShort 717.38 65.66
 staff rect 0.00 117.90 720.00 0.77
 staff rect 0.00 129.90 720.00 0.77
@@ -278,8 +278,8 @@ Lyric 204.59 174.08 14.70 s40 "tu"
 note PunctumQuadratum 229.10 154.28 n49
 mora Mora 232.22 149.78 n49
 Lyric 227.30 174.08 14.70 s41 "i."
-bar rect 246.14 118.28 0.77 36.00
-bar rect 251.46 118.28 0.77 36.00
+bar rect 246.20 118.28 0.77 36.00
+bar rect 251.52 118.28 0.77 36.00
 Hyphen 45.84 174.08 14.70 "-"
 Hyphen 63.36 174.08 14.70 "-"
 Hyphen 175.63 174.08 14.70 "-"

@@ -153,9 +153,10 @@ singing order, each a `TimelineNote` with:
 
 `timeline.pauses` have kinds that include the mediant `*` and the flex `†`, and a `start` and
 `duration`. A mark is the whole pause at its bar, so a bar right after one lasts 0. Each
-pause's `bar` is where its bar is drawn: `line`, `left` and `right` (both strokes of a double
-bar), `cx`, `top` and `bottom`, and the bar's `index` in the score. A mark gives the bar it
-sits at; `bar` is null when no bar is drawn for the pause.
+pause's `bar` is where its bar is drawn: its `line`, its box `x`, `y`, `w` and `h` (both
+strokes of a double bar) and `cx`, as the bar's `SourceElement` has them, and the bar's
+`index` in the score. A mark gives the bar it sits at; `bar` is null when no bar is drawn for
+the pause, as for a mark written as text alone, so a cursor stays at the note before it.
 `Weights` are the relative durations, and any field left out keeps its default. `virgula`
 also times the minimis bar, and `half` the Dominican bars. `layout.noteAtTime(t, weights)`
 finds the note sounding at time `t` for a playhead (null in a pause), keeping the timeline
