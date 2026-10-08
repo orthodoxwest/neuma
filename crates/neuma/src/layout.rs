@@ -2033,10 +2033,11 @@ mod tests {
     #[cfg(any(feature = "font-google", feature = "font-garamond12"))]
     fn break_stats() -> Option<(usize, usize, f32, usize)> {
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-        let dirs = ["tests/golden", "tests/corpus", "../../examples/compline"].map(|d| dir.join(d));
-        if !dirs.iter().all(|d| d.is_dir()) {
+        // A published crate has no tests/ folder; in the repo, every folder must be there.
+        if !dir.join("tests").is_dir() {
             return None;
         }
+        let dirs = ["tests/golden", "tests/corpus", "../../examples/compline"].map(|d| dir.join(d));
         let mut paths: Vec<_> = dirs
             .iter()
             .flat_map(|d| std::fs::read_dir(d).expect("reference scores"))
