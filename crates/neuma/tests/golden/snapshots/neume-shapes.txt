@@ -255,8 +255,8 @@ note PodatusUpperShort 319.98 286.50 n135
 note PunctumQuadratum 325.98 292.50 n136
 note PunctumQuadratum 334.98 298.50 n137
 Lyric 303.21 324.30 14.70 s36 "re"
-bar rect 347.58 268.50 0.77 36.00
-bar rect 352.91 268.50 0.77 36.00
+bar rect 347.64 268.50 0.77 36.00
+bar rect 352.97 268.50 0.77 36.00
 Hyphen 35.62 324.30 14.70 "-"
 Hyphen 176.41 324.30 14.70 "-"
 Hyphen 209.04 324.30 14.70 "-"
@@ -499,8 +499,8 @@ note PodatusUpperShort 583.26 125.34 n135
 note PunctumQuadratum 589.26 131.34 n136
 note PunctumQuadratum 598.26 137.34 n137
 Lyric 566.48 163.14 14.70 s36 "re"
-bar rect 610.86 107.34 0.77 36.00
-bar rect 616.19 107.34 0.77 36.00
+bar rect 610.92 107.34 0.77 36.00
+bar rect 616.25 107.34 0.77 36.00
 Hyphen 19.80 163.14 14.70 "-"
 Hyphen 49.18 163.14 14.70 "-"
 Hyphen 134.13 163.14 14.70 "-"

@@ -180,10 +180,15 @@ same.
     the mediant `*`.
   - `sourceStart`, `sourceEnd`: the note's bytes in the GABC source;
     `sourceUtf16Start`, `sourceUtf16End`: the same in UTF-16 units.
-- **`timeline.pauses`**: `{ beforeNote, kind, start, duration }`. `kind` is one of
+- **`timeline.pauses`**: `{ beforeNote, kind, start, duration, bar }`. `kind` is one of
   `virgula`, `minimis`, `quarter`, `half`, `full`, `dotted-full`, `double`, `dominican`,
   `mediant` (`*`) or `flex` (`†`). A mediant or flex is the whole pause at its bar: the bar
   right after it stays in the list with duration 0.
+  - `bar`: where the pause's bar is drawn, so a cursor can stop on it without reading the
+    SVG: `{ index, line, x, y, w, h, cx }`, the box `sourceAt` gives for the bar, both
+    strokes of a double bar in it. A mediant or flex gives the bar it sits at. `null` when
+    no bar is drawn for the pause, as for a mediant or flex written as text alone: a cursor
+    then stays at the note before it.
 - **`timeline.lines`**: each line's `top`, `bottom`, `staff` (the middle line) and
   `baseline` (the lyrics).
 - **`timeline.duration`**: the total length.

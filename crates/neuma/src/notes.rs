@@ -107,6 +107,33 @@ pub struct Pause {
     pub duration: f32,
     /// When the pause starts, in weight units.
     pub start: f32,
+    /// Where the pause's bar is drawn: its own for a bar, and for a mediant or flex the bar
+    /// it sits at, if one is written there. None when no bar is drawn for it, as for a mediant
+    /// or flex marked by its text alone: a cursor then stays at the note before the pause.
+    pub bar: Option<PauseBar>,
+}
+
+/// Where a [`Pause`]'s bar is drawn, in output units: the box of its ink, both strokes of a
+/// double bar, so a player can draw over it without reading the drawing. The box is the
+/// bar's [`Element`](crate::Element) in the [`SourceMap`](crate::SourceMap), with the same
+/// fields, so code that hit-tests the source map can take it as it is.
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[non_exhaustive]
+pub struct PauseBar {
+    /// The bar's index in the score, as in [`SourceMap::bars`](crate::SourceMap::bars).
+    pub index: u32,
+    /// The line it is drawn on, from 0.
+    pub line: u32,
+    /// The box's left edge.
+    pub x: f32,
+    /// The box's top edge.
+    pub y: f32,
+    /// The box's width.
+    pub w: f32,
+    /// The box's height.
+    pub h: f32,
+    /// The box's center, `x + w / 2`.
+    pub cx: f32,
 }
 
 /// Relative durations: multipliers per sign, in weight units. Not beats; tools choose the
@@ -246,6 +273,7 @@ pub(crate) fn timed_pauses(marks: &[(u32, PauseKind)], weights: &Weights) -> Vec
             kind,
             duration: weights.pause(kind),
             start: 0.0,
+            bar: None,
         })
         .collect();
     for i in 1..pauses.len() {
@@ -339,6 +367,7 @@ impl Layout {
 
         // Lay notes and pauses end to end, and count phrases.
         let mut pauses = timed_pauses(&eng.pauses, weights);
+        self.place_bars(&mut pauses);
         // A layout cut short keeps only the pauses drawn on its lines.
         if truncated {
             let mut segs = eng.pause_segments.iter();
@@ -388,6 +417,63 @@ impl Layout {
             pauses,
             lines,
             duration: t,
+        }
+    }
+}
+
+impl Layout {
+    /// Sets each pause's bar from where this layout draws it (see [`Pause::bar`]). The bar
+    /// pauses are the score's bars in order; a mediant or flex takes the bar written right
+    /// after it, before the next note, or else right before it.
+    fn place_bars(&self, pauses: &mut [Pause]) {
+        let eng = &*self.eng;
+        let s = self.scale;
+        let mut drawn: Vec<Option<PauseBar>> = vec![None; eng.bar_spans.len()];
+        for (li, line) in self.lines.iter().enumerate() {
+            for (i, seg) in eng.segments[line.first..=line.last].iter().enumerate() {
+                for b in &seg.bars {
+                    let index = seg.bar(b.bar);
+                    if let Some(slot) = drawn.get_mut(index as usize) {
+                        // As the source map draws its box.
+                        let x0 = line.xs[i];
+                        *slot = Some(PauseBar {
+                            index,
+                            line: li as u32,
+                            x: (x0 + b.x) * s,
+                            y: (line.staff + b.top) * s,
+                            w: b.w * s,
+                            h: (b.bottom - b.top) * s,
+                            cx: (x0 + b.x + b.w / 2.0) * s,
+                        });
+                    }
+                }
+            }
+        }
+        let mut next = 0usize;
+        for p in pauses.iter_mut() {
+            if let PauseKind::Bar(_) = p.kind {
+                p.bar = drawn.get(next).copied().flatten();
+                next += 1;
+            }
+        }
+        debug_assert_eq!(next, eng.bar_spans.len(), "a bar pause for every bar");
+        for i in 0..pauses.len() {
+            if matches!(pauses[i].kind, PauseKind::Mediant | PauseKind::Flex) {
+                let at = pauses[i].before_note;
+                let beside = |p: &&Pause| p.before_note == at;
+                let after = pauses[i + 1..]
+                    .iter()
+                    .take_while(beside)
+                    .find(|p| matches!(p.kind, PauseKind::Bar(_)));
+                let before = || {
+                    pauses[..i]
+                        .iter()
+                        .rev()
+                        .take_while(beside)
+                        .find(|p| matches!(p.kind, PauseKind::Bar(_)))
+                };
+                pauses[i].bar = after.or_else(before).and_then(|p| p.bar);
+            }
         }
     }
 }

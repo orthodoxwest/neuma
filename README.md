@@ -264,8 +264,10 @@ requestAnimationFrame(function tick(now) {
 });
 ```
 
-`page.noteAt(x, y)` answers the reverse question for a tap or a click. The timeline also
-marks recitation, accents, the start of each syllable, and the verse and half-verse.
+`page.noteAt(x, y)` answers the reverse question for a tap or a click. Each pause at a bar
+says where the bar is drawn (`bar`: its line and its box, as the source map gives it), so a
+cursor can stop on it. The timeline also marks recitation, accents, the start of each
+syllable, and the verse and half-verse.
 
 ### Psalm tones and automatic pointing
 

@@ -13,44 +13,44 @@ note PunctumQuadratum 96.25 36.89 n0
 note PodatusLowerShort 105.25 36.89 n1
 note PodatusUpperShort 108.25 30.89 n2
 Lyric 77.63 68.69 14.70 s1 "Hris"
-note PunctumQuadratum 122.30 36.89 n3
-mora Mora 125.42 32.39 n3
-Lyric 113.81 68.69 14.70 s2 "tus"
-bar rect 141.13 6.89 0.77 12.00
-Lyric 139.01 68.69 14.70 s3 "*"
-note PodatusLowerShort 159.52 36.89 n4
-note PodatusUpperShort 162.52 30.89 n5
-Lyric 152.10 68.69 14.70 s4 "fac"
-note PunctumQuadratum 176.74 36.89 n6
-Lyric 168.25 68.69 14.70 s5 "tus"
-note PunctumQuadratum 196.32 36.89 n7
-ictus VerticalEpisemaBelow 196.32 41.69 n7
-Lyric 193.45 68.69 14.70 s6 "est"
-note PunctumQuadratum 232.81 36.89 n8
-Lyric 216.64 68.69 14.70 s7 "pro"
-note PodatusLowerShort 255.94 30.89 n9
-note PodatusUpperShort 258.94 24.89 n10
-note PunctumInclinatum 263.98 36.89 n11
-note PunctumInclinatum 267.98 42.89 n12
-note PunctumInclinatum 271.98 48.89 n13
-ictus VerticalEpisemaBelow 263.98 43.49 n11
-mora Mora 275.10 53.39 n13
-stem rect 277.98 30.89 0.77 14.83 n14
-note PunctumQuadratum 280.98 30.89 n14
-stem rect 283.21 30.89 0.77 12.00 n15
-note PunctumQuadratum 286.21 42.89 n15
-episema rect 277.98 20.41 6.00 0.96 n14
-note PodatusLowerShort 295.09 36.89 n16
-note PodatusUpperShort 298.09 30.89 n17
-Lyric 244.54 68.69 14.70 s8 "no"
-note PunctumQuadratum 312.15 36.89 n18
-mora Mora 315.27 32.39 n18
-Lyric 302.77 68.69 14.70 s9 "bis"
-bar rect 330.22 18.89 0.77 24.00
+note PunctumQuadratum 122.29 36.89 n3
+mora Mora 125.41 32.39 n3
+Lyric 113.80 68.69 14.70 s2 "tus"
+bar rect 141.10 6.89 0.77 12.00
+Lyric 138.98 68.69 14.70 s3 "*"
+note PodatusLowerShort 159.48 36.89 n4
+note PodatusUpperShort 162.48 30.89 n5
+Lyric 152.06 68.69 14.70 s4 "fac"
+note PunctumQuadratum 176.70 36.89 n6
+Lyric 168.21 68.69 14.70 s5 "tus"
+note PunctumQuadratum 196.27 36.89 n7
+ictus VerticalEpisemaBelow 196.27 41.69 n7
+Lyric 193.40 68.69 14.70 s6 "est"
+note PunctumQuadratum 232.75 36.89 n8
+Lyric 216.57 68.69 14.70 s7 "pro"
+note PodatusLowerShort 255.86 30.89 n9
+note PodatusUpperShort 258.86 24.89 n10
+note PunctumInclinatum 263.90 36.89 n11
+note PunctumInclinatum 267.90 42.89 n12
+note PunctumInclinatum 271.90 48.89 n13
+ictus VerticalEpisemaBelow 263.90 43.49 n11
+mora Mora 275.02 53.39 n13
+stem rect 277.90 30.89 0.77 14.83 n14
+note PunctumQuadratum 280.90 30.89 n14
+stem rect 283.13 30.89 0.77 12.00 n15
+note PunctumQuadratum 286.13 42.89 n15
+episema rect 277.90 20.41 6.00 0.96 n14
+note PodatusLowerShort 295.01 36.89 n16
+note PodatusUpperShort 298.01 30.89 n17
+Lyric 244.46 68.69 14.70 s8 "no"
+note PunctumQuadratum 312.05 36.89 n18
+mora Mora 315.17 32.39 n18
+Lyric 302.68 68.69 14.70 s9 "bis"
+bar rect 330.17 18.89 0.77 24.00
 note PunctumQuadratum 344.62 36.89 n19
 Lyric 340.98 68.69 14.70 s11 "o"
 Hyphen 102.80 68.69 14.70 "-"
-Hyphen 259.58 68.69 14.70 "-"
+Hyphen 259.50 68.69 14.70 "-"
 Hyphen 348.26 68.69 14.70 "-"
 custos CustosLong 357.22 24.89
 staff rect 0.00 93.09 360.00 0.77
@@ -70,46 +70,46 @@ stem rect 52.99 87.47 0.77 8.83 n26
 note Porrectus1 55.99 87.47 n26-27
 note PodatusUpperShort 71.13 87.47 n28
 Lyric 7.56 149.27 14.70 s12 "bé"
-stem rect 82.26 93.47 0.77 14.83 n29
-note Porrectus1 85.26 93.47 n29-30
-note PodatusUpperShort 100.40 93.47 n31
-Lyric 76.02 149.27 14.70 s13 "di"
-stem rect 111.52 105.47 0.77 14.83 n32
-note PunctumQuadratum 114.52 105.47 n32
-note PunctumQuadratum 120.52 111.47 n33
-episema rect 111.52 97.92 6.00 0.96 n32
-Lyric 111.66 149.27 14.70 s14 "ens"
-bar rect 134.23 87.47 0.77 12.00
-note PunctumQuadratum 148.70 105.47 n34
-note PunctumQuadratum 154.70 93.47 n35
-stem rect 160.70 93.47 0.77 14.83 n36
-note PunctumQuadratum 163.70 93.47 n36
-stem rect 165.93 93.47 0.77 12.00 n37
-note PunctumQuadratum 168.93 105.47 n37
-Lyric 144.83 149.27 14.70 s16 "us"
-note PunctumQuadratum 186.06 117.47 n38
-mora Mora 189.18 112.97 n38
-Lyric 167.77 149.27 14.70 s17 "que"
-accidental Flat 206.67 99.47
-note PodatusLower 218.48 117.47 n39
-stem rect 220.71 99.47 0.77 18.00 n40
-note PodatusUpper 221.48 99.47 n40
-note PunctumInclinatum 226.52 105.47 n41
-note PunctumInclinatum 230.52 111.47 n42
-ictus VerticalEpisemaBelow 226.52 112.07 n41
-note PunctumQuadratum 239.52 105.47 n43
-Lyric 215.55 149.27 14.70 s18 "ad"
-note PunctumQuadratum 258.62 117.47 n44
-note PunctumQuadratum 264.62 111.47 n45
-note PunctumQuadratum 270.62 117.47 n46
-episema rect 255.62 109.92 6.00 0.96 n44
-episema rect 261.62 100.99 6.00 0.96 n45
-episema rect 267.62 109.92 6.00 0.96 n46
-Lyric 243.55 149.27 14.70 s19 "mor"
-note PunctumQuadratum 287.75 117.47 n47
-mora Mora 290.87 112.97 n47
-Lyric 280.27 149.27 14.70 s20 "tem,"
-bar rect 305.89 93.47 0.77 36.00
+stem rect 82.51 93.47 0.77 14.83 n29
+note Porrectus1 85.51 93.47 n29-30
+note PodatusUpperShort 100.65 93.47 n31
+Lyric 76.27 149.27 14.70 s13 "di"
+stem rect 112.03 105.47 0.77 14.83 n32
+note PunctumQuadratum 115.03 105.47 n32
+note PunctumQuadratum 121.03 111.47 n33
+episema rect 112.03 97.92 6.00 0.96 n32
+Lyric 112.16 149.27 14.70 s14 "ens"
+bar rect 133.72 87.47 0.77 12.00
+note PunctumQuadratum 147.19 105.47 n34
+note PunctumQuadratum 153.19 93.47 n35
+stem rect 159.19 93.47 0.77 14.83 n36
+note PunctumQuadratum 162.19 93.47 n36
+stem rect 164.42 93.47 0.77 12.00 n37
+note PunctumQuadratum 167.42 105.47 n37
+Lyric 143.32 149.27 14.70 s16 "us"
+note PunctumQuadratum 184.80 117.47 n38
+mora Mora 187.92 112.97 n38
+Lyric 166.51 149.27 14.70 s17 "que"
+accidental Flat 205.66 99.47
+note PodatusLower 217.47 117.47 n39
+stem rect 219.70 99.47 0.77 18.00 n40
+note PodatusUpper 220.47 99.47 n40
+note PunctumInclinatum 225.51 105.47 n41
+note PunctumInclinatum 229.51 111.47 n42
+ictus VerticalEpisemaBelow 225.51 112.07 n41
+note PunctumQuadratum 238.51 105.47 n43
+Lyric 214.54 149.27 14.70 s18 "ad"
+note PunctumQuadratum 257.87 117.47 n44
+note PunctumQuadratum 263.87 111.47 n45
+note PunctumQuadratum 269.87 117.47 n46
+episema rect 254.87 109.92 6.00 0.96 n44
+episema rect 260.87 100.99 6.00 0.96 n45
+episema rect 266.87 109.92 6.00 0.96 n46
+Lyric 242.79 149.27 14.70 s19 "mor"
+note PunctumQuadratum 287.25 117.47 n47
+mora Mora 290.37 112.97 n47
+Lyric 279.76 149.27 14.70 s20 "tem,"
+bar rect 305.70 93.47 0.77 36.00
 accidental Flat 317.96 99.47
 note PunctumQuadratum 329.78 117.47 n48
 note PunctumQuadratum 335.78 105.47 n49
@@ -117,9 +117,9 @@ note PodatusLowerShort 344.78 105.47 n50
 note PodatusUpperShort 347.78 99.47 n51
 Lyric 314.70 149.27 14.70 s22 "mor"
 Hyphen 20.87 149.27 14.70 "-"
-Hyphen 87.06 149.27 14.70 "-"
-Hyphen 157.32 149.27 14.70 "-"
-Hyphen 267.17 149.27 14.70 "-"
+Hyphen 87.31 149.27 14.70 "-"
+Hyphen 155.81 149.27 14.70 "-"
+Hyphen 266.42 149.27 14.70 "-"
 Hyphen 338.32 149.27 14.70 "-"
 custos CustosShort 357.38 111.47
 staff rect 0.00 172.96 360.00 0.77
@@ -164,8 +164,8 @@ stem rect 183.13 197.34 0.77 18.00 n70
 note PunctumQuadratum 186.13 215.34 n70
 episema rect 177.90 189.78 6.00 0.96 n69
 Lyric 173.12 229.85 14.70 s27 "cis."
-bar rect 198.73 173.34 0.77 36.00
-bar rect 204.06 173.34 0.77 36.00
+bar rect 198.79 173.34 0.77 36.00
+bar rect 204.12 173.34 0.77 36.00
 Hyphen 52.97 229.85 14.70 "-"
 Hyphen 150.75 229.85 14.70 "-"
 Initial 8.34 68.69 85.85 s1 "C"
@@ -183,110 +183,110 @@ note PunctumQuadratum 96.25 36.89 n0
 note PodatusLowerShort 105.25 36.89 n1
 note PodatusUpperShort 108.25 30.89 n2
 Lyric 77.63 68.69 14.70 s1 "Hris"
-note PunctumQuadratum 122.20 36.89 n3
-mora Mora 125.32 32.39 n3
-Lyric 113.71 68.69 14.70 s2 "tus"
-bar rect 140.93 6.89 0.77 12.00
-Lyric 138.81 68.69 14.70 s3 "*"
-note PodatusLowerShort 159.22 36.89 n4
-note PodatusUpperShort 162.22 30.89 n5
-Lyric 151.80 68.69 14.70 s4 "fac"
-note PunctumQuadratum 176.44 36.89 n6
-Lyric 167.96 68.69 14.70 s5 "tus"
-note PunctumQuadratum 195.92 36.89 n7
-ictus VerticalEpisemaBelow 195.92 41.69 n7
-Lyric 193.06 68.69 14.70 s6 "est"
-note PunctumQuadratum 232.32 36.89 n8
-Lyric 216.14 68.69 14.70 s7 "pro"
-note PodatusLowerShort 255.35 30.89 n9
-note PodatusUpperShort 258.35 24.89 n10
-note PunctumInclinatum 263.39 36.89 n11
-note PunctumInclinatum 267.39 42.89 n12
-note PunctumInclinatum 271.39 48.89 n13
-ictus VerticalEpisemaBelow 263.39 43.49 n11
-mora Mora 274.51 53.39 n13
-stem rect 277.39 30.89 0.77 14.83 n14
-note PunctumQuadratum 280.39 30.89 n14
-stem rect 282.62 30.89 0.77 12.00 n15
-note PunctumQuadratum 285.62 42.89 n15
-episema rect 277.39 20.41 6.00 0.96 n14
-note PodatusLowerShort 294.50 36.89 n16
-note PodatusUpperShort 297.50 30.89 n17
-Lyric 243.95 68.69 14.70 s8 "no"
-note PunctumQuadratum 311.45 36.89 n18
-mora Mora 314.57 32.39 n18
-Lyric 302.08 68.69 14.70 s9 "bis"
-bar rect 329.43 18.89 0.77 24.00
-note PunctumQuadratum 343.73 36.89 n19
-Lyric 340.09 68.69 14.70 s11 "o"
-stem rect 359.76 24.89 0.77 14.83 n20
-note PunctumQuadratum 362.76 24.89 n20
-stem rect 365.00 24.89 0.77 12.00 n21
-note PunctumQuadratum 368.00 36.89 n21
-note PodatusLowerShort 376.88 30.89 n22
-note PodatusUpperShort 379.88 24.89 n23
-note PunctumQuadratum 382.88 12.89 n24
-note PunctumQuadratum 391.88 12.89 n25
-stem rect 397.76 6.89 0.77 8.83 n26
-note Porrectus1 400.76 6.89 n26-27
-note PodatusUpperShort 415.90 6.89 n28
-Lyric 352.33 68.69 14.70 s12 "bé"
-stem rect 426.85 12.89 0.77 14.83 n29
-note Porrectus1 429.85 12.89 n29-30
-note PodatusUpperShort 444.99 12.89 n31
-Lyric 420.61 68.69 14.70 s13 "di"
-stem rect 455.94 24.89 0.77 14.83 n32
-note PunctumQuadratum 458.94 24.89 n32
-note PunctumQuadratum 464.94 30.89 n33
-episema rect 455.94 17.34 6.00 0.96 n32
-Lyric 456.08 68.69 14.70 s14 "ens"
-bar rect 478.48 6.89 0.77 12.00
-note PunctumQuadratum 492.78 24.89 n34
-note PunctumQuadratum 498.78 12.89 n35
-stem rect 504.78 12.89 0.77 14.83 n36
-note PunctumQuadratum 507.78 12.89 n36
-stem rect 510.01 12.89 0.77 12.00 n37
-note PunctumQuadratum 513.01 24.89 n37
-Lyric 488.91 68.69 14.70 s16 "us"
-note PunctumQuadratum 529.96 36.89 n38
-mora Mora 533.08 32.39 n38
-Lyric 511.68 68.69 14.70 s17 "que"
-accidental Flat 550.40 18.89
-note PodatusLower 562.21 36.89 n39
-stem rect 564.44 18.89 0.77 18.00 n40
-note PodatusUpper 565.21 18.89 n40
-note PunctumInclinatum 570.25 24.89 n41
-note PunctumInclinatum 574.25 30.89 n42
-ictus VerticalEpisemaBelow 570.25 31.49 n41
-note PunctumQuadratum 583.25 24.89 n43
-Lyric 559.28 68.69 14.70 s18 "ad"
-note PunctumQuadratum 602.19 36.89 n44
-note PunctumQuadratum 608.19 30.89 n45
-note PunctumQuadratum 614.19 36.89 n46
-episema rect 599.19 29.34 6.00 0.96 n44
-episema rect 605.19 20.41 6.00 0.96 n45
-episema rect 611.19 29.34 6.00 0.96 n46
-Lyric 587.11 68.69 14.70 s19 "mor"
-note PunctumQuadratum 631.14 36.89 n47
-mora Mora 634.26 32.39 n47
-Lyric 623.66 68.69 14.70 s20 "tem,"
-bar rect 649.11 12.89 0.77 36.00
-accidental Flat 661.01 18.89
-note PunctumQuadratum 672.82 36.89 n48
-note PunctumQuadratum 678.82 24.89 n49
-note PodatusLowerShort 687.82 24.89 n50
-note PodatusUpperShort 690.82 18.89 n51
-Lyric 657.75 68.69 14.70 s22 "mor"
+note PunctumQuadratum 122.32 36.89 n3
+mora Mora 125.44 32.39 n3
+Lyric 113.83 68.69 14.70 s2 "tus"
+bar rect 141.16 6.89 0.77 12.00
+Lyric 139.04 68.69 14.70 s3 "*"
+note PodatusLowerShort 159.57 36.89 n4
+note PodatusUpperShort 162.57 30.89 n5
+Lyric 152.14 68.69 14.70 s4 "fac"
+note PunctumQuadratum 176.79 36.89 n6
+Lyric 168.30 68.69 14.70 s5 "tus"
+note PunctumQuadratum 196.38 36.89 n7
+ictus VerticalEpisemaBelow 196.38 41.69 n7
+Lyric 193.51 68.69 14.70 s6 "est"
+note PunctumQuadratum 232.89 36.89 n8
+Lyric 216.71 68.69 14.70 s7 "pro"
+note PodatusLowerShort 256.03 30.89 n9
+note PodatusUpperShort 259.03 24.89 n10
+note PunctumInclinatum 264.07 36.89 n11
+note PunctumInclinatum 268.07 42.89 n12
+note PunctumInclinatum 272.07 48.89 n13
+ictus VerticalEpisemaBelow 264.07 43.49 n11
+mora Mora 275.19 53.39 n13
+stem rect 278.07 30.89 0.77 14.83 n14
+note PunctumQuadratum 281.07 30.89 n14
+stem rect 283.30 30.89 0.77 12.00 n15
+note PunctumQuadratum 286.30 42.89 n15
+episema rect 278.07 20.41 6.00 0.96 n14
+note PodatusLowerShort 295.18 36.89 n16
+note PodatusUpperShort 298.18 30.89 n17
+Lyric 244.63 68.69 14.70 s8 "no"
+note PunctumQuadratum 312.25 36.89 n18
+mora Mora 315.37 32.39 n18
+Lyric 302.88 68.69 14.70 s9 "bis"
+bar rect 330.40 18.89 0.77 24.00
+note PunctumQuadratum 344.88 36.89 n19
+Lyric 341.24 68.69 14.70 s11 "o"
+stem rect 361.03 24.89 0.77 14.83 n20
+note PunctumQuadratum 364.03 24.89 n20
+stem rect 366.26 24.89 0.77 12.00 n21
+note PunctumQuadratum 369.26 36.89 n21
+note PodatusLowerShort 378.14 30.89 n22
+note PodatusUpperShort 381.14 24.89 n23
+note PunctumQuadratum 384.14 12.89 n24
+note PunctumQuadratum 393.14 12.89 n25
+stem rect 399.02 6.89 0.77 8.83 n26
+note Porrectus1 402.02 6.89 n26-27
+note PodatusUpperShort 417.16 6.89 n28
+Lyric 353.59 68.69 14.70 s12 "bé"
+stem rect 428.23 12.89 0.77 14.83 n29
+note Porrectus1 431.23 12.89 n29-30
+note PodatusUpperShort 446.37 12.89 n31
+Lyric 421.99 68.69 14.70 s13 "di"
+stem rect 457.44 24.89 0.77 14.83 n32
+note PunctumQuadratum 460.44 24.89 n32
+note PunctumQuadratum 466.44 30.89 n33
+episema rect 457.44 17.34 6.00 0.96 n32
+Lyric 457.57 68.69 14.70 s14 "ens"
+bar rect 478.82 6.89 0.77 12.00
+note PunctumQuadratum 491.98 24.89 n34
+note PunctumQuadratum 497.98 12.89 n35
+stem rect 503.98 12.89 0.77 14.83 n36
+note PunctumQuadratum 506.98 12.89 n36
+stem rect 509.21 12.89 0.77 12.00 n37
+note PunctumQuadratum 512.21 24.89 n37
+Lyric 488.11 68.69 14.70 s16 "us"
+note PunctumQuadratum 529.28 36.89 n38
+mora Mora 532.40 32.39 n38
+Lyric 510.99 68.69 14.70 s17 "que"
+accidental Flat 549.83 18.89
+note PodatusLower 561.64 36.89 n39
+stem rect 563.87 18.89 0.77 18.00 n40
+note PodatusUpper 564.64 18.89 n40
+note PunctumInclinatum 569.68 24.89 n41
+note PunctumInclinatum 573.68 30.89 n42
+ictus VerticalEpisemaBelow 569.68 31.49 n41
+note PunctumQuadratum 582.68 24.89 n43
+Lyric 558.71 68.69 14.70 s18 "ad"
+note PunctumQuadratum 601.73 36.89 n44
+note PunctumQuadratum 607.73 30.89 n45
+note PunctumQuadratum 613.73 36.89 n46
+episema rect 598.73 29.34 6.00 0.96 n44
+episema rect 604.73 20.41 6.00 0.96 n45
+episema rect 610.73 29.34 6.00 0.96 n46
+Lyric 586.65 68.69 14.70 s19 "mor"
+note PunctumQuadratum 630.80 36.89 n47
+mora Mora 633.92 32.39 n47
+Lyric 623.31 68.69 14.70 s20 "tem,"
+bar rect 648.94 12.89 0.77 36.00
+accidental Flat 660.89 18.89
+note PunctumQuadratum 672.71 36.89 n48
+note PunctumQuadratum 678.71 24.89 n49
+note PodatusLowerShort 687.71 24.89 n50
+note PodatusUpperShort 690.71 18.89 n51
+Lyric 657.63 68.69 14.70 s22 "mor"
 note PunctumQuadratum 704.78 30.89 n52
 Lyric 697.29 68.69 14.70 s23 "tem"
 Hyphen 102.80 68.69 14.70 "-"
-Hyphen 258.99 68.69 14.70 "-"
-Hyphen 347.37 68.69 14.70 "-"
-Hyphen 365.63 68.69 14.70 "-"
-Hyphen 431.65 68.69 14.70 "-"
-Hyphen 501.40 68.69 14.70 "-"
-Hyphen 610.73 68.69 14.70 "-"
-Hyphen 681.37 68.69 14.70 "-"
+Hyphen 259.67 68.69 14.70 "-"
+Hyphen 348.51 68.69 14.70 "-"
+Hyphen 366.89 68.69 14.70 "-"
+Hyphen 433.03 68.69 14.70 "-"
+Hyphen 500.60 68.69 14.70 "-"
+Hyphen 610.28 68.69 14.70 "-"
+Hyphen 681.26 68.69 14.70 "-"
 custos CustosShort 717.38 30.89
 staff rect 0.00 92.38 720.00 0.77
 staff rect 0.00 104.38 720.00 0.77
@@ -328,8 +328,8 @@ stem rect 163.84 116.76 0.77 18.00 n70
 note PunctumQuadratum 166.84 134.76 n70
 episema rect 158.61 109.20 6.00 0.96 n69
 Lyric 153.83 149.27 14.70 s27 "cis."
-bar rect 179.44 92.76 0.77 36.00
-bar rect 184.77 92.76 0.77 36.00
+bar rect 179.50 92.76 0.77 36.00
+bar rect 184.83 92.76 0.77 36.00
 Hyphen 33.68 149.27 14.70 "-"
 Hyphen 131.46 149.27 14.70 "-"
 Initial 8.34 68.69 85.85 s1 "C"

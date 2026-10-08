@@ -201,7 +201,9 @@ fn line(out: &mut String, l: &LineBox) {
 
 /// `{ notes, pauses, lines, duration }`: the playback timeline. Each note gives its notehead's
 /// center as `cx` and `cy`, and its source as `sourceStart` and `sourceEnd` (and, with
-/// `utf16`, the source's index, `sourceUtf16Start` and `sourceUtf16End`).
+/// `utf16`, the source's index, `sourceUtf16Start` and `sourceUtf16End`). Each pause gives
+/// its bar as `bar`: `{ index, line, x, y, w, h, cx }` as a source map element's box, or
+/// null.
 pub fn timeline(out: &mut String, map: &Timeline, utf16: Option<&Utf16Index>) {
     out.push_str("{\"notes\":[");
     for (i, n) in map.notes.iter().enumerate() {
@@ -272,6 +274,18 @@ pub fn timeline(out: &mut String, map: &Timeline, utf16: Option<&Utf16Index>) {
         number(out, p.duration);
         out.push_str(",\"start\":");
         number(out, p.start);
+        out.push_str(",\"bar\":");
+        match &p.bar {
+            Some(b) => {
+                let _ = write!(out, "{{\"index\":{},\"line\":{}", b.index, b.line);
+                for (name, v) in [("x", b.x), ("y", b.y), ("w", b.w), ("h", b.h), ("cx", b.cx)] {
+                    let _ = write!(out, ",\"{name}\":");
+                    number(out, v);
+                }
+                out.push('}');
+            }
+            None => out.push_str("null"),
+        }
         out.push('}');
     }
     out.push_str("],\"lines\":[");

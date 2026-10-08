@@ -1,8 +1,10 @@
 //! Line breaking and justification: the only width-dependent stage.
 //!
 //! Segments are packed left to right with minimum gaps (notation to notation, lyric to lyric),
-//! and an optimal-fit breaker picks the breaks with the least total demerits. Arithmetic is
-//! limited to add, subtract, multiply, divide and comparison (docs/DESIGN.md, "Determinism").
+//! and an optimal-fit breaker picks the breaks with the least total demerits. It breaks before
+//! a bar only to save a line from extreme looseness (docs/DESIGN.md, "Line breaking").
+//! Arithmetic is limited to add, subtract, multiply, divide and comparison (docs/DESIGN.md,
+//! "Determinism").
 
 use std::collections::HashMap;
 use std::fmt;
@@ -87,9 +89,17 @@ const HALF_STAFF: f32 = crate::engrave::STAFF_HEIGHT / 2.0;
 /// staff, whose interline is 0.288 cm.
 const NOTES_SYLLABLE_GAP: f32 = 1.67;
 const NOTES_WORD_GAP: f32 = 2.0;
-/// The space either side of a bar standing in a syllable of its own, as measured from
-/// GregorioTeX's output (its bar spacing, `bar@minor` and the like, is 0.18 cm plus glue).
-const BAR_GAP: f32 = 1.6;
+/// The space either side of a bar standing in a syllable of its own: GregorioTeX's
+/// `bar@minor@standalone@notext` and the like (0.2323 cm), for a half, full or double bar, or
+/// any bar with text under it.
+const BAR_GAP: f32 = 1.61;
+/// The same for a virgula, a minimis bar or a quarter bar with no text:
+/// `bar@minima@standalone@notext` and the like (0.2 cm).
+const LIGHT_BAR_GAP: f32 = 1.39;
+/// How far the gap either side of a bar may shrink: GregorioTeX's `bar@rubber` (0.025 cm).
+/// Only the notes come nearer: the texts either side of a bar keep their word space, as
+/// GregorioTeX's `interwordspacetext@bars` has no shrink.
+const BAR_SHRINK: f32 = 0.17;
 /// Gap after the line-start clef: GregorioTeX's `spaceafterlineclef` is 0.23 cm, and its
 /// output shows 1.5 staff spaces from the clef's ink to the first note.
 const CLEF_GAP: f32 = 1.5;
@@ -161,6 +171,13 @@ const LINE_GAP: f32 = 1.0;
 /// Demerits for each line, which outweigh any line's own within the tolerance, so a score
 /// takes as few lines as it can, as GregorioTeX's `\looseness=-1` asks.
 const LINE_PENALTY: f64 = 1.0e6;
+/// Demerits for a break on the wrong side of a bar: ten lines' worth. That is before a bar, so
+/// that the next line starts with it, which GregorioTeX never does; or after a bar whose text
+/// leads into what follows (see [`text_leads`]), which would leave the text behind, so a line
+/// may start with that bar instead. The breaker takes such a break only when every other way
+/// sets a line looser than about three staff spaces a gap, as a line of one syllable too
+/// narrow to hold its bar may be.
+const BAR_SIDE_DEMERITS: f64 = 10.0 * LINE_PENALTY;
 /// The loosest line taken to save a line: GregorioTeX's tolerance of 9000 lets its word
 /// gaps stretch about 4.5 times their 0.05 cm glue, 1.6 staff spaces, which is badness 115
 /// here.
@@ -417,7 +434,30 @@ struct Cursor {
     own_hyphen: bool,
     /// The last segment is a bar standing alone.
     after_bar: bool,
+    /// The gap after that bar.
+    bar_gap: f32,
+    /// How far the gaps at bars since the last text may shrink together: the next text may
+    /// take it back (see [`BAR_SHRINK`]).
+    bar_shrink: f32,
     x: f32,
+}
+
+impl Cursor {
+    /// Before a line's first segment, which starts at `x`.
+    fn at(x: f32) -> Cursor {
+        Cursor {
+            ink_right: None,
+            spacing_right: None,
+            lyric_right: None,
+            lyric_tail: 0.0,
+            word_continues: false,
+            own_hyphen: false,
+            after_bar: false,
+            bar_gap: 0.0,
+            bar_shrink: 0.0,
+            x,
+        }
+    }
 }
 
 /// Where a segment goes after the cursor.
@@ -451,7 +491,7 @@ fn place(cur: &Cursor, seg: &Space, hyphen: f32, word_space: f32, line_start: f3
             };
             let gap = if seg.first() {
                 if seg.is_bar() || cur.after_bar {
-                    BAR_GAP
+                    seg.bar_gap.max(if cur.after_bar { cur.bar_gap } else { 0.0 })
                 } else if seg.word_start() {
                     NOTES_WORD_GAP
                 } else {
@@ -474,6 +514,8 @@ fn place(cur: &Cursor, seg: &Space, hyphen: f32, word_space: f32, line_start: f3
         _ => {}
     }
     let mut touching = false;
+    // Where the text alone would put the segment.
+    let mut text_need = None;
     if let Some(t) = &seg.lyric() {
         // A word ending in a syllable with no text (`quam(e)(/) *()`) leaves the text before
         // it unended; the next word's text still keeps a word space from it.
@@ -481,22 +523,33 @@ fn place(cur: &Cursor, seg: &Space, hyphen: f32, word_space: f32, line_start: f3
         match cur.lyric_right {
             // A text with its own hyphen may touch the next one, and needs no other.
             Some(r) if word_continues && cur.own_hyphen => {
+                text_need = Some(r - t.left);
                 x = x.max(r - t.left);
                 touching = x + t.left - r <= HYPHEN_MIN_GAP;
             }
             Some(r) if word_continues => {
                 // Within a word the texts may touch. If the notes hold them apart, a hyphen
                 // follows the first text's ink, and the second's ink must clear it.
+                text_need = Some(r - t.left);
                 x = x.max(r - t.left);
                 if x + t.left - r > HYPHEN_MIN_GAP {
-                    x = x.max(r + cur.lyric_tail + hyphen - t.ink_left());
+                    let need = r + cur.lyric_tail + hyphen - t.ink_left();
+                    text_need = Some((r - t.left).max(need));
+                    x = x.max(need);
                 } else {
                     touching = true;
                 }
             }
             // A word space, and the two words' inks apart.
-            Some(r) => x = x.max(r + word_space - t.left).max(r + cur.lyric_tail - t.ink_left()),
-            None => x = x.max(-t.ink_left()),
+            Some(r) => {
+                let need = (r + word_space - t.left).max(r + cur.lyric_tail - t.ink_left());
+                text_need = Some(need);
+                x = x.max(need);
+            }
+            None => {
+                text_need = Some(-t.ink_left());
+                x = x.max(-t.ink_left());
+            }
         }
     }
     let weight = if !seg.first() {
@@ -507,11 +560,21 @@ fn place(cur: &Cursor, seg: &Space, hyphen: f32, word_space: f32, line_start: f3
         1.0
     };
     // Nothing shrinks before a line's first text, which may sit right at the line's start.
-    let shrink = if seg.first() && seg.word_start() && !seg.is_bar() && !cur.after_bar && cur.lyric_right.is_some() {
+    let at_bar = seg.first() && (seg.is_bar() || cur.after_bar) && cur.ink_right.is_some() && seg.ink().is_some();
+    let mut shrink = if seg.first() && seg.word_start() && !seg.is_bar() && !cur.after_bar && cur.lyric_right.is_some() {
         SHRINK.min(word_space * SHRINK_OF_WORD_SPACE)
+    } else if at_bar {
+        BAR_SHRINK
     } else {
         0.0
     };
+    // Shrinking at bars takes only the room the notes leave the text: past the bars since the
+    // last text, a text takes back what they would take from it.
+    if let Some(need) = text_need
+        && (at_bar || cur.bar_shrink > 0.0)
+    {
+        shrink = shrink.min((x - need).max(0.0) - cur.bar_shrink);
+    }
     Spot {
         x,
         touching,
@@ -520,12 +583,15 @@ fn place(cur: &Cursor, seg: &Space, hyphen: f32, word_space: f32, line_start: f3
     }
 }
 
-fn advance(cur: &Cursor, seg: &Space, x: f32) -> Cursor {
+/// The cursor after placing `seg` at `x`, the gap before it shrinking up to `shrink`.
+fn advance(cur: &Cursor, seg: &Space, x: f32, shrink: f32) -> Cursor {
     let mut next = *cur;
     next.x = x;
     if seg.ink().is_some() {
         next.after_bar = seg.is_bar();
+        next.bar_gap = seg.bar_gap;
     }
+    next.bar_shrink = if seg.lyric().is_some() { 0.0 } else { cur.bar_shrink + shrink };
     if let Some((_, r)) = seg.ink() {
         next.ink_right = Some(x + r);
         next.spacing_right = seg.spacing().map(|(_, r)| x + r);
@@ -537,6 +603,22 @@ fn advance(cur: &Cursor, seg: &Space, x: f32) -> Cursor {
         next.own_hyphen = t.hyphenated;
     }
     next
+}
+
+/// Whether the text under a bar leads into what follows it rather than closing what came
+/// before: a ℣ or ℟ before its verse or response, a verse number (`2.`), or a rubric before
+/// a chant (`Ps.`, `Ant.`, `T. P.`). A line may start with such a bar, as in the chant
+/// books, and one ending after it would leave the text behind. A `*` doesn't lead: it marks
+/// the end of an intonation or a psalm verse's mediant, and stays with what it ends, as
+/// GregorioTeX and the pointed psalters keep it.
+fn text_leads(seg: &Segment) -> bool {
+    let Some(t) = &seg.lyric else { return false };
+    let text: String = t.runs.iter().map(|r| r.text.as_str()).collect();
+    let text = text.trim_start();
+    let numbered = text.trim_start_matches(|c: char| c.is_ascii_digit());
+    text.starts_with(['℣', '℟'])
+        || numbered.len() < text.len() && numbered.starts_with('.')
+        || ["Ps.", "Ant.", "T. P.", "T.P."].iter().any(|r| text.starts_with(r))
 }
 
 struct Trial {
@@ -573,6 +655,8 @@ struct Space {
     /// The text's left, width, lead and tail (see [`Text`]).
     text: [f32; 4],
     flags: u8,
+    /// For a bar standing alone, the gap either side of it; else 0.
+    bar_gap: f32,
 }
 
 /// What spacing reads of a segment's text (see [`LyricBox`](crate::engrave::LyricBox)).
@@ -669,6 +753,13 @@ impl Space {
                 | flag(t.is_some(), HAS_TEXT)
                 | flag(t.is_some_and(|t| t.word_end), WORD_END)
                 | flag(t.is_some_and(|t| t.hyphenated), HYPHENATED),
+            bar_gap: if !seg.is_bar() {
+                0.0
+            } else if seg.light_bars && t.is_none() {
+                LIGHT_BAR_GAP
+            } else {
+                BAR_GAP
+            },
         }
     }
 }
@@ -683,6 +774,7 @@ impl PartialEq for Space {
             && b(self.space_before) == b(o.space_before)
             && self.text.map(b) == o.text.map(b)
             && b(self.right) == b(o.right)
+            && b(self.bar_gap) == b(o.bar_gap)
     }
 }
 
@@ -968,16 +1060,7 @@ impl Engraving {
     }
 
     fn trial(&self, fits: &[Fit], first: usize, last: usize, start: f32) -> Trial {
-        let mut cur = Cursor {
-            ink_right: None,
-            spacing_right: None,
-            lyric_right: None,
-            lyric_tail: 0.0,
-            word_continues: false,
-            own_hyphen: false,
-            after_bar: false,
-            x: start,
-        };
+        let mut cur = Cursor::at(start);
         let mut xs = Vec::with_capacity(last - first + 1);
         let mut weights = Vec::with_capacity(last - first + 1);
         let mut shrinks = Vec::with_capacity(last - first + 1);
@@ -1007,9 +1090,10 @@ impl Engraving {
                 last_lyric = xs.len() - 1;
             }
             shrinks.push(if xs.len() == 1 { 0.0 } else { spot.shrink });
-            gone += shrinks[shrinks.len() - 1];
-            cur = advance(&cur, seg, x);
-            cur_shrunk = advance(&cur_shrunk, seg, x - gone);
+            let shrink = shrinks[shrinks.len() - 1];
+            gone += shrink;
+            cur = advance(&cur, seg, x, shrink);
+            cur_shrunk = advance(&cur_shrunk, seg, x - gone, shrink);
             right = right.max(x + seg.right);
             right_shrunk = right_shrunk.max(x - gone + seg.right);
             if let Some(r) = seg.wall_right() {
@@ -1029,21 +1113,12 @@ impl Engraving {
 
     /// The width of the line `first..=last` set at `xs`, and its ink's right end.
     fn extent(&self, fits: &[Fit], first: usize, last: usize, xs: &[f32], start: f32) -> (f32, f32) {
-        let mut cur = Cursor {
-            ink_right: None,
-            spacing_right: None,
-            lyric_right: None,
-            lyric_tail: 0.0,
-            word_continues: false,
-            own_hyphen: false,
-            after_bar: false,
-            x: start,
-        };
+        let mut cur = Cursor::at(start);
         let mut right = 0.0f32;
         let mut ink_end = start;
         for (fit, &x) in fits[first..=last].iter().zip(xs) {
             let seg = &fit.space;
-            cur = advance(&cur, seg, x);
+            cur = advance(&cur, seg, x, 0.0);
             right = right.max(x + seg.right);
             if let Some(r) = seg.wall_right() {
                 ink_end = ink_end.max(x + r);
@@ -1096,15 +1171,32 @@ impl Engraving {
         }
     }
 
+    /// Whether a line starting at each segment would start with a bar whose text doesn't
+    /// lead into what follows: the segment starts with one, or draws nothing a reader sees
+    /// first (no text, and no ink or only a custos) and the next segment does.
+    fn bar_first(&self) -> Vec<bool> {
+        let mut out = vec![false; self.segments.len()];
+        let mut next = false;
+        for (k, seg) in self.segments.iter().enumerate().rev() {
+            let unseen =
+                seg.lyric.is_none() && seg.pieces.iter().all(|p| p.role == Ink::Custos) && !matches!(seg.after, Break::Forced { .. });
+            next = seg.starts_with_bar && !text_leads(seg) || unseen && next;
+            out[k] = next;
+        }
+        out
+    }
+
     /// The breaker's view of every segment.
     fn fits(&self) -> Vec<Fit> {
         let n = self.segments.len();
+        let bar_first = self.bar_first();
         self.closings()
             .into_iter()
             .zip(&self.segments)
             .enumerate()
             .map(|(k, (closing, seg))| {
-                let cost = self.break_cost(k);
+                let bar_led = bar_first.get(k + 1) == Some(&true) && matches!(seg.after, Break::Allowed | Break::InMelisma);
+                let cost = self.break_cost(k) + if bar_led { BAR_SIDE_DEMERITS } else { 0.0 };
                 debug_assert_eq!(f64::from(cost as f32), cost);
                 let flag = |on: bool, f: u8| if on { f } else { 0 };
                 Fit {
@@ -1281,17 +1373,12 @@ impl Engraving {
     fn break_cost(&self, end: usize) -> f64 {
         let after = self.segments[end].after;
         // A syllable's end is a better break than a cut inside its melisma, a word's end
-        // better still, and a bar best. A ℣ or ℟ under a bar (`<sp>V/</sp>.(::)`) leads into
-        // the verse after it, so a line ending there would leave it behind: no better than
-        // any break.
+        // better still, and a bar best, unless its text leads into what follows (a ℣ before
+        // its verse), which a line ending there would leave behind.
         let seg = &self.segments[end];
-        let leads = seg
-            .lyric
-            .as_ref()
-            .is_some_and(|t| t.runs.first().is_some_and(|r| r.text.starts_with(['℣', '℟'])));
         match after {
             Break::InMelisma => MELISMA_DEMERITS,
-            Break::Allowed if seg.is_bar() && leads => 0.0,
+            Break::Allowed if seg.is_bar() && text_leads(seg) && end + 1 < self.segments.len() => BAR_SIDE_DEMERITS,
             Break::Allowed if seg.is_bar() => AFTER_BAR_DEMERITS,
             Break::Allowed if self.segments.get(end + 1).is_none_or(|s| s.word_start) => WORD_END_DEMERITS,
             _ => 0.0,
@@ -1306,16 +1393,7 @@ impl Engraving {
         let start = fits[first].start;
         // Packs the line one segment at a time, as `trial` does, so each candidate costs
         // one step instead of a repack.
-        let mut cur = Cursor {
-            ink_right: None,
-            spacing_right: None,
-            lyric_right: None,
-            lyric_tail: 0.0,
-            word_continues: false,
-            own_hyphen: false,
-            after_bar: false,
-            x: start,
-        };
+        let mut cur = Cursor::at(start);
         let mut right = 0.0f32;
         let mut ink_end = start;
         // How far the line's gaps stretch together, relative to a gap between words.
@@ -1341,16 +1419,17 @@ impl Engraving {
                 stretch_weight -= since_text;
                 since_text = 0.0;
             }
+            let shrink = if last > first { spot.shrink } else { 0.0 };
             if last > first {
                 stretch_weight += spot.weight;
                 since_text += spot.weight;
-                gone += spot.shrink;
+                gone += shrink;
             }
             if seg.lyric().is_some() {
                 since_text = 0.0;
             }
-            cur = advance(&cur, seg, x);
-            cur_shrunk = advance(&cur_shrunk, seg, x - gone);
+            cur = advance(&cur, seg, x, shrink);
+            cur_shrunk = advance(&cur_shrunk, seg, x - gone, shrink);
             right = right.max(x + seg.right);
             right_shrunk = right_shrunk.max(x - gone + seg.right);
             if let Some(r) = seg.wall_right() {
@@ -1941,14 +2020,20 @@ mod tests {
     }
 
     #[test]
-    fn a_bar_with_text_is_spaced_as_a_bar() {
-        // Gregorio sets a bar's syllable at the bar spacing whether or not it carries text,
-        // and doesn't shrink around it.
+    fn a_bar_is_spaced_as_gregoriotex_spaces_it() {
+        // GregorioTeX sets a bar's syllable 0.2323 cm from the notes either side, whether or
+        // not it carries text, and a virgula, minimis or quarter bar with none 0.2 cm; its
+        // gaps shrink by `bar@rubber`.
         let style = StyleOptions::default().with_initial(Initial::None);
-        for src in [
-            "(c4) a(ghg) (;) b(ghg)",
-            "(c4) a(ghg) *(;) b(ghg)",
-            "(c4) a(ghg) <sp>V/</sp>.(::) b(ghg)",
+        for (src, gap) in [
+            ("(c4) a(ghg) (;) b(ghg)", BAR_GAP),
+            ("(c4) a(ghg) (::) b(ghg)", BAR_GAP),
+            ("(c4) a(ghg) (,) b(ghg)", LIGHT_BAR_GAP),
+            ("(c4) a(ghg) (`) b(ghg)", LIGHT_BAR_GAP),
+            ("(c4) a(ghg) (^) b(ghg)", LIGHT_BAR_GAP),
+            ("(c4) a(ghg) *(,) b(ghg)", BAR_GAP),
+            ("(c4) a(ghg) *(;) b(ghg)", BAR_GAP),
+            ("(c4) a(ghg) <sp>V/</sp>.(::) b(ghg)", BAR_GAP),
         ] {
             let eng = parse(src).score.engrave(&ApproxMeasure, &style);
             assert_eq!(eng.segments.len(), 3, "{src}");
@@ -1957,10 +2042,41 @@ mod tests {
                 let (l, r) = eng.segments[i].ink.unwrap();
                 (t.xs[i] + l, t.xs[i] + r)
             };
-            assert!((ink(1).0 - ink(0).1 - BAR_GAP).abs() < 1e-4, "{src}");
+            assert!((ink(1).0 - ink(0).1 - gap).abs() < 1e-4, "{src}");
             // After the bar, the texts may hold the next syllable further off.
-            assert!(ink(2).0 - ink(1).1 >= BAR_GAP - 1e-4, "{src}");
-            assert_eq!(t.shrinks[1..], [0.0, 0.0], "{src}");
+            assert!(ink(2).0 - ink(1).1 >= gap - 1e-4, "{src}");
+            assert!(t.shrinks[1..].iter().all(|&s| s <= BAR_SHRINK), "{src}");
+        }
+        // Between notes, the gaps either side of a bar give a little.
+        let eng = parse("(c4) a(ghg) (;) b(ghg)").score.engrave(&ApproxMeasure, &style);
+        assert_eq!(eng.trial(&eng.fits(), 0, 2, 0.0).shrinks[1..], [BAR_SHRINK, BAR_SHRINK]);
+    }
+
+    #[test]
+    fn texts_either_side_of_a_bar_keep_their_word_space() {
+        // Where the texts hold the syllables apart, shrinking the line brings the notes nearer
+        // the bar only as far as the texts allow, the bar's own text or none.
+        let style = StyleOptions::default().with_initial(Initial::None);
+        for src in [
+            "(c4) Allelúia(g) (;) Benedíctus(g) (::)",
+            "(c4) Allelúia(g) (,) Benedíctus(g) (::)",
+            "(c4) Allelúia(g) <sp>V/</sp>.(:) Benedíctus(g) (::)",
+            "(c4) a(ghgh) Allelúia(g) (;) b(ghgh) (::)",
+        ] {
+            let eng = parse(src).score.engrave(&ApproxMeasure, &style);
+            let n = eng.segments.len();
+            let t = eng.trial(&eng.fits(), 0, n - 1, 0.0);
+            let mut prev: Option<(f32, f32)> = None;
+            for (i, seg) in eng.segments.iter().enumerate() {
+                if let Some(l) = &seg.lyric {
+                    if let Some((right, shrunk)) = prev {
+                        let gap = t.xs[i] + l.left - right;
+                        let gone: f32 = t.shrinks[..=i].iter().sum::<f32>() - shrunk;
+                        assert!(gap - gone >= eng.word_space - 1e-4, "{src}: {gap} less {gone}");
+                    }
+                    prev = Some((t.xs[i] + l.left + l.width, t.shrinks[..=i].iter().sum()));
+                }
+            }
         }
     }
 
@@ -2036,8 +2152,9 @@ mod tests {
         assert_eq!(cost("Dó"), 0.0);
         assert_eq!(cost("ne"), WORD_END_DEMERITS);
         assert_eq!(eng.line_end(3, &opts).1, AFTER_BAR_DEMERITS);
-        // A versicle sign under a bar leads into its verse.
-        assert_eq!(cost("℣"), 0.0);
+        // A versicle sign under a bar leads into its verse: a line ending after it would
+        // leave it behind.
+        assert_eq!(cost("℣"), BAR_SIDE_DEMERITS);
     }
 
     /// How often lines break inside a word, and how far justified lines stretch, over the
@@ -2087,18 +2204,20 @@ mod tests {
     #[cfg(any(feature = "font-google", feature = "font-garamond12"))]
     fn lines_break_between_words_where_that_costs_little() {
         // GregorioTeX breaks about a quarter of its lines inside a word across GregoBase. Over
-        // the reference scores at five widths (136 breaks), this breaker cuts 24% of them
-        // inside a word, its word gaps stretch 0.25 staff spaces on average, and 2% stretch
-        // more than a staff space. One blind to words cuts 43% inside one; one that holds out
-        // for words and bars at any cost (TeX's weights) cuts 8%, stretches 0.52 and leaves 15%
-        // of its lines loose.
+        // the reference scores at five widths (140 breaks), this breaker cuts 33% of them
+        // inside a word, its word gaps stretch 0.24 staff spaces on average, and 1% stretch
+        // more than a staff space. Keeping each bar at the end of its line, as GregorioTeX
+        // does, costs a few: a line that ought not end before a bar sometimes ends inside the
+        // word before it (31% otherwise). One blind to words cuts 43% inside one; one that
+        // holds out for words and bars at any cost (TeX's weights) cuts 8%, stretches 0.52 and
+        // leaves 15% of its lines loose.
         let Some((mid, breaks, stretch, loose)) = break_stats() else {
             return;
         };
         assert!(breaks > 100, "{breaks} breaks");
         let mid = mid as f32 / breaks as f32;
         let loose = loose as f32 / breaks as f32;
-        assert!((0.15..0.32).contains(&mid), "{mid} of breaks inside a word");
+        assert!((0.15..0.35).contains(&mid), "{mid} of breaks inside a word");
         assert!(stretch < 0.35, "word gaps stretch {stretch} on average");
         assert!(loose <= 0.05, "{loose} of lines stretch more than a staff space a gap");
     }
@@ -2143,5 +2262,118 @@ mod tests {
         // after `a`; the breaker still sets every syllable.
         let layout = eng.layout_with(1.0, &opts);
         assert_eq!(layout.lines.last().map(|l| l.last), Some(n - 1));
+    }
+
+    /// The lines of `eng` at `width` that start with a bar, by their first segment: a bar
+    /// whose text doesn't lead, after no break the score writes.
+    fn bar_led(eng: &Arc<Engraving>, width: f32) -> Vec<usize> {
+        let layout = eng.layout_with(width, &LayoutOptions::default());
+        let first = eng.bar_first();
+        layout
+            .lines
+            .windows(2)
+            .filter(|w| first[w[1].first] && !matches!(eng.segments[w[0].last].after, Break::Forced { .. }))
+            .map(|w| w[1].first)
+            .collect()
+    }
+
+    #[test]
+    fn a_line_starts_with_a_bar_only_when_nothing_else_will_do() {
+        // Every kind of bar, bars with text that doesn't lead, a bar after a custos or an
+        // empty syllable, two bars together, a bar inside a melisma, and a clef change
+        // behind a bar: none starts a line at any width that holds a few syllables. Narrower,
+        // a line of one syllable can't fill the width, so the next may start with a bar.
+        let style = StyleOptions::default().with_initial(Initial::None);
+        let scores = [
+            "(c4) Ad(g) te(h) le(g)vá(hi)vi(h) (,) á(g)ni(h)mam(g) me(h)am,(g) (;) De(gh)us(g) me(h)us,(g) (:) in(g) te(h) con(g)fí(h)do(g) (::)",
+            "(c4) Di(h)xit(h) Dó(h)mi(h)nus(h) †(:) Dó(h)mi(g)no(h) me(h)o(g) ij.(,) se(g)de(h) a(g) dex(h)tris(g) me(h)is.(g) (::)",
+            "(c4) a(g) b(h) (f+) (;) c(g) d(h) () (:) e(g) f(h) (z0,c3) g(g) h(h) (::)",
+            "(c4) a(g) b(h) (;) (:) c(g) d(h) (,)(;) e(g) f(h) (::)",
+            "(c4) a(ghgfghgfghgf/ ,ghgfghgfghgf) b(g) c(h) d(ghgfghgfghgf,ghgfghgfghgf) e(g) (::)",
+            "(c4) a(g) b(h) c(g) (:?) d(h) e(g) (;1) f(h) (`) g(g) (^) h(h) (::)",
+        ];
+        for src in scores {
+            let eng = parse(src).score.engrave(&ApproxMeasure, &style);
+            assert!(eng.segments.iter().any(|s| s.starts_with_bar), "{src}");
+            for width in (170..1200).step_by(3) {
+                assert_eq!(bar_led(&eng, width as f32), [0usize; 0], "{src} at {width}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_break_before_a_bar_costs_ten_lines() {
+        // Ending a line before a bar starts the next with it: dearer than ten more lines, so
+        // a line ends after the bar, or earlier, unless that leaves one far too loose.
+        let style = StyleOptions::default().with_initial(Initial::None);
+        let eng = parse("(c4) a(g) b(h) c(g) (;) d(h) e(g)").score.engrave(&ApproxMeasure, &style);
+        let fits = eng.fits();
+        let bar = eng.segments.iter().position(|s| s.starts_with_bar).unwrap();
+        assert_eq!(fits[bar - 1].cost(), BAR_SIDE_DEMERITS + WORD_END_DEMERITS);
+        assert_eq!(fits[bar].cost(), AFTER_BAR_DEMERITS);
+        // Wherever the line holding `c` has room for a few syllables, it holds the bar too.
+        for width in (100..400).step_by(2) {
+            let layout = eng.layout_with(width as f32, &LayoutOptions::default());
+            let line = layout.lines.iter().find(|l| (l.first..=l.last).contains(&(bar - 1))).unwrap();
+            assert!(line.last >= bar, "at {width}");
+        }
+        // Past an empty syllable or a lone custos to the bar, and inside a melisma.
+        for src in ["(c4) a(g) () (;) b(g)", "(c4) a(g) (f+) (;) b(g)"] {
+            let eng = parse(src).score.engrave(&ApproxMeasure, &style);
+            assert_eq!(eng.fits()[0].cost(), BAR_SIDE_DEMERITS + WORD_END_DEMERITS, "{src}");
+        }
+        let eng = parse("(c4) a(ghgfghgfghgf/ ,ghgfghgfghgf) b(g)")
+            .score
+            .engrave(&ApproxMeasure, &style);
+        assert_eq!(eng.segments[0].after, Break::InMelisma);
+        assert_eq!(eng.fits()[0].cost(), BAR_SIDE_DEMERITS + MELISMA_DEMERITS);
+    }
+
+    #[test]
+    fn a_bar_whose_text_leads_may_start_a_line() {
+        // A ℣ before its verse, a verse number and a rubric lead into what follows: a line may
+        // start with them, and a line that ends after them costs what one that starts with
+        // another bar does. Text that closes what came before doesn't lead, nor does the `*`
+        // that ends an intonation or a mediant.
+        let style = StyleOptions::default().with_initial(Initial::None);
+        let cost = |text: &str| {
+            let eng = parse(&format!("(c4) a(g) {text}(::) b(h) c(g)"))
+                .score
+                .engrave(&ApproxMeasure, &style);
+            let fits = eng.fits();
+            (fits[0].cost(), fits[1].cost())
+        };
+        for text in ["<sp>V/</sp>.", "<sp>R/</sp>.", "2.", "<i>Ps.</i>", "<i>T. P.</i>", "Ant."] {
+            assert_eq!(cost(text), (WORD_END_DEMERITS, BAR_SIDE_DEMERITS), "{text}");
+        }
+        for text in ["", "*", "<v>\\greheightstar</v>", "<i>ij.</i>", "†", "bis"] {
+            assert_eq!(cost(text), (BAR_SIDE_DEMERITS + WORD_END_DEMERITS, AFTER_BAR_DEMERITS), "{text}");
+        }
+        // Where the verse goes to the next line, the ℣ goes with it, except where that
+        // stretches the line before it more than three staff spaces a gap (132 to 140 here).
+        let eng = parse("(c4) Can(g)tá(h)te(g) mus.(g) <sp>V/</sp>.(::) Vir(g)go(h) De(g)i(h) (::)")
+            .score
+            .engrave(&ApproxMeasure, &style);
+        let versicle = eng.segments.iter().position(|s| s.starts_with_bar).unwrap();
+        let (mut starts, mut ends) = (0, Vec::new());
+        for width in (100..400).step_by(2) {
+            let layout = eng.layout_with(width as f32, &LayoutOptions::default());
+            starts += layout.lines.iter().filter(|l| l.first == versicle).count();
+            if layout.lines.iter().any(|l| l.last == versicle) {
+                ends.push(width);
+            }
+        }
+        assert!(starts > 0);
+        assert_eq!(ends, [132, 134, 136, 138, 140]);
+    }
+
+    #[test]
+    fn a_written_break_before_a_bar_holds() {
+        // The score asks for the break: the next line starts with the bar.
+        let style = StyleOptions::default().with_initial(Initial::None);
+        let eng = parse("(c4) a(g) b(h) (z) (;) c(g)").score.engrave(&ApproxMeasure, &style);
+        let layout = eng.layout_with(800.0, &LayoutOptions::default());
+        assert_eq!(layout.lines.len(), 2);
+        assert!(eng.bar_first()[layout.lines[1].first]);
     }
 }

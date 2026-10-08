@@ -327,6 +327,18 @@ fn edits_whose_effects_reach_past_them() {
         ("(c4) Al(g)le(h) c(g)", "(c4) W(g)le(h) c(g)"),
         ("(c4) a(g) <i>b(h) c(g)", "(c4) a(g) b(h) c(g)"),
         ("(c4) a*(g) b(h) c(g)", "(c4) a(g) b(h) c(g)"),
+        // A break before a bar costs much, so a syllable turned into one, or one put in
+        // front of a bar, changes where the line before it may end; and the text under a bar
+        // decides whether it leads into the verse after it, which turns that cost around.
+        ("(c4) a(g) b(h) c(g) d(h)", "(c4) a(g) b(h) (;) c(g) d(h)"),
+        ("(c4) a(g) b(h) c(g) d(h)", "(c4) a(g) b(h) (,)c(g) d(h)"),
+        ("(c4) a(g) b(h) (;) c(g)", "(c4) a(g) b(h) (;) (:) c(g)"),
+        ("(c4) a(g) b(h) (;) c(g)", "(c4) a(g) b(h) () (;) c(g)"),
+        ("(c4) a(g) b(h) (;) c(g)", "(c4) a(g) b(h) (f+) (;) c(g)"),
+        ("(c4) a(g) b(h) (z0,c3) c(g)", "(c4) a(g) b(h) (z0g,c3) c(g)"),
+        ("(c4) a(g) b(h) *(;) c(g)", "(c4) a(g) b(h) *() c(g)"),
+        ("(c4) a(g) b(h) *(;) c(g)", "(c4) a(g) b(h) <sp>V/</sp>.(;) c(g)"),
+        ("(c4) a(g) b(h) 2.(::) c(g)", "(c4) a(g) b(h) 2(::) c(g)"),
     ];
     let styles = [Initial::Lines(1), Initial::None, Initial::Lines(2)];
     // Each with a header too, which is what lets a chant parse only around the edit.

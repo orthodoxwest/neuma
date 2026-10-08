@@ -1103,28 +1103,31 @@ fn spaces_inside_notes_are_gregorios() {
 
 #[test]
 fn a_bar_keeps_gregorios_space_either_side() {
-    let eng = parse("(c4) a(g) (;) b(g)").score.engrave(&ApproxMeasure, &NO_INITIAL);
-    let opts = LayoutOptions::default();
-    let layout = eng.layout_with(2000.0, &opts);
-    let map = layout.timeline();
-    let bar = layout
-        .display()
-        .items
-        .iter()
-        .find_map(|i| match i {
-            Item::Rect {
-                x,
-                w,
-                role: neuma::Ink::Bar,
-                ..
-            } => Some((*x, *w)),
-            _ => None,
-        })
-        .unwrap();
-    let (a, b) = (&map.notes[0], &map.notes[1]);
-    let before = (bar.0 - (a.cx + a.w / 2.0)) / opts.scale;
-    let after = (b.cx - b.w / 2.0 - (bar.0 + bar.1)) / opts.scale;
-    assert!((before - 1.6).abs() < 0.01 && (after - 1.6).abs() < 0.01, "{before} {after}");
+    // GregorioTeX's `bar@minor@standalone@notext` (0.2323 cm), and 0.2 cm for a quarter bar.
+    for (bar, gap) in [(";", 1.61), (",", 1.39)] {
+        let eng = parse(&format!("(c4) a(g) ({bar}) b(g)")).score.engrave(&ApproxMeasure, &NO_INITIAL);
+        let opts = LayoutOptions::default();
+        let layout = eng.layout_with(2000.0, &opts);
+        let map = layout.timeline();
+        let bar = layout
+            .display()
+            .items
+            .iter()
+            .find_map(|i| match i {
+                Item::Rect {
+                    x,
+                    w,
+                    role: neuma::Ink::Bar,
+                    ..
+                } => Some((*x, *w)),
+                _ => None,
+            })
+            .unwrap();
+        let (a, b) = (&map.notes[0], &map.notes[1]);
+        let before = (bar.0 - (a.cx + a.w / 2.0)) / opts.scale;
+        let after = (b.cx - b.w / 2.0 - (bar.0 + bar.1)) / opts.scale;
+        assert!((before - gap).abs() < 0.01 && (after - gap).abs() < 0.01, "{before} {after}");
+    }
 }
 
 #[test]
