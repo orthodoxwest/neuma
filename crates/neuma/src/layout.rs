@@ -1626,33 +1626,15 @@ impl Engraving {
         layout
     }
 
-    fn lay_out(self: &Arc<Self>, width: f32, opts: &LayoutOptions, column: Option<f32>, cache: &mut LayoutCache) -> Layout {
-        let scale = opts.sanitized().scale;
-        let width = usable_width(width);
-        let target = (width / scale).min(MAX_WIDTH);
+    /// The optimal-fit breaks: the first and last segment of each line, from the cheapest
+    /// way to end the score. `w` is the number of line counts tracked (the lines the initial
+    /// indents, and one for every line after), and the indented lines are `indent` narrower.
+    /// The best rows end up in `table`, for the next layout after an edit to start from.
+    fn break_lines(&self, table: &mut BreakTable, w: usize, indent: f32, target: f32, opts: &LayoutOptions) -> Vec<(usize, usize)> {
         let n = self.segments.len();
-        if n == 0 {
-            return Layout::new(Arc::clone(self), Vec::new(), None, target, 0.0, scale);
-        }
-        // The first `indented` lines make room for the initial, so the breaker tracks how many
-        // lines came before, up to that count.
-        let indented = self.initial.as_ref().map_or(0, |i| i.lines);
-        let column = self.initial.as_ref().map_or(0.0, |i| column.unwrap_or(0.0).max(i.column()));
-        let indent = if indented > 0 { INITIAL_BEFORE + column + INITIAL_GAP } else { 0.0 };
+        let indented = w - 1;
         // best[k * w + j]: least demerits for lines ending just before segment k, with j lines
         // so far (capped at `indented`), and where the last line started and its own j.
-        let w = indented + 1;
-        // Each line's candidate breaks depend only on its own segments, so they come from the
-        // cache when those are unchanged (see `BreakTable`).
-        let key = BreakKey {
-            target: target.to_bits(),
-            indent: indent.to_bits(),
-            hyphen: self.hyphen.to_bits(),
-            word_space: self.word_space.to_bits(),
-            last_line: opts.last_line,
-        };
-        let mut table = cache.take(&key);
-        table.refit(self, key);
         // The rows before the edit come out as last time: lines ending there read only
         // segments before it.
         let same = table.same_best(w);
@@ -1703,6 +1685,81 @@ impl Engraving {
         ranges.reverse();
         table.best = best;
         table.width = w;
+        ranges
+    }
+
+    /// Where the initial goes beside the first `lines`, in a column `column` wide, and how
+    /// big it is; `height` grows to hold it.
+    fn place_initial(&self, lines: &[PlacedLine], column: f32, height: &mut f32) -> Option<PlacedInitial> {
+        let init = self.initial.as_ref()?;
+        let first = lines.first()?;
+        if init.lines == 1 {
+            // Standing on the first line's lyric baseline, the lyrics running on beside it,
+            // and reaching up to the staff's top line.
+            let has_lyrics = self.segments[first.first..=first.last].iter().any(|s| s.lyric.is_some());
+            let baseline = if has_lyrics {
+                first.baseline
+            } else {
+                first.staff + 3.0 + self.text_drop()
+            };
+            let (size, natural) = self.one_staff_initial(init, baseline - first.staff, column);
+            let width = init.advance_em * size;
+            *height = height.max(baseline + init.descent * size);
+            return Some(PlacedInitial {
+                x: INITIAL_BEFORE + (column - width) / 2.0,
+                baseline,
+                size,
+                column,
+                natural_width: init.advance_em * natural,
+                annotation_baseline: first.staff - 3.0 - init.above - ANNOTATION_GAP,
+            });
+        }
+        let last = &lines[init.lines.min(lines.len()) - 1];
+        let cap = (last.staff + 3.0) - (first.staff - 3.0);
+        let natural = cap / CAP_HEIGHT;
+        let mut size = natural;
+        if init.advance_em > 0.0 {
+            size = size.min(column / init.advance_em);
+        }
+        let width = init.advance_em * size;
+        let baseline = last.staff + 3.0;
+        *height = height.max(baseline + init.descent * size);
+        Some(PlacedInitial {
+            x: INITIAL_BEFORE + (column - width) / 2.0,
+            baseline,
+            size,
+            column,
+            natural_width: init.advance_em * natural,
+            annotation_baseline: first.staff - 3.0 - init.above - ANNOTATION_GAP,
+        })
+    }
+
+    fn lay_out(self: &Arc<Self>, width: f32, opts: &LayoutOptions, column: Option<f32>, cache: &mut LayoutCache) -> Layout {
+        let scale = opts.sanitized().scale;
+        let width = usable_width(width);
+        let target = (width / scale).min(MAX_WIDTH);
+        let n = self.segments.len();
+        if n == 0 {
+            return Layout::new(Arc::clone(self), Vec::new(), None, target, 0.0, scale);
+        }
+        // The first `indented` lines make room for the initial, so the breaker tracks how many
+        // lines came before, up to that count.
+        let indented = self.initial.as_ref().map_or(0, |i| i.lines);
+        let column = self.initial.as_ref().map_or(0.0, |i| column.unwrap_or(0.0).max(i.column()));
+        let indent = if indented > 0 { INITIAL_BEFORE + column + INITIAL_GAP } else { 0.0 };
+        let w = indented + 1;
+        // Each line's candidate breaks depend only on its own segments, so they come from the
+        // cache when those are unchanged (see `BreakTable`).
+        let key = BreakKey {
+            target: target.to_bits(),
+            indent: indent.to_bits(),
+            hyphen: self.hyphen.to_bits(),
+            word_space: self.word_space.to_bits(),
+            last_line: opts.last_line,
+        };
+        let mut table = cache.take(&key);
+        table.refit(self, key);
+        let ranges = self.break_lines(&mut table, w, indent, target, opts);
 
         let size = self.lyric_size;
         let mut lines: Vec<PlacedLine> = Vec::new();
@@ -1835,48 +1892,7 @@ impl Engraving {
         let mut height = lines.get(kept.wrapping_sub(1)).map_or(0.0, |l| l.bottom);
         // The capital runs from the first staff's top line to the bottom line of the last
         // staff it spans, narrowed if need be to fit the column the breaker left for it.
-        let initial = self.initial.as_ref().and_then(|init| {
-            let first = lines.first()?;
-            if init.lines == 1 {
-                // Standing on the first line's lyric baseline, the lyrics running on beside it,
-                // and reaching up to the staff's top line.
-                let has_lyrics = self.segments[first.first..=first.last].iter().any(|s| s.lyric.is_some());
-                let baseline = if has_lyrics {
-                    first.baseline
-                } else {
-                    first.staff + 3.0 + self.text_drop()
-                };
-                let (size, natural) = self.one_staff_initial(init, baseline - first.staff, column);
-                let width = init.advance_em * size;
-                height = height.max(baseline + init.descent * size);
-                return Some(PlacedInitial {
-                    x: INITIAL_BEFORE + (column - width) / 2.0,
-                    baseline,
-                    size,
-                    column,
-                    natural_width: init.advance_em * natural,
-                    annotation_baseline: first.staff - 3.0 - init.above - ANNOTATION_GAP,
-                });
-            }
-            let last = &lines[init.lines.min(lines.len()) - 1];
-            let cap = (last.staff + 3.0) - (first.staff - 3.0);
-            let natural = cap / CAP_HEIGHT;
-            let mut size = natural;
-            if init.advance_em > 0.0 {
-                size = size.min(column / init.advance_em);
-            }
-            let width = init.advance_em * size;
-            let baseline = last.staff + 3.0;
-            height = height.max(baseline + init.descent * size);
-            Some(PlacedInitial {
-                x: INITIAL_BEFORE + (column - width) / 2.0,
-                baseline,
-                size,
-                column,
-                natural_width: init.advance_em * natural,
-                annotation_baseline: first.staff - 3.0 - init.above - ANNOTATION_GAP,
-            })
-        });
+        let initial = self.place_initial(&lines, column, &mut height);
         lines.truncate(kept);
         // A line too wide for the column widens the layout, and every staff with it. Lines left
         // out of a preview count too, so its staves are drawn as in the whole score.
