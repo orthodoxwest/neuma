@@ -6,15 +6,20 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+readme = "README.md"
+keywords = ["gregorian", "chant", "font-metrics", "opentype", "kerning"]
+categories = ["development-tools::build-utils", "text-processing"]
+# The tests read files elsewhere in the repository, so they stay out of the package.
+exclude = ["tests/"]
 
 [dependencies]
-neuma = { path = "../neuma", default-features = false }
-rustybuzz = "0.20"
-sha2 = "0.10"
+neuma.workspace = true
+rustybuzz.workspace = true
+sha2.workspace = true
 
 [lints]
 workspace = true
 
 [dev-dependencies]
 # The collisions example lays scores out with the built-in tables.
-neuma = { path = "../neuma" }
+neuma = { workspace = true, default-features = true }

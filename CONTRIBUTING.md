@@ -6,9 +6,18 @@ CI runs these on every pull request; run them before you push:
 
 ```sh
 cargo fmt --all --check
-cargo clippy --all-targets -- -D warnings
-cargo test --all
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --all-features
+cargo deny --all-features check    # after changing a dependency; see deny.toml
 ```
+
+CI also runs the tests on the oldest supported Rust, the `rust-version` in
+[Cargo.toml](Cargo.toml).
+[clippy.toml](clippy.toml) bans `mul_add` and the libm functions (`powf`, `exp`, `ln`, `sin`
+and the rest), whose results vary between platforms, because the engraving must come out
+byte-identical everywhere. A use whose result can't reach the output, or that has no
+deterministic replacement, needs an `#[allow(clippy::disallowed_methods)]` that says why.
 
 The browser package has its own build and smoke test (see
 [crates/neuma-wasm](crates/neuma-wasm/README.md)):
@@ -18,6 +27,12 @@ cargo build -p neuma-wasm --target wasm32-unknown-unknown --profile wasm
 node crates/neuma-wasm/build.mjs
 node crates/neuma-wasm/test.mjs
 ```
+
+CI builds it with wasm-opt (`npm install binaryen@132.0.0`, then `node
+crates/neuma-wasm/build.mjs node_modules/binaryen/bin/wasm-opt`) and fails if
+`dist/neuma.mjs` grows past its budget, 470 KiB (`NEUMA_MJS_BUDGET` in
+[ci.yml](.github/workflows/ci.yml)). If a change needs more, raise the budget in the same pull
+request and say why.
 
 The README's Rust snippets run as doctests of [tools/readme](tools/readme/README.md), so
 `cargo test` fails when an API change breaks one. After a change to the engraving, redraw the

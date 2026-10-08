@@ -27,8 +27,8 @@ font-google = ["neuma/font-google"]
 font-garamond12 = ["neuma/font-garamond12"]
 
 [dependencies]
-neuma = { path = "../neuma", default-features = false, features = ["json", "svg"] }
-neuma-tones = { path = "../neuma-tones", default-features = false, optional = true }
+neuma = { workspace = true, features = ["json", "svg"] }
+neuma-tones = { workspace = true, optional = true }
 
 # The exports need `#[unsafe(no_mangle)]`, so this crate can't inherit the workspace's
 # `forbid(unsafe_code)`; it denies it instead and allows it only on those items.

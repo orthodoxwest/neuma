@@ -6,13 +6,18 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+readme = "README.md"
+keywords = ["gregorian", "chant", "booklet", "pdf", "typesetting"]
+categories = ["multimedia", "rendering", "text-processing"]
+# The tests read files elsewhere in the repository, so they stay out of the package.
+exclude = ["tests/"]
 
 [dependencies]
-neuma = { path = "../neuma" }
-neuma-tones = { path = "../neuma-tones" }
+neuma = { workspace = true, default-features = true }
+neuma-tones = { workspace = true, default-features = true }
 # Shapes text with the booklet's font (kerning, small caps) and reads its outlines, so measured
 # and drawn text agree. Already in the workspace through neuma-metrics.
-rustybuzz = "0.20"
+rustybuzz.workspace = true
 
 [lints]
 workspace = true

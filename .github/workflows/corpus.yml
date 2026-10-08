@@ -19,6 +19,10 @@ on:
       - crates/neuma/examples/corpus.rs
 permissions:
   contents: read
+# A new push to a pull request supersedes the run before it.
+concurrency:
+  group: corpus-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   gregobase:
     runs-on: ubuntu-latest
@@ -27,8 +31,13 @@ jobs:
       GREGOBASE_COMMIT: 2ebcda3f523f9b19933d59fa32bb4215cd8e7675
       GREGOBASE_SHA256: 3759c60b529b57fa13f696bfacf748d40a285a847d859276667749caa76de080
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - name: Fetch the GregoBase dump
         run: |
           curl -sSfL --retry 3 -o "$RUNNER_TEMP/gregobase.sql" \
@@ -45,7 +54,7 @@ jobs:
       - name: Summarize
         if: always()
         run: if [ -f report.md ]; then cat report.md >> "$GITHUB_STEP_SUMMARY"; fi
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           name: corpus-report

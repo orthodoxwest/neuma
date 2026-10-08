@@ -6,9 +6,22 @@ exclude = ["fuzz"]
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.94"
+# The oldest Rust that builds and tests the workspace (1.95 stabilized `if let` guards); CI
+# checks it in the `msrv` job.
+rust-version = "1.95"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/orthodoxwest/neuma"
+keywords = ["gabc", "gregorian", "chant", "music-notation", "engraving"]
+
+# Every version the workspace depends on, in one place. The workspace's own crates leave
+# their default features off here, so each member names the ones it needs.
+[workspace.dependencies]
+neuma = { path = "crates/neuma", version = "0.1.0", default-features = false }
+neuma-book = { path = "crates/neuma-book", version = "0.1.0" }
+neuma-tones = { path = "crates/neuma-tones", version = "0.1.0", default-features = false }
+rustybuzz = "0.20"
+sha2 = "0.10"
+uniffi = "0.32"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
