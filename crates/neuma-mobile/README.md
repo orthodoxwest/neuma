@@ -207,7 +207,9 @@ peregrinus"). Each `PsalmVerse` has its `number` and its line as `runs`, each a 
 `kind` that says how to style it, which fits a styled `Text` directly. The space between a
 mark and its syllable is U+00A0, and U+2060 (word joiner) follows each `–` and spelling
 hyphen, so a line never breaks there; to search the text, read U+00A0 as a space and drop
-U+2060. To sing the text again, keep `point`'s text rather than a copy of the display: the display leaves out the verse numbers and rubric brackets, and with `OutsideFlex` the acutes of a flex. `toneLabel(tone)` names a tone without any text. In Compose:
+U+2060. Text copied from the display keeps the invisible U+2060, so a search of the copy for
+"blood-guiltiness" misses it. Drawing the runs with a text system that doesn't shape them,
+glyph by glyph, drop U+2060: it has no width, but a font may draw a missing-glyph box for it. To sing the text again, keep `point`'s text rather than a copy of the display: the display leaves out the verse numbers and rubric brackets, and with `OutsideFlex` the acutes of a flex. `toneLabel(tone)` names a tone without any text. In Compose:
 
 ```kotlin
 val red = Color(0xFFA3211C)

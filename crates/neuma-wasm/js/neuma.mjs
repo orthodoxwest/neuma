@@ -289,7 +289,9 @@ export function point(text, tone) {
  *   diagnostics: Array<object> }}
  *   `toneLabel` names the tone as a psalter prints it ("Tone 8 G", "Tonus peregrinus").
  *   Each verse's `runs`, their `text` joined, is its line after the number; the space between
- *   a mark and its syllable is U+00A0, so a line never breaks there. A run's `kind` says how
+ *   a mark and its syllable is U+00A0, and U+2060 (word joiner) follows each `–` and spelling
+ *   hyphen, so a line never breaks there. A copy of the text keeps the invisible U+2060, and a
+ *   renderer that doesn't shape text should drop it. A run's `kind` says how
  *   to style it: "text" (spaces, a word's hyphen), "syllable", "point" (`·`,
  *   bold red), "held" (`–`, bold red), "mediant" (`*`, red), "flex" (`†`, red) or "rubric"
  *   (red italic). A syllable's run also has `part`, `role` (its place in the tone, as
