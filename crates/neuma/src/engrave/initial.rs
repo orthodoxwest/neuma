@@ -34,19 +34,57 @@ pub(crate) fn depth(initial: &str) -> f32 {
 
 /// How far an initial's ink rises above its cap height, in ems: an accent, a lowercase
 /// ascender, the apex of an A, the serifs of a T. Measured from the letter's outline in both
-/// built-in faces ([`RISE_LETTERS`]); a letter not listed rises by no more than its overshoot,
-/// and a combining mark after it is taken as an accent.
+/// built-in faces ([`RISE_LETTERS`]); another Latin, Greek or Cyrillic letter rises by no more
+/// than its overshoot ([`OVERSHOOT`]), and a letter of any other script by [`OTHER_SCRIPT_RISE`].
+/// Combining marks after the letter are taken as an accent ([`MARK_RISE`]).
 pub(crate) fn rise(initial: &str) -> f32 {
     let mut chars = initial.chars();
-    let base = chars
-        .next()
-        .and_then(|c| RISE_LETTERS.chars().position(|l| l == c))
-        .map_or(0.015, |i| f32::from(RISE[i]) / 100.0);
-    if chars.any(|m| ('\u{0300}'..='\u{036F}').contains(&m)) {
-        base.max(0.25)
+    let base = chars.next().map_or(OVERSHOOT, |c| match RISE_LETTERS.chars().position(|l| l == c) {
+        Some(i) => f32::from(RISE[i]) / 100.0,
+        None if latin_greek_or_cyrillic(c) => OVERSHOOT,
+        None => OTHER_SCRIPT_RISE,
+    });
+    if chars.any(|m| COMBINING.contains(&m)) {
+        base.max(MARK_RISE)
     } else {
         base
     }
+}
+
+/// The combining diacritical marks an initial takes with its letter.
+pub(crate) const COMBINING: std::ops::RangeInclusive<char> = '\u{0300}'..='\u{036F}';
+
+/// The rise of a letter of the built-in faces with nothing above its cap height: its
+/// overshoot, in ems.
+const OVERSHOOT: f32 = 0.015;
+
+/// The rise allowed for combining marks over the letter, in ems: an acute over a capital
+/// reaches about 0.19 em above the cap height in both built-in faces, and two marks stacked
+/// no more than 0.25 (as the precomposed Ǟ, Ǖ and Ȫ measure). The faces set Vietnamese pairs
+/// such as A with U+0302 and U+0300 side by side, and don't stack a third mark over a capital
+/// at all, so more marks are given no more room.
+const MARK_RISE: f32 = 0.25;
+
+/// The rise allowed for a letter outside the Latin, Greek and Cyrillic scripts, in ems. The
+/// built-in faces don't have it, so it is drawn from whatever font the renderer falls back
+/// to, and may stand well above a capital's height (a CJK ideograph fills its em square;
+/// Khmer and the Indic scripts set marks above the letter): enough room that the annotation
+/// clears it in common fallback fonts.
+const OTHER_SCRIPT_RISE: f32 = 0.25;
+
+/// Whether `c` is in a Latin, Greek or Cyrillic block, whose letters the built-in faces draw
+/// (those that rise above the cap height are in [`RISE_LETTERS`]).
+fn latin_greek_or_cyrillic(c: char) -> bool {
+    matches!(
+        u32::from(c),
+        // Latin: Basic Latin to the IPA extensions and spacing modifiers, phonetic extensions,
+        // Latin Extended Additional, C, D and E, and the Latin ligatures.
+        0x0000..=0x02FF | 0x1D00..=0x1DBF | 0x1E00..=0x1EFF | 0x2C60..=0x2C7F | 0xA720..=0xA7FF | 0xAB30..=0xAB6F | 0xFB00..=0xFB06
+        // Greek and Coptic, and Greek Extended.
+        | 0x0370..=0x03FF | 0x1F00..=0x1FFF
+        // Cyrillic, its supplement, and Extended A, B and C.
+        | 0x0400..=0x052F | 0x1C80..=0x1C8F | 0x2DE0..=0x2DFF | 0xA640..=0xA69F
+    )
 }
 
 /// The letters of the built-in EB Garamond faces whose ink rises more than 0.02 em above the
@@ -134,7 +172,7 @@ pub(crate) fn split_initial(lyric: &Lyric) -> Option<(String, Lyric)> {
     let rest: String = {
         let mut rest = chars.peekable();
         while let Some(&m) = rest.peek() {
-            if !('\u{0300}'..='\u{036F}').contains(&m) {
+            if !COMBINING.contains(&m) {
                 break;
             }
             initial.push(m);
@@ -244,6 +282,23 @@ mod tests {
             assert!(rise(c) < 0.03, "{c}");
         }
         assert_eq!(rise("E\u{0301}"), 0.25);
+    }
+
+    #[test]
+    fn rise_allows_for_other_scripts_and_marks() {
+        // Not in the built-in faces: drawn from a fallback font, often taller than a capital.
+        for c in ["天", "ស", "ա", "א", "ა"] {
+            assert_eq!(rise(c), OTHER_SCRIPT_RISE, "{c}");
+        }
+        // Latin, Greek and Cyrillic letters the table doesn't list rise by their overshoot.
+        for c in ["H", "Ŋ", "Ω", "Ш", "Ꙗ"] {
+            assert_eq!(rise(c), OVERSHOOT, "{c}");
+        }
+        // Marks, stacked or not, get the room two stacked marks take in the built-in faces.
+        assert_eq!(rise("A\u{0323}"), MARK_RISE);
+        assert_eq!(rise("A\u{0308}\u{0304}"), rise("\u{01DE}"));
+        assert_eq!(rise("A\u{0306}\u{0302}\u{0301}"), MARK_RISE);
+        assert_eq!(rise("天\u{0301}"), OTHER_SCRIPT_RISE.max(MARK_RISE));
     }
 
     #[test]
