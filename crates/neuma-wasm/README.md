@@ -14,8 +14,17 @@ node crates/neuma-wasm/test.mjs
 The build also writes `dist/neuma-external.mjs`, the same module without the engine inlined:
 it fetches `neuma.wasm` from beside itself (or takes its bytes, `init(bytes)`), for a site
 that would rather cache the engine as its own file. Node's `fetch` takes no `file:` URL, so
-under Node pass the bytes, `init(readFileSync(new URL("./neuma.wasm", import.meta.url)))`
-from beside it; `init()` alone fails there with the code `fetch` and says so.
+under Node pass the bytes of `dist/neuma.wasm`, found through the package's
+`neuma/neuma.wasm` export; `init()` alone fails there with the code `fetch` and says so:
+
+```js
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { init } from "neuma/external";
+
+await init(readFileSync(createRequire(import.meta.url).resolve("neuma/neuma.wasm")));
+```
+
 `dist/neuma.d.mts` has the TypeScript types, with JSDoc, and `package.json` maps the
 package's entry points (`neuma`, `neuma/external`, `neuma/neuma.wasm`) to them. CI builds
 the module on every push and keeps it as the `neuma-browser` artifact.
