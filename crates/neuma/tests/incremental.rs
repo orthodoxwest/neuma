@@ -327,6 +327,15 @@ fn edits_whose_effects_reach_past_them() {
         ("(c4) Al(g)le(h) c(g)", "(c4) W(g)le(h) c(g)"),
         ("(c4) a(g) <i>b(h) c(g)", "(c4) a(g) b(h) c(g)"),
         ("(c4) a*(g) b(h) c(g)", "(c4) a(g) b(h) c(g)"),
+        // A line never starts with a bar, so a syllable turned into one, or one put in
+        // front of a bar, changes where the line before it may end.
+        ("(c4) a(g) b(h) c(g) d(h)", "(c4) a(g) b(h) (;) c(g) d(h)"),
+        ("(c4) a(g) b(h) c(g) d(h)", "(c4) a(g) b(h) (,)c(g) d(h)"),
+        ("(c4) a(g) b(h) (;) c(g)", "(c4) a(g) b(h) (;) (:) c(g)"),
+        ("(c4) a(g) b(h) (;) c(g)", "(c4) a(g) b(h) () (;) c(g)"),
+        ("(c4) a(g) b(h) (;) c(g)", "(c4) a(g) b(h) (f+) (;) c(g)"),
+        ("(c4) a(g) b(h) (z0,c3) c(g)", "(c4) a(g) b(h) (z0g,c3) c(g)"),
+        ("(c4) a(g) b(h) *(;) c(g)", "(c4) a(g) b(h) *() c(g)"),
     ];
     let styles = [Initial::Lines(1), Initial::None, Initial::Lines(2)];
     // Each with a header too, which is what lets a chant parse only around the edit.

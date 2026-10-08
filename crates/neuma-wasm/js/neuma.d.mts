@@ -205,6 +205,21 @@ export interface Pause {
   kind: PauseKind;
   start: number;
   duration: number;
+  /** Where its bar is drawn: a bar's own, or the bar a mediant or flex sits at. */
+  bar: PauseBar | null;
+}
+
+/** Where a pause's bar is drawn: the box of its ink, both strokes of a double bar. */
+export interface PauseBar {
+  /** The bar's index in the score, as a `SourceElement` of kind `"bar"` has it. */
+  index: number;
+  line: number;
+  left: number;
+  right: number;
+  /** Halfway between `left` and `right`. */
+  cx: number;
+  top: number;
+  bottom: number;
 }
 
 export interface LineBox {

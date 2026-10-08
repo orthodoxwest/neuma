@@ -312,6 +312,10 @@ pub(crate) struct SegmentInk {
     /// Space written before this segment inside its syllable (for segments after the first).
     pub space_before: f32,
     pub starts_with_clef: bool,
+    /// It has a bar before any note (after a custos or a clef at most), so no line breaks
+    /// before it: a line ends with its bar, as in GregorioTeX, which sets no break before a
+    /// bar.
+    pub starts_with_bar: bool,
     /// Position of the first note, for the custos that announces this segment.
     pub first_note: Option<StaffPosition>,
 }
@@ -672,6 +676,7 @@ struct Open {
     x: f32,
     gap: Option<f32>,
     starts_with_clef: bool,
+    starts_with_bar: bool,
     first_note: Option<StaffPosition>,
     empty: bool,
 }
@@ -685,6 +690,7 @@ impl Open {
             x: 0.0,
             gap: None,
             starts_with_clef: false,
+            starts_with_bar: false,
             first_note: None,
             empty: true,
         }
@@ -832,6 +838,7 @@ impl Engraver<'_> {
                 lyric: None,
                 space_before,
                 starts_with_clef,
+                starts_with_bar: open.starts_with_bar,
                 first_note: open.first_note,
             }),
         });
@@ -1210,6 +1217,10 @@ impl Pass<'_> {
                 Figure::Bar(b) => {
                     self.e.flush(&mut run, &mut open, si);
                     self.e.reset_alterations(false, true);
+                    // GregorioTeX reads past a custos or a clef to the bar, and so does this.
+                    if open.pieces.iter().all(|p| matches!(p.role, Ink::Custos | Ink::Clef)) {
+                        open.starts_with_bar = true;
+                    }
                     let x = open.advance(SYLLABLE_GAP);
                     let (pieces, w) = bar_pieces(b.kind, b.high, x);
                     let (top, bottom) = pieces

@@ -18,11 +18,13 @@ in the browser and on iOS and Android.
   - engraving in Gregorio's style: every neume shape GABC writes, with exsurge's glyphs;
     lyrics centered on their vowels; GregorioTeX's spacing; drop-cap initials and their
     annotations;
-  - optimal-fit line breaking at any width, cheap enough to redo on every resize;
+  - optimal-fit line breaking at any width, cheap enough to redo on every resize, which
+    never starts a line with a bar (the bar ends the line before, as in GregorioTeX);
   - SVG, styled with CSS classes and `currentColor`, whole or a line at a time;
   - a renderer-neutral display list of glyphs, rectangles and text, for native canvases;
   - a timeline with each note's position, pitch, duration and source, for practice and
-    playback, and a source map for hit tests both ways;
+    playback, and each pause's bar as drawn (`Pause::bar`: line, left, right, top and
+    bottom), and a source map for hit tests both ways;
   - `Chant`, which keeps a score and redoes only what an edit changed, with the same result
     as starting afresh;
   - library entries (`summarize`): headers, mode, incipit, range and length, without
@@ -31,7 +33,8 @@ in the browser and on iOS and Android.
 - `neuma-tones`: pointed psalm text, the Solesmes psalm tones and their endings, settings of
   text to a tone, automatic pointing of English, and a pointed psalter's display.
 - `neuma-book`: booklets from a `.book` file, as PDF (with the text font subset) or SVG pages.
-- `neuma-metrics`: builds a metrics table for any font, and checks a corpus for collisions.
+- `neuma-metrics`: builds a metrics table for any font, and checks a corpus for collisions
+  and for lines that start with a bar.
 - `neuma-cli`: the `neuma` command: `render`, `check`, `notes`, `info`, `tones`, `point`,
   `psalm` and `book`.
 - The browser package (`neuma-wasm`): one self-contained ES module with the engine inlined,

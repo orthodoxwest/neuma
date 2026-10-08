@@ -41,6 +41,18 @@ assert.deepEqual(t.notes.map((n) => n.half).join(""), "000001111111");
 assert.ok(t.notes[0].recitation && t.notes[2].accent);
 // The mediant is the whole pause at its bar.
 assert.deepEqual(t.pauses.slice(0, 2).map((p) => p.duration), [DEFAULT_WEIGHTS.mediant, 0]);
+// Each pause says where its bar is drawn, a mark the bar it sits at, and the source map
+// finds the same bar there.
+assert.deepEqual(t.pauses[0].bar, t.pauses[1].bar);
+const verseBars = verse.layout(600);
+for (const p of verseBars.timeline().pauses) {
+  const b = p.bar;
+  assert.ok(b && b.left < b.cx && b.cx < b.right && b.top < b.bottom, p.kind);
+  const hit = verseBars.sourceAt(b.cx, (b.top + b.bottom) / 2);
+  assert.equal(hit.kind, "bar");
+  assert.equal(hit.index, b.index);
+}
+assert.equal(new Chant("(c4) a(g) *() b(g)", { initial: 0 }).layout(400).timeline().pauses[0].bar, null);
 // Recitation doesn't run across a bar.
 const runs = new Chant("(c4) a(h) (::) b(h) (::) c(h)", { initial: 0 }).layout(400).timeline().notes;
 assert.ok(runs.every((n) => !n.recitation));

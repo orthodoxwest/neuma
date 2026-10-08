@@ -75,3 +75,84 @@ fn a_one_line_initial_stands_on_the_first_line() {
         );
     }
 }
+
+/// The reference scores: the golden ones, the corpus and the examples.
+fn reference_scores() -> Vec<(String, String)> {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut out: Vec<(String, String)> = ["tests/golden", "tests/corpus", "../../examples/compline"]
+        .iter()
+        .flat_map(|d| std::fs::read_dir(root.join(d)).unwrap())
+        .map(|e| e.unwrap().path())
+        .filter(|p| p.extension().is_some_and(|e| e == "gabc"))
+        .map(|p| (p.display().to_string(), std::fs::read_to_string(&p).unwrap()))
+        .collect();
+    out.sort();
+    out
+}
+
+/// The lines after the first that start with a bar: one drawn before every note on its line,
+/// with no syllable of the line before it in the source (a cue of text alone may lead it).
+fn lines_led_by_a_bar(layout: &neuma::Layout) -> Vec<u32> {
+    let map = layout.source_map();
+    (1..map.lines.len() as u32)
+        .filter(|&line| {
+            let first_note = map
+                .notes
+                .iter()
+                .filter(|e| e.line == line)
+                .map(|e| e.x)
+                .fold(f32::INFINITY, f32::min);
+            map.bars
+                .iter()
+                .filter(|b| b.line == line)
+                .min_by(|a, b| a.x.total_cmp(&b.x))
+                .is_some_and(|bar| bar.x < first_note && !map.syllables.iter().any(|s| s.line == line && s.span.end <= bar.span.start))
+        })
+        .collect()
+}
+
+#[test]
+fn no_line_starts_with_a_bar() {
+    // A bar ends the line of the syllable before it, as in GregorioTeX and printed books,
+    // at any width; none of these scores writes a break before a bar.
+    for (name, src) in reference_scores() {
+        let eng = parse(&src).score.engrave(LyricFont::Google.metrics(), &StyleOptions::default());
+        for width in (160..1400).step_by(20) {
+            let layout = eng.layout(width as f32);
+            assert_eq!(lines_led_by_a_bar(&layout), [0u32; 0], "{name} at {width}");
+        }
+    }
+}
+
+#[test]
+fn the_timeline_says_where_each_bar_is_drawn() {
+    // Each bar's pause carries the bar's box from the source map; a mediant or flex carries
+    // the bar it sits at, or none.
+    for (name, src) in reference_scores() {
+        let eng = parse(&src).score.engrave(LyricFont::Google.metrics(), &StyleOptions::default());
+        for width in [300.0, 700.0] {
+            let layout = eng.layout(width);
+            let map = layout.source_map();
+            let timeline = layout.timeline();
+            let mut bars = map.bars.iter();
+            for (i, p) in timeline.pauses.iter().enumerate() {
+                let ctx = format!("{name} at {width}, pause {i}");
+                match p.kind {
+                    neuma::PauseKind::Bar(_) => {
+                        let (bar, e) = (p.bar.expect(&ctx), bars.next().expect(&ctx));
+                        assert_eq!((bar.index, bar.line), (e.index, e.line), "{ctx}");
+                        let close = |a: f32, b: f32| (a - b).abs() < 1e-3;
+                        assert!(close(bar.left, e.x) && close(bar.right, e.x + e.w) && close(bar.cx, e.cx), "{ctx}");
+                        assert!(close(bar.top, e.y) && close(bar.bottom, e.y + e.h), "{ctx}");
+                    }
+                    _ => {
+                        let at = timeline.pauses.iter().filter(|q| q.before_note == p.before_note);
+                        let bar = at.filter(|q| matches!(q.kind, neuma::PauseKind::Bar(_))).find_map(|q| q.bar);
+                        assert_eq!(p.bar, bar, "{ctx}");
+                    }
+                }
+            }
+            assert!(bars.next().is_none(), "{name} at {width}");
+        }
+    }
+}

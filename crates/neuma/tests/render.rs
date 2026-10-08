@@ -220,9 +220,10 @@ fn long_melismas_break_between_note_groups() {
 fn one_syllable_nlba_keeps_its_melisma_whole() {
     // The region holds only this syllable, so no other syllable carries the no-break mark.
     let src = "(c4) <nlba>To(g/h/g/h/g/h/g/h/g/h/g/h/g/h/g/h/g/h)</nlba> (::)";
-    // Its line: the clef, the whole melisma, and the final bar on a line of its own.
+    // Its line: the clef, the whole melisma, and the final bar after it, past the width,
+    // since no line starts with a bar.
     let eng = parse(src).score.engrave(&ApproxMeasure, &NO_INITIAL);
-    assert_eq!(eng.layout(100.0).line_count(), 2);
+    assert_eq!(eng.layout(100.0).line_count(), 1);
     // Without the region the same melisma breaks.
     let eng = parse("(c4) To(g/h/g/h/g/h/g/h/g/h/g/h/g/h/g/h/g/h) (::)")
         .score

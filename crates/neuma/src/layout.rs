@@ -1,7 +1,8 @@
 //! Line breaking and justification: the only width-dependent stage.
 //!
 //! Segments are packed left to right with minimum gaps (notation to notation, lyric to lyric),
-//! and an optimal-fit breaker picks the breaks with the least total demerits. Arithmetic is
+//! and an optimal-fit breaker picks the breaks with the least total demerits. It never breaks
+//! before a bar (docs/DESIGN.md, "GABC coverage"). Arithmetic is
 //! limited to add, subtract, multiply, divide and comparison (docs/DESIGN.md, "Determinism").
 
 use std::collections::HashMap;
@@ -708,6 +709,8 @@ const INITIAL: u8 = 2;
 const HAS_CUSTOS: u8 = 4;
 /// A line ending here ends inside a word that goes on.
 const WORD_GOES_ON: u8 = 8;
+/// A line starting after this segment would start with a bar, which no line does.
+const BEFORE_BAR: u8 = 16;
 
 impl Fit {
     fn closing(&self) -> Closing {
@@ -719,6 +722,10 @@ impl Fit {
 
     fn initial(&self) -> bool {
         self.flags & INITIAL != 0
+    }
+
+    fn before_bar(&self) -> bool {
+        self.flags & BEFORE_BAR != 0
     }
 
     #[cfg(test)]
@@ -1096,9 +1103,25 @@ impl Engraving {
         }
     }
 
+    /// Whether a line starting at each segment would start with a bar: the segment starts
+    /// with one, or draws nothing a reader sees first (no text, and no ink or only a custos)
+    /// and the next segment does.
+    fn bar_first(&self) -> Vec<bool> {
+        let mut out = vec![false; self.segments.len()];
+        let mut next = false;
+        for (k, seg) in self.segments.iter().enumerate().rev() {
+            let unseen =
+                seg.lyric.is_none() && seg.pieces.iter().all(|p| p.role == Ink::Custos) && !matches!(seg.after, Break::Forced { .. });
+            next = seg.starts_with_bar || unseen && next;
+            out[k] = next;
+        }
+        out
+    }
+
     /// The breaker's view of every segment.
     fn fits(&self) -> Vec<Fit> {
         let n = self.segments.len();
+        let bar_first = self.bar_first();
         self.closings()
             .into_iter()
             .zip(&self.segments)
@@ -1119,7 +1142,8 @@ impl Engraving {
                             INITIAL,
                         )
                         | flag(closing.custos.is_some(), HAS_CUSTOS)
-                        | flag(closing.word_goes_on, WORD_GOES_ON),
+                        | flag(closing.word_goes_on, WORD_GOES_ON)
+                        | flag(bar_first.get(k + 1) == Some(&true), BEFORE_BAR),
                 }
             })
             .collect()
@@ -1334,7 +1358,9 @@ impl Engraving {
             let seg = &fit.space;
             let end_of_score = last + 1 == n;
             let forced = matches!(fit.after, Break::Forced { .. });
-            let breakable = end_of_score || forced || matches!(fit.after, Break::Allowed | Break::InMelisma);
+            // No line starts with a bar: one keeps to the line before, as in GregorioTeX,
+            // which puts no break before a bar. A break the score asks for still holds.
+            let breakable = end_of_score || forced || matches!(fit.after, Break::Allowed | Break::InMelisma) && !fit.before_bar();
             let spot = place(&cur, seg, self.hyphen, self.word_space, start);
             let x = spot.x;
             if spot.touching {
@@ -1369,10 +1395,19 @@ impl Engraving {
             // alone is too wide, rather than nowhere, which left the walk back to set every
             // segment on a line of its own.
             let stuck = over && !breakable_seen;
+            // The initial's syllable keeps to the first line even when too wide for it:
+            // ending before it would part it from the bar or clef written before it. A bar
+            // keeps to it too, however full: the line ends after it, or after the last of a
+            // run of bars, overfull by their width.
+            let end = if stuck && last > first && !fit.initial() && !fits[last - 1].before_bar() {
+                last - 1
+            } else {
+                last
+            };
+            if stuck && end == last && fit.before_bar() && matches!(fit.after, Break::Allowed | Break::InMelisma) {
+                continue;
+            }
             if breakable || stuck {
-                // The initial's syllable keeps to the first line even when too wide for it:
-                // ending before it would part it from the bar or clef written before it.
-                let end = if stuck && last > first && !fit.initial() { last - 1 } else { last };
                 let gaps = (last - first) as f32;
                 // A stuck line ends before this segment, so the break it takes is `end`'s.
                 let (ragged, break_cost) = (self.ragged(end, opts), fits[end].cost);
@@ -2087,18 +2122,20 @@ mod tests {
     #[cfg(any(feature = "font-google", feature = "font-garamond12"))]
     fn lines_break_between_words_where_that_costs_little() {
         // GregorioTeX breaks about a quarter of its lines inside a word across GregoBase. Over
-        // the reference scores at five widths (136 breaks), this breaker cuts 24% of them
-        // inside a word, its word gaps stretch 0.25 staff spaces on average, and 2% stretch
-        // more than a staff space. One blind to words cuts 43% inside one; one that holds out
-        // for words and bars at any cost (TeX's weights) cuts 8%, stretches 0.52 and leaves 15%
-        // of its lines loose.
+        // the reference scores at five widths (141 breaks), this breaker cuts 33% of them
+        // inside a word, its word gaps stretch 0.24 staff spaces on average, and 1% stretch
+        // more than a staff space. Keeping each bar on the line before it, as GregorioTeX
+        // does, cost a few: a line that may not end before a bar sometimes ends inside the
+        // word before it (31% before). One blind to words cuts 43% inside one; one that holds
+        // out for words and bars at any cost (TeX's weights) cuts 8%, stretches 0.52 and leaves
+        // 15% of its lines loose.
         let Some((mid, breaks, stretch, loose)) = break_stats() else {
             return;
         };
         assert!(breaks > 100, "{breaks} breaks");
         let mid = mid as f32 / breaks as f32;
         let loose = loose as f32 / breaks as f32;
-        assert!((0.15..0.32).contains(&mid), "{mid} of breaks inside a word");
+        assert!((0.15..0.35).contains(&mid), "{mid} of breaks inside a word");
         assert!(stretch < 0.35, "word gaps stretch {stretch} on average");
         assert!(loose <= 0.05, "{loose} of lines stretch more than a staff space a gap");
     }
@@ -2143,5 +2180,82 @@ mod tests {
         // after `a`; the breaker still sets every syllable.
         let layout = eng.layout_with(1.0, &opts);
         assert_eq!(layout.lines.last().map(|l| l.last), Some(n - 1));
+    }
+
+    /// The lines of `eng` at `width` that start with a bar, by their first segment, other
+    /// than one after a break the score writes.
+    fn bar_led(eng: &Arc<Engraving>, width: f32) -> Vec<usize> {
+        let layout = eng.layout_with(width, &LayoutOptions::default());
+        let first = eng.bar_first();
+        layout
+            .lines
+            .windows(2)
+            .filter(|w| first[w[1].first] && !matches!(eng.segments[w[0].last].after, Break::Forced { .. }))
+            .map(|w| w[1].first)
+            .collect()
+    }
+
+    #[test]
+    fn no_line_starts_with_a_bar() {
+        // Every kind of bar, a bar with text, a bar after a custos or an empty syllable, two
+        // bars together, a bar inside a melisma, and a clef change behind a bar.
+        let style = StyleOptions::default().with_initial(Initial::None);
+        let scores = [
+            "(c4) Ad(g) te(h) le(g)vá(hi)vi(h) (,) á(g)ni(h)mam(g) me(h)am,(g) (;) De(gh)us(g) me(h)us,(g) (:) in(g) te(h) con(g)fí(h)do(g) (::)",
+            "(c4) Di(h)xit(h) Dó(h)mi(h)nus(h) *(:) Dó(h)mi(g)no(h) me(h)o(g) †(,) se(g)de(h) a(g) dex(h)tris(g) me(h)is.(g) (::)",
+            "(c4) Ps(g)al(h)mus(g) <i>Ps.</i>(:) Be(g)á(h)ti(g) im(h)ma(g)cu(h)lá(g)ti(h) (;) in(g) vi(h)a(g) (::)",
+            "(c4) a(g) b(h) (f+) (;) c(g) d(h) () (:) e(g) f(h) (z0,c3) g(g) h(h) (::)",
+            "(c4) a(g) b(h) (;) (:) c(g) d(h) (,)(;) e(g) f(h) (::)",
+            "(c4) a(ghgfghgfghgf/ ,ghgfghgfghgf) b(g) c(h) d(ghgfghgfghgf,ghgfghgfghgf) e(g) (::)",
+            "(c4) a(g) <sp>V/</sp>.(::) b(h) c(g) (:?) d(h) e(g) (;1) f(h) (`) g(g) (^) h(h) (::)",
+        ];
+        for src in scores {
+            let eng = parse(src).score.engrave(&ApproxMeasure, &style);
+            assert!(eng.segments.iter().any(|s| s.starts_with_bar), "{src}");
+            for width in (20..1200).step_by(3) {
+                assert_eq!(bar_led(&eng, width as f32), [0usize; 0], "{src} at {width}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_bar_follows_a_line_too_full_for_it() {
+        // Narrower than any syllable, each line is overfull: the bars still end the line of
+        // the syllable before them, a run of bars together, rather than start the next.
+        let style = StyleOptions::default().with_initial(Initial::None);
+        let eng = parse("(c4) a(ghgh) (;) (:) b(ghgh) c(g) (,) d(g)")
+            .score
+            .engrave(&ApproxMeasure, &style);
+        let layout = eng.layout_with(1.0, &LayoutOptions::default());
+        let lines: Vec<_> = layout.lines.iter().map(|l| (l.first, l.last)).collect();
+        assert_eq!(lines, [(0, 2), (3, 3), (4, 5), (6, 6)]);
+        assert!(bar_led(&eng, 1.0).is_empty());
+    }
+
+    #[test]
+    fn a_written_break_before_a_bar_holds() {
+        // The score asks for the break: the next line starts with the bar.
+        let style = StyleOptions::default().with_initial(Initial::None);
+        let eng = parse("(c4) a(g) b(h) (z) (;) c(g)").score.engrave(&ApproxMeasure, &style);
+        let layout = eng.layout_with(800.0, &LayoutOptions::default());
+        assert_eq!(layout.lines.len(), 2);
+        assert!(eng.bar_first()[layout.lines[1].first]);
+    }
+
+    #[test]
+    fn a_line_ends_after_a_bar_rather_than_before_it() {
+        // Where the line before the bar is full, the breaker takes the bar with it if it
+        // fits, else breaks earlier; the break before the bar was GregorioTeX's `\GreNoBreak`.
+        let style = StyleOptions::default().with_initial(Initial::None);
+        let eng = parse("(c4) a(g) b(h) c(g) (;) d(h) e(g)").score.engrave(&ApproxMeasure, &style);
+        let fits = eng.fits();
+        let bar = eng.segments.iter().position(|s| s.starts_with_bar).unwrap();
+        assert!(fits[bar - 1].before_bar() && !fits[bar].before_bar());
+        // At every width the line holding `c` holds the bar too.
+        for width in (20..400).step_by(2) {
+            let layout = eng.layout_with(width as f32, &LayoutOptions::default());
+            let line = layout.lines.iter().find(|l| (l.first..=l.last).contains(&(bar - 1))).unwrap();
+            assert!(line.last >= bar, "at {width}");
+        }
     }
 }

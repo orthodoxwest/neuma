@@ -169,7 +169,8 @@ the work afresh.
   update takes it back without a copy when no layout holds it; when one does (an editor
   always holds the layout on screen), the update copies the engraving's lists up to the edit
   and shares what follows, and each syllable's drawing is shared either way.
-- **Line breaking.** Each line's candidate breaks depend only on its own segments, so the
+- **Line breaking.** Each line's candidate breaks depend only on its own segments (and,
+  for the break after its last, on whether the next starts with a bar), so the
   layout cache keeps them in a break table keyed on the width and the measure's numbers, and
   the rows of the breaker before an edit come out as last time. A line set from the same
   segments under the same conditions keeps its shape: only how far down the page it goes is
@@ -235,6 +236,17 @@ cost, so a syllable's end is preferred. `z` and `Z` force a break: `z` justifies
 ends and `Z` leaves it ragged, and `+` or `-` forces or suppresses its custos. Only
 `<nlba>` regions and `!` before a space forbid a break. A line that can't end within the
 width ends at its last forbidden break rather than running past it.
+
+No line starts with a bar. As GregorioTeX does (`\GreNoBreak` before a syllable whose first
+bar or note is a bar), the breaker never breaks before a bar: the bar ends the line of the
+syllable before it, with that syllable's text and the custos after it, and the break after
+the bar earns GregorioTeX's `endafterbarpenalty`. This counts a bar after a clef or a custos
+in its syllable, a bar in its own segment inside a long melisma, a bar with text (`*`, `℣.`,
+`<i>Ps.</i>`) and each bar of a run (`(;) (:)`). Beyond GregorioTeX, it looks past a
+syllable that draws nothing a reader would see first (`()`, a lone `(f+)`) to the bar after it. A break the score writes (`z`, `Z`)
+before a bar still holds. Where the syllable and its bar don't fit, the line ends earlier;
+where a line is overfull anyway (nothing fits), it takes its bars with it, overfull by
+their width.
 
 **Alteration scope.** GABC says where an alteration sign is drawn, not how long it lasts.
 Gregorio's default is the line, Solesmes books use the word or the next bar, and Dominican
@@ -341,7 +353,10 @@ is then pixel-exact for that browser, but layouts are no longer identical across
 notehead's center and size, its source span, staff position, scale degree and semitones above
 the clef's do (alterations applied per the scope), shape, liquescence, accent, and when it
 starts and how long it lasts in weight units; and the pauses between notes, at bars and at a
-psalm's mediant and flex, each before the note it names. Chant has no absolute pitch, so a
+psalm's mediant and flex, each before the note it names. A pause at a bar gives where the
+bar is drawn (its line, left and right, center, top and bottom, and its index in the
+source map), and a mediant or flex the bar it sits at, so a cursor can stop on the bar
+without reading the drawing; how it moves there is the tool's. Chant has no absolute pitch, so a
 tool picks a key and adds an offset. Weights are relative durations, not beats: `Weights` has
 one per sign (a plain note 1, a dotted note 2, an episema 1.5, pauses growing with the bar)
 and a tool chooses the tempo. The timeline also marks the first note of each syllable,

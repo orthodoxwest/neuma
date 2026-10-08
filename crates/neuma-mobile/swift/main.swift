@@ -21,6 +21,12 @@ check(page.lines.count > wide.page().lines.count, "narrow wraps")
 check(wide.timeline(weights: weights).notes.map { $0.id } == notes.map { $0.id }, "stable ids")
 check(timeline.pauses.map { $0.kind } == [.mediant, .double], "pause kinds")
 check(timeline.pauses[0].duration == 3, "caller weight")
+check(timeline.pauses[0].bar == nil, "a mediant without a bar")
+if let bar = timeline.pauses[1].bar {
+    check(Int(bar.line) == page.lines.count - 1 && bar.left < bar.right, "pause bar")
+} else {
+    check(false, "pause bar")
+}
 check(narrow.noteAtTime(t: notes[2].start, weights: weights) == notes[2], "playhead")
 // A one-line preview laid out since leaves each layout's hit tests alone.
 let preview = chant.layout(width: 120, options: LayoutOptions(lastLine: .justified, maxLines: 1))

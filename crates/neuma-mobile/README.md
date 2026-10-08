@@ -152,7 +152,10 @@ singing order, each a `TimelineNote` with:
   and Kotlin's string indices.
 
 `timeline.pauses` have kinds that include the mediant `*` and the flex `†`, and a `start` and
-`duration`. A mark is the whole pause at its bar, so a bar right after one lasts 0.
+`duration`. A mark is the whole pause at its bar, so a bar right after one lasts 0. Each
+pause's `bar` is where its bar is drawn: `line`, `left` and `right` (both strokes of a double
+bar), `cx`, `top` and `bottom`, and the bar's `index` in the score. A mark gives the bar it
+sits at; `bar` is null when no bar is drawn for the pause.
 `Weights` are the relative durations, and any field left out keeps its default. `virgula`
 also times the minimis bar, and `half` the Dominican bars. `layout.noteAtTime(t, weights)`
 finds the note sounding at time `t` for a playhead (null in a pause), keeping the timeline

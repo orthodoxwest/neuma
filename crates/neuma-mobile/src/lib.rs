@@ -436,6 +436,24 @@ pub struct Pause {
     pub kind: PauseKind,
     pub start: f32,
     pub duration: f32,
+    /// Where its bar is drawn: a bar's own, or the bar a mediant or flex sits at. null when
+    /// no bar is drawn for it.
+    pub bar: Option<PauseBar>,
+}
+
+/// Where a pause's bar is drawn, in output units: the box of its ink, both strokes of a
+/// double bar.
+#[derive(Clone, Copy, Debug, PartialEq, uniffi::Record)]
+pub struct PauseBar {
+    /// The bar's index in the score, as a `SourceElement` of kind bar has it.
+    pub index: i32,
+    pub line: i32,
+    pub left: f32,
+    pub right: f32,
+    /// Halfway between `left` and `right`.
+    pub cx: f32,
+    pub top: f32,
+    pub bottom: f32,
 }
 
 /// When each note sounds, and where it is drawn (`Timeline` in the Rust and JS APIs).
@@ -675,6 +693,15 @@ impl ChantLayout {
                     kind: pause_kind(p.kind),
                     start: p.start,
                     duration: p.duration,
+                    bar: p.bar.map(|b| PauseBar {
+                        index: int(b.index),
+                        line: int(b.line),
+                        left: b.left,
+                        right: b.right,
+                        cx: b.cx,
+                        top: b.top,
+                        bottom: b.bottom,
+                    }),
                 })
                 .collect(),
             duration: t.duration,

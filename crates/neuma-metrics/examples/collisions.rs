@@ -12,7 +12,9 @@
 //!   staff line crossing the initial (a Q's tail reaching the staff below);
 //! - `TT`: two texts' letters overlapping, a hyphen included (syllables of a word that touch
 //!   by their advances are left out: their letters meet as in any word);
-//! - `OOB`: ink outside the page.
+//! - `OOB`: ink outside the page;
+//! - `BAR`: a line that starts with a bar, which the line breaker never does unless the
+//!   score writes a break (`z`, `Z`) before the bar.
 //!
 //! Boxes overlap when they share more than a twentieth of a staff space both ways. Letters are
 //! boxed by their outlines in the fonts given, which should be the ones the metrics describe.
@@ -49,6 +51,7 @@ struct Counts {
     nt: usize,
     tt: usize,
     oob: usize,
+    bar: usize,
 }
 
 fn usage() -> ! {
@@ -109,28 +112,32 @@ fn main() {
     });
     let mut results = results;
     results.sort_by_key(|r| r.0);
-    let mut totals = vec![(Counts::default(), [0usize; 3]); widths.len()];
+    let mut totals = vec![(Counts::default(), [0usize; 4]); widths.len()];
     for (_, counts, report) in &results {
         print!("{report}");
         for (t, c) in totals.iter_mut().zip(counts) {
             t.0.nt += c.nt;
             t.0.tt += c.tt;
             t.0.oob += c.oob;
+            t.0.bar += c.bar;
             t.1[0] += usize::from(c.nt > 0);
             t.1[1] += usize::from(c.tt > 0);
             t.1[2] += usize::from(c.oob > 0);
+            t.1[3] += usize::from(c.bar > 0);
         }
     }
     for (w, (c, f)) in widths.iter().zip(&totals) {
         println!(
-            "width {w}: {} files, NT {} ({} files), TT {} ({} files), OOB {} ({} files)",
+            "width {w}: {} files, NT {} ({} files), TT {} ({} files), OOB {} ({} files), BAR {} ({} files)",
             results.len(),
             c.nt,
             f[0],
             c.tt,
             f[1],
             c.oob,
-            f[2]
+            f[2],
+            c.bar,
+            f[3]
         );
     }
 }
@@ -163,7 +170,9 @@ fn check(src: &str, name: &str, widths: &[f32], scale: f32, faces: &[Face; 2], d
     let mut report = String::new();
     let mut all = Vec::new();
     for &w in widths {
-        let list = eng.layout_with(w, &LayoutOptions::default().with_scale(scale)).display();
+        let layout = eng.layout_with(w, &LayoutOptions::default().with_scale(scale));
+        let bar_led = lines_led_by_a_bar(src, &layout);
+        let list = layout.display();
         let sp = list.staff_space;
         let mut boxes = Vec::new();
         // Text items by syllable, with their advance extents, to tell touching syllables.
@@ -257,8 +266,14 @@ fn check(src: &str, name: &str, widths: &[f32], scale: f32, faces: &[Face; 2], d
             }
         }
 
-        let mut c = Counts::default();
+        let mut c = Counts {
+            bar: bar_led.len(),
+            ..Counts::default()
+        };
         let mut findings: Vec<(f32, String)> = Vec::new();
+        for line in &bar_led {
+            findings.push((f32::INFINITY, format!("BAR line {line} starts with a bar")));
+        }
         let slack = 0.25 * sp;
         for b in &boxes {
             if b.x0 < -slack || b.y0 < -slack || b.x1 > list.width + slack || b.y1 > list.height + slack {
@@ -328,4 +343,50 @@ fn check(src: &str, name: &str, widths: &[f32], scale: f32, faces: &[Face; 2], d
         all.push(c);
     }
     (all, report)
+}
+
+/// The lines after the first that start with a bar: one drawn before every note on its
+/// line, with no syllable of the line before it in the source (a cue of text alone may lead
+/// it), and no break written between the line before and the bar.
+fn lines_led_by_a_bar(src: &str, layout: &neuma::Layout) -> Vec<u32> {
+    let map = layout.source_map();
+    (1..map.lines.len() as u32)
+        .filter(|&line| {
+            let first_note = map
+                .notes
+                .iter()
+                .filter(|e| e.line == line)
+                .map(|e| e.x)
+                .fold(f32::INFINITY, f32::min);
+            let Some(bar) = map.bars.iter().filter(|b| b.line == line).min_by(|a, b| a.x.total_cmp(&b.x)) else {
+                return false;
+            };
+            let text_first = map.syllables.iter().any(|s| s.line == line && s.span.end <= bar.span.start);
+            let before = map
+                .syllables
+                .iter()
+                .filter(|s| s.line == line - 1)
+                .map(|s| s.span.start)
+                .max()
+                .unwrap_or(0);
+            bar.x < first_note && !text_first && !written_break(src.get(before..bar.span.start).unwrap_or(""))
+        })
+        .collect()
+}
+
+/// Whether GABC holds a line break in its notation: a `z` or `Z` (not the custos `z0`) in
+/// parentheses, before any NABC.
+fn written_break(gabc: &str) -> bool {
+    let (mut inside, mut nabc) = (false, false);
+    let mut chars = gabc.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '(' => (inside, nabc) = (true, false),
+            ')' => inside = false,
+            '|' if inside => nabc = true,
+            'z' | 'Z' if inside && !nabc && chars.peek() != Some(&'0') => return true,
+            _ => {}
+        }
+    }
+    false
 }

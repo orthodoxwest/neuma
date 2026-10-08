@@ -25,6 +25,8 @@ setLayoutBudget({ current: 10 });
 setLayoutBudget();
 setLayoutBudget(5);
 console.log(engineStats().budget.stale, chant.version > page.version, page.timeline().notes[0]?.cx);
+const bar = page.timeline().pauses[0]?.bar;
+if (bar) console.log(bar.line, bar.right - bar.left, bar.index);
 try {
   Chant.fromTone("9.z");
 } catch (e) {

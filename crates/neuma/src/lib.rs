@@ -218,7 +218,7 @@ pub use layout::{LastLine, Layout, LayoutOptions};
 #[doc(inline)]
 pub use metrics::{MetricsError, MetricsTable};
 #[doc(inline)]
-pub use notes::{Pause, PauseKind, Timeline, TimelineNote, Weights};
+pub use notes::{Pause, PauseBar, PauseKind, Timeline, TimelineNote, Weights};
 #[doc(inline)]
 pub use score::{BarKind, NoteShape, Score, ScoreBuilder, TextStyle};
 #[doc(inline)]

@@ -862,7 +862,8 @@ export class Page {
    * The playback timeline, made on the first call and kept: `{ notes, pauses, lines,
    * duration }`, with times in weight units. Each note is `{ id, cx, cy, w, h, start,
    * duration, … }`, `cx`, `cy` its notehead's center; each pause `{ beforeNote, kind, start,
-   * duration }`.
+   * duration, bar }`, `bar` where its bar is drawn (`{ index, line, left, right, cx, top,
+   * bottom }`) or null.
    */
   timeline() {
     if (this.#timeline === undefined) {
