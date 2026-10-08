@@ -27,8 +27,23 @@ pub(crate) fn depth(initial: &str) -> f32 {
     match initial.chars().next() {
         Some('Q') => 0.27,
         Some('J') => 0.21,
-        Some('g' | 'j' | 'p' | 'q' | 'y' | 'ç' | 'ý' | 'ÿ') => 0.3,
+        Some('g' | 'j' | 'p' | 'q' | 'y' | 'ç' | 'ý' | 'ÿ' | 'Ç' | 'Ą' | 'Ę' | 'Į' | 'Ų') => 0.3,
         _ => 0.02,
+    }
+}
+
+/// How far an initial's ink rises above its cap height, in ems: an accent (any letter beyond
+/// ASCII is taken to carry one), a lowercase ascender, the apex of an A, the serifs of a T.
+pub(crate) fn rise(initial: &str) -> f32 {
+    if !initial.is_ascii() {
+        return 0.25;
+    }
+    match initial.chars().next() {
+        Some('b' | 'd' | 'f' | 'h' | 'k' | 'l') => 0.06,
+        Some('T') => 0.05,
+        Some('A') => 0.04,
+        Some('Z') => 0.03,
+        _ => 0.015,
     }
 }
 
@@ -39,8 +54,9 @@ pub enum Initial {
     None,
     /// The initial spans this many staves (at most 4, and no more than the layout has): its
     /// cap height runs from the top line of the first staff to the bottom line of the last.
-    /// `Lines(1)`, the default, is GregorioTeX's default initial instead: four times the lyric
-    /// size, standing on the first line's lyric baseline.
+    /// `Lines(1)`, the default, stands on the first line's lyric baseline instead, as a
+    /// one-line initial does in Solesmes books: its cap height runs from the staff's top line
+    /// down to the lyrics.
     Lines(u8),
 }
 

@@ -95,5 +95,5 @@ check(edited > made && ed.version() == edited, "version moves on real changes on
 check(!ed.diagnostics().contains { $0.code == "gabc::hyphen-in-syllable" }, "update")
 ed.setOptions(options: ChantOptions(lyricSize: 4))
 check(ed.version() > edited, "set options changed")
-check(ed.layout(width: 500, options: LayoutOptions()).page().height > layout.page().height, "set options")
+check(ed.layout(width: 500, options: LayoutOptions()).page().lines.last!.bottom > layout.page().lines.last!.bottom, "set options")
 print("ok: swift, \(notes.count) notes, \(glyphs.count) glyphs")

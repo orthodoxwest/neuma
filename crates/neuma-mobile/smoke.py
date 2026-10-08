@@ -94,6 +94,6 @@ assert edited > made and ed.version() == edited
 assert all(d.code != "gabc::hyphen-in-syllable" for d in ed.diagnostics())
 ed.set_options(neuma.ChantOptions(lyric_size=4.0))
 assert ed.version() > edited
-assert ed.layout(500.0, neuma.LayoutOptions()).page().height > layout.page().height
+assert ed.layout(500.0, neuma.LayoutOptions()).page().lines[-1].bottom > layout.page().lines[-1].bottom
 
 print(f"ok: {len(timeline.notes)} notes, {len(page.lines)} lines at 120, {len(glyphs)} glyphs")
