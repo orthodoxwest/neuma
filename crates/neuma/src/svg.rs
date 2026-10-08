@@ -350,11 +350,11 @@ impl PartialEq for LineKey {
 fn hash_str(s: &str) -> u64 {
     let mut h = s.len() as u64;
     let mut mix = |x: u64| h = (h.rotate_left(5) ^ x).wrapping_mul(0x517c_c1b7_2722_0a95);
-    let mut chunks = s.as_bytes().chunks_exact(8);
-    for c in &mut chunks {
-        mix(u64::from_le_bytes(c.try_into().unwrap_or_default()));
+    let (chunks, rest) = s.as_bytes().as_chunks::<8>();
+    for c in chunks {
+        mix(u64::from_le_bytes(*c));
     }
-    for &b in chunks.remainder() {
+    for &b in rest {
         mix(u64::from(b));
     }
     h
