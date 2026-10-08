@@ -35,7 +35,7 @@ const USAGE: &str = "usage: neuma render [--width PX] [--scale PX] [--initial LI
            Problems go to stderr.
 
   --width PX        the column width in pixels, above 0 and at most 1000000 (default 800)
-  --scale PX        pixels per staff space, above 0 and at most 1000 (default 6)
+  --scale PX        pixels per staff space, from 0.01 to 1000 (default 6)
   --initial LINES   drop-cap height in staves, 0 to 4; 0 for none (default 1)
   --max-lines N     keep only the first N lines, as broken for the whole score (an incipit);
                     0 keeps them all; a taller initial keeps its full size
@@ -45,7 +45,9 @@ const USAGE: &str = "usage: neuma render [--width PX] [--scale PX] [--initial LI
 
   A FILE of - is stdin, which is also read when no FILE is given (but not by book).
   Diagnostics, from check on stdout and from psalm, point and book on stderr, are lines of
-  FILE:LINE:COL: SEVERITY: CODE: MESSAGE. FILE is <stdin> for stdin, or a book's piece.
+  FILE:LINE:COL: SEVERITY: CODE: MESSAGE. FILE is <stdin> for stdin. In book, FILE is a
+  piece's own file, or the book for text written in it; a problem with the whole piece (an
+  unknown tone, a line past the margin) is at the piece's line in the book, and names it.
   LINE and COL count from 1, COL in characters (Unicode scalar values; a tab is one), not
   counting a byte-order mark at the start of the file.
   Exit status: 0 on success, 1 when there are errors in the input, 2 for a usage error or
@@ -56,6 +58,9 @@ const COMMANDS: &[&str] = &["render", "check", "notes", "info", "psalm", "point"
 
 /// The largest `--width`: the widest column a layout lays out.
 const MAX_WIDTH: f32 = 1.0e6;
+
+/// The smallest `--scale`: below it a score is a speck, and its numbers lose their precision.
+const MIN_SCALE: f32 = 0.01;
 
 /// The largest `--scale`.
 const MAX_SCALE: f32 = 1000.0;
@@ -100,10 +105,18 @@ fn emit(args: std::fmt::Arguments<'_>) -> Result<(), Closed> {
         Ok(()) => Ok(()),
         Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => Err(Closed),
         Err(e) => {
-            eprintln!("neuma: can't write to stdout: {e}");
+            let _ = writeln!(std::io::stderr(), "neuma: can't write to stdout: {e}");
             std::process::exit(2);
         }
     }
+}
+
+/// Prints a line to stderr. A failed write is ignored: there is nowhere left to report it,
+/// and `eprintln!` would panic.
+macro_rules! say {
+    ($($arg:tt)*) => {{
+        let _ = writeln!(std::io::stderr(), $($arg)*);
+    }};
 }
 
 /// Prints a line to stdout; see [`emit`].
@@ -115,7 +128,7 @@ macro_rules! out {
 
 /// Reports a usage error, with the usage, and returns the exit code for one.
 fn usage_error(message: &str) -> ExitCode {
-    eprintln!("neuma: {message}\n{USAGE}");
+    say!("neuma: {message}\n{USAGE}");
     ExitCode::from(2)
 }
 
@@ -166,6 +179,16 @@ fn pixels(flag: &str, v: &str, max: f32) -> Result<f32, ExitCode> {
     }
 }
 
+/// `v` as `--scale`, from [`MIN_SCALE`] to [`MAX_SCALE`], or a usage error.
+fn scale(v: &str) -> Result<f32, ExitCode> {
+    match v.parse::<f32>() {
+        Ok(x) if (MIN_SCALE..=MAX_SCALE).contains(&x) => Ok(x),
+        _ => Err(usage_error(&format!(
+            "--scale takes a number of pixels from {MIN_SCALE} to {MAX_SCALE}, not `{v}`"
+        ))),
+    }
+}
+
 fn main() -> ExitCode {
     let mut args = Vec::new();
     for a in std::env::args_os().skip(1) {
@@ -176,7 +199,7 @@ fn main() -> ExitCode {
     }
     match args.first().map(String::as_str) {
         None => {
-            eprintln!("{USAGE}");
+            say!("{USAGE}");
             ExitCode::from(2)
         }
         Some("-h" | "--help") => help(),
@@ -220,7 +243,7 @@ fn run(cmd: &str, args: &[String]) -> Result<ExitCode, ExitCode> {
         }
         match a {
             "--width" => width = pixels(a, value(&mut it, a)?, MAX_WIDTH)?,
-            "--scale" => layout = layout.with_scale(pixels(a, value(&mut it, a)?, MAX_SCALE)?),
+            "--scale" => layout = layout.with_scale(scale(value(&mut it, a)?)?),
             "--initial" => {
                 let v = value(&mut it, a)?;
                 match v.parse::<u8>().ok().filter(|n| *n <= 4) {
@@ -346,13 +369,17 @@ fn position(src: &str, offset: usize) -> (usize, usize) {
 /// `d` as `FILE:LINE:COL: SEVERITY: CODE: MESSAGE`, with its fix, if it has one, on the
 /// next line.
 fn diagnostic_lines(name: &str, src: &str, d: &Diagnostic) -> String {
-    let (line, col) = position(src, d.span.start);
+    diagnostic_at(name, position(src, d.span.start), "", d)
+}
+
+/// `d` as [`diagnostic_lines`] gives it, at `(line, col)`, its message after `prefix`.
+fn diagnostic_at(name: &str, (line, col): (usize, usize), prefix: &str, d: &Diagnostic) -> String {
     let severity = match d.severity {
         Severity::Info => "info",
         Severity::Warning => "warning",
         Severity::Error => "error",
     };
-    let mut s = format!("{name}:{line}:{col}: {severity}: {}: {}", d.code, d.message);
+    let mut s = format!("{name}:{line}:{col}: {severity}: {}: {prefix}{}", d.code, d.message);
     if let Some(fix) = &d.fix {
         s.push_str("\n    fix: ");
         s.push_str(&fix.title);
@@ -395,7 +422,7 @@ fn resolve_tone(name: Option<String>, file: Option<String>) -> Result<neuma_tone
         Some(f) => {
             let src = read(f).ok_or(ExitCode::from(2))?;
             neuma_tones::Tone::parse_all(&src).map_err(|e| {
-                eprintln!("neuma: {f}: {e}");
+                say!("neuma: {f}: {e}");
                 ExitCode::from(2)
             })?
         }
@@ -411,9 +438,9 @@ fn resolve_tone(name: Option<String>, file: Option<String>) -> Result<neuma_tone
     };
     found.cloned().ok_or_else(|| {
         match (&name, &file) {
-            (Some(n), Some(f)) => eprintln!("neuma: no tone {n} in {f} or built in"),
-            (Some(n), None) => eprintln!("neuma: no built-in tone {n}; `neuma tones` lists them"),
-            (None, _) => eprintln!("neuma: {} has no tones", file.as_deref().unwrap_or("")),
+            (Some(n), Some(f)) => say!("neuma: no tone {n} in {f} or built in"),
+            (Some(n), None) => say!("neuma: no built-in tone {n}; `neuma tones` lists them"),
+            (None, _) => say!("neuma: {} has no tones", file.as_deref().unwrap_or("")),
         }
         ExitCode::from(2)
     })
@@ -424,7 +451,7 @@ fn psalm_command(name: &str, src: &str, tone: &neuma_tones::Tone, options: &neum
     let setting = neuma_tones::psalm(src, tone, options);
     let mut errors = false;
     for d in &setting.diagnostics {
-        eprintln!("{}", diagnostic_lines(name, src, d));
+        say!("{}", diagnostic_lines(name, src, d));
         errors |= d.severity == Severity::Error;
     }
     let _ = out!("{}", setting.gabc);
@@ -436,18 +463,11 @@ fn point_command(name: &str, src: &str, tone: &neuma_tones::Tone) -> ExitCode {
     let p = neuma_tones::point(src, tone);
     let mut errors = false;
     for d in &p.diagnostics {
-        eprintln!("{}", diagnostic_lines(name, src, d));
+        say!("{}", diagnostic_lines(name, src, d));
         errors |= d.severity == Severity::Error;
     }
-    for h in p.halves.iter().filter(|h| !h.kept && h.confidence < neuma_tones::UNSURE) {
-        let part = match h.part {
-            neuma_tones::VersePart::Flex => "flex",
-            neuma_tones::VersePart::Mediant => "first half",
-            neuma_tones::VersePart::Termination => "second half",
-        };
-        let message = format!("check the {part}: {:.0}% sure", h.confidence * 100.0);
-        let d = Diagnostic::new(Severity::Info, h.span.clone(), "point::unsure", message);
-        eprintln!("{}", diagnostic_lines(name, src, &d));
+    for d in p.halves.iter().filter_map(neuma_tones::HalfPointing::unsure) {
+        say!("{}", diagnostic_lines(name, src, &d));
     }
     let _ = out!("{}", p.text.trim_end());
     if errors { ExitCode::FAILURE } else { ExitCode::SUCCESS }
@@ -491,7 +511,7 @@ fn book_command(args: &[String]) -> Result<ExitCode, ExitCode> {
     let src = read(&file).ok_or(ExitCode::from(2))?;
     let path = std::path::Path::new(&file);
     let mut book = neuma_book::Book::parse(&src).map_err(|e| {
-        eprintln!("{name}: {e}");
+        say!("{name}: {e}");
         ExitCode::from(2)
     })?;
     // Pieces resolve from the book's folder; a book from stdin from the current one.
@@ -500,27 +520,26 @@ fn book_command(args: &[String]) -> Result<ExitCode, ExitCode> {
     } else {
         path.parent().unwrap_or(std::path::Path::new("."))
     };
-    // What each piece's diagnostics are named: its file, or the book and the piece's number.
-    let labels: Vec<String> = book
+    // The file each score or psalm is read from, if it isn't in the book.
+    let files: Vec<Option<String>> = book
         .pieces
         .iter()
-        .enumerate()
-        .map(|(i, piece)| match piece_source(piece) {
-            Some(neuma_book::Source::Path(p)) => base.join(p).display().to_string(),
-            _ => format!("{name} (piece {})", i + 1),
+        .map(|piece| match piece_source(piece) {
+            Some(neuma_book::Source::Path(p)) => Some(base.join(p).display().to_string()),
+            _ => None,
         })
         .collect();
     book.resolve(base).map_err(|e| {
-        eprintln!("{name}: {e}");
+        say!("{name}: {e}");
         ExitCode::from(2)
     })?;
-    let files = neuma_book::font_files(&book.settings).map_err(|e| {
-        eprintln!("neuma: {e}");
+    let font_files = neuma_book::font_files(&book.settings).map_err(|e| {
+        say!("neuma: {e}");
         ExitCode::from(2)
     })?;
-    let fonts = neuma_book::Fonts::new(&files);
+    let fonts = neuma_book::Fonts::new(&font_files);
     if fonts.is_standard() {
-        eprintln!("neuma: no text font: set `font:` in the book, or install EB Garamond 12; using the PDF's standard Times");
+        say!("neuma: no text font: set `font:` in the book, or install EB Garamond 12; using the PDF's standard Times");
     }
     let mut doc = neuma_book::typeset(&book, &fonts);
     if paths {
@@ -535,35 +554,66 @@ fn book_command(args: &[String]) -> Result<ExitCode, ExitCode> {
                 Some(neuma_book::Source::Inline(t)) => t.as_str(),
                 _ => "",
             };
-            eprintln!("{}", diagnostic_lines(&labels[p.piece], text, d));
+            let file = files[p.piece].as_deref();
+            say!("{}", book_diagnostic(name, p.piece, book.origin(p.piece), file, text, d));
         }
     }
     let missing = fonts.missing();
     if !missing.is_empty() {
         let list: String = missing.iter().map(|c| format!(" {c} (U+{:04X})", *c as u32)).collect();
-        eprintln!("neuma: the text font has no glyph for{list}");
+        say!("neuma: the text font has no glyph for{list}");
     }
     let pdf_out = pdf_out.unwrap_or_else(|| path.with_extension("pdf").to_string_lossy().into_owned());
     if let Err(e) = std::fs::write(&pdf_out, doc.pdf(&fonts)) {
-        eprintln!("neuma: {pdf_out}: {e}");
+        say!("neuma: {pdf_out}: {e}");
         return Err(ExitCode::from(2));
     }
     if let Some(dir) = svg_dir {
         let dir = std::path::Path::new(&dir);
         if let Err(e) = std::fs::create_dir_all(dir) {
-            eprintln!("neuma: {}: {e}", dir.display());
+            say!("neuma: {}: {e}", dir.display());
             return Err(ExitCode::from(2));
         }
         for i in 0..doc.pages.len() {
             let out = dir.join(format!("page-{:03}.svg", i + 1));
             if let Err(e) = std::fs::write(&out, doc.svg(i, &fonts).unwrap_or_default()) {
-                eprintln!("neuma: {}: {e}", out.display());
+                say!("neuma: {}: {e}", out.display());
                 return Err(ExitCode::from(2));
             }
         }
     }
-    eprintln!("{pdf_out}: {} pages", doc.pages.len());
+    say!("{pdf_out}: {} pages", doc.pages.len());
     Ok(if errors { ExitCode::FAILURE } else { ExitCode::SUCCESS })
+}
+
+/// A diagnostic of the book's piece `piece`. One in a piece read from `file` is at its line
+/// and column in that file. One in text written in the book is at its line and column in the
+/// book. One with no place in the piece's text (an empty span: the piece runs past the margin,
+/// its tone is unknown, its Gloria's pointing is unsure) is at the piece's line in the book,
+/// and names the piece.
+fn book_diagnostic(
+    book: &str,
+    piece: usize,
+    origin: Option<&neuma_book::Origin>,
+    file: Option<&str>,
+    text: &str,
+    d: &Diagnostic,
+) -> String {
+    let line = origin.map_or(1, neuma_book::Origin::line);
+    if d.span.is_empty() && d.span.start == 0 {
+        let prefix = match file {
+            Some(f) => format!("piece {} ({f}): ", piece + 1),
+            None => format!("piece {}: ", piece + 1),
+        };
+        return diagnostic_at(book, (line, 1), &prefix, d);
+    }
+    match file {
+        Some(f) => diagnostic_lines(f, text, d),
+        None => {
+            let at = origin.and_then(|o| o.position(text, d.span.start)).unwrap_or((line, 1));
+            diagnostic_at(book, at, "", d)
+        }
+    }
 }
 
 /// The source of a book's score or psalm.
@@ -580,7 +630,7 @@ fn read(path: &str) -> Option<String> {
     if path == "-" {
         let mut s = String::new();
         if let Err(e) = std::io::stdin().read_to_string(&mut s) {
-            eprintln!("neuma: can't read stdin: {e}");
+            say!("neuma: can't read stdin: {e}");
             return None;
         }
         return Some(s);
@@ -588,7 +638,7 @@ fn read(path: &str) -> Option<String> {
     match std::fs::read_to_string(path) {
         Ok(s) => Some(s),
         Err(e) => {
-            eprintln!("neuma: {path}: {e}");
+            say!("neuma: {path}: {e}");
             None
         }
     }

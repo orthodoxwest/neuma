@@ -64,6 +64,39 @@ fn diagnostics_name_the_piece() {
     std::fs::remove_dir_all(&dir).ok();
 }
 
+/// Text written in the book is reported at its line and column in the book, and a problem
+/// with a whole piece at the piece's line, naming it, rather than at the start of its file.
+#[test]
+fn book_level_diagnostics_name_the_book_and_piece() {
+    let dir = scratch("book-level");
+    std::fs::write(dir.join("ps.txt"), "O praise the Lord * all ye nations.\n").unwrap();
+    let wide = "a".repeat(200);
+    let book = dir.join("a.book");
+    let src = format!(
+        "page: a6\ntitle: T\nscore:\n    name: x;\n    %%\n    (c4) A(g\npsalm tone=9.z: ps.txt\nscore:\n    (c4) {wide}(g) (::)\n"
+    );
+    std::fs::write(&book, src).unwrap();
+    let out = neuma()
+        .args(["book", book.to_str().unwrap(), "-o"])
+        .arg(dir.join("a.pdf"))
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    let err = String::from_utf8_lossy(&out.stderr);
+    let book = book.display();
+    let ps = dir.join("ps.txt");
+    let ps = ps.display();
+    for expected in [
+        format!("{book}:6:11: error: gabc::unclosed-notes: "),
+        format!("{book}:7:1: error: book::psalm: piece 3 ({ps}): "),
+        format!("{book}:8:1: warning: book::overflow: piece 4: runs "),
+    ] {
+        assert!(err.contains(&expected), "{expected}\n{err}");
+    }
+    assert!(!err.contains(":1:1:"), "{err}");
+    std::fs::remove_dir_all(&dir).ok();
+}
+
 /// `-` reads the book from stdin, its files from the current folder; it needs `-o`.
 #[test]
 fn reads_a_book_from_stdin() {

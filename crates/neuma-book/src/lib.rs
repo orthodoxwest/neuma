@@ -27,7 +27,7 @@ mod svg;
 mod text;
 mod times;
 
-pub use book::{Book, BookError, PageNumbers, Piece, PsalmSet, Settings, Source};
+pub use book::{Book, BookError, Origin, PageNumbers, Piece, PsalmSet, Settings, Source};
 pub use compose::Problem;
 pub use font::{FontFiles, Fonts};
 pub use page::{Color, Op, Page};

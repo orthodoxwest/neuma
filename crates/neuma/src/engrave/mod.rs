@@ -28,16 +28,27 @@ use std::sync::Arc;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum Ink {
+    /// A staff line.
     Staff,
+    /// A ledger line above or below the staff.
     Ledger,
+    /// A notehead, or a neume glyph that draws several notes.
     Note,
+    /// A stem or a line joining two notes.
     Stem,
+    /// A bar (divisio).
     Bar,
+    /// A horizontal or vertical episema.
     Episema,
+    /// A mora (dot).
     Mora,
+    /// An ictus mark.
     Ictus,
+    /// A flat, natural or sharp.
     Accidental,
+    /// A clef, and a `cb` clef's flat.
     Clef,
+    /// A custos at the end of a line.
     Custos,
 }
 
@@ -118,17 +129,22 @@ impl Piece {
     }
 }
 
-/// How long an alteration lasts (DESIGN section 6.4).
+/// How long an alteration lasts (docs/DESIGN.md, "Alteration scope").
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum AlterationScope {
     /// Until the next clef or written line break. Engraving doesn't know where layout will
     /// break lines, so an alteration carries past a line break that layout chose.
     Line,
+    /// Until the end of the word.
     Word,
+    /// Until the next bar.
     Bar,
+    /// Until the end of the word or the next bar, whichever comes first, as in the Solesmes
+    /// books; the default.
     #[default]
     WordOrBar,
+    /// For its own note only.
     Note,
 }
 
@@ -139,6 +155,7 @@ pub enum CustosPolicy {
     /// Where the score and GregorioTeX's defaults put one.
     #[default]
     Auto,
+    /// Never, whatever the score asks for.
     Never,
 }
 
@@ -424,6 +441,7 @@ pub struct Engraving {
     /// The segments from here on have no ink, only text, so a line of them alone draws no
     /// staff; the segments' count when every segment has ink or none has.
     pub(crate) inkless_from: usize,
+    /// What engraving found: the `engrave::` and `text::` codes in docs/diagnostics.md.
     pub diagnostics: Vec<Diagnostic>,
 }
 
@@ -439,6 +457,8 @@ const MELISMA_END_NOTES: usize = 4;
 /// `interwordspacetext` (0.17 cm against 10 pt lyrics). The font's own space is narrower, and
 /// set words ran together.
 const WORD_SPACE: f32 = 0.48;
+/// A staff's height from its top line to its bottom line, in staff spaces.
+pub(crate) const STAFF_HEIGHT: f32 = 6.0;
 /// Annotation size relative to the lyrics.
 const ANNOTATION_RATIO: f32 = 0.75;
 const DEFAULT_CLEF: Clef = Clef {
@@ -448,17 +468,23 @@ const DEFAULT_CLEF: Clef = Clef {
     span: 0..0,
 };
 
-/// The spaces written inside notes. `/`, `//` and a space are GregorioTeX's
-/// interelementspace (0.069 cm), largerspace (0.109 cm) and glyphspace (0.219 cm) on its
-/// default staff, whose interline is 0.288 cm.
+/// `/` in the notes: GregorioTeX's `interelementspace` (0.069 cm) on its default staff, whose
+/// interline is 0.288 cm.
+const SMALL_SPACE: f32 = 0.48;
+/// `//` in the notes: GregorioTeX's `largerspace` (0.109 cm).
+const MEDIUM_SPACE: f32 = 0.76;
+/// A space in the notes: GregorioTeX's `glyphspace` (0.219 cm).
+const LARGE_SPACE: f32 = 1.52;
+
+/// The spaces written inside notes.
 fn space_width(s: Space) -> f32 {
     match s {
         Space::Zero => 0.0,
         Space::Tiny => INTRA * 0.5,
         Space::Half => INTRA * 0.5,
-        Space::Small => 0.48,
-        Space::Medium => 0.76,
-        Space::Large | Space::LargeNoBreak => 1.52,
+        Space::Small => SMALL_SPACE,
+        Space::Medium => MEDIUM_SPACE,
+        Space::Large | Space::LargeNoBreak => LARGE_SPACE,
         Space::Scaled(f) => INTRA * f,
     }
 }
@@ -492,6 +518,10 @@ fn rect(x: f32, top: StaffPosition, bottom: StaffPosition, role: Ink) -> Piece {
     }
 }
 
+/// How much wider than the regular face a style without a face of its own is measured: a
+/// synthesized bold is about this much wider.
+const SYNTHETIC_WIDENING: f32 = 0.03;
+
 /// The width to add to run `r` measured with the regular face, where the measure has no face
 /// for its style; warns of it once.
 #[cold]
@@ -511,8 +541,11 @@ fn synthetic_face(
         );
         *warned = true;
     }
-    measure.advance(&r.text, TextStyle::REGULAR) * size * 0.03
+    measure.advance(&r.text, TextStyle::REGULAR) * size * SYNTHETIC_WIDENING
 }
+
+/// The gap between a `cb` clef and its key flat, in staff spaces.
+const KEY_FLAT_GAP: f32 = 0.2;
 
 pub(crate) fn clef_pieces(clef: &Clef, left: f32) -> (Vec<Piece>, f32) {
     let glyph = if clef.kind == ClefKind::Do { G::DoClef } else { G::FaClef };
@@ -529,9 +562,9 @@ pub(crate) fn clef_pieces(clef: &Clef, left: f32) -> (Vec<Piece>, f32) {
         if b < -4 {
             b += 7;
         }
-        let (piece, w) = ink_at(G::Flat, right + 0.2, -(b as f32), Ink::Clef, None);
+        let (piece, w) = ink_at(G::Flat, right + KEY_FLAT_GAP, -(b as f32), Ink::Clef, None);
         out.push(piece);
-        right += 0.2 + w;
+        right += KEY_FLAT_GAP + w;
     }
     (out, right)
 }
@@ -544,7 +577,7 @@ pub(crate) fn clef_width(clef: &Clef) -> f32 {
         c - a
     };
     let w = ink(if clef.kind == ClefKind::Do { G::DoClef } else { G::FaClef });
-    if clef.flat { w + (0.2 + ink(G::Flat)) } else { w }
+    if clef.flat { w + (KEY_FLAT_GAP + ink(G::Flat)) } else { w }
 }
 
 pub(crate) fn custos_piece(position: StaffPosition, left: f32) -> (Piece, f32) {
@@ -560,6 +593,9 @@ pub(crate) fn custos_piece(position: StaffPosition, left: f32) -> (Piece, f32) {
 /// The distance between the centres of the two bars of a `::`: GregorioTeX's
 /// `divisiofinalissep` (0.109 cm, 0.76 staff spaces) between them, plus a bar's width.
 const FINALIS_SEP: f32 = 0.76 + STEM;
+
+/// The dotted full bar `:?`: a dash this long at every staff position from the top line down.
+const DOTTED_BAR_DASH: f32 = 0.6;
 
 fn bar_pieces(kind: BarKind, high: bool, left: f32) -> (Vec<Piece>, f32) {
     let shift = if high { -2 } else { 0 };
@@ -582,7 +618,7 @@ fn bar_pieces(kind: BarKind, high: bool, left: f32) -> (Vec<Piece>, f32) {
                         x: left,
                         y,
                         w: STEM,
-                        h: 0.6,
+                        h: DOTTED_BAR_DASH,
                     },
                     role: Ink::Bar,
                     note: None,
@@ -910,9 +946,9 @@ impl Score {
             let lines = n.min(initial::MAX_LINES) as usize;
             let cap = if lines == 1 {
                 let lowest = e.note_positions.iter().copied().min().unwrap_or(0);
-                6.0 + crate::layout::text_drop(lowest)
+                STAFF_HEIGHT + crate::layout::text_drop(lowest)
             } else {
-                6.0 + line_pitch * (lines - 1) as f32
+                STAFF_HEIGHT + line_pitch * (lines - 1) as f32
             };
             let initial_size = cap / CAP_HEIGHT;
             let annotation_size = size * ANNOTATION_RATIO;
@@ -929,7 +965,7 @@ impl Score {
             };
             // The column holds the capital's ink, which for a few letters runs past its advance.
             let (lead, tail) = initial::overhang(&text);
-            let advance_em = measure.advance(&text, TextStyle::REGULAR) + lead + tail;
+            let advance_em = initial::advance(&text, |t| measure.advance(t, TextStyle::REGULAR)) + lead + tail;
             initial = Some(InitialBox {
                 width: advance_em * initial_size,
                 advance_em,

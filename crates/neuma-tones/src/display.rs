@@ -22,6 +22,14 @@ use crate::{PsalmOptions, Tone, ToneRole};
 /// place in the text and in the tone, for a tap or a highlight that follows the singing.
 /// [`Tone::label`] names the tone above it.
 ///
+/// The runs hold two invisible characters, so that a line never breaks between a mark and
+/// its syllable ([`PsalmRunKind::Text`]): U+00A0 (no-break space) and U+2060 (word joiner).
+/// A renderer that maps characters to glyphs without shaping the text, as a simple PDF or
+/// canvas writer does, should drop U+2060, which has no width but for which a font may draw
+/// a missing-glyph box. Text copied from a display keeps the invisible U+2060, so a search of
+/// it for "blood-guiltiness" or a typed "–" misses the word; [`psalm`](crate::psalm()) and
+/// [`point`](crate::point()) read such text back as its source.
+///
 /// ```
 /// use neuma_tones::{PsalmDisplay, PsalmOptions, PsalmRunKind, Tone};
 ///
@@ -62,7 +70,9 @@ pub struct PsalmVerse {
 #[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
 pub struct PsalmRun {
+    /// The text to print.
     pub text: String,
+    /// What it is, which says how to style it.
     pub kind: PsalmRunKind,
 }
 
@@ -74,8 +84,9 @@ pub enum PsalmRunKind {
     /// with one ("blood-guiltiness"). A space that must not break a line, between a `·` and
     /// its syllable or before a `*`, `†` or held `–`, is U+00A0, and a spelling hyphen is
     /// followed by U+2060 (word joiner), as is each `–` ([`Held`](Self::Held)): to search the
-    /// text, read U+00A0 as a space and drop U+2060. [`psalm`](crate::psalm()) reads both back,
-    /// a `-` and U+2060 as a spelling hyphen.
+    /// text, read U+00A0 as a space and drop U+2060; a renderer that doesn't shape text should
+    /// drop U+2060 too. [`psalm`](crate::psalm()) reads both back, a `-` and U+2060 as a
+    /// spelling hyphen.
     Text,
     /// A sung syllable, as printed: accents kept, punctuation attached.
     Syllable(PsalmSyllable),
@@ -97,6 +108,7 @@ pub enum PsalmRunKind {
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct PsalmSyllable {
+    /// The half-verse it is in.
     pub part: VersePart,
     /// What the syllable sings in the tone: its first note's role.
     pub role: ToneRole,
@@ -157,6 +169,8 @@ impl PsalmDisplay {
         &self.tone
     }
 
+    /// The verses, pointed for the tone, in order.
+    #[must_use]
     pub fn verses(&self) -> &[PsalmVerse] {
         &self.verses
     }

@@ -1,18 +1,7 @@
 //! Pointed psalm text: a verse per line, with the marks a hand-pointed psalter prints.
 //!
-//! | Mark | Meaning |
-//! |---|---|
-//! | `*` | The mediant: the end of the first half-verse. |
-//! | `†` | The flex: a short drop before the mediant, in long first halves. |
-//! | `·` | The cadence starts at the next syllable. Inside a word it also splits it ("e·ver"). |
-//! | acute (`á`) | An accented syllable, which takes an accent of the tone's cadence. |
-//! | `–` (en dash) | A note of the cadence with no syllable of its own: the syllable before it is held ("thou · árt – mý God", "Dávid, – – *"). Before a half's first syllable it leaves a note out instead ("* – · – – práise the Lord"). |
-//! | `-` inside a word | A sung syllable split ("judg-ed"). Write `\-` (or `-` and U+2060, or U+2011) for a hyphen that is only spelling ("blood\-guiltiness"). A hyphen with the `·` after it is spelling too ("pre-·eminence"), the `·` before it a dotted split ("hon·-our"). |
-//! | `[…]` | A rubric, such as a posture cue: kept, never sung. |
-//! | `12` at the start of a line | The verse number, after any rubrics that open the line ("[Stand.] 5 For I …"). |
-//!
-//! Any Unicode space separates words, U+00A0 among them, and U+2060 (word joiner) is dropped. A line starting with `#` is a comment. [`Pointed::to_text`] writes the canonical form back,
-//! and parsing that form and writing it again gives the same text.
+//! The marks are the crate's ([Pointed text](crate#pointed-text)). [`Pointed::to_text`] writes
+//! the canonical form back, and parsing that form and writing it again gives the same text.
 
 use std::fmt::Write as _;
 use std::ops::Range;
@@ -39,6 +28,7 @@ pub struct Verse {
     pub span: Range<usize>,
 }
 
+/// A part of a verse: the flex, the first half up to the mediant, or the second half.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum VersePart {
     /// Up to the flex `†`.

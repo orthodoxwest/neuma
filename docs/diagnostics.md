@@ -10,7 +10,7 @@ engine renders what it can and says what it did.
   problems get new codes.
 - **Messages are not stable.** They are English prose for people and may be reworded.
 - **Spans** are UTF-8 byte ranges in the source. The bindings also give UTF-16 offsets for
-  editors (`from` and `to` in JavaScript, `utf16Start` and `utf16End` on mobile). A span is
+  editors (`utf16Start` and `utf16End`, in JavaScript and on mobile). A span is
   empty only where a problem has no place in the source, such as an empty psalm text.
 - **Fixes** replace the span `fix.span` (empty for an insertion) with `fix.replacement`, and
   carry a short `title` for a quick-fix menu. A fix is offered only where there is one
@@ -91,7 +91,21 @@ Spans count bytes of the psalm text.
 | `apply::short-intonation` | info | The half-verse is too short for the whole intonation. |
 | `apply::extra-preparatory` | info | Syllables before the preparatory notes stay on the tenor. |
 | `apply::implied-hold` | info | Two accents with nothing between: the first is held. |
-| `point::unsure` | info | The automatic pointing of a half-verse is unsure; check it. |
+| `point::unsure` | info | The automatic pointing of a half-verse is unsure; check it. `psalm` and `PsalmDisplay` report it, and so do `neuma point` and `neuma book`, all in the same words. |
+
+## Booklets (`neuma-book`: `book::`)
+
+A book's pieces also report the diagnostics above: a score's `gabc::`, `engrave::` and
+`text::` codes, with spans in its GABC, and a psalm's `pointed::`, `apply::` and
+`point::unsure`, with spans in the psalm's text and the verse named in the message. The
+Gloria a book adds isn't in the psalm's text, so its diagnostics have an empty span. The
+codes below are about a piece as a whole, so their span is empty too; `neuma book` reports
+each at the piece's line in the book.
+
+| Code | Severity | Meaning |
+|---|---|---|
+| `book::psalm` | error | A psalm can't be set: its tone isn't built in or in its tone file, or the tone file can't be read. The psalm is left out. |
+| `book::overflow` | warning | A piece runs past the right margin, by the amount the message gives: a word or a neume wider than the measure. |
 
 ## Retired codes
 

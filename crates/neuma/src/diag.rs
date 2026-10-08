@@ -22,6 +22,7 @@ pub enum Severity {
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct Diagnostic {
+    /// How serious it is.
     pub severity: Severity,
     /// Byte range in the source.
     pub span: Range<usize>,

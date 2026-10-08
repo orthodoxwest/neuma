@@ -13,7 +13,21 @@ fn diagnostics(src: &str) -> Vec<Diagnostic> {
     parsed.diagnostics.into_iter().chain(eng.diagnostics.iter().cloned()).collect()
 }
 
-/// Every `"prefix::code"` string literal in a crate's sources.
+/// Whether `s` has a diagnostic code's form, `namespace::name`: lowercase ASCII letters, then
+/// `::`, then lowercase letters, digits and hyphens.
+fn is_code(s: &str) -> bool {
+    let Some((namespace, name)) = s.split_once("::") else {
+        return false;
+    };
+    !namespace.is_empty()
+        && namespace.chars().all(|c| c.is_ascii_lowercase())
+        && !name.is_empty()
+        && name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
+/// Every string literal in a crate's sources with a code's form, whatever its namespace.
+/// Diagnostics are made from such literals (passed to `Diagnostic::new` or a crate's own
+/// helper), so a code in a new namespace is found as well.
 fn codes_in(dir: &Path, out: &mut Vec<String>) {
     for entry in fs::read_dir(dir).unwrap() {
         let path = entry.unwrap().path();
@@ -25,9 +39,7 @@ fn codes_in(dir: &Path, out: &mut Vec<String>) {
                 let start = text[..i].rfind('"').map_or(i, |q| q + 1);
                 let end = text[i..].find('"').map_or(i, |q| i + q);
                 let code = &text[start..end];
-                let (prefix, name) = code.split_once("::").unwrap_or(("", ""));
-                let known = ["gabc", "engrave", "text", "pointed", "apply", "point"].contains(&prefix);
-                if known && !name.is_empty() && name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') {
+                if is_code(code) {
                     out.push(code.to_string());
                 }
             }
@@ -40,12 +52,14 @@ fn every_code_is_documented() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let doc = fs::read_to_string(root.join("docs/diagnostics.md")).unwrap();
     let mut codes = Vec::new();
-    for krate in ["neuma", "neuma-tones"] {
-        codes_in(&root.join("crates").join(krate).join("src"), &mut codes);
+    // Every crate: the engine, the psalm tones and booklets report diagnostics, and the
+    // bindings and command line name some codes.
+    for entry in fs::read_dir(root.join("crates")).unwrap() {
+        codes_in(&entry.unwrap().path().join("src"), &mut codes);
     }
     codes.sort();
     codes.dedup();
-    assert!(codes.len() > 40, "{codes:?}");
+    assert!(codes.len() > 50, "{codes:?}");
     for code in &codes {
         assert!(doc.contains(&format!("| `{code}` |")), "{code} isn't in docs/diagnostics.md");
     }

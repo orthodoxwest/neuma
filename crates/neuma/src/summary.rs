@@ -1,4 +1,4 @@
-//! A score's catalogue entry: its descriptive headers, typed, and what can be read off its
+//! A score's library entry: its descriptive headers, typed, and what can be read off its
 //! notes without laying it out, so a library can list and search many scores cheaply.
 
 use crate::engrave::{Engraving, Initial, StyleOptions, strip_tex};
@@ -12,19 +12,29 @@ use crate::text::ApproxMeasure;
 #[derive(Clone, Debug, Default, PartialEq)]
 #[non_exhaustive]
 pub struct Summary {
+    /// The `name` header.
     pub name: Option<String>,
     /// The `office-part` header as written, and what it names.
     pub office_part: Option<String>,
+    /// What `office_part` names, if it names a kind neuma knows.
     pub kind: Option<OfficePart>,
+    /// The mode headers.
     pub mode: Option<Mode>,
     /// A short label for when the piece is sung; a calendar holds the full list of uses.
     pub occasion: Option<String>,
+    /// The `book` header: the book the score is taken from.
     pub book: Option<String>,
+    /// The `language` header, as written (`la`, `English`).
     pub language: Option<String>,
+    /// The `transcriber` header.
     pub transcriber: Option<String>,
+    /// The `gabc-copyright` header: the transcription's copyright.
     pub gabc_copyright: Option<String>,
+    /// The `score-copyright` header: the copyright of the score transcribed.
     pub score_copyright: Option<String>,
+    /// The `commentary` header: the source of the text, such as a psalm verse.
     pub commentary: Option<String>,
+    /// The `annotation` headers, in order (at most two are drawn).
     pub annotations: Vec<String>,
     /// Every other header in source order, so a library can keep its own fields (`source`,
     /// `translation-of`) in the score file. These are raw: values are only trimmed, so TeX
@@ -43,9 +53,11 @@ pub struct Summary {
     pub highest: Option<i32>,
     /// The last note, in semitones above the clef's do.
     pub final_pitch: Option<i32>,
+    /// How many notes it has.
     pub notes: u32,
-    /// Syllables and words that carry text.
+    /// How many syllables carry text.
     pub syllables: u32,
+    /// How many words carry text.
     pub words: u32,
     /// The length with the default weights, in pulses (one per plain note).
     pub duration: f32,
@@ -56,29 +68,47 @@ pub struct Summary {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum OfficePart {
+    /// An antiphon (`Antiphona`, `Ant.`).
     Antiphon,
+    /// The introit (`Introitus`, `In.`).
     Introit,
+    /// The gradual (`Graduale`, `Gr.`).
     Gradual,
+    /// The alleluia (`Alleluia`, `All.`).
     Alleluia,
+    /// The tract (`Tractus`, `Tr.`).
     Tract,
+    /// The sequence (`Sequentia`, `Seq.`).
     Sequence,
+    /// The offertory (`Offertorium`, `Of.`).
     Offertory,
+    /// The communion (`Communio`, `Co.`).
     Communion,
+    /// A hymn (`Hymnus`, `Hy.`).
     Hymn,
+    /// A responsory (`Responsorium`, `R.`).
     Responsory,
     /// A short responsory (`Responsorium breve`, `R. br.`).
     ShortResponsory,
+    /// A versicle (`Versiculus`, `V.`).
     Versicle,
     /// The chapter (`Capitulum`).
     Chapter,
     /// The collect (`Oratio`).
     Collect,
+    /// A psalm (`Psalmus`, `Ps.`).
     Psalm,
+    /// A canticle (`Canticum`).
     Canticle,
+    /// The Kyrie of the Mass.
     Kyrie,
+    /// The Gloria of the Mass (not the Gloria Patri).
     Gloria,
+    /// The Credo.
     Credo,
+    /// The Sanctus.
     Sanctus,
+    /// The Agnus Dei.
     Agnus,
     /// Something else, such as `Varia`; the header itself is in `office_part`.
     Other,
@@ -148,6 +178,7 @@ pub struct Mode {
     pub number: Option<u8>,
     /// The `mode` header as written, such as `8`, `VIII` or `per`.
     pub name: String,
+    /// The `mode-modifier` header (such as `t. irr.`).
     pub modifier: Option<String>,
     /// From `mode-differentia`, else what follows the number (`g` in `1g`).
     pub differentia: Option<String>,
@@ -230,7 +261,7 @@ const TYPED: [&str; 13] = [
 const INCIPIT_WORDS: usize = 8;
 
 impl Engraving {
-    /// The score's catalogue entry. `header` is the parsed score's header ([`crate::Chant::summary`]
+    /// The score's library entry. `header` is the parsed score's header ([`crate::Chant::summary`]
     /// keeps it for you).
     #[must_use]
     pub fn summary(&self, header: &Header) -> Summary {

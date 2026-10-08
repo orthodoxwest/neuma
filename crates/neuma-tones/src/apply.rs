@@ -13,7 +13,7 @@ use crate::tone::{Cadence, Slot, Tone};
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum Intone {
-    /// On the first verse only, as at the Office.
+    /// On the first verse only, as at the daily office.
     #[default]
     FirstVerse,
     /// On every verse, as in the Magnificat and Benedictus.
@@ -106,14 +106,27 @@ impl PsalmOptions {
 /// Below this confidence an automatically pointed half-verse is reported for checking.
 pub const UNSURE: f32 = 0.8;
 
+/// The `point::unsure` diagnostic for a half-verse pointed automatically at `confidence`
+/// (0 to 1), worded the same wherever it is reported.
+pub(crate) fn unsure_diagnostic(span: Range<usize>, confidence: f32) -> Diagnostic {
+    let message = format!(
+        "pointed automatically, but only {:.0}% sure: check where the accents fall",
+        confidence * 100.0
+    );
+    Diagnostic::new(Severity::Info, span, "point::unsure", message)
+}
+
 /// What a note does in the tone.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum ToneRole {
+    /// The intonation that opens a first half-verse.
     Intonation,
     /// The reciting note.
     Tenor,
+    /// A preparatory note before a cadence's first accent.
     Preparatory,
+    /// An accented note of the cadence.
     Accent,
     /// The notes after an accent: passing notes between accents and the cadence's ending.
     Ending,
@@ -127,7 +140,9 @@ pub struct PsalmNote {
     pub verse: usize,
     /// The printed verse number.
     pub number: Option<u32>,
+    /// The half-verse it is in.
     pub part: VersePart,
+    /// What it does in the tone.
     pub role: ToneRole,
     /// The sung syllable's UTF-8 bytes in the psalm text: the same span as the engraved
     /// note's (`TimelineNote::span`).
@@ -206,16 +221,7 @@ pub(crate) fn sing(pointed: &Pointed, tone: &Tone, options: &PsalmOptions) -> Su
         warn(&mut diags, Severity::Warning, 0..0, "apply::empty", "there is no verse to sing");
     }
     for (span, confidence) in unsure {
-        warn(
-            &mut diags,
-            Severity::Info,
-            span,
-            "point::unsure",
-            &format!(
-                "pointed automatically, but only {:.0}% sure: check where the accents fall",
-                confidence * 100.0
-            ),
-        );
+        diags.push(unsure_diagnostic(span, confidence));
     }
     let mut neumes = Vec::with_capacity(text.verses.len());
     for (vi, verse) in text.verses.iter().enumerate() {

@@ -32,6 +32,7 @@ use crate::tone::{Cadence, Slot, Tone};
 pub struct HalfPointing {
     /// The verse's index in the text.
     pub verse: usize,
+    /// Which half-verse (or the flex) it is.
     pub part: VersePart,
     /// The model's probability for the chosen pointing, from 0 to 1; 1 for a half that was
     /// kept as written, and 0 for one too short for the tone, which accents every syllable.
@@ -41,6 +42,16 @@ pub struct HalfPointing {
     /// The half's sung syllables in the text, in UTF-8 bytes from the first one's start to
     /// the last one's end; empty, at the verse's start, for a half with none.
     pub span: Range<usize>,
+}
+
+impl HalfPointing {
+    /// The `point::unsure` diagnostic for this half, as [`psalm`](crate::psalm()) reports it,
+    /// if the pointer chose its accents with a confidence below [`UNSURE`](crate::UNSURE);
+    /// `None` for a half it is sure of, or one kept as written.
+    #[must_use]
+    pub fn unsure(&self) -> Option<Diagnostic> {
+        (!self.kept && self.confidence < crate::UNSURE).then(|| crate::apply::unsure_diagnostic(self.span.clone(), self.confidence))
+    }
 }
 
 /// A pointed text and how sure the pointer is of each half-verse.

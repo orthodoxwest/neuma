@@ -1,6 +1,7 @@
 //! A compact table of font metrics, built offline by `neuma-metrics` and read here with no
 //! dependencies. It measures text the way the renderers set lyrics: per-character advances,
-//! pair kerning, and small-cap advances, with ligatures off (DESIGN section 11).
+//! pair kerning, and small-cap advances, with ligatures off
+//! (docs/DESIGN.md, "Lyrics and text measurement").
 //!
 //! Format (little-endian): `b"NMET"`, `u16` version (1), `u16` face count, then per face:
 //! `u8` style flags (1 italic, 2 bold), 32-byte SHA-256 of the font file, `f32` ascent and
@@ -15,10 +16,16 @@ use crate::text::TextMeasure;
 /// builder (`neuma-metrics`); the stability contract is the `NMET` format version.
 #[derive(Clone, Debug)]
 pub struct FaceMetrics {
+    /// Whether the face is italic.
     pub italic: bool,
+    /// Whether the face is bold.
     pub bold: bool,
+    /// The SHA-256 of the font file the face was measured from, so a table can be checked
+    /// against the fonts a renderer draws with.
     pub sha256: [u8; 32],
+    /// The face's ascent above the baseline, in ems.
     pub ascent: f32,
+    /// The face's descent below the baseline, in ems (positive).
     pub descent: f32,
     advances: Vec<(u32, f32)>,
     small_caps: Vec<(u32, f32)>,
@@ -134,6 +141,10 @@ impl FaceMetrics {
         }
     }
 
+    /// The advance of `text` in this face, in ems: each character's advance, plus kerning
+    /// between each pair unless in small caps. A character the face lacks counts 0.5 em, a
+    /// combining mark nothing.
+    #[must_use]
     pub fn advance(&self, text: &str, small_caps: bool) -> f32 {
         let mut w = 0.0;
         let mut prev: Option<char> = None;
@@ -168,6 +179,7 @@ impl FaceMetrics {
 /// [`LyricFont::metrics`](crate::LyricFont::metrics).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct MetricsTable {
+    /// The faces measured, one per style (regular, italic, bold, bold italic) at most.
     pub faces: Vec<FaceMetrics>,
 }
 
@@ -175,8 +187,11 @@ pub struct MetricsTable {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum MetricsError {
+    /// The bytes don't start with `NMET`.
     BadMagic,
+    /// The table is of a format version this reader doesn't know.
     UnsupportedVersion(u16),
+    /// The bytes end before the table does.
     Truncated,
 }
 
@@ -220,6 +235,13 @@ impl Reader<'_> {
 }
 
 impl MetricsTable {
+    /// Reads a table in the `NMET` format (see the module docs), as `neuma-metrics` writes it.
+    ///
+    /// # Errors
+    ///
+    /// [`MetricsError::BadMagic`] if `bytes` isn't a metrics table,
+    /// [`MetricsError::UnsupportedVersion`] if it is of a newer format, and
+    /// [`MetricsError::Truncated`] if it ends early.
     pub fn from_bytes(bytes: &[u8]) -> Result<MetricsTable, MetricsError> {
         let mut r = Reader { b: bytes, at: 0 };
         if r.take(4)? != b"NMET" {

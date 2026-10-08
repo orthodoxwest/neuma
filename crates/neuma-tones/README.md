@@ -104,7 +104,10 @@ The verse as printed is the pointed text as `point` writes it, without the verse
 the rubrics' brackets. The space between a `·` and its syllable, and before a `*`, `†` or
 held `–`, is U+00A0, and U+2060 (word joiner) follows each `–` and spelling hyphen, so a line
 never breaks between a mark and the syllable it belongs to, nor after "pre-". To search the
-text, read U+00A0 as a space and drop U+2060; pointed text reads both back. To sing the text again, keep `point`'s text rather than a copy of the display: the display leaves out the verse numbers and rubric brackets, and with `OutsideFlex` the acutes of a flex.
+text, read U+00A0 as a space and drop U+2060; pointed text reads both back. A renderer that
+draws characters without shaping the text (a simple PDF or canvas writer) should drop U+2060,
+which has no width but may come out as a missing-glyph box. Text copied from a display keeps
+the invisible U+2060, so a search of a copy for "blood-guiltiness" misses it. To sing the text again, keep `point`'s text rather than a copy of the display: the display leaves out the verse numbers and rubric brackets, and with `OutsideFlex` the acutes of a flex.
 
 ## Pointed text
 

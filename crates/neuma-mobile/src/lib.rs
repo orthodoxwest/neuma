@@ -910,7 +910,7 @@ fn diagnostic(d: &neuma::Diagnostic, utf16: &neuma::Utf16Index) -> Diagnostic {
 /// When a psalm's intonation is sung.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, uniffi::Enum)]
 pub enum Intone {
-    /// On the first verse only, as at the Office.
+    /// On the first verse only, as at the daily office.
     #[default]
     FirstVerse,
     /// On every verse, as in the Gospel canticles.
@@ -1165,7 +1165,9 @@ pub struct PsalmVerse {
 }
 
 /// A piece of a verse's line, of one kind. A space that must not break the line (between a
-/// mark and its syllable) is U+00A0.
+/// mark and its syllable) is U+00A0, and U+2060 (word joiner) follows each `–` and spelling
+/// hyphen. A copy of the text keeps the invisible U+2060, and a renderer that doesn't shape
+/// text should drop it.
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]
 pub struct PsalmRun {
     pub text: String,
