@@ -1,8 +1,7 @@
 //! Turns pieces into blocks: one per score line or text line, each with its height and
 //! whether it must stay on the page with the block after it.
 
-use neuma::display::{DisplayList, Item, TextRole};
-use neuma::{Diagnostic, Initial, LastLine, LayoutOptions, Severity, StyleOptions};
+use neuma::{Diagnostic, DisplayList, Initial, Item, LastLine, LayoutOptions, Severity, StyleOptions, TextRole};
 use neuma_tones::{Accents, Intone, PsalmOptions, Tone};
 
 use crate::book::{Book, Piece, Psalm, PsalmSet, Settings, Source};
@@ -565,17 +564,7 @@ fn psalm_blocks(ps: &Psalm, s: &Settings, fonts: &Fonts, m: &Metrics, diags: &mu
         };
         let pointing = neuma_tones::point(&rest, &tone);
         diags.extend(pointing.diagnostics.iter().cloned().map(relocate));
-        for h in pointing.halves.iter().filter(|h| !h.kept && h.confidence < neuma_tones::UNSURE) {
-            diags.push(relocate(Diagnostic::new(
-                Severity::Info,
-                h.span.clone(),
-                "point::unsure",
-                format!(
-                    "pointed automatically, but only {:.0}% sure: check where the accents fall",
-                    h.confidence * 100.0
-                ),
-            )));
-        }
+        diags.extend(pointing.halves.iter().filter_map(neuma_tones::HalfPointing::unsure).map(relocate));
         let nsize = size * 0.9;
         let number_w = fonts.width("000", fonts.resolve(false, false), false) * nsize + size * 0.45;
         let pointed = &pointing.text;

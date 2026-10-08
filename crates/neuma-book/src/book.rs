@@ -154,21 +154,28 @@ impl Default for Settings {
 pub struct Book {
     pub settings: Settings,
     pub pieces: Vec<Piece>,
+    /// Where each parsed piece is in the file, by index ([`Book::origin`]).
+    origins: Vec<Origin>,
 }
 
 /// Where a piece is in its `.book` file, so that a problem in it can be reported at the
-/// book's own lines ([`Book::parse_with_origins`]).
-#[derive(Clone, Debug, PartialEq, Eq, Default)]
-#[non_exhaustive]
+/// book's own lines ([`Book::origin`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Origin {
     /// The 1-based line of the piece's entry.
-    pub line: usize,
+    line: usize,
     /// Each line of the piece's text on indented lines under its entry, if it has any: its
     /// 1-based line in the book, and the bytes of indentation taken off it.
-    pub body: Vec<(usize, usize)>,
+    body: Vec<(usize, usize)>,
 }
 
 impl Origin {
+    /// The 1-based line of the piece's entry in the book.
+    #[must_use]
+    pub fn line(&self) -> usize {
+        self.line
+    }
+
     /// The 1-based line and column in the book (the column in characters) of byte `offset`
     /// in `text`, the piece's text from the indented lines under its entry; `None` if the
     /// piece has no such text.
@@ -420,14 +427,10 @@ impl Entry {
 
 impl Book {
     /// Parses a `.book` file. File names in it stay as written; [`Book::resolve`] reads them.
+    /// A byte-order mark at the start is skipped.
     pub fn parse(src: &str) -> Result<Book, BookError> {
-        Book::parse_with_origins(src).map(|(book, _)| book)
-    }
-
-    /// Parses a `.book` file as [`Book::parse`] does, with each piece's [`Origin`] in it.
-    pub fn parse_with_origins(src: &str) -> Result<(Book, Vec<Origin>), BookError> {
+        let src = src.strip_prefix('\u{feff}').unwrap_or(src);
         let mut book = Book::default();
-        let mut origins = Vec::new();
         let mut started = false;
         for e in entries(src)? {
             let s = &mut book.settings;
@@ -523,7 +526,7 @@ impl Book {
                 _ => {
                     started = true;
                     book.pieces.push(piece(&e)?);
-                    origins.push(Origin {
+                    book.origins.push(Origin {
                         line: e.line,
                         body: e.body_lines.clone(),
                     });
@@ -545,7 +548,14 @@ impl Book {
                 ),
             });
         }
-        Ok((book, origins))
+        Ok(book)
+    }
+
+    /// Where piece `piece` is in the file it was parsed from, or `None` for a piece the
+    /// parser didn't make.
+    #[must_use]
+    pub fn origin(&self, piece: usize) -> Option<&Origin> {
+        self.origins.get(piece)
     }
 
     /// Reads every file the book names, relative to `base` (the book's directory), so the
@@ -791,9 +801,10 @@ mod tests {
     #[test]
     fn origins_place_inline_text_in_the_book() {
         let src = "page: a5\ntitle: A\nscore: a.gabc\nscore:\n    name: x;\n\n# a comment\n      %%\n    (c4) A(g\nbreak\n";
-        let (book, origins) = Book::parse_with_origins(src).unwrap();
-        assert_eq!(origins.len(), book.pieces.len());
-        assert_eq!(origins.iter().map(|o| o.line).collect::<Vec<_>>(), [2, 3, 4, 10]);
+        let book = Book::parse(src).unwrap();
+        let origins: Vec<&Origin> = (0..book.pieces.len()).map(|i| book.origin(i).unwrap()).collect();
+        assert!(book.origin(book.pieces.len()).is_none());
+        assert_eq!(origins.iter().map(|o| o.line()).collect::<Vec<_>>(), [2, 3, 4, 10]);
         assert!(origins[1].body.is_empty());
         let Piece::Score {
             source: Source::Inline(text),
@@ -808,5 +819,11 @@ mod tests {
         assert_eq!(at("%%"), Some((8, 7)));
         assert_eq!(at("A(g"), Some((9, 10)));
         assert_eq!(origins[1].position("", 0), None);
+    }
+
+    #[test]
+    fn a_byte_order_mark_is_skipped() {
+        let src = "title: A\nscore:\n    (c4) A(g)\n";
+        assert_eq!(Book::parse(&format!("\u{feff}{src}")).unwrap(), Book::parse(src).unwrap());
     }
 }

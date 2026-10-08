@@ -44,6 +44,16 @@ pub struct HalfPointing {
     pub span: Range<usize>,
 }
 
+impl HalfPointing {
+    /// The `point::unsure` diagnostic for this half, as [`psalm`](crate::psalm()) reports it,
+    /// if the pointer chose its accents with a confidence below [`UNSURE`](crate::UNSURE);
+    /// `None` for a half it is sure of, or one kept as written.
+    #[must_use]
+    pub fn unsure(&self) -> Option<Diagnostic> {
+        (!self.kept && self.confidence < crate::UNSURE).then(|| crate::apply::unsure_diagnostic(self.span.clone(), self.confidence))
+    }
+}
+
 /// A pointed text and how sure the pointer is of each half-verse.
 #[derive(Clone, Debug, Default, PartialEq)]
 #[non_exhaustive]

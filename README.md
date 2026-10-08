@@ -455,7 +455,9 @@ there is one, on the next line: from `neuma check` on stdout, in order of positi
 `psalm`, `point` and `book` on stderr. `FILE` is `<stdin>` for stdin. In `neuma book` it is
 a piece's own file, or the book for text written in it; a problem with a whole piece, such as
 an unknown tone or a line past the margin, is at the piece's line in the book and names the
-piece (`compline.book:12:1: error: book::psalm: piece 5 (psalm-4.txt): …`). Lines and columns count from 1, the column in
+piece: with `tone=9.Z` on line 40 of `examples/compline/compline.book`, `neuma book` reports
+``compline.book:40:1: error: book::psalm: piece 13 (psalm-4.txt): no psalm tone `9.Z`; `neuma
+tones` lists them``. Lines and columns count from 1, the column in
 characters (Unicode scalar values, so a tab or an accented letter is one), not counting a
 byte-order mark at the start of the file. The exit status is 1 when the input has errors and
 2 for a usage error or a file that can't be read or written; output to a reader that stops

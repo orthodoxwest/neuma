@@ -8,7 +8,7 @@
 
 use super::{Ink, Mark, Piece};
 use crate::glyphs::{Align, GlyphId as G};
-use crate::score::{Liquescent, Note, NoteShape, Placement};
+use crate::score::{Liquescent, Note, NoteShape, Placement, StaffPosition};
 
 /// Weight of stems, connecting lines and staff lines.
 pub(crate) const STEM: f32 = 0.128;
@@ -17,8 +17,8 @@ pub(crate) const EPISEMA: f32 = STEM * 1.25;
 /// exsurge's `intraNeumeSpacing`: half a staff space.
 pub(crate) const INTRA: f32 = 0.5;
 /// How far a ledger line reaches past the notes it serves, each way: GregorioTeX's
-/// `additionallineswidth`, 0.14584 cm at a 0.288 cm staff space, less the punctum's side
-/// bearings, as its ledger lines measure on the page.
+/// `additionallineswidth`, 0.14584 cm with its staff lines 0.288 cm apart (two of neuma's
+/// staff spaces), less the punctum's side bearings, as its ledger lines measure on the page.
 pub(crate) const LEDGER_OVERHANG: f32 = 0.95;
 /// The narrowest gap left between two ledger lines at one height; any narrower and the two are
 /// drawn as one. GregorioTeX's meet exactly at its word space between notes, and a sliver
@@ -36,6 +36,12 @@ const VIRGA_STEM_ON_LINE: f32 = 2.7;
 const VIRGA_STEM_IN_SPACE: f32 = 1.8;
 /// How far apart two inclinata on the same pitch are, in inclinatum widths.
 const INCLINATA_UNISON: f32 = 1.1;
+
+/// How far apart two inclinata `diff` staff positions apart are, in inclinatum widths: two
+/// thirds of a width for each position they step, or [`INCLINATA_UNISON`] on one pitch.
+fn inclinata_spacing(diff: StaffPosition) -> f32 {
+    if diff == 0 { INCLINATA_UNISON } else { diff as f32 * 2.0 / 3.0 }
+}
 /// The gap between the pes and the inclinata of a pes subpunctis.
 const PES_SUBPUNCTIS_GAP: f32 = INTRA * 0.68;
 /// The part of its width an episema keeps over an inclinatum that steps down from the one
@@ -746,7 +752,7 @@ impl Builder {
                 _ => G::PunctumInclinatum,
             };
             let diff = (prev - n.position).abs();
-            let multiple = if diff == 0 { INCLINATA_UNISON } else { diff as f32 * 2.0 / 3.0 };
+            let multiple = inclinata_spacing(diff);
             if k > 0 {
                 self.x += advance * multiple;
             }

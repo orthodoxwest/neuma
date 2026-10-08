@@ -69,8 +69,7 @@ crates/
                    the automatic pointer, settings (text and tone to a Score) and the pointed
                    psalter display. Depends on neuma.
   neuma-book/      booklets: the .book format, composition, pagination, a PDF writer with font
-                   subsetting, and SVG pages. Depends on neuma, neuma-tones, ttf-parser and
-                   rustybuzz.
+                   subsetting, and SVG pages. Depends on neuma, neuma-tones and rustybuzz.
   neuma-wasm/      the browser package: a thin wrapper over neuma::Chant behind a hand-written
                    C ABI, and the JavaScript glue (js/neuma.mjs) that build.mjs bundles with
                    the engine inlined.
@@ -86,7 +85,10 @@ fuzz/              cargo-fuzz targets: parse, layout, round_trip.
 ```
 
 The workspace uses edition 2024 and builds on Rust 1.95 and later (the workspace's
-`rust-version`).
+`rust-version`, which a CI job tests on). `neuma`, `neuma-tones`, `neuma-book`,
+`neuma-metrics` and `neuma-cli` carry crates.io metadata and their license files, and CI
+packages each on its own; `neuma-wasm` and `neuma-mobile` are built from the repository
+and not published as crates.
 
 ## Data flow
 
@@ -131,7 +133,9 @@ mobile bindings and the CLI all wrap a `Chant`.
 
 - **Staff spaces** measure the notation. One staff space is the distance between two
   adjacent staff positions, a line and the space beside it, so the staff's four lines are two
-  staff spaces apart and a punctum is one staff space wide.
+  staff spaces apart and a punctum is one staff space wide. This is half of what engravers
+  (SMuFL, Gould's *Behind Bars*, GregorioTeX) call a staff space, the distance from one line
+  to the next.
 - **Staff positions** count those steps from the middle space: the lines are at −3, −1, 1
   and 3, positions grow upward, and GABC's `a` is −6 and `m` is 6.
 - **Ems** measure text. Lyrics are sized in staff spaces (`StyleOptions::lyric_size`, 2.45 by
@@ -191,10 +195,14 @@ The same input, options and metrics table give byte-identical output everywhere:
   comparison. No `mul_add`, whose result differs between fused and unfused
   hardware, and no `powf`, `exp`, `sin` or other transcendental functions, whose results
   differ between libm builds. The breaker's badness is cubic, computed as `r * r * r`.
+  `clippy.toml` disallows these methods, so clippy fails on any new use. (The pointer's
+  confidence in `neuma-tones` uses `exp`: it only decides whether to report
+  `point::unsure`, never which syllables are accented or what is drawn.)
 - The breaker breaks ties explicitly (the earliest break wins), so iteration order never
   decides.
-- SVG writes coordinates with exactly two decimals; rounding happens once, at the output,
-  never between stages.
+- SVG writes coordinates with exactly two decimals (glyph outlines in `<defs>` keep the
+  table's three, and their scale four significant digits); rounding happens once, at the
+  output, never between stages.
 - Caches give the same result as fresh work (above), so output never depends on what was
   laid out before.
 
@@ -257,7 +265,7 @@ that handle only `M L H V C A Z`, read every glyph.
 Glyphs cross every API as numeric ids with a lookup (`glyph_outline`), not as an enum, so the
 glyph set can grow without breaking apps that match exhaustively on an enum. Gregorio's
 greciliae font isn't a source: it is under the OFL, so a table of its outlines couldn't ship
-under MIT and Apache. Shapes exsurge lacks are composed from its glyphs and rectangles.
+under MIT and Apache.
 
 ## Display list and SVG
 
@@ -271,8 +279,9 @@ annotation, rubric), and notation names the note or notes it draws.
 The SVG writer maps roles to CSS classes (`neuma-note`, `neuma-staff`, `neuma-rubric`, …)
 and fills with `currentColor`, so a page themes it with CSS, dark mode included, and lists
 each piece of ink's notes in `data-note` for highlighting. Glyphs are defined once in
-`<defs>` and used by reference, with ids that differ between scales so two scores on one page
-don't collide. The SVG names the lyric font and asks for `font-variant-ligatures: none` and
+`<defs>` and used by reference. Their ids carry the scale, so scores drawn at different
+scales never share one; two scores at one scale share ids (and identical definitions), so a
+page that shows several gives each its own `SvgOptions::prefix` to keep ids unique. The SVG names the lyric font and asks for `font-variant-ligatures: none` and
 `text-rendering: geometricPrecision` (below). It can come whole or in parts: a head, the
 glyph definitions, one string per line and the rest (the initial).
 
@@ -291,10 +300,12 @@ glyph definitions, one string per line and the rest (the initial).
   and syllables follow GregorioTeX's spacing.
 - **Initials.** With the `initial-style:` header or `StyleOptions::initial`, the first letter
   becomes a drop cap spanning one to four staves, in a column before the staff, with the
-  `annotation:` headers (or the mode) centered above it. Its size comes from the face's cap height, and
-  its ink from small per-letter tables: how far a Q's tail or an accent reaches past the
-  letter's box, so the capital clears the staff and the line below. A letter outside Latin,
-  Greek and Cyrillic is given a quarter em of room above it.
+  `annotation:` headers (or the mode) centered above it. Its size comes from the face's cap
+  height, and its ink from small per-letter tables: how far a Q's tail or an accent reaches past the
+  letter's box, so the capital clears the staff and the line below. The initial takes the
+  marks after its letter (any Unicode mark), with room for an accent above it, or for two
+  stacked. A letter outside Latin, Greek and Cyrillic, which the built-in faces lack and a
+  fallback font draws, is given at least an em of width and a quarter em of room above.
 
 `TextMeasure` is the engine's only text dependency. Widths are right only if every renderer
 sets text the way it was measured, so neuma fixes the shaping:
@@ -361,8 +372,9 @@ text and a tone directly and needs no hand-written GABC.
   exactly this grammar and reports anything else as a `pointed::` diagnostic. `point` writes
   the canonical form back, and reading and writing it again gives the same text.
 - **Tones** are small text blocks: an intonation, a tenor and a cadence for each half and the
-  flex, as formulas of accented, preparatory, fixed and open slots. The Solesmes tones and
-  their usual endings are built in, from jgabc's formulas.
+  flex. A cadence is a formula of slots (`Slot`): an accented syllable, one unaccented
+  syllable, or any number of unaccented syllables on one note. The Solesmes tones and their
+  usual endings are built in, from jgabc's formulas.
 - **Syllabification.** The cadence needs the syllables after each accent, and most cadence
   words are unhyphenated in a psalter. Splits come from the markup first, then an exception
   list, then a small set of English rules, with every piece holding a vowel.
@@ -399,8 +411,9 @@ module, `dist/neuma.mjs`, which fetches nothing and works in sandboxed pages; a 
 fetches `neuma.wasm` beside it is built too. The glue gives `Chant`, views and pages: a page
 is a layout with its SVG, timeline and hit tests, answering for the score it shows for as
 long as it is held. The engine keeps the layouts behind pages in two pools of the most
-recently used, across every chant, view and page (64 for pages showing their chant as it is
-now, 2 for pages whose chant has changed), and a page whose layout was dropped lays itself
+recently used, across every chant, view and page (by default 64 for pages showing their
+chant as it is now and 2 for pages whose chant has changed, set with `setLayoutBudget`), and
+a page whose layout was dropped lays itself
 out again when next asked, to the same answers. Versions keep growing across a restart of
 the engine. Features of the crate leave psalm tones, the pointer or a font table out for a
 smaller module. TypeScript types ship beside the module.
@@ -444,7 +457,6 @@ library entry as JSON, lists tones, points and sets psalms, and builds booklets.
 
 ## Open questions
 
-1. Publishing to crates.io and npm, or git dependencies only for now.
-2. Whether English choirs want vowel centering other than Gregorio's English rules.
-3. A core SVG mode that draws text as outlines, for exports that must look identical without
+1. Whether English choirs want vowel centering other than Gregorio's English rules.
+2. A core SVG mode that draws text as outlines, for exports that must look identical without
    the font. `neuma-book` already does this for booklets (`text-as-paths: yes`).

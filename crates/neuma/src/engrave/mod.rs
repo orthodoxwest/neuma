@@ -965,7 +965,7 @@ impl Score {
             };
             // The column holds the capital's ink, which for a few letters runs past its advance.
             let (lead, tail) = initial::overhang(&text);
-            let advance_em = measure.advance(&text, TextStyle::REGULAR) + lead + tail;
+            let advance_em = initial::advance(&text, measure.advance(&text, TextStyle::REGULAR)) + lead + tail;
             initial = Some(InitialBox {
                 width: advance_em * initial_size,
                 advance_em,

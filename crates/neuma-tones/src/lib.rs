@@ -29,10 +29,13 @@
 //! | `†` | The flex: a short drop before the mediant, in long first halves. |
 //! | `·` | The cadence starts at the next syllable. Inside a word it also splits it ("e·ver"). |
 //! | acute (`á`) | An accented syllable, which takes an accent of the tone's cadence. |
-//! | `–` (en dash) | A note of the cadence with no syllable of its own: the syllable before it is held ("thou · árt – mý God"). Before a half's first syllable it leaves a note out instead ("* – · – – práise the Lord"). |
-//! | `-` inside a word | A sung syllable split ("judg-ed"). `\-` (or `-` and U+2060, or U+2011) is a hyphen that is only spelling ("blood\-guiltiness"). |
+//! | `–` (en dash) | A note of the cadence with no syllable of its own: the syllable before it is held ("thou · árt – mý God", "Dávid, – – *"). Before a half's first syllable it leaves a note out instead ("* – · – – práise the Lord"). |
+//! | `-` inside a word | A sung syllable split ("judg-ed"). `\-` (or `-` and U+2060, or U+2011) is a hyphen that is only spelling ("blood\-guiltiness"). A hyphen with the `·` after it is spelling too ("pre-·eminence"), the `·` before it a dotted split ("hon·-our"). |
 //! | `[…]` | A rubric, such as a posture cue: kept, never sung. |
-//! | `12` at the start of a line | The verse number. |
+//! | `12` at the start of a line | The verse number, after any rubrics that open the line ("[Stand.] 5 For I …"). |
+//!
+//! Any Unicode space separates words, U+00A0 among them, U+2060 (word joiner) is dropped,
+//! and a line starting with `#` is a comment.
 //!
 //! A half-verse without marks is pointed automatically ([`point`], with the `pointing`
 //! feature, on by default), and marks written by hand are kept. [`point`] returns the text
@@ -41,8 +44,9 @@
 //! ## Tones
 //!
 //! A [`Tone`] is a psalm tone with one ending: an intonation, a reciting note (the tenor) and
-//! a cadence for each half-verse and the flex, each a formula of accented, preparatory and
-//! other notes ([`Cadence`]). [`Tone::named`] gives the built-in Solesmes tones (`8.G`,
+//! a cadence for each half-verse and the flex ([`Cadence`]), each a formula of slots
+//! ([`Slot`]): one accented syllable, one unaccented syllable, or any number of unaccented
+//! syllables on one note. [`Tone::named`] gives the built-in Solesmes tones (`8.G`,
 //! `1.D2`, `per`, …) and [`Tone::parse`] reads one of your own.
 //!
 //! ## Sung or printed

@@ -466,13 +466,7 @@ fn point_command(name: &str, src: &str, tone: &neuma_tones::Tone) -> ExitCode {
         say!("{}", diagnostic_lines(name, src, d));
         errors |= d.severity == Severity::Error;
     }
-    for h in p.halves.iter().filter(|h| !h.kept && h.confidence < neuma_tones::UNSURE) {
-        // Worded as `psalm` and `book` word it.
-        let message = format!(
-            "pointed automatically, but only {:.0}% sure: check where the accents fall",
-            h.confidence * 100.0
-        );
-        let d = Diagnostic::new(Severity::Info, h.span.clone(), "point::unsure", message);
+    for d in p.halves.iter().filter_map(neuma_tones::HalfPointing::unsure) {
         say!("{}", diagnostic_lines(name, src, &d));
     }
     let _ = out!("{}", p.text.trim_end());
@@ -516,7 +510,7 @@ fn book_command(args: &[String]) -> Result<ExitCode, ExitCode> {
     let name = display_name(&file);
     let src = read(&file).ok_or(ExitCode::from(2))?;
     let path = std::path::Path::new(&file);
-    let (mut book, origins) = neuma_book::Book::parse_with_origins(&src).map_err(|e| {
+    let mut book = neuma_book::Book::parse(&src).map_err(|e| {
         say!("{name}: {e}");
         ExitCode::from(2)
     })?;
@@ -560,9 +554,8 @@ fn book_command(args: &[String]) -> Result<ExitCode, ExitCode> {
                 Some(neuma_book::Source::Inline(t)) => t.as_str(),
                 _ => "",
             };
-            let origin = &origins[p.piece];
             let file = files[p.piece].as_deref();
-            say!("{}", book_diagnostic(name, p.piece, origin, file, text, d));
+            say!("{}", book_diagnostic(name, p.piece, book.origin(p.piece), file, text, d));
         }
     }
     let missing = fonts.missing();
@@ -598,18 +591,26 @@ fn book_command(args: &[String]) -> Result<ExitCode, ExitCode> {
 /// book. One with no place in the piece's text (an empty span: the piece runs past the margin,
 /// its tone is unknown, its Gloria's pointing is unsure) is at the piece's line in the book,
 /// and names the piece.
-fn book_diagnostic(book: &str, piece: usize, origin: &neuma_book::Origin, file: Option<&str>, text: &str, d: &Diagnostic) -> String {
+fn book_diagnostic(
+    book: &str,
+    piece: usize,
+    origin: Option<&neuma_book::Origin>,
+    file: Option<&str>,
+    text: &str,
+    d: &Diagnostic,
+) -> String {
+    let line = origin.map_or(1, neuma_book::Origin::line);
     if d.span.is_empty() && d.span.start == 0 {
         let prefix = match file {
             Some(f) => format!("piece {} ({f}): ", piece + 1),
             None => format!("piece {}: ", piece + 1),
         };
-        return diagnostic_at(book, (origin.line, 1), &prefix, d);
+        return diagnostic_at(book, (line, 1), &prefix, d);
     }
     match file {
         Some(f) => diagnostic_lines(f, text, d),
         None => {
-            let at = origin.position(text, d.span.start).unwrap_or((origin.line, 1));
+            let at = origin.and_then(|o| o.position(text, d.span.start)).unwrap_or((line, 1));
             diagnostic_at(book, at, "", d)
         }
     }
