@@ -1,11 +1,82 @@
 # Changelog
 
-## Unreleased
+All notable changes to neuma are recorded here. The format follows
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
+[Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-Editor support: source maps, diagnostics with fixes, SVG a line at a time, and faster
-engraving and layout. Then the API for 0.1: one front door (`neuma::Chant`) that the
-browser, mobile and command-line front ends wrap, owned layouts that answer their own hit
-tests, and one name for each concept in Rust, JavaScript, Kotlin/Swift and the JSON.
+## [0.1.0] - Unreleased
+
+The first release. neuma engraves Gregorian chant in square notation from GABC, or from
+English psalm text and a psalm tone, and gives SVG, a renderer-neutral display list, a
+timeline of every note and a source map, with the same line breaks and coordinates on a
+server, in the browser and on iOS and Android.
+
+Before this release neuma was used from git. Besides what it adds, this entry records what
+changed for code written against those previews: the API was settled for 0.1 (renames and
+removals under [Changed](#changed)), and some rendering and behavior changed.
+
+### Added
+
+- `neuma`: a GABC parser that never fails (diagnostics with stable codes, spans and fixes),
+  the score model, engraving of every GABC neume shape with exsurge's glyphs, optimal-fit
+  line breaking with GregorioTeX's penalties, drop-cap initials and annotations, a display
+  list, SVG, a timeline for practice and playback, a source map for hit tests, library
+  entries, and metrics tables for EB Garamond (Google Fonts, and the EB Garamond 12
+  release). `neuma::Chant` keeps a score and redoes only what an edit changed.
+- `neuma-tones`: pointed psalm text, the Solesmes psalm tones and their endings, settings of
+  text to a tone, automatic pointing of English, and a pointed psalter's display.
+- `neuma-book`: booklets from a `.book` file, as PDF or SVG pages.
+- `neuma-wasm`: the browser package, one ES module with the engine inlined, with TypeScript
+  types.
+- `neuma-mobile`: UniFFI bindings for Swift and Kotlin.
+- `neuma-cli`: the `neuma` command (`render`, `check`, `notes`, `info`, `tones`, `point`,
+  `psalm`, `book`).
+- `neuma-metrics`: builds a metrics table from any font, and checks a corpus for collisions.
+
+**Since the previews**
+
+- `Layout::source_map()`: what is drawn where, and the source of each note, bar and
+  syllable, both ways (`SourceMap::source_at`, `SourceMap::elements_at`); `Utf16Index` for
+  editors' offsets.
+- `Fix` on diagnostics where one edit makes sense, with `Fix::apply`.
+- `Layout::svg_parts()`: the SVG as a head, definitions and one string per line, so a page
+  can replace only the lines an edit changed.
+- Incremental engraving, line breaking and SVG: after an edit, `neuma::Chant` redoes each
+  only where the edit could change it, with the same result as doing it afresh, and the
+  browser package passes only the lines that changed from the engine to the page.
+- Browser package: `Chant.update`, hit tests, `layout(…, { svg: "lines", ids: false })`, and
+  UTF-16 offsets and fixes on diagnostics; an example editor in
+  `crates/neuma-wasm/examples/editor.html`.
+- Mobile bindings: hit tests for editors, UTF-16 offsets and fixes.
+- A pointed psalter's display, for apps that show a psalm as text under its tone rather
+  than in chant over every verse: `Tone::gabc()` (the tone as one line of notes with no
+  words, moved from `neuma-book`, whose output is unchanged), and `PsalmDisplay` in
+  `neuma-tones`, the text pointed verse by verse as styled runs (syllables with their place
+  in the text and the tone, the `·`, `–`, `*` and `†` marks, rubrics), with automatic
+  pointing and `point::unsure` diagnostics as `psalm` gives them. In the browser,
+  `psalmDisplay(text, tone, options)` and `Chant.fromTone(tone, options)`, with an example
+  page, `crates/neuma-wasm/examples/psalm.html`; on mobile, `psalmDisplay(text, tone,
+  PsalmOptions)` returning records (a run's kind a sealed class in Kotlin and an enum with an
+  associated value in Swift) and `Chant.fromTone(tone, ChantOptions)`. A line's runs use
+  U+00A0 between a mark and its syllable, and U+2060 after each `–` and spelling hyphen, so
+  it never breaks there; pointed text reads both back, so a line copied from the display sets
+  as its source. The browser's psalm options throw on an unknown value.
+  `Tone::label()` names a tone as a psalter prints it ("Tone 8 G", "Tonus peregrinus";
+  `toneLabel(tone)` and `toneLabel` on the display in the browser and on mobile).
+- `neuma_book::Book::parse_with_origins`, which also returns each piece's place in the book
+  (`Origin`), so a tool can report an inline piece's diagnostics at the book's own lines.
+- Documentation: rustdoc for every public item of `neuma` and `neuma-tones`, each crate's
+  concepts (units and coordinates, the stages from a chant to a page, versions,
+  diagnostics), and `# Errors` on the fallible functions; `docs/DESIGN.md` describes the
+  architecture as it is; `docs/diagnostics.md` lists every diagnostic code, `book::` ones
+  included, and a test keeps it complete.
+
+**Packaging and CI**
+
+- The crates carry license files (MIT OR Apache-2.0, plus NOTICE) and crates.io metadata.
+- SECURITY.md was added.
+
+### Changed
 
 Editing is fast at any length: on the longest score in GregoBase (about 4,900 notes) a
 keystroke costs about 5 ms in the browser, update, layout and caret together (it was about
@@ -15,8 +86,7 @@ is; a held layout shares the syllables the edit left alone; lines that didn't ch
 their shape and their SVG. Engraving a whole score is about 10% faster, and in the browser
 engraving and laying one out about 20% faster.
 
-What renders is byte-identical to before for the same options (SVG, display lists,
-timelines, PDFs). Some behavior did change:
+Rendering and behavior that changed:
 
 - A `LayoutOptions::scale` that isn't positive and finite now falls back to the default 6
   (it was 1), and a lyric size that isn't to 2.45, in every front end.
@@ -78,8 +148,15 @@ timelines, PDFs). Some behavior did change:
   drawn on its own ended up to a pixel or more from where it was measured to end: the
   touching syllables of a word ("góod|ness") came apart, with no hyphen between them, by an
   amount that changed with the page's scale.
+- An initial in a script other than Latin, Greek or Cyrillic (Khmer, Chinese, …) leaves a
+  quarter em above its cap height for marks and taller letters, so its annotations clear it.
+  In GregoBase this moves the annotations of four scores.
+- Line breaking, spacing and lyric clearance follow GregorioTeX more closely: lyrics clear
+  the notes above them column by column from the ink, breaks weigh word ends and bars as
+  GregorioTeX does, notes are spaced by their heads, and ledger lines are GregorioTeX's
+  length, stopping short of accidentals. Layout got about 14% faster.
 
-### The 0.1 API (breaking)
+#### The 0.1 API (breaking)
 
 **Rust: `neuma`**
 
@@ -229,8 +306,6 @@ timelines, PDFs). Some behavior did change:
   them in: one left out takes its default. The module's errors carry a **`code`**:
   `invalid-option`, `tone`, `unsupported`, `not-initialized`, `engine-stopped`,
   `no-constructor`, `fetch`.
-- Fixed: the glue read the engine's pointers as signed numbers, so every call failed once
-  the engine's memory passed 2 GiB.
 - `Chant` and `View` are disposable (`Symbol.dispose`), as `Page` is.
 - New: **TypeScript types** (`dist/neuma.d.mts`) and a `package.json` with an exports map;
   **`dist/neuma-external.mjs`**, the module without the engine inlined, which fetches
@@ -287,16 +362,20 @@ timelines, PDFs). Some behavior did change:
   `psalmWithTone`; `PsalmNote`'s range is `sourceStart`/`sourceEnd` and
   `sourceUtf16Start`/`sourceUtf16End`, and `HalfPointing` gains the same.
 
-**Command line.** `neuma psalm --no-point` → `--no-auto-point`. `neuma-cli` no longer depends on
-`neuma-wasm`. The JSON renames above apply to `neuma notes` and `neuma info`.
+**Command line**
 
+- `neuma psalm --no-point` → `--no-auto-point`. `neuma-cli` no longer depends on
+`neuma-wasm`. The JSON renames above apply to `neuma notes` and `neuma info`.
 - Diagnostics have one form in every command: `FILE:LINE:COL: SEVERITY: CODE: MESSAGE`,
-  with the fix, if there is one, on the next line. `FILE` is `<stdin>` for stdin, and in
-  `neuma book` the piece's file (or the book and the piece's number). It was
+  with the fix, if there is one, on the next line. `FILE` is `<stdin>` for stdin. In
+  `neuma book` it is the piece's file, or the book itself for a piece written inline, at the
+  line and column in the book; a problem with no place in the piece's text (such as a psalm
+  too long for the page) is reported at the piece's line in the book, as `piece N (FILE):`. It was
   `LINE:COL: severity[code] at START..END: message` from `check`, `psalm` and `point`, and
   `BOOK: piece N: severity[code] at START..END: message` from `book`, whose positions are
-  now a line and column in the piece's own text. `point`'s unsure half-verses are
-  `point::unsure` diagnostics with a column. The column counts characters and skips a
+  now a line and column. `point`'s unsure half-verses are `point::unsure` diagnostics with
+  a column, worded as `psalm` and `neuma book` word them ("pointed automatically, but only
+  N% sure: check where the accents fall"). The column counts characters and skips a
   byte-order mark at the start of the file.
 - `neuma check` takes any number of files, sorts each file's diagnostics by position, and
   exits 1 if any file has an error and 2 if a file can't be read. It no longer takes
@@ -308,8 +387,8 @@ timelines, PDFs). Some behavior did change:
   that takes one, or an argument to `neuma tones` is an error with the usage and exit status
   2. They used to be ignored, taken for a file name, or read as stdin. `--` ends the
   options, and `neuma book -` reads the book from stdin (with `-o`).
-- `--width` takes a number above 0 and at most 1000000, and `--scale` above 0 and at most
-  1000; anything else is an error. A value that didn't parse used to keep the default
+- `--width` takes a number above 0 and at most 1000000, and `--scale` a number from 0.01
+  to 1000; anything else is an error. A value that didn't parse used to keep the default
   silently, a zero, negative or NaN one was laid out as the narrowest column or the default
   scale, and a huge scale wrote `inf` into the SVG.
 - A write error on stdout, such as a full disk, is reported with exit status 2; it used to
@@ -317,7 +396,7 @@ timelines, PDFs). Some behavior did change:
   book` exits 2, not 1, when it can't write the PDF or an SVG page.
 - An argument that isn't valid UTF-8 is a usage error rather than a panic.
 
-### Breaking changes (earlier in this release)
+#### Breaking changes earlier in this release
 
 - **`neuma::Diagnostic`** has a new public field, `fix: Option<Fix>`. Code that builds a
   `Diagnostic` with a struct literal must add `fix: None` (or a fix).
@@ -337,33 +416,19 @@ timelines, PDFs). Some behavior did change:
   (`gabc::no-clef`, `gabc::unclosed-tag`). `engrave::final-break` is retired: no score could
   reach it. See [docs/diagnostics.md](docs/diagnostics.md).
 
-### Added
+#### Packaging and CI
 
-- `Layout::source_map()`: what is drawn where, and the source of each note, bar and
-  syllable, both ways (`SourceMap::source_at`, `SourceMap::elements_at`); `Utf16Index` for
-  editors' offsets.
-- `Fix` on diagnostics where one edit makes sense, with `Fix::apply`.
-- `Layout::svg_parts()`: the SVG as a head, definitions and one string per line, so a page
-  can replace only the lines an edit changed.
-- Incremental engraving, line breaking and SVG: after an edit, `neuma::Chant` redoes each
-  only where the edit could change it, with the same result as doing it afresh, and the
-  browser package passes only the lines that changed from the engine to the page.
-- Browser package: `Chant.update`, hit tests, `layout(…, { svg: "lines", ids: false })`, and
-  UTF-16 offsets and fixes on diagnostics; an example editor in
-  `crates/neuma-wasm/examples/editor.html`.
-- Mobile bindings: hit tests for editors, UTF-16 offsets and fixes.
-- A pointed psalter's display, for apps that show a psalm as text under its tone rather
-  than in chant over every verse: `Tone::gabc()` (the tone as one line of notes with no
-  words, moved from `neuma-book`, whose output is unchanged), and `PsalmDisplay` in
-  `neuma-tones`, the text pointed verse by verse as styled runs (syllables with their place
-  in the text and the tone, the `·`, `–`, `*` and `†` marks, rubrics), with automatic
-  pointing and `point::unsure` diagnostics as `psalm` gives them. In the browser,
-  `psalmDisplay(text, tone, options)` and `Chant.fromTone(tone, options)`, with an example
-  page, `crates/neuma-wasm/examples/psalm.html`; on mobile, `psalmDisplay(text, tone,
-  PsalmOptions)` returning records (a run's kind a sealed class in Kotlin and an enum with an
-  associated value in Swift) and `Chant.fromTone(tone, ChantOptions)`. A line's runs use
-  U+00A0 between a mark and its syllable, and U+2060 after each `–` and spelling hyphen, so
-  it never breaks there; pointed text reads both back, so a line copied from the display sets
-  as its source. The browser's psalm options throw on an unknown value.
-  `Tone::label()` names a tone as a psalter prints it ("Tone 8 G", "Tonus peregrinus";
-  `toneLabel(tone)` and `toneLabel` on the display in the browser and on mobile).
+- MSRV is 1.95, with a CI job.
+- CI is hardened: SHA-pinned actions, least-privilege permissions, cargo-deny, rustdoc
+  `-D warnings`, a module size budget of 470 KiB, and checksummed downloads.
+
+### Fixed
+
+- The browser glue read the engine's pointers as signed numbers, so every call failed once
+  the engine's memory passed 2 GiB.
+- `neuma` no longer panics when it can't write to stderr (a closed or full stderr); its
+  messages are dropped and the exit status is unchanged.
+- Empty trailing staves, clipped custodes, misplaced initials, verbatim TeX, the slashed A,
+  small caps and soft hyphens.
+
+[0.1.0]: https://github.com/orthodoxwest/neuma/releases/tag/v0.1.0
