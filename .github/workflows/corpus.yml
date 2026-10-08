@@ -31,7 +31,7 @@ jobs:
       GREGOBASE_COMMIT: 2ebcda3f523f9b19933d59fa32bb4215cd8e7675
       GREGOBASE_SHA256: 3759c60b529b57fa13f696bfacf748d40a285a847d859276667749caa76de080
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master
@@ -54,7 +54,7 @@ jobs:
       - name: Summarize
         if: always()
         run: if [ -f report.md ]; then cat report.md >> "$GITHUB_STEP_SUMMARY"; fi
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: corpus-report
