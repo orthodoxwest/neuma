@@ -474,12 +474,12 @@ pub(crate) struct Rest {
 /// Reads the body of `src`, which starts at `start`, from its byte `i` on (0, or where a
 /// syllable ends), with `state` carried from the syllables before, onto `syllables`.
 /// `before` is how far reading the syllables before looked, when there are any (they need
-/// not be in `syllables`). After
-/// each syllable, `meet` is told where it ended and the state then; when it returns true
-/// reading stops there, and `None` is returned. Otherwise reading goes to the end, and
-/// returns the text after the last syllable.
+/// not be in `syllables`). After each syllable, `meet` is told where it ended and the state
+/// then; when it returns true reading stops there, and `None` is returned. Otherwise reading
+/// goes to the end, and returns the text after the last syllable. (`meet` is a trait object,
+/// so the browser's module has one copy of this function, not one for each caller.)
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn read_body<M: FnMut(usize, &BodyState) -> bool>(
+pub(crate) fn read_body(
     src: &str,
     start: usize,
     mut i: usize,
@@ -488,7 +488,7 @@ pub(crate) fn read_body<M: FnMut(usize, &BodyState) -> bool>(
     sink: &mut Sink,
     mut marks: Option<&mut Vec<BodyMark>>,
     before: Option<usize>,
-    meet: &mut M,
+    meet: &mut dyn FnMut(usize, &BodyState) -> bool,
 ) -> Option<Rest> {
     let body = &src[start..];
     let bytes = body.as_bytes();

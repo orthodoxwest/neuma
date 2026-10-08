@@ -40,4 +40,7 @@ writeFileSync(
   join(dist, "neuma-external.mjs"),
   glue.replace(marker, 'const WASM_GZIP_BASE64 = "";\nconst wasmUrl = () => new URL("./neuma.wasm", import.meta.url);'),
 );
+const types = readFileSync(join(here, "js/neuma.d.mts"), "utf8");
+writeFileSync(join(dist, "neuma.d.mts"), types);
+writeFileSync(join(dist, "neuma-external.d.mts"), types);
 console.log(`dist/neuma.mjs: ${(packed.length / 1024).toFixed(0)} KB of inlined wasm (${(wasm.length / 1024).toFixed(0)} KB raw, ${(gzipSync(wasm, { level: 9 }).length / 1024).toFixed(0)} KB gzipped)`);

@@ -1,0 +1,18 @@
+{
+  "name": "neuma",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Engraves Gregorian chant from GABC in the browser: one self-contained ES module",
+  "license": "MIT OR Apache-2.0",
+  "repository": { "type": "git", "url": "https://github.com/orthodoxwest/neuma", "directory": "crates/neuma-wasm" },
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": { "types": "./dist/neuma.d.mts", "default": "./dist/neuma.mjs" },
+    "./external": { "types": "./dist/neuma-external.d.mts", "default": "./dist/neuma-external.mjs" },
+    "./neuma.wasm": "./dist/neuma.wasm",
+    "./package.json": "./package.json"
+  },
+  "types": "./dist/neuma.d.mts",
+  "files": ["dist/neuma.mjs", "dist/neuma.d.mts", "dist/neuma-external.mjs", "dist/neuma-external.d.mts", "dist/neuma.wasm", "README.md"]
+}

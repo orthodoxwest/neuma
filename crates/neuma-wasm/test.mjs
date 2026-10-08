@@ -544,5 +544,12 @@ setLayoutBudget(budget);
   assert.ok(readFileSync(new URL("./dist/neuma-external.mjs", import.meta.url)).length < 100_000);
 }
 
+// The types declare what the module exports, no more and no less.
+{
+  const types = readFileSync(new URL("./dist/neuma.d.mts", import.meta.url), "utf8");
+  const declared = [...types.matchAll(/^export (?:declare )?(?:const|function|class) (\w+)/gm)].map((m) => m[1]);
+  assert.deepEqual([...new Set(declared)].sort(), Object.keys(await import("./dist/neuma.mjs")).sort());
+}
+
 assert.equal(DEFAULT_WEIGHTS.note, 1);
 console.log(`ok: ${notes.length} notes, ${wide.timeline().lines.length} lines at 900, ${narrow.timeline().lines.length} at 360`);

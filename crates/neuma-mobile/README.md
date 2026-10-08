@@ -42,6 +42,11 @@ cargo run -p neuma-mobile --features bindgen --bin uniffi-bindgen -- \
   generate --library target/debug/libneuma_mobile.so --language kotlin --out-dir out
 ```
 
+The library leaves out what an app doesn't use (the SVG writer). For a smaller library, build
+it with link-time optimization in the app's release profile, `lto = "fat"` and
+`codegen-units = 1`: about 12% smaller, and about as fast (engraving about 5% faster, line
+breaking about 4% slower).
+
 Generate Swift bindings with `--language swift`. Bindgen writes `Neuma.swift` plus the
 `NeumaFFI` header and module map. The Kotlin bindings load the library through JNA, so an
 Android app also depends on `net.java.dev.jna:jna:5.14.0@aar`.
@@ -84,9 +89,10 @@ chant.close()
 
 **A layout's lifetime.** A `ChantLayout` holds on to the engraving it was made from. While
 a layout is held, the chant's next edit copies the engraving rather than changing it in
-place; an app always holds the layout on screen, so this copy is part of an edit's cost (on
-the longest scores, about 4,900 notes, about 1.7 ms of a 5 ms update; on typical ones next to
-nothing). After the edit the old layout keeps a whole engraving alive until it is freed, so
+place, up to the edit; an app always holds the layout on screen, so this copy is part of an
+edit's cost (on the longest scores, about 4,900 notes, about 0.1 ms of a 0.7 ms update; on
+typical ones next to nothing). After the edit the old layout keeps the old engraving's lists
+alive until it is freed, so
 close the layout a view has replaced instead of leaving it to the garbage collector:
 `close()`, `layout.use { }`, or in Compose a `DisposableEffect`. In Swift, drop the
 reference. That bounds memory; it doesn't make the edit cheaper. `page()` is made once per

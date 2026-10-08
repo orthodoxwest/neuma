@@ -291,12 +291,13 @@ impl Chant {
     /// breaks again only the lines they are on. Layouts made before keep showing the old
     /// score.
     ///
-    /// A layout still held shares the engraving, which the update must then copy rather than
-    /// change in place. In an editor the layout on screen is always held when the next edit
-    /// comes, so this copy is part of an edit's cost: on the longest scores (about 4,900
-    /// notes) about 1.7 ms of a 5 ms update, on typical ones next to nothing. Dropping the
-    /// layouts a view has replaced doesn't avoid it, but bounds memory: each layout kept past
-    /// an edit keeps a whole engraving alive.
+    /// A layout still held shares the engraving, which the update must then copy up to the
+    /// edit rather than change in place (what follows the edit, and every syllable's drawing,
+    /// is shared). In an editor the layout on screen is always held when the next edit comes,
+    /// so this copy is part of an edit's cost: on the longest scores (about 4,900 notes) about
+    /// 0.1 ms of a 0.7 ms update, on typical ones next to nothing. Dropping the layouts a view
+    /// has replaced doesn't avoid it, but bounds memory: each layout kept past an edit keeps
+    /// the old engraving's lists alive.
     ///
     /// Returns whether anything changed: `false` when `gabc` is the current source, and the
     /// chant, its layouts, its memo and its [`version`](Self::version) stay as they were.
