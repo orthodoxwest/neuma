@@ -1,197 +1,197 @@
 
 # width 360
-size 360.00 x 239.59, staff space 6.00
-line top 0.00 bottom 78.43 staff 36.25 baseline 74.05
-line top 85.94 bottom 159.01 staff 116.83 baseline 154.63
-line top 166.52 bottom 239.59 staff 197.41 baseline 235.21
-staff rect 48.86 17.87 311.14 0.77
-staff rect 48.86 29.87 311.14 0.77
-staff rect 48.86 41.87 311.14 0.77
-staff rect 48.86 53.87 311.14 0.77
-clef DoClef 48.86 18.25
-note PunctumQuadratum 66.86 36.25 n0
-Lyric 62.71 74.05 14.70 s1 "E"
-note PunctumQuadratum 85.15 36.25 n1
-Lyric 77.02 74.05 14.70 s2 "fore"
-note PunctumQuadratum 123.34 30.25 n2
-Lyric 108.29 74.05 14.70 s3 "the"
-note PunctumQuadratum 143.34 18.25 n3
-Lyric 140.47 74.05 14.70 s4 "end"
-note PunctumQuadratum 163.20 30.25 n4
-Lyric 161.40 74.05 14.70 s5 "ing"
-note PunctumQuadratum 191.84 36.25 n5
-Lyric 188.21 74.05 14.70 s6 "of"
-note PunctumQuadratum 224.26 30.25 n6
-Lyric 209.20 74.05 14.70 s7 "the"
-note PunctumQuadratum 249.69 36.25 n7
-mora Mora 252.81 36.25 n7
-Lyric 236.17 74.05 14.70 s8 "day,"
-bar rect 268.72 24.25 0.77 24.00
-note PunctumQuadratum 287.37 30.25 n8
-Lyric 269.15 74.05 14.70 s10 "Cre"
-note PunctumQuadratum 305.38 18.25 n9
-Lyric 302.44 74.05 14.70 s11 "a"
-note PunctumQuadratum 323.39 12.25 n10
-Lyric 315.13 74.05 14.70 s12 "tor"
-note PunctumQuadratum 344.62 18.25 n11
-Lyric 340.98 74.05 14.70 s13 "of"
-Hyphen 71.00 74.05 14.70 "-"
-Hyphen 290.23 74.05 14.70 "-"
-Hyphen 308.31 74.05 14.70 "-"
-custos CustosLong 357.22 30.25
-staff rect 0.00 98.45 360.00 0.77
-staff rect 0.00 110.45 360.00 0.77
-staff rect 0.00 122.45 360.00 0.77
-staff rect 0.00 134.45 360.00 0.77
-clef DoClef 0.00 98.83
-note PunctumQuadratum 18.00 110.83 n12
-Lyric 2.95 154.63 14.70 s14 "the"
-note PunctumQuadratum 41.34 116.83 n13
-Lyric 27.82 154.63 14.70 s15 "world,"
-note PunctumQuadratum 83.76 110.83 n14
-Lyric 71.01 154.63 14.70 s16 "we"
-note PunctumQuadratum 112.02 110.83 n15
-mora Mora 115.14 106.33 n15
-Lyric 93.40 154.63 14.70 s17 "pray"
-bar rect 129.06 98.83 0.77 36.00
-note PunctumQuadratum 145.50 98.83 n16
-Lyric 125.15 154.63 14.70 s19 "That"
-note PunctumQuadratum 171.87 110.83 n17
-Lyric 160.00 154.63 14.70 s20 "with"
-note PunctumQuadratum 207.93 116.83 n18
-Lyric 192.81 154.63 14.70 s21 "thy"
-note PunctumQuadratum 231.33 110.83 n19
-Lyric 217.81 154.63 14.70 s22 "wont"
-note PunctumQuadratum 250.03 98.83 n20
-Lyric 247.16 154.63 14.70 s23 "ed"
-note PunctumQuadratum 274.56 110.83 n21
-Lyric 267.14 154.63 14.70 s24 "fa"
-note PunctumQuadratum 291.08 116.83 n22
-Lyric 277.31 154.63 14.70 s25 "vour"
-note PunctumQuadratum 329.97 122.83 n23
-mora Mora 333.09 118.33 n23
-Lyric 310.27 154.63 14.70 s26 "thou"
-bar rect 347.01 104.83 0.77 24.00
-custos CustosShort 357.38 116.83
-staff rect 0.00 179.03 360.00 0.77
-staff rect 0.00 191.03 360.00 0.77
-staff rect 0.00 203.03 360.00 0.77
-staff rect 0.00 215.03 360.00 0.77
-clef DoClef 0.00 179.41
-note PunctumQuadratum 20.24 197.41 n24
-Lyric 0.00 235.21 14.70 s28 "Wouldst"
-note PunctumQuadratum 64.84 191.41 n25
-Lyric 54.40 235.21 14.70 s29 "be"
-note PunctumQuadratum 82.84 197.41 n26
-Lyric 75.33 235.21 14.70 s30 "our"
-note PunctumQuadratum 119.39 203.41 n27
-Lyric 102.32 235.21 14.70 s31 "guard"
-note PunctumQuadratum 144.66 197.41 n28
-Lyric 141.73 235.21 14.70 s32 "and"
-note PunctumQuadratum 182.40 191.41 n29
-Lyric 169.85 235.21 14.70 s33 "keep"
-note PunctumQuadratum 198.56 197.41 n30
-Lyric 195.69 235.21 14.70 s34 "er"
-note PunctumQuadratum 229.72 197.41 n31
-mora Mora 232.84 197.41 n31
-Lyric 213.39 235.21 14.70 s35 "now."
-bar rect 246.76 179.41 0.77 36.00
-bar rect 252.08 179.41 0.77 36.00
-Initial 8.34 74.05 58.80 s1 "B"
-Annotation 11.52 14.10 11.03 "Hymn"
-Annotation 22.95 26.23 11.03 "8"
+size 360.00 x 254.86, staff space 6.00
+line top 0.00 bottom 93.70 staff 51.52 baseline 89.32
+line top 101.20 bottom 174.28 staff 132.10 baseline 169.90
+line top 181.78 bottom 254.86 staff 212.68 baseline 250.48
+staff rect 67.07 33.13 292.93 0.77
+staff rect 67.07 45.13 292.93 0.77
+staff rect 67.07 57.13 292.93 0.77
+staff rect 67.07 69.13 292.93 0.77
+clef DoClef 67.07 33.52
+note PunctumQuadratum 85.07 51.52 n0
+Lyric 80.93 89.32 14.70 s1 "E"
+note PunctumQuadratum 101.71 51.52 n1
+Lyric 93.58 89.32 14.70 s2 "fore"
+note PunctumQuadratum 138.25 45.52 n2
+Lyric 123.20 89.32 14.70 s3 "the"
+note PunctumQuadratum 156.58 33.52 n3
+Lyric 153.72 89.32 14.70 s4 "end"
+note PunctumQuadratum 176.45 45.52 n4
+Lyric 174.65 89.32 14.70 s5 "ing"
+note PunctumQuadratum 203.44 51.52 n5
+Lyric 199.80 89.32 14.70 s6 "of"
+note PunctumQuadratum 234.19 45.52 n6
+Lyric 219.14 89.32 14.70 s7 "the"
+note PunctumQuadratum 257.97 51.52 n7
+mora Mora 261.09 51.52 n7
+Lyric 244.45 89.32 14.70 s8 "day,"
+bar rect 275.34 39.52 0.77 24.00
+note PunctumQuadratum 292.33 45.52 n8
+Lyric 274.12 89.32 14.70 s10 "Cre"
+note PunctumQuadratum 308.69 33.52 n9
+Lyric 305.76 89.32 14.70 s11 "a"
+note PunctumQuadratum 325.04 27.52 n10
+Lyric 316.79 89.32 14.70 s12 "tor"
+note PunctumQuadratum 344.62 33.52 n11
+Lyric 340.98 89.32 14.70 s13 "of"
+Hyphen 89.22 89.32 14.70 "-"
+Hyphen 295.20 89.32 14.70 "-"
+Hyphen 311.62 89.32 14.70 "-"
+custos CustosLong 357.22 45.52
+staff rect 0.00 113.71 360.00 0.77
+staff rect 0.00 125.71 360.00 0.77
+staff rect 0.00 137.71 360.00 0.77
+staff rect 0.00 149.71 360.00 0.77
+clef DoClef 0.00 114.10
+note PunctumQuadratum 18.00 126.10 n12
+Lyric 2.95 169.90 14.70 s14 "the"
+note PunctumQuadratum 41.34 132.10 n13
+Lyric 27.82 169.90 14.70 s15 "world,"
+note PunctumQuadratum 83.76 126.10 n14
+Lyric 71.01 169.90 14.70 s16 "we"
+note PunctumQuadratum 112.02 126.10 n15
+mora Mora 115.14 121.60 n15
+Lyric 93.40 169.90 14.70 s17 "pray"
+bar rect 129.06 114.10 0.77 36.00
+note PunctumQuadratum 145.50 114.10 n16
+Lyric 125.15 169.90 14.70 s19 "That"
+note PunctumQuadratum 171.87 126.10 n17
+Lyric 160.00 169.90 14.70 s20 "with"
+note PunctumQuadratum 207.93 132.10 n18
+Lyric 192.81 169.90 14.70 s21 "thy"
+note PunctumQuadratum 231.33 126.10 n19
+Lyric 217.81 169.90 14.70 s22 "wont"
+note PunctumQuadratum 250.03 114.10 n20
+Lyric 247.16 169.90 14.70 s23 "ed"
+note PunctumQuadratum 274.56 126.10 n21
+Lyric 267.14 169.90 14.70 s24 "fa"
+note PunctumQuadratum 291.08 132.10 n22
+Lyric 277.31 169.90 14.70 s25 "vour"
+note PunctumQuadratum 329.97 138.10 n23
+mora Mora 333.09 133.60 n23
+Lyric 310.27 169.90 14.70 s26 "thou"
+bar rect 347.01 120.10 0.77 24.00
+custos CustosShort 357.38 132.10
+staff rect 0.00 194.29 360.00 0.77
+staff rect 0.00 206.29 360.00 0.77
+staff rect 0.00 218.29 360.00 0.77
+staff rect 0.00 230.29 360.00 0.77
+clef DoClef 0.00 194.68
+note PunctumQuadratum 20.24 212.68 n24
+Lyric 0.00 250.48 14.70 s28 "Wouldst"
+note PunctumQuadratum 64.84 206.68 n25
+Lyric 54.40 250.48 14.70 s29 "be"
+note PunctumQuadratum 82.84 212.68 n26
+Lyric 75.33 250.48 14.70 s30 "our"
+note PunctumQuadratum 119.39 218.68 n27
+Lyric 102.32 250.48 14.70 s31 "guard"
+note PunctumQuadratum 144.66 212.68 n28
+Lyric 141.73 250.48 14.70 s32 "and"
+note PunctumQuadratum 182.40 206.68 n29
+Lyric 169.85 250.48 14.70 s33 "keep"
+note PunctumQuadratum 198.56 212.68 n30
+Lyric 195.69 250.48 14.70 s34 "er"
+note PunctumQuadratum 229.72 212.68 n31
+mora Mora 232.84 212.68 n31
+Lyric 213.39 250.48 14.70 s35 "now."
+bar rect 246.76 194.68 0.77 36.00
+bar rect 252.08 194.68 0.77 36.00
+Initial 8.34 89.32 85.85 s1 "B"
+Annotation 19.46 14.10 11.03 "Hymn"
+Annotation 30.89 26.23 11.03 "8"
 
 # width 720
-size 720.00 x 159.01, staff space 6.00
-line top 0.00 bottom 78.43 staff 36.25 baseline 74.05
-line top 85.94 bottom 159.01 staff 116.83 baseline 154.63
-staff rect 48.86 17.87 671.14 0.77
-staff rect 48.86 29.87 671.14 0.77
-staff rect 48.86 41.87 671.14 0.77
-staff rect 48.86 53.87 671.14 0.77
-clef DoClef 48.86 18.25
-note PunctumQuadratum 66.86 36.25 n0
-Lyric 62.71 74.05 14.70 s1 "E"
-note PunctumQuadratum 84.20 36.25 n1
-Lyric 76.07 74.05 14.70 s2 "fore"
-note PunctumQuadratum 121.45 30.25 n2
-Lyric 106.40 74.05 14.70 s3 "the"
-note PunctumQuadratum 140.50 18.25 n3
-Lyric 137.63 74.05 14.70 s4 "end"
-note PunctumQuadratum 160.37 30.25 n4
-Lyric 158.57 74.05 14.70 s5 "ing"
-note PunctumQuadratum 188.06 36.25 n5
-Lyric 184.42 74.05 14.70 s6 "of"
-note PunctumQuadratum 219.53 30.25 n6
-Lyric 204.48 74.05 14.70 s7 "the"
-note PunctumQuadratum 244.01 36.25 n7
-mora Mora 247.13 36.25 n7
-Lyric 230.50 74.05 14.70 s8 "day,"
-bar rect 262.10 24.25 0.77 24.00
-note PunctumQuadratum 279.80 30.25 n8
-Lyric 261.59 74.05 14.70 s10 "Cre"
-note PunctumQuadratum 296.87 18.25 n9
-Lyric 293.93 74.05 14.70 s11 "a"
-note PunctumQuadratum 313.93 12.25 n10
-Lyric 305.68 74.05 14.70 s12 "tor"
-note PunctumQuadratum 334.22 18.25 n11
-Lyric 330.58 74.05 14.70 s13 "of"
-note PunctumQuadratum 365.69 30.25 n12
-Lyric 350.63 74.05 14.70 s14 "the"
-note PunctumQuadratum 390.18 36.25 n13
-Lyric 376.65 74.05 14.70 s15 "world,"
-note PunctumQuadratum 433.74 30.25 n14
-Lyric 420.99 74.05 14.70 s16 "we"
-note PunctumQuadratum 463.14 30.25 n15
-mora Mora 466.26 25.75 n15
-Lyric 444.53 74.05 14.70 s17 "pray"
-bar rect 481.23 18.25 0.77 36.00
-note PunctumQuadratum 498.72 18.25 n16
-Lyric 478.37 74.05 14.70 s19 "That"
-note PunctumQuadratum 526.24 30.25 n17
-Lyric 514.37 74.05 14.70 s20 "with"
-note PunctumQuadratum 563.44 36.25 n18
-Lyric 548.33 74.05 14.70 s21 "thy"
-note PunctumQuadratum 587.99 30.25 n19
-Lyric 574.47 74.05 14.70 s22 "wont"
-note PunctumQuadratum 606.69 18.25 n20
-Lyric 603.82 74.05 14.70 s23 "ed"
-note PunctumQuadratum 632.37 30.25 n21
-Lyric 624.95 74.05 14.70 s24 "fa"
-note PunctumQuadratum 648.89 36.25 n22
-Lyric 635.12 74.05 14.70 s25 "vour"
-note PunctumQuadratum 688.92 42.25 n23
-mora Mora 692.04 37.75 n23
-Lyric 669.22 74.05 14.70 s26 "thou"
-bar rect 707.01 24.25 0.77 24.00
-Hyphen 71.00 74.05 14.70 "-"
-Hyphen 282.67 74.05 14.70 "-"
-Hyphen 299.80 74.05 14.70 "-"
-custos CustosShort 717.38 36.25
-staff rect 0.00 98.45 720.00 0.77
-staff rect 0.00 110.45 720.00 0.77
-staff rect 0.00 122.45 720.00 0.77
-staff rect 0.00 134.45 720.00 0.77
-clef DoClef 0.00 98.83
-note PunctumQuadratum 20.24 116.83 n24
-Lyric 0.00 154.63 14.70 s28 "Wouldst"
-note PunctumQuadratum 64.84 110.83 n25
-Lyric 54.40 154.63 14.70 s29 "be"
-note PunctumQuadratum 82.84 116.83 n26
-Lyric 75.33 154.63 14.70 s30 "our"
-note PunctumQuadratum 119.39 122.83 n27
-Lyric 102.32 154.63 14.70 s31 "guard"
-note PunctumQuadratum 144.66 116.83 n28
-Lyric 141.73 154.63 14.70 s32 "and"
-note PunctumQuadratum 182.40 110.83 n29
-Lyric 169.85 154.63 14.70 s33 "keep"
-note PunctumQuadratum 198.56 116.83 n30
-Lyric 195.69 154.63 14.70 s34 "er"
-note PunctumQuadratum 229.72 116.83 n31
-mora Mora 232.84 116.83 n31
-Lyric 213.39 154.63 14.70 s35 "now."
-bar rect 246.76 98.83 0.77 36.00
-bar rect 252.08 98.83 0.77 36.00
-Initial 8.34 74.05 58.80 s1 "B"
-Annotation 11.52 14.10 11.03 "Hymn"
-Annotation 22.95 26.23 11.03 "8"
+size 720.00 x 174.28, staff space 6.00
+line top 0.00 bottom 93.70 staff 51.52 baseline 89.32
+line top 101.20 bottom 174.28 staff 132.10 baseline 169.90
+staff rect 67.07 33.13 652.93 0.77
+staff rect 67.07 45.13 652.93 0.77
+staff rect 67.07 57.13 652.93 0.77
+staff rect 67.07 69.13 652.93 0.77
+clef DoClef 67.07 33.52
+note PunctumQuadratum 85.07 51.52 n0
+Lyric 80.93 89.32 14.70 s1 "E"
+note PunctumQuadratum 101.63 51.52 n1
+Lyric 93.50 89.32 14.70 s2 "fore"
+note PunctumQuadratum 138.09 45.52 n2
+Lyric 123.03 89.32 14.70 s3 "the"
+note PunctumQuadratum 156.34 33.52 n3
+Lyric 153.47 89.32 14.70 s4 "end"
+note PunctumQuadratum 176.21 45.52 n4
+Lyric 174.41 89.32 14.70 s5 "ing"
+note PunctumQuadratum 203.11 51.52 n5
+Lyric 199.47 89.32 14.70 s6 "of"
+note PunctumQuadratum 233.78 45.52 n6
+Lyric 218.73 89.32 14.70 s7 "the"
+note PunctumQuadratum 257.48 51.52 n7
+mora Mora 260.60 51.52 n7
+Lyric 243.96 89.32 14.70 s8 "day,"
+bar rect 274.77 39.52 0.77 24.00
+note PunctumQuadratum 291.68 45.52 n8
+Lyric 273.47 89.32 14.70 s10 "Cre"
+note PunctumQuadratum 307.96 33.52 n9
+Lyric 305.02 89.32 14.70 s11 "a"
+note PunctumQuadratum 324.23 27.52 n10
+Lyric 315.97 89.32 14.70 s12 "tor"
+note PunctumQuadratum 343.72 33.52 n11
+Lyric 340.09 89.32 14.70 s13 "of"
+note PunctumQuadratum 374.40 45.52 n12
+Lyric 359.35 89.32 14.70 s14 "the"
+note PunctumQuadratum 398.10 51.52 n13
+Lyric 384.57 89.32 14.70 s15 "world,"
+note PunctumQuadratum 440.87 45.52 n14
+Lyric 428.12 89.32 14.70 s16 "we"
+note PunctumQuadratum 469.48 45.52 n15
+mora Mora 472.60 41.02 n15
+Lyric 450.86 89.32 14.70 s17 "pray"
+bar rect 486.77 33.52 0.77 36.00
+note PunctumQuadratum 503.47 33.52 n16
+Lyric 483.12 89.32 14.70 s19 "That"
+note PunctumQuadratum 530.20 45.52 n17
+Lyric 518.33 89.32 14.70 s20 "with"
+note PunctumQuadratum 566.61 51.52 n18
+Lyric 551.50 89.32 14.70 s21 "thy"
+note PunctumQuadratum 590.37 45.52 n19
+Lyric 576.84 89.32 14.70 s22 "wont"
+note PunctumQuadratum 609.06 33.52 n20
+Lyric 606.20 89.32 14.70 s23 "ed"
+note PunctumQuadratum 633.95 45.52 n21
+Lyric 626.53 89.32 14.70 s24 "fa"
+note PunctumQuadratum 650.47 51.52 n22
+Lyric 636.70 89.32 14.70 s25 "vour"
+note PunctumQuadratum 689.71 57.52 n23
+mora Mora 692.83 53.02 n23
+Lyric 670.02 89.32 14.70 s26 "thou"
+bar rect 707.01 39.52 0.77 24.00
+Hyphen 89.22 89.32 14.70 "-"
+Hyphen 294.55 89.32 14.70 "-"
+Hyphen 310.89 89.32 14.70 "-"
+custos CustosShort 717.38 51.52
+staff rect 0.00 113.71 720.00 0.77
+staff rect 0.00 125.71 720.00 0.77
+staff rect 0.00 137.71 720.00 0.77
+staff rect 0.00 149.71 720.00 0.77
+clef DoClef 0.00 114.10
+note PunctumQuadratum 20.24 132.10 n24
+Lyric 0.00 169.90 14.70 s28 "Wouldst"
+note PunctumQuadratum 64.84 126.10 n25
+Lyric 54.40 169.90 14.70 s29 "be"
+note PunctumQuadratum 82.84 132.10 n26
+Lyric 75.33 169.90 14.70 s30 "our"
+note PunctumQuadratum 119.39 138.10 n27
+Lyric 102.32 169.90 14.70 s31 "guard"
+note PunctumQuadratum 144.66 132.10 n28
+Lyric 141.73 169.90 14.70 s32 "and"
+note PunctumQuadratum 182.40 126.10 n29
+Lyric 169.85 169.90 14.70 s33 "keep"
+note PunctumQuadratum 198.56 132.10 n30
+Lyric 195.69 169.90 14.70 s34 "er"
+note PunctumQuadratum 229.72 132.10 n31
+mora Mora 232.84 132.10 n31
+Lyric 213.39 169.90 14.70 s35 "now."
+bar rect 246.76 114.10 0.77 36.00
+bar rect 252.08 114.10 0.77 36.00
+Initial 8.34 89.32 85.85 s1 "B"
+Annotation 19.46 14.10 11.03 "Hymn"
+Annotation 30.89 26.23 11.03 "8"

@@ -21,7 +21,9 @@ pub struct SvgOptions {
     /// Prefix for ids and classes, so several scores can share a page. Only ASCII letters,
     /// digits, `-` and `_` are kept; an empty result falls back to `neuma`.
     pub prefix: String,
-    /// Include the default `<style>` block.
+    /// Include the default `<style>` block. A page that styles the SVG itself should give its
+    /// `text` the lyric face, `font-variant-ligatures: none` and `text-rendering:
+    /// geometricPrecision`, so lyrics are drawn at the advances they were measured with.
     pub style: bool,
     /// Mark each note's ink with `data-note` and each lyric with `data-syllable`.
     pub ids: bool,
@@ -503,7 +505,7 @@ fn write_head(out: &mut String, width: f32, height: f32, alt_text: &str, p: &str
     if opts.style {
         let _ = write!(
             out,
-            "<style>.{p}{{fill:currentColor}}.{p} text{{font-family:{f};font-variant-ligatures:none;font-kerning:normal}}.{p} .{p}-rubric{{fill:var(--{p}-rubric,#a3211c)}}.{p} .{p}-sign{{stroke:currentColor;stroke-width:.04em}}.{p} .{p}-rubric.{p}-sign,.{p} .{p}-rubric .{p}-sign{{stroke:var(--{p}-rubric,#a3211c)}}</style>",
+            "<style>.{p}{{fill:currentColor}}.{p} text{{font-family:{f};font-variant-ligatures:none;font-kerning:normal;text-rendering:geometricPrecision}}.{p} .{p}-rubric{{fill:var(--{p}-rubric,#a3211c)}}.{p} .{p}-sign{{stroke:currentColor;stroke-width:.04em}}.{p} .{p}-rubric.{p}-sign,.{p} .{p}-rubric .{p}-sign{{stroke:var(--{p}-rubric,#a3211c)}}</style>",
             f = opts
                 .font_family
                 .chars()

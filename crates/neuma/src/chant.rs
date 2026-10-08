@@ -565,6 +565,37 @@ mod tests {
     }
 
     #[test]
+    fn a_tail_clears_the_next_line_after_an_edit() {
+        // A one-line Q's tail hangs below the first line's lyrics, and the second line keeps
+        // clear of it. That clearance depends on the first line, so a second line set as
+        // before (its shape reused) must still be placed afresh after an edit above it.
+        let body = "(g)a(h) ve(g)ni(h)et(g) Do(h)mi(g)nus(h) (,) et(g) om(h)nes(g) san(h)cti(g) e(h)jus(g) (;) \
+                    cum(h) e(g)o(h) in(g) di(h)e(g) il(h)la(g) (:) lux(h) ma(g)gna(h) (::)";
+        let width = 240.0;
+        let staff = |src: &str, i: usize| Chant::new(src).layout(width).timeline().lines[i].staff;
+        let q = format!("(c4) Qui{body}");
+        assert!(Chant::new(&q).layout(width).line_count() > 2);
+        assert!(
+            staff(&q, 1) > staff(&format!("(c4) Hui{body}"), 1),
+            "the tail moves the second line down"
+        );
+        let mut chant = Chant::new(&q);
+        let _ = chant.layout(width);
+        let mut seconds = Vec::new();
+        for first in ["Qui(c)a(d)", "Qui(m)a(l)", "Jui(c)a(d)", "Hui(c)a(d)", "Qui(d)a(c)", "Qui(g)a(h)"] {
+            let src = format!("(c4) {first}{}", &body[7..]);
+            chant.update(&src);
+            let got = chant.layout(width);
+            let want = Chant::new(&src).layout(width);
+            assert_eq!(got.display(), want.display(), "{first}");
+            assert_eq!(got.svg(), want.svg(), "{first}");
+            seconds.push(got.timeline().lines[1].staff);
+        }
+        // From J to H the notes stay, so the second line's shape is reused: only the tail went.
+        assert!(seconds[2] > seconds[3] + 1.0, "{seconds:?}");
+    }
+
+    #[test]
     fn svg_parts_say_what_they_reused() {
         let mut chant = Chant::new("(c4) a(g) b(h) (;) c(i) d(h) (:) e(g) f(h) (::)");
         let opts = SvgOptions::default();
@@ -642,7 +673,7 @@ mod tests {
         chant.set_options(ChantOptions::default().with_lyric_size(4.0));
         let style = StyleOptions::default().with_lyric_size(4.0);
         assert_eq!(chant.engraving(), &*pipeline(src, &style));
-        assert_ne!(chant.layout(600.0).size(), small.size());
+        assert_ne!(chant.layout(600.0).display(), small.display());
     }
 
     #[test]

@@ -22,6 +22,15 @@ fn scores() -> Vec<(String, String)> {
         "low notes".into(),
         "(c4) Lá(b)l(a)ti(b)ò(c)nem(a) Ál(b)tí(a)ssi(b)mi(a) (,) ge(bab)ni(a)tus(b.) (::)".into(),
     ));
+    // Initials with tails over a second line that starts high (GregoBase 14123 and 6402).
+    out.push((
+        "q tail".into(),
+        "mode: 4;\n%%\n(c2)Quem(dv) quǽ(cb)ri(cd)tis(d) in(c) se(e)púl(fgf~)chro(edf) chri(d)stí(cb)co(cd)le.(d.) (:) Je(cd)sum(d) Na(c)za(ev)ré(fg)num(f) cru(fe)ci(d)fí(ed)xum(cd,) o(cf) cæ(f)lí(ed)co(cd)læ.(d.) (::)".into(),
+    ));
+    out.push((
+        "j tail".into(),
+        "%%\n(c2) Jo(cfe)seph,(f) (::) fi(g)li(f) Da(df)vid,(f) (;) no(f)li(f) ti(e)mé(c!dfd)re(efe) (;1) ac(ef)cí(gh)pe(g)re(ghg) Ma(f)rí(d)am(c) cón(d)ju(f)gem(e) tu(c)am:(c) (::)".into(),
+    ));
     out.sort();
     out
 }
@@ -97,6 +106,59 @@ fn notes_keep_off_the_lyrics_and_ink_stays_on_the_page() {
                     let pen = (l[2].min(b[2]) - l[0].max(b[0])).min(l[3].min(b[3]) - l[1].max(b[1]));
                     assert!(pen <= 0.05 * sp, "{ctx}: {c:?} at {l:?} under ink at {b:?}");
                 }
+            }
+        }
+    }
+}
+
+#[test]
+fn the_initial_clears_the_staves_and_notes_below_it() {
+    // A drop cap's tail (a Q's, a J's) hangs below the first line's lyrics, over the second
+    // line: it must clear that line's staff lines as well as its notes.
+    let metrics = LyricFont::Google.metrics();
+    // How far a capital's ink reaches below its baseline, and past its advance on the right,
+    // in ems (EB Garamond's outlines, rounded up).
+    let reach = |c: char| match c {
+        'Q' => (0.25, 0.13),
+        'J' => (0.21, 0.0),
+        'g' | 'j' | 'p' | 'q' | 'y' => (0.3, 0.0),
+        _ => (0.02, 0.0),
+    };
+    for (name, src) in scores() {
+        let eng = parse(&src).score.engrave(metrics, &StyleOptions::default());
+        for width in [300.0, 500.0, 800.0, 1200.0] {
+            let list = eng.layout(width).display();
+            let sp = list.staff_space;
+            let Some(cap) = list.items.iter().find_map(|i| match i {
+                Item::Text {
+                    role: TextRole::Initial,
+                    x,
+                    baseline,
+                    size,
+                    runs,
+                    ..
+                } => {
+                    let c = runs[0].text.chars().next()?;
+                    let (depth, tail) = reach(c);
+                    let right = x + (metrics.advance(&runs[0].text, runs[0].style) + tail) * size;
+                    Some([*x, baseline - 0.65 * size, right, baseline + depth * size])
+                }
+                _ => None,
+            }) else {
+                continue;
+            };
+            for item in &list.items {
+                let b = match item {
+                    Item::Glyph { glyph, x, y, scale, .. } => {
+                        let (a, b, c, d) = GlyphId::from_id(*glyph).unwrap().ink();
+                        let k = scale * UNITS_PER_SPACE;
+                        [x + a * k, y + b * k, x + c * k, y + d * k]
+                    }
+                    Item::Rect { x, y, w, h, .. } => [*x, *y, x + w, y + h],
+                    _ => continue,
+                };
+                let pen = (cap[2].min(b[2]) - cap[0].max(b[0])).min(cap[3].min(b[3]) - cap[1].max(b[1]));
+                assert!(pen <= 0.05 * sp, "{name} at {width}: the initial {cap:?} over ink at {b:?}");
             }
         }
     }

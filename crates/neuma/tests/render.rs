@@ -265,8 +265,8 @@ fn initial_and_annotations() {
         .collect();
     let initial = texts.iter().find(|t| t.0 == TextRole::Initial).unwrap();
     assert_eq!(initial.1, "K");
-    // As in GregorioTeX, the capital stands on the first line's lyric baseline, left of the
-    // staff, four times the lyrics' size.
+    // The capital stands on the first line's lyric baseline, left of the staff, its cap
+    // height reaching the staff's top line.
     let line = &list.lines[0];
     assert!((initial.3 - line.baseline).abs() < 0.01);
     let size = |role: TextRole| {
@@ -275,7 +275,8 @@ fn initial_and_annotations() {
             _ => None,
         })
     };
-    assert!((size(TextRole::Initial).unwrap() - 4.0 * size(TextRole::Lyric).unwrap()).abs() < 0.01);
+    let top = initial.3 - 0.65 * size(TextRole::Initial).unwrap();
+    assert!((top - (line.staff - 3.0 * list.staff_space)).abs() < 0.01);
     let staff_left = list
         .items
         .iter()
@@ -378,6 +379,105 @@ fn tall_initials_fit_the_staves_they_span() {
             _ => None,
         }) {
             assert!(a < baseline - 0.65 * size && a > 0.0, "{src}");
+        }
+    }
+}
+
+#[test]
+fn one_line_initial_runs_from_the_top_line_to_the_lyric_baseline() {
+    use neuma::{LyricFont, TextMeasure};
+    // As in Solesmes books: the capital's cap height spans the first staff's top line to the
+    // first line's lyric baseline, whatever the face, an accent or a tail, a low note that
+    // lowers the lyrics, or annotations over it. GregorioTeX's afterinitialshift (0.2 cm) parts
+    // the capital's column from the staff.
+    let cases = [
+        "annotation: Ant.;\nannotation: VIII G;\n%%\n(c4) Ho(g)di(h)e(g) e(h)le(g)i(h)son(g) (::)",
+        "%%\n(c4) Ky(g)ri(h)e(g) e(h)le(g)i(h)son(g) (::)",
+        "annotation: Ant.;\n%%\n(c4) É(g)ra(h)t(g) (::)",
+        "mode: 8;\n%%\n(c4) Quo(g)ni(h)am(g) la(h)la(g) (::)",
+        "%%\n(c4) Je(g)ru(h)sa(g)lem(h) la(g) (::)",
+        "%%\n(c4) Ho(g)di(a)e(b) la(h) (::)",
+        // Ink above the cap height, under an annotation with a descender.
+        "annotation: Ad Magnificat;\n%%\n(c4) Te(g) De(h)um(g) (::)",
+        "annotation: Ant. ad Magnificat;\n%%\n(c4) hó(g)di(h)e(g) (::)",
+    ];
+    for font in [LyricFont::Google, LyricFont::Garamond12] {
+        let m = font.metrics();
+        for src in cases {
+            let eng = parse(src).score.engrave(m, &StyleOptions::default());
+            for width in [300.0, 600.0, 1200.0] {
+                let list = eng.layout(width).display();
+                let sp = list.staff_space;
+                let (x, baseline, size, run) = list
+                    .items
+                    .iter()
+                    .find_map(|i| match i {
+                        Item::Text {
+                            role: TextRole::Initial,
+                            x,
+                            baseline,
+                            size,
+                            runs,
+                            ..
+                        } => Some((*x, *baseline, *size, runs[0].clone())),
+                        _ => None,
+                    })
+                    .unwrap();
+                let line = &list.lines[0];
+                let what = format!("{font:?} {width} {src}");
+                assert!((baseline - line.baseline).abs() < 0.01, "{what}: {baseline} vs {}", line.baseline);
+                let top = baseline - 0.65 * size;
+                assert!(
+                    (top - (line.staff - 3.0 * sp)).abs() < 0.01,
+                    "{what}: cap top {top} vs {}",
+                    line.staff - 3.0 * sp
+                );
+                // An ascender, an accent or a T's serifs rise above the cap height (by these
+                // ems in EB Garamond), but stay on the page and clear of the annotations'
+                // descenders.
+                let rise = match run.text.chars().next().unwrap() {
+                    'É' => 0.19,
+                    'h' => 0.055,
+                    'T' => 0.044,
+                    _ => 0.015,
+                };
+                let ink_top = top - rise * size;
+                assert!(ink_top >= 0.0, "{what}: {ink_top}");
+                for (a, a_size) in list.items.iter().filter_map(|i| match i {
+                    Item::Text {
+                        role: TextRole::Annotation,
+                        baseline,
+                        size,
+                        ..
+                    } => Some((*baseline, *size)),
+                    _ => None,
+                }) {
+                    assert!(a + 0.3 * a_size < ink_top && a > 0.0, "{what}: annotation at {a}");
+                }
+                assert!(baseline + 0.25 * size <= list.height + 0.01, "{what}");
+                let staff_left = list
+                    .items
+                    .iter()
+                    .find_map(|i| match i {
+                        Item::Rect {
+                            x,
+                            role: neuma::Ink::Staff,
+                            ..
+                        } => Some(*x),
+                        _ => None,
+                    })
+                    .unwrap();
+                let right = x + m.advance(&run.text, run.style) * size;
+                assert!(x >= -0.01 && right < staff_left, "{what}: {x}..{right} vs {staff_left}");
+                // H has no overhang, and is wider than the annotations over it. Lyrics set
+                // lower than usual, under a low note, make it a little wider than its column,
+                // into the gap.
+                if run.text == "H" {
+                    let gap = (staff_left - right) / sp;
+                    let lowered = src.contains("(a)");
+                    assert!((gap - 1.39).abs() < 0.01 || lowered && gap > 0.98 && gap < 1.39, "{what}: {gap}");
+                }
+            }
         }
     }
 }
@@ -931,6 +1031,20 @@ fn an_end_of_line_custos_keeps_gregorios_gap() {
         .unwrap();
     let gap = (custos - first_line_end) / opts.scale;
     assert!(gap > 1.5 && gap < 1.8, "{gap}");
+}
+
+#[test]
+fn lyrics_are_drawn_at_their_measured_advances() {
+    // A browser that hints the lyric face rounds each glyph's advance to a whole pixel, so a
+    // syllable drawn on its own ends up to a pixel or more away from where it was measured to
+    // end: touching syllables of one word ("góod|ness") come apart with no hyphen between
+    // them. The style asks for unhinted, fractional advances.
+    let svg = render("%%\n(c4) góod(g)ness(h) (::)", 600.0);
+    let style = &svg[svg.find("<style>").unwrap()..svg.find("</style>").unwrap()];
+    assert!(
+        style.contains("text{") && style.contains("text-rendering:geometricPrecision"),
+        "{style}"
+    );
 }
 
 #[test]

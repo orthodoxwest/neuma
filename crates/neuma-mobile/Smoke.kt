@@ -75,7 +75,7 @@ fun main() {
     check(ed.diagnostics().none { it.code == "gabc::hyphen-in-syllable" }, "update")
     ed.setOptions(ChantOptions(lyricSize = 4f, font = LyricFont.GARAMOND12))
     check(ed.version() > edited, "set options changed")
-    check(ed.layout(500f, LayoutOptions()).page().height > layout.page().height, "set options")
+    check(ed.layout(500f, LayoutOptions()).page().lines.last().bottom > layout.page().lines.last().bottom, "set options")
     layout.close()
     ed.close()
     chant.close()

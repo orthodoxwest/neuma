@@ -65,6 +65,19 @@ timelines, PDFs). Some behavior did change:
   (word joiner), and reads `-` and U+2060, or U+2011, as a spelling hyphen: a line copied from
   a psalm display reads as the text it came from. A no-break space used to be read as part of
   a word, so held dashes were sung as words.
+- The default one-staff initial runs from the staff's top line down to the first line's
+  lyric baseline, as a one-line initial does in Solesmes books. It was GregorioTeX's
+  default size, four times the lyrics, which reached only about halfway up the staff. Its
+  annotations sit above the staff, over the capital, and the gap between any initial's
+  column and the staff is GregorioTeX's `afterinitialshift`, 0.2 cm (it was 0.144 cm). The
+  second line moves down, if need be, so that a Q's or J's tail clears its staff lines as
+  well as its notes.
+- SVG output asks for `text-rendering: geometricPrecision` on its text, in the score's style
+  and in a book's SVG pages. A browser that hints the lyric face (Chrome on Linux and
+  Windows) rounded each glyph's advance to a whole pixel at the size drawn, so a syllable
+  drawn on its own ended up to a pixel or more from where it was measured to end: the
+  touching syllables of a word ("góod|ness") came apart, with no hyphen between them, by an
+  amount that changed with the page's scale.
 
 ### The 0.1 API (breaking)
 
