@@ -42,7 +42,7 @@ const decoder = new TextDecoder();
  * can't be read), "unsupported" (this build of the module leaves the feature out),
  * "not-initialized" (`init()` hasn't run), "engine-stopped" (the engine stopped on an
  * internal error: call `init()` again), "no-constructor" (a TypeError: views and pages come
- * from a Chant).
+ * from a Chant), "fetch" (`init()` in `neuma-external.mjs` couldn't fetch `neuma.wasm`).
  */
 function fail(Kind, code, message, cause) {
   const e = new Kind(`neuma: ${message}`, cause === undefined ? undefined : { cause });
@@ -92,7 +92,8 @@ export function initSync(bytes) {
 
 /**
  * Initializes from the module's inlined copy (in `neuma-external.mjs`, from `neuma.wasm`
- * beside it), or from `bytes` if given.
+ * beside it, failing with the code "fetch" if it can't be fetched), or from `bytes` if given.
+ * Under Node, whose fetch takes no file: URLs, `neuma-external.mjs` needs the bytes.
  */
 export async function init(bytes) {
   if (wasm) return;
@@ -100,8 +101,15 @@ export async function init(bytes) {
   if (bytes) return initSync(bytes);
   const url = wasmUrl();
   if (url) {
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(`neuma: fetching ${url} failed: ${response.status}`);
+    let response;
+    try {
+      response = await fetch(url);
+    } catch (e) {
+      // Node's fetch takes no file: URLs, so the module can't fetch its engine from disk there.
+      const hint = url.protocol === "file:" ? "; this runtime can't fetch a file: URL, so pass the bytes: init(readFileSync(<path to neuma.wasm>))" : "";
+      throw fail(Error, "fetch", `fetching ${url} failed${hint}`, e);
+    }
+    if (!response.ok) throw fail(Error, "fetch", `fetching ${url} failed: ${response.status}`);
     return initSync(new Uint8Array(await response.arrayBuffer()));
   }
   const packed = Uint8Array.from(atob(WASM_GZIP_BASE64), (c) => c.charCodeAt(0));
@@ -180,17 +188,20 @@ function guarded(f) {
   }
 }
 
+// A pointer or length from the engine arrives as a signed 32-bit number; `>>> 0` reads it as
+// the unsigned one it is, for memory past 2 GiB.
+
 function putInput(text) {
   const w = ready();
   const bytes = encoder.encode(text);
-  const ptr = w.neuma_input(bytes.length);
+  const ptr = w.neuma_input(bytes.length) >>> 0;
   new Uint8Array(w.memory.buffer, ptr, bytes.length).set(bytes);
 }
 
 function takeOutput() {
   const w = ready();
-  const ptr = w.neuma_output_ptr();
-  const len = w.neuma_output_len();
+  const ptr = w.neuma_output_ptr() >>> 0;
+  const len = w.neuma_output_len() >>> 0;
   return decoder.decode(new Uint8Array(w.memory.buffer, ptr, len));
 }
 
@@ -564,8 +575,11 @@ export class Chant {
 
   /**
    * Engraves the score again with new options (those the constructor takes), as when the
-   * reader changes the lyric size. Options that engrave as the current ones change nothing,
-   * and pages laid out before stay current. Returns whether anything changed.
+   * reader changes the lyric size. They replace the current options, as the constructor
+   * takes them: one left out takes its default, not its current value, as in Rust and on
+   * mobile, so `setOptions({ lyricSize: 3 })` on a chant made with `{ initial: 0 }` brings
+   * back the initial. Options that engrave as the current ones change nothing, and pages
+   * laid out before stay current. Returns whether anything changed.
    * @returns {boolean}
    */
   setOptions(options) {
@@ -919,6 +933,17 @@ if (typeof Symbol.dispose === "symbol") {
 const DEFAULT_LAYOUT_BUDGET = Object.freeze({ current: 64, stale: 2 });
 let layoutBudget = DEFAULT_LAYOUT_BUDGET;
 
+/** The most a pool can be set to keep: the engine takes it as a u32. */
+const MAX_LAYOUT_BUDGET = 0xffffffff;
+
+/** One pool's budget: a number at least 1, rounded down and capped at 2^32 − 1. */
+function poolBudget(name, value) {
+  if (typeof value !== "number" || !(value >= 1)) {
+    throw invalid(`setLayoutBudget's ${name} must be a number at least 1 (or undefined or null for the default, ${DEFAULT_LAYOUT_BUDGET[name]}); got ${String(value)}`);
+  }
+  return Math.min(MAX_LAYOUT_BUDGET, Math.floor(value));
+}
+
 /**
  * Sets how many pages' layouts the engine keeps, in two pools across every chant, view and
  * page: `current`, of pages showing their chant as it is now (default 64, enough for a page
@@ -928,19 +953,24 @@ let layoutBudget = DEFAULT_LAYOUT_BUDGET;
  * Layouts of a chant's current state share its engraving; a stale one holds the engraving
  * it was laid out from (under 200 KB for a typical score, about 4 MB for the longest). Laying
  * a page out again costs little while its chant is still in the page's state, and a full
- * layout (tens of milliseconds for the longest scores) once the chant has moved on. A number
- * sets `current` alone.
- * @param {number | { current?: number, stale?: number }} budget `current` at least 1,
- *   `stale` at least 1 (a page laid out again lives to answer); one left out keeps its
- *   value.
+ * layout (tens of milliseconds for the longest scores) once the chant has moved on.
+ *
+ * Set `current` above the number of pages shown at once: with more, a mouse moving across
+ * them in turn always reaches the one dropped longest ago, so every hover lays a page out
+ * again.
+ *
+ * Like every options object here, the budget replaces the last one: a pool left out,
+ * undefined or null takes its default, and `setLayoutBudget()` restores both. A number sets
+ * `current`, `stale` taking its default.
+ * @param {number | { current?: number, stale?: number }} budget each pool a number at least
+ *   1 (a page laid out again lives to answer), rounded down; `Infinity` or anything past
+ *   2^32 − 1 keeps 2^32 − 1, no limit in practice. 0, a negative number, `NaN` or a value
+ *   that isn't a number throws (code "invalid-option").
  */
 export function setLayoutBudget(budget) {
   const given = typeof budget === "number" ? { current: budget } : budget;
-  const { current, stale } = options(given, layoutBudget, "setLayoutBudget");
-  layoutBudget = Object.freeze({
-    current: Math.max(1, Math.trunc(Number(current)) || DEFAULT_LAYOUT_BUDGET.current),
-    stale: Math.max(1, Math.trunc(Number(stale)) || DEFAULT_LAYOUT_BUDGET.stale),
-  });
+  const { current, stale } = options(given, DEFAULT_LAYOUT_BUDGET, "setLayoutBudget");
+  layoutBudget = Object.freeze({ current: poolBudget("current", current), stale: poolBudget("stale", stale) });
   if (wasm) wasm.neuma_set_layout_budget(layoutBudget.current, layoutBudget.stale);
 }
 
@@ -951,5 +981,5 @@ export function setLayoutBudget(budget) {
  */
 export function engineStats() {
   const w = ready();
-  return { memory: w.memory.buffer.byteLength, layouts: w.neuma_layouts(0), staleLayouts: w.neuma_layouts(1), budget: layoutBudget };
+  return { memory: w.memory.buffer.byteLength, layouts: w.neuma_layouts(0) >>> 0, staleLayouts: w.neuma_layouts(1) >>> 0, budget: layoutBudget };
 }

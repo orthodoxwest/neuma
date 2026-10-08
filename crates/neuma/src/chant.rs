@@ -351,8 +351,9 @@ impl Chant {
     }
 
     /// Engraves the score with new options, as when the reader changes the lyric font or
-    /// size (Dynamic Type, say) or the initial. Options that engrave the same as the current
-    /// ones change nothing; others engrave the score again, and the next layout reuses
+    /// size (Dynamic Type, say) or the initial. They replace the current ones whole, as on
+    /// mobile and in the browser. Options that engrave the same as the current ones change
+    /// nothing; others engrave the score again, and the next layout reuses
     /// whatever lines still come out the same.
     ///
     /// Returns whether it engraved again, which is when layouts made before are out of date.

@@ -191,7 +191,9 @@ timelines, PDFs). Some behavior did change:
   whose chant has changed or is gone (**`setLayoutBudget({ current, stale })`**), and a page
   whose layout was dropped, or freed with `page.free()` (or `Symbol.dispose`), lays itself
   out again when next asked, from its chant's source and options at the time, to the same
-  answers. A `FinalizationRegistry` only frees a collected page's layout sooner. New:
+  answers. A `FinalizationRegistry` only frees a collected page's layout sooner. Each
+  pool's budget is a number at least 1 (capped at 2^32 − 1); 0, negatives and non-numbers
+  throw. New:
   **`engineStats()`**, `{ memory, layouts, staleLayouts, budget }`. `page.stale` says the
   chant has changed since the page was laid out, and `page.version` is the chant's version it
   was laid out at. `chant.layout` makes a
@@ -210,12 +212,17 @@ timelines, PDFs). Some behavior did change:
 - Options are checked: a key a call doesn't take (`{ intial: 1 }`, `{ timeline: false }`)
   throws a `TypeError`, as does a value it doesn't know (`{ font: "EB Garamond" }`, `{ svg:
   "parts" }`, `{ unit: "bytes" }`); both fell back to the default. `null` is the default, as
-  `undefined` is. The module's errors carry a **`code`**: `invalid-option`, `tone`,
-  `unsupported`, `not-initialized`, `engine-stopped`, `no-constructor`.
+  `undefined` is. `setOptions` and `setLayoutBudget` replace the last options, not merge
+  them in: one left out takes its default. The module's errors carry a **`code`**:
+  `invalid-option`, `tone`, `unsupported`, `not-initialized`, `engine-stopped`,
+  `no-constructor`, `fetch`.
+- Fixed: the glue read the engine's pointers as signed numbers, so every call failed once
+  the engine's memory passed 2 GiB.
 - `Chant` and `View` are disposable (`Symbol.dispose`), as `Page` is.
 - New: **TypeScript types** (`dist/neuma.d.mts`) and a `package.json` with an exports map;
   **`dist/neuma-external.mjs`**, the module without the engine inlined, which fetches
-  `neuma.wasm` beside it. Features of the `neuma-wasm` crate (`tones`, `pointing`,
+  `neuma.wasm` beside it (under Node, whose `fetch` takes no `file:` URL, pass its bytes to
+  `init`). Features of the `neuma-wasm` crate (`tones`, `pointing`,
   `font-google`, `font-garamond12`) leave parts of the engine out for a smaller module; the
   glue's functions for a part left out throw with the code `unsupported`.
 - New: `Chant.fromPsalm(text, tone, { intone, autoPoint, …chantOptions })`, with

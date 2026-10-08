@@ -235,6 +235,13 @@ assert.throws(() => Chant.fromTone("8.G", { annotaton: false }), invalid);
   assert.equal(c.layout(300, null).svg, new Chant("(c4) a(g) b(h)").layout(300).svg);
   assert.equal(new Chant("(c4) a(g) b(h)", { initial: null, font: null }).layout(300).svg, c.layout(300).svg);
   assert.throws(() => c.setOptions({ size: 3 }), invalid);
+  // setOptions replaces the options, as in Rust and on mobile: one left out takes its default.
+  const r = new Chant("(c4) a(g) b(h)", { initial: 0, lyricSize: 4 });
+  assert.equal(r.setOptions({ lyricSize: 4 }), true, "initial back to 1");
+  assert.equal(r.layout(300).svg, new Chant("(c4) a(g) b(h)", { lyricSize: 4 }).layout(300).svg);
+  assert.equal(r.setOptions(), true);
+  assert.equal(r.layout(300).svg, c.layout(300).svg);
+  assert.equal(r.setOptions(null), false);
   assert.throws(() => c.layout(300, { svg: "parts" }), { ...invalid, message: /svg must be "whole", "lines"/ });
   assert.throws(() => c.layout(300, { lastLine: "justify" }), invalid);
   assert.throws(() => c.layout(300, { timeline: false }), invalid);
@@ -396,7 +403,23 @@ setLayoutBudget(budget);
 assert.deepEqual(engineStats().budget, { current: 64, stale: 2 });
 setLayoutBudget(3);
 assert.deepEqual(engineStats().budget, { current: 3, stale: 2 }, "a number sets the current pool's");
-setLayoutBudget(budget);
+// A budget replaces the last one: a pool left out, undefined or null takes its default.
+setLayoutBudget({ current: 5, stale: 7 });
+setLayoutBudget({ stale: 4 });
+assert.deepEqual(engineStats().budget, { current: 64, stale: 4 });
+setLayoutBudget({ current: 9, stale: 7 });
+setLayoutBudget(null);
+assert.deepEqual(engineStats().budget, { current: 64, stale: 2 });
+setLayoutBudget({ current: 2.9, stale: Infinity });
+assert.deepEqual(engineStats().budget, { current: 2, stale: 0xffffffff }, "rounded down, and capped as the engine takes it");
+setLayoutBudget(2 ** 40);
+assert.deepEqual(engineStats().budget, { current: 0xffffffff, stale: 2 });
+for (const bad of [0, -3, 0.5, NaN, -Infinity, "4", { current: 0 }, { stale: -1 }, { current: "8" }]) {
+  assert.throws(() => setLayoutBudget(bad), { name: "TypeError", code: "invalid-option" }, String(bad));
+}
+assert.deepEqual(engineStats().budget, { current: 0xffffffff, stale: 2 }, "a budget that throws changes nothing");
+setLayoutBudget();
+assert.deepEqual(engineStats().budget, { current: 64, stale: 2 });
 
 // Each view in parts, here a page and a thumbnail, reuses the lines of its own last page,
 // even when the caller has changed that page's parts.
@@ -536,9 +559,41 @@ setLayoutBudget(budget);
   }
 }
 
-// The module without the wasm inlined, given its bytes, works as the inlined one.
+// Memory past 2 GiB, where the engine's pointers are negative as signed numbers: a copy of
+// the glue whose engine has grown its memory by 2 GiB before it allocates anything.
+{
+  const Real = WebAssembly.Instance;
+  WebAssembly.Instance = function (module, imports) {
+    const real = new Real(module, imports);
+    real.exports.memory.grow(32768);
+    return real;
+  };
+  try {
+    const glue = await import("./dist/neuma.mjs?high");
+    await glue.init();
+    const high = new glue.Chant(gabc);
+    assert.ok(glue.engineStats().memory > 2 ** 31);
+    assert.equal(high.layout(500).svg, chant.layout(500).svg);
+    assert.equal(high.update(gabc.replace("(", "(f) a(")), true);
+    assert.deepEqual(glue.summarize(gabc), summarize(gabc));
+  } finally {
+    WebAssembly.Instance = Real;
+  }
+}
+
+// The module without the wasm inlined, given its bytes, works as the inlined one. Without
+// them, it fetches neuma.wasm: Node's fetch takes no file: URL, and the error says to pass
+// the bytes.
 {
   const external = await import("./dist/neuma-external.mjs");
+  await assert.rejects(external.init(), { code: "fetch", message: /pass the bytes/ });
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: false, status: 404 });
+  try {
+    await assert.rejects(external.init(), { code: "fetch", message: /failed: 404/ });
+  } finally {
+    globalThis.fetch = realFetch;
+  }
   await external.init(readFileSync(new URL("./dist/neuma.wasm", import.meta.url)));
   assert.equal(new external.Chant(gabc).layout(500).svg, chant.layout(500).svg);
   assert.ok(readFileSync(new URL("./dist/neuma-external.mjs", import.meta.url)).length < 100_000);

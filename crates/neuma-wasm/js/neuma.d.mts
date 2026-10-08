@@ -21,7 +21,12 @@ export type ErrorCode =
   /** The engine stopped on an internal error; `init()` starts a fresh one. */
   | "engine-stopped"
   /** A TypeError: views and pages come from a Chant, not their constructors. */
-  | "no-constructor";
+  | "no-constructor"
+  /**
+   * `init()` in `neuma-external.mjs` couldn't fetch `neuma.wasm`: an HTTP error, or a runtime
+   * whose fetch takes no file: URL (Node), which needs `init(bytes)`.
+   */
+  | "fetch";
 
 /** An error the glue throws: an `Error` or a `TypeError` with a `code`. */
 export interface NeumaError extends Error {
@@ -373,8 +378,14 @@ export function toneLabel(tone: string): string;
 export function toneNames(): string[];
 /** The note sounding at time `t` of a timeline, or null. */
 export function noteAtTime(timeline: { notes: TimelineNote[] }, t: number): TimelineNote | null;
-/** Sets how many layouts the engine keeps; a number sets `current` alone. */
-export function setLayoutBudget(budget: number | Opt<Partial<LayoutBudget>>): void;
+/**
+ * Sets how many layouts the engine keeps, replacing the last budget: a pool left out,
+ * undefined or null takes its default (64 current, 2 stale), and a number sets `current`.
+ * Each pool is a number at least 1, rounded down; `Infinity` or anything past 2^32 − 1
+ * keeps 2^32 − 1. Anything else throws (code "invalid-option"). Set `current` above the
+ * number of pages shown at once, or hovering across them lays each out again.
+ */
+export function setLayoutBudget(budget?: number | Opt<Partial<LayoutBudget>>): void;
 export function engineStats(): EngineStats;
 
 /** One score, engraved once and laid out at any width. */
@@ -393,13 +404,21 @@ export class Chant {
   readonly summary: Summary;
   /** Replaces the score, keeping the options. Returns whether anything changed. */
   update(src: string): boolean;
-  /** Engraves again with new options. Returns whether anything changed. */
+  /**
+   * Engraves again with these options, replacing the current ones (as the constructor takes
+   * them: one left out takes its default, not its current value), as in Rust and on mobile.
+   * Returns whether anything changed.
+   */
   setOptions(options?: Opt<ChantOptions>): boolean;
   view(options: ViewOptions & { svg: "lines" }): View<LinesPage>;
   view(options?: Opt<ViewOptions & { svg?: Opt<"whole"> }>): View<WholePage>;
+  /** With `svg` known only at run time: check the page's `svgParts` or `svg`. */
+  view(options?: Opt<ViewOptions>): View<WholePage | LinesPage>;
   /** A new page each call; a place that lays out again on each change wants a view. */
   layout(width: number, options: LayoutOptions & { svg: "lines" }): LinesPage;
   layout(width: number, options?: Opt<LayoutOptions & { svg?: Opt<"whole"> }>): WholePage;
+  /** With `svg` known only at run time: check the page's `svgParts` or `svg`. */
+  layout(width: number, options?: Opt<LayoutOptions>): WholePage | LinesPage;
   /** Drops the engine's engraving now; the chant still works. */
   free(): void;
   [Symbol.dispose](): void;

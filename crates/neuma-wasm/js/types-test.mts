@@ -14,7 +14,15 @@ const hit = page.sourceAt(10, 10);
 if (hit) console.log(hit.utf16Start, hit.kind === "note");
 console.log(whole, parts, top, chant.view().layout(300).svg.length, page.elementsAt(3, { unit: "utf8" }));
 console.log(psalm("a * b", "8.G", { intone: null, accents: "outsideFlex" }).notes[0]?.role);
+// `svg` chosen at run time.
+const mode = (globalThis as { lines?: boolean }).lines ? "lines" : "whole";
+const either = chant.layout(300, { svg: mode });
+console.log(either.svgParts ? either.svgParts.lines.length : either.svg.length);
+const anyView = chant.view({ svg: mode, ids: false });
+const shownNow = anyView.layout(300);
+console.log(shownNow.svgParts?.head ?? shownNow.svg);
 setLayoutBudget({ current: 10 });
+setLayoutBudget();
 setLayoutBudget(5);
 console.log(engineStats().budget.stale, chant.version > page.version, page.timeline().notes[0]?.cx);
 try {

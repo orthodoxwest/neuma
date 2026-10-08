@@ -81,7 +81,7 @@ val page = layout.page()      // keep it: each call copies the display list acro
 val timeline = layout.timeline(Weights(mediant = 3f))
 val id = layout.noteAt(x, y)  // the note under a tap, or null
 chant.update(edited)          // after an edit; lay it out again to see it
-chant.setOptions(ChantOptions(initial = 2, lyricSize = 3f)) // a new text size
+chant.setOptions(ChantOptions(initial = 2, lyricSize = 3f)) // a new text size; replaces all the options
 chant.version()               // names the state: grows with each real change
 layout.close()                // when a new layout replaces it
 chant.close()

@@ -13,10 +13,12 @@ node crates/neuma-wasm/test.mjs
 
 The build also writes `dist/neuma-external.mjs`, the same module without the engine inlined:
 it fetches `neuma.wasm` from beside itself (or takes its bytes, `init(bytes)`), for a site
-that would rather cache the engine as its own file. `dist/neuma.d.mts` has the TypeScript
-types, with JSDoc, and `package.json` maps the package's entry points (`neuma`,
-`neuma/external`, `neuma/neuma.wasm`) to them. CI builds the module on every push and keeps
-it as the `neuma-browser` artifact.
+that would rather cache the engine as its own file. Node's `fetch` takes no `file:` URL, so
+under Node pass the bytes, `init(readFileSync(new URL("./neuma.wasm", import.meta.url)))`
+from beside it; `init()` alone fails there with the code `fetch` and says so.
+`dist/neuma.d.mts` has the TypeScript types, with JSDoc, and `package.json` maps the
+package's entry points (`neuma`, `neuma/external`, `neuma/neuma.wasm`) to them. CI builds
+the module on every push and keeps it as the `neuma-browser` artifact.
 
 ### Smaller builds
 
@@ -87,15 +89,27 @@ again the next time it is asked, from what it was made from: its chant's source 
 options at the time, its width and its weights. It gives the same answers, byte for byte.
 So no page throws for its age, nor after its chant is freed or changed.
 
-- `setLayoutBudget({ current, stale })` sets how many layouts each pool keeps (each at least
-  1; a number sets `current` alone). Layouts of a chant as it is now share its engraving,
-  so each costs only its lines: about 40 KB for a typical score, about 1.4 MB for the longest
-  (about 4,900 notes). A stale one also keeps the engraving it was laid out from, up to about
-  4 MB for the longest. Typing into the longest score with the defaults stays near 25 MB of
-  engine memory, however the pages are made (one view, `chant.layout` on each change, or a
-  new view each time). Lower `current` for a phone showing long scores; raise it when more
-  pages are shown and clicked at once. Laying a page out again costs little while its chant
-  hasn't changed, but a full layout once it has (tens of milliseconds on the longest scores).
+- `setLayoutBudget({ current, stale })` sets how many layouts each pool keeps. Layouts of a
+  chant as it is now share its engraving, so each costs only its lines: about 40 KB for a
+  typical score, about 1.4 MB for the longest (about 4,900 notes). A stale one also keeps
+  the engraving it was laid out from, up to about 4 MB for the longest. Typing into the
+  longest score with the defaults, the engine's memory levels off between about 25 and
+  40 MB: least through one view, a few MB more with `chant.layout` or a new view on each
+  change, and more for some runs of edits (about 30 MB through one view, 33 MB otherwise,
+  after 100 keystrokes that add and remove a letter in turn). Lower `current` for a phone
+  showing long scores. Laying a page out again costs little while its chant hasn't changed,
+  but a full layout once it has (tens of milliseconds on the longest scores).
+
+  **Set `current` above the number of pages shown at once.** With more pages than that
+  (80 against the default 64, say), a mouse moving across them in turn always reaches the
+  page dropped longest ago, so every hover lays a page out again.
+
+  Each pool takes a number at least 1, rounded down; `Infinity`, or anything past
+  2^32 − 1, keeps 2^32 − 1, which is no limit in practice. 0, a negative number, `NaN` or a
+  value that isn't a number throws (code `invalid-option`). Like every options object here,
+  the budget replaces the last one: a pool left out, `undefined` or `null` takes its default
+  (`setLayoutBudget({ stale: 4 })` sets `current` back to 64), `setLayoutBudget()` restores
+  both, and a number sets `current`, `stale` taking its default.
 - `engineStats()` returns `{ memory, layouts, staleLayouts, budget }`: the WebAssembly
   memory's size in bytes (which only grows), the layouts held, how many of those are stale,
   and the budget, `{ current, stale }`.
@@ -105,7 +119,10 @@ So no page throws for its age, nor after its chant is freed or changed.
   used, as the same state, so its pages stay current. A `FinalizationRegistry` drops the
   copies of pages and chants that are garbage collected. For pages that only frees memory
   sooner, since the budget bounds their layouts without it; a chant's own engraving lives
-  until it is freed or collected.
+  until it is freed or collected. **Free chants you're done with.** JavaScript collects
+  garbage when its own heap fills, and a chant is small there while its engraving in the
+  engine is not, so chants dropped without `free()` can fill the engine's memory long before
+  the collector runs, if it ever does.
 
 ### Views: pages for a place that shows the score
 
@@ -179,7 +196,11 @@ Each diagnostic has a `code` that stays stable across versions (see
 
 `page.noteAt(x, y)` returns the note under a point, or the nearest note on that line, or
 `null`. `chant.setOptions({ lyricSize: 3 })` engraves again with new options (those the
-constructor takes).
+constructor takes). They replace the options the chant had, as the constructor takes them:
+an option left out takes its default, not its current value, so on a chant made with
+`{ initial: 0 }` that call brings the initial back. Pass every option you set, from one
+settings object. Rust's `set_options` and mobile's `setOptions` take a whole `ChantOptions`
+the same way.
 
 Weights default to `DEFAULT_WEIGHTS`: one pulse per note, two for a dotted note, and pauses
 that grow with the bar. Any key you pass with a number overrides its default, except a negative one; no weight
@@ -196,7 +217,8 @@ Every call takes its options as one object of the keys it lists. A key it doesn'
 (`{ intial: 1 }`, `{ timeline: false }`) throws, as does a value not among those it takes
 (`{ font: "EB Garamond" }`, `{ svg: "parts" }`), rather than quietly falling back to the
 default. An option left out, `undefined` or `null` takes its default, and so does a missing
-or `null` options object.
+or `null` options object. That holds for calls that change a setting too: `setOptions` and
+`setLayoutBudget` replace the last options with the ones given, not merge them in.
 
 The errors the module throws carry a `code`:
 
@@ -208,6 +230,8 @@ The errors the module throws carry a `code`:
 - `not-initialized`: `init()` hasn't run.
 - `engine-stopped`: the engine stopped on an internal error; `init()` starts a fresh one.
 - `no-constructor`: a `TypeError`, for `new View()` or `new Page()`: they come from a chant.
+- `fetch`: `init()` in `neuma-external.mjs` couldn't fetch `neuma.wasm`: an HTTP error (the
+  message gives the status), or a fetch that failed (the error's `cause`).
 
 ## Editors
 
