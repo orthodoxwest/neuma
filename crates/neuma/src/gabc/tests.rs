@@ -636,5 +636,8 @@ fn a_space_after_a_tag_still_ends_the_word() {
     let v = parse("(c4) a(f)<sp>V/</sp> b(g) (::)");
     assert_eq!(v.score.syllables[2].text.plain(), "℣ b");
     assert!(!v.score.syllables[2].word_start);
+    // An unknown tag is set as text, so it doesn't end the word either.
+    let u = parse("(c4) a(f)<foo> b(g) (::)");
+    assert!(!u.score.syllables[2].word_start);
     assert!(p.diagnostics.is_empty(), "{:?}", p.diagnostics);
 }

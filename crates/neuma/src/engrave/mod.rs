@@ -1623,6 +1623,20 @@ mod tests {
         assert_ne!(pes[0].1, pes[1].1);
         let apart = ink("(c4) a(g_ h_)", Ink::Episema);
         assert_ne!(apart[0].1, apart[1].1);
+        // `_2` keeps a note's episema from joining the next.
+        let unbridged = ink("(c4) a(h_2g_)", Ink::Episema);
+        assert_ne!(unbridged[0].1, unbridged[1].1);
+        // An ictus beside a joined line moves out with it, keeping the clearance it has from
+        // a lone note's episema rather than sitting in the line.
+        let clearance = |src: &str| {
+            let bar = ink(src, Ink::Episema).last().unwrap().1;
+            let ictus = ink(src, Ink::Ictus)[0].1;
+            bar - ictus
+        };
+        let lone = clearance("(c4) a(g'1_)");
+        for src in ["(c4) a(h_g'1_)", "(c4) a(f_h_g'1_)"] {
+            assert!((clearance(src) - lone).abs() < 1e-4, "{src}: {} vs {lone}", clearance(src));
+        }
     }
 
     #[test]

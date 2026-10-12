@@ -672,13 +672,16 @@ fn end_body(src: &str, start: usize, mut st: BodyState, rest: Rest, sink: &mut S
 }
 
 /// Whether `text` is only style tags (`</nlba>`, `<i>`), with no text a reader would see. A
-/// verbatim tag (`<sp>V/</sp>`) prints its content, so it counts as text.
+/// verbatim tag (`<sp>V/</sp>`) prints its content, and an unknown one is set as text, so
+/// either counts as text.
 fn only_tags(text: &str) -> bool {
+    const STYLE: [&str; 10] = ["i", "b", "sc", "ul", "c", "e", "tt", "eu", "nlba", "clear"];
     let mut rest = text.trim();
     while let Some(tag) = rest.strip_prefix('<') {
         let Some(end) = tag.find('>') else { return false };
         let name = tag[..end].trim_start_matches('/');
-        if VERBATIM.contains(&name) {
+        let name = name.strip_suffix('/').unwrap_or(name);
+        if !(STYLE.contains(&name) || name == "pr" || name.starts_with("pr:")) {
             return false;
         }
         rest = tag[end + 1..].trim_start();

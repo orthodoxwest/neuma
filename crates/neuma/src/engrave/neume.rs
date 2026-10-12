@@ -1417,14 +1417,15 @@ pub(crate) fn add_markings(built: &mut Built, kind: Kind, notes: &[Note], note_b
     }
     // Episemata on neighbouring notes on the same side are drawn as one line at the height
     // the outermost needs, as GregorioTeX joins them: `(h_g_)` draws one line over the
-    // clivis, not a line over each note at its own height. Each note keeps its own piece, run
-    // on to where the next one starts.
+    // clivis, not a line over each note at its own height. `_2` stops the line at its note.
+    // Each note keeps its own piece, run on to where the next one starts.
     let inclinatum = |hi: usize| matches!(heads[hi].glyph, Some(G::PunctumInclinatum | G::PunctumInclinatumLiquescent));
     let mut start = 0;
     while start < bars.len() {
         let mut end = start + 1;
         while end < bars.len()
             && bars[end].hi == bars[end - 1].hi + 1
+            && !notes[heads[bars[end - 1].hi].index].episema.is_some_and(|e| e.no_bridge)
             && bars[end].below == bars[start].below
             && !inclinatum(bars[end].hi)
             && !inclinatum(bars[end - 1].hi)
@@ -1437,6 +1438,25 @@ pub(crate) fn add_markings(built: &mut Built, kind: Kind, notes: &[Note], note_b
             .map(|b| b.y)
             .fold(run[0].y, |a, y| if run[0].below { a.max(y) } else { a.min(y) });
         for k in 0..run.len() {
+            // An ictus on the same side was set clear of the note's own episema; it moves out
+            // as far as the joined line does.
+            let moved = y - run[k].y;
+            if moved != 0.0 {
+                let side = if run[k].below {
+                    G::VerticalEpisemaBelow
+                } else {
+                    G::VerticalEpisemaAbove
+                };
+                for p in &mut built.pieces {
+                    if let Mark::Glyph { glyph, y: py, .. } = &mut p.mark
+                        && p.role == Ink::Ictus
+                        && p.note == run[k].id
+                        && *glyph == side
+                    {
+                        *py += moved;
+                    }
+                }
+            }
             run[k].y = y;
             if k + 1 < run.len() {
                 run[k].w = run[k].w.max(run[k + 1].x - run[k].x + EPISEMA_JOIN);
