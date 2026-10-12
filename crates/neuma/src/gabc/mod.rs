@@ -624,6 +624,11 @@ pub(crate) fn read_body(
                     text.clear();
                     from.clear();
                     text_start = i + c.len_utf8();
+                } else if only_tags(&text) {
+                    // Tags with no text before the space (`non(f)</nlba> fran(g)`): the space
+                    // still ends the word, as in Gregorio, and the tags stay with the syllable
+                    // after it.
+                    saw_space = true;
                 } else {
                     text.push(' ');
                     from.push((start + i, start + i + c.len_utf8()));
@@ -664,6 +669,21 @@ fn end_body(src: &str, start: usize, mut st: BodyState, rest: Rest, sink: &mut S
             format!("text `{}` has no notes after it and is dropped", rest.text.trim()),
         );
     }
+}
+
+/// Whether `text` is only style tags (`</nlba>`, `<i>`), with no text a reader would see. A
+/// verbatim tag (`<sp>V/</sp>`) prints its content, so it counts as text.
+fn only_tags(text: &str) -> bool {
+    let mut rest = text.trim();
+    while let Some(tag) = rest.strip_prefix('<') {
+        let Some(end) = tag.find('>') else { return false };
+        let name = tag[..end].trim_start_matches('/');
+        if VERBATIM.contains(&name) {
+            return false;
+        }
+        rest = tag[end + 1..].trim_start();
+    }
+    rest.is_empty()
 }
 
 /// The verbatim tags, in the order `verbatim_end` and `LyricState::verbatim_first` index them.
