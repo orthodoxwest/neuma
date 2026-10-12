@@ -47,6 +47,8 @@ const PES_SUBPUNCTIS_GAP: f32 = INTRA * 0.68;
 /// The part of its width an episema keeps over an inclinatum that steps down from the one
 /// before, or over a liquescent inclinatum.
 const SHORT_EPISEMA: f32 = 2.0 / 3.0;
+/// How far a joined episema's piece runs under the next one's, so the line shows no seam.
+const EPISEMA_JOIN: f32 = 0.05;
 /// How far an ictus is set off a staff line it would hit, in staff spaces.
 const ICTUS_OFF_LINE: f32 = 0.3;
 /// How far an ictus in a space is set toward its note, in staff spaces.
@@ -112,10 +114,23 @@ fn small(n: &Note) -> bool {
 fn odd(p: i8) -> bool {
     p.rem_euclid(2) == 1
 }
-fn set_auto(p: &mut Option<Placement>, to: Placement) {
-    if *p == Some(Placement::Auto) {
-        *p = Some(to);
-    }
+
+/// Whether an ictus left to its default goes above note `k` of a neume of `kind` (`notes`):
+/// GregorioTeX's rule, which sets it below the note unless a note drawn just under it is in
+/// the way, as for the upper note of a pes and the pes that ends a porrectus or a scandicus.
+/// The middle note of a torculus and the first of a clivis take theirs below.
+fn ictus_above(kind: Kind, notes: &[Note], k: usize) -> bool {
+    let top = match kind {
+        Kind::Podatus | Kind::PesQuassus | Kind::PesSubpunctis => 1,
+        Kind::Porrectus | Kind::PorrectusFlexus | Kind::Salicus | Kind::SalicusFlexus => 2,
+        Kind::TorculusResupinus | Kind::TorculusResupinusFlexus => 3,
+        // A scandicus ending on a virga is a pes and the virga beside it.
+        Kind::Scandicus if notes.get(2).is_some_and(virga) => return k == 1 || k == 2,
+        Kind::ScandicusFlexus if notes.get(2).is_some_and(virga) => 1,
+        Kind::Scandicus | Kind::ScandicusFlexus => 2,
+        _ => return false,
+    };
+    k == top
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -252,10 +267,8 @@ impl Splitter<'_> {
                     self.close_gap_if_rising(c);
                     s
                 } else if up {
-                    set_auto(&mut self.notes[c].ictus, Placement::Above);
                     St::Podatus
                 } else if down {
-                    set_auto(&mut self.notes[c - 1].ictus, Placement::Above);
                     if inclinatum(&cur) { St::Climacus } else { St::Clivis }
                 } else if prev.morae == 0 {
                     St::Distropha
@@ -285,8 +298,6 @@ impl Splitter<'_> {
             }
             St::Podatus => {
                 if up {
-                    set_auto(&mut self.notes[c].ictus, Placement::Above);
-                    set_auto(&mut self.notes[c - 1].ictus, Placement::Below);
                     if oriscus(&prev) { St::Salicus } else { St::Scandicus }
                 } else if down {
                     if inclinatum(&cur) { St::PesSubpunctis } else { St::Torculus }
@@ -296,7 +307,6 @@ impl Splitter<'_> {
             }
             St::Clivis => {
                 if plain(&cur) && up {
-                    set_auto(&mut self.notes[c].ictus, Placement::Above);
                     St::Porrectus
                 } else if down && small(&cur) {
                     self.create(Kind::Ancus, true, true)
@@ -383,7 +393,6 @@ impl Splitter<'_> {
             St::Tristropha => self.create(Kind::Distropha, false, false),
             St::Torculus => {
                 if plain(&cur) && up && c >= 2 && self.notes[c - 2].position - prev.position <= 4 {
-                    set_auto(&mut self.notes[c].ictus, Placement::Above);
                     St::TorculusResupinus
                 } else {
                     self.create(Kind::Torculus, false, true)
@@ -401,7 +410,7 @@ impl Splitter<'_> {
 }
 
 /// Splits a run of notes (no separators between them) into neumes. Fills in automatic oriscus
-/// orientations and ictus placements as it goes.
+/// orientations as it goes, and then the ictus placements left to their default.
 pub(crate) fn split(notes: &mut [Note]) -> Vec<Split> {
     let len = notes.len() as isize;
     let mut s = Splitter {
@@ -417,6 +426,15 @@ pub(crate) fn split(notes: &mut [Note]) -> Vec<Split> {
             state = s.create(state.kind(), true, true);
         }
         s.cur += 1;
+    }
+    for split in &s.out {
+        let run = &mut s.notes[split.start..split.end];
+        for k in 0..run.len() {
+            if run[k].ictus == Some(Placement::Auto) {
+                let above = ictus_above(split.kind, run, k);
+                run[k].ictus = Some(if above { Placement::Above } else { Placement::Below });
+            }
+        }
     }
     s.out
 }
@@ -1259,6 +1277,17 @@ pub(crate) fn mora_placements(kind: Kind, n: &[Note]) -> Vec<Placement> {
     out
 }
 
+/// A horizontal episema as [`add_markings`] places it, before neighbours are joined: the
+/// head it's over, its left edge and width, its center line, and its side.
+struct Bar {
+    hi: usize,
+    x: f32,
+    w: f32,
+    y: f32,
+    below: bool,
+    id: Option<u32>,
+}
+
 /// Adds episemata, morae, ictus and ledger lines to a built neume. `trailing_zero` says the
 /// next notation follows with no space, so a mora on the last note looks at its first note.
 pub(crate) fn add_markings(built: &mut Built, kind: Kind, notes: &[Note], note_base: u32) {
@@ -1274,6 +1303,7 @@ pub(crate) fn add_markings(built: &mut Built, kind: Kind, notes: &[Note], note_b
             None
         }
     };
+    let mut bars: Vec<Bar> = Vec::new();
     for (hi, h) in heads.iter().enumerate() {
         let note = &notes[h.index];
         let id = Some(note_base + h.index as u32);
@@ -1298,17 +1328,7 @@ pub(crate) fn add_markings(built: &mut Built, kind: Kind, notes: &[Note], note_b
                 w *= SHORT_EPISEMA;
                 x += 0.25 * w;
             }
-            built.pieces.push(Piece {
-                mark: Mark::Rect {
-                    x,
-                    y: y - EPISEMA / 2.0,
-                    w,
-                    h: EPISEMA,
-                },
-                role: Ink::Episema,
-                note: id,
-                through: None,
-            });
+            bars.push(Bar { hi, x, w, y, below, id });
         }
         // Ictus (vertical episema).
         if let Some(p) = note.ictus {
@@ -1394,6 +1414,68 @@ pub(crate) fn add_markings(built: &mut Built, kind: Kind, notes: &[Note], note_b
                 });
             }
         }
+    }
+    // Episemata on neighbouring notes on the same side are drawn as one line at the height
+    // the outermost needs, as GregorioTeX joins them: `(h_g_)` draws one line over the
+    // clivis, not a line over each note at its own height. `_2` stops the line at its note.
+    // Each note keeps its own piece, run on to where the next one starts.
+    let inclinatum = |hi: usize| matches!(heads[hi].glyph, Some(G::PunctumInclinatum | G::PunctumInclinatumLiquescent));
+    let mut start = 0;
+    while start < bars.len() {
+        let mut end = start + 1;
+        while end < bars.len()
+            && bars[end].hi == bars[end - 1].hi + 1
+            && !notes[heads[bars[end - 1].hi].index].episema.is_some_and(|e| e.no_bridge)
+            && bars[end].below == bars[start].below
+            && !inclinatum(bars[end].hi)
+            && !inclinatum(bars[end - 1].hi)
+        {
+            end += 1;
+        }
+        let run = &mut bars[start..end];
+        let y = run
+            .iter()
+            .map(|b| b.y)
+            .fold(run[0].y, |a, y| if run[0].below { a.max(y) } else { a.min(y) });
+        for k in 0..run.len() {
+            // An ictus on the same side was set clear of the note's own episema; it moves out
+            // as far as the joined line does.
+            let moved = y - run[k].y;
+            if moved != 0.0 {
+                let side = if run[k].below {
+                    G::VerticalEpisemaBelow
+                } else {
+                    G::VerticalEpisemaAbove
+                };
+                for p in &mut built.pieces {
+                    if let Mark::Glyph { glyph, y: py, .. } = &mut p.mark
+                        && p.role == Ink::Ictus
+                        && p.note == run[k].id
+                        && *glyph == side
+                    {
+                        *py += moved;
+                    }
+                }
+            }
+            run[k].y = y;
+            if k + 1 < run.len() {
+                run[k].w = run[k].w.max(run[k + 1].x - run[k].x + EPISEMA_JOIN);
+            }
+        }
+        start = end;
+    }
+    for b in bars {
+        built.pieces.push(Piece {
+            mark: Mark::Rect {
+                x: b.x,
+                y: b.y - EPISEMA / 2.0,
+                w: b.w,
+                h: EPISEMA,
+            },
+            role: Ink::Episema,
+            note: b.id,
+            through: None,
+        });
     }
     // Ledger lines, one per head that needs them, merged where heads share a line.
     let mut ledgers: Vec<(i8, f32, f32, u32)> = Vec::new();

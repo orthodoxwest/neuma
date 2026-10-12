@@ -623,3 +623,21 @@ fn reparsing_an_edit_reads_as_parsing_it() {
     }
     assert!(reread > tried / 2, "{reread} of {tried}");
 }
+
+#[test]
+fn a_space_after_a_tag_still_ends_the_word() {
+    // `</nlba>` before the space: Gregorio still sets a word gap between `non` and `fran`.
+    let p = parse("(c4) <nlba>et(d) non(f)</nlba> fran(g)tur(g) (::)");
+    let words: Vec<(String, bool)> = p.score.syllables.iter().map(|s| (s.text.plain(), s.word_start)).collect();
+    assert_eq!(words[3], ("fran".to_string(), true));
+    assert_eq!(words[4], ("tur".to_string(), false));
+    assert!(!p.score.syllables[3].no_break_before, "the group ended before `fran`");
+    // A verbatim tag prints its text, so it's part of the word.
+    let v = parse("(c4) a(f)<sp>V/</sp> b(g) (::)");
+    assert_eq!(v.score.syllables[2].text.plain(), "℣ b");
+    assert!(!v.score.syllables[2].word_start);
+    // An unknown tag is set as text, so it doesn't end the word either.
+    let u = parse("(c4) a(f)<foo> b(g) (::)");
+    assert!(!u.score.syllables[2].word_start);
+    assert!(p.diagnostics.is_empty(), "{:?}", p.diagnostics);
+}
