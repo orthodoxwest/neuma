@@ -102,9 +102,9 @@ Lyric 214.54 149.27 14.70 s18 "ad"
 note PunctumQuadratum 257.87 117.47 n44
 note PunctumQuadratum 263.87 111.47 n45
 note PunctumQuadratum 269.87 117.47 n46
-episema rect 254.87 109.92 6.00 0.96 n44
-episema rect 260.87 100.99 6.00 0.96 n45
-episema rect 266.87 109.92 6.00 0.96 n46
+episema rect 254.87 100.99 6.30 0.96 n44
+episema rect 260.87 100.99 6.30 0.96 n45
+episema rect 266.87 100.99 6.00 0.96 n46
 Lyric 242.79 149.27 14.70 s19 "mor"
 note PunctumQuadratum 287.25 117.47 n47
 mora Mora 290.37 112.97 n47
@@ -263,9 +263,9 @@ Lyric 558.71 68.69 14.70 s18 "ad"
 note PunctumQuadratum 601.73 36.89 n44
 note PunctumQuadratum 607.73 30.89 n45
 note PunctumQuadratum 613.73 36.89 n46
-episema rect 598.73 29.34 6.00 0.96 n44
-episema rect 604.73 20.41 6.00 0.96 n45
-episema rect 610.73 29.34 6.00 0.96 n46
+episema rect 598.73 20.41 6.30 0.96 n44
+episema rect 604.73 20.41 6.30 0.96 n45
+episema rect 610.73 20.41 6.00 0.96 n46
 Lyric 586.65 68.69 14.70 s19 "mor"
 note PunctumQuadratum 630.80 36.89 n47
 mora Mora 633.92 32.39 n47

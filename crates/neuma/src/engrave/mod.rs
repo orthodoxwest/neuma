@@ -1591,6 +1591,75 @@ mod tests {
         assert!(eng.next_note.iter().any(Option::is_some) && eng.next_note.last() == Some(&None));
     }
 
+    /// The pieces of `role` in the engraving of `src`: each one's note, its top, and its left
+    /// and right edges, in the order drawn.
+    fn ink(src: &str, role: Ink) -> Vec<(u32, f32, f32, f32)> {
+        let eng = crate::parse(src).score.engrave(&crate::ApproxMeasure, &StyleOptions::default());
+        eng.segments
+            .iter()
+            .flat_map(|s| s.body.pieces.iter().map(move |p| (s, p)))
+            .filter(|(_, p)| p.role == role)
+            .map(|(s, p)| {
+                let [l, top, r, _] = p.ink_box();
+                (s.note_base + p.note.unwrap_or(0), top, l, r)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn episemata_on_neighbouring_notes_join() {
+        // As GregorioTeX draws them: one line over the clivis and the torculus, at the height
+        // of their top note, with no gap between the notes' pieces.
+        for src in ["(c4) a(h_g_)", "(c4) a(hg__)", "(c4) a(f_g_f_)"] {
+            let bars = ink(src, Ink::Episema);
+            assert!(bars.len() >= 2, "{src}: {bars:?}");
+            assert!(bars.iter().all(|b| b.1 == bars[0].1), "{src}: one height, {bars:?}");
+            for w in bars.windows(2) {
+                assert!(w[0].3 >= w[1].2, "{src}: no gap, {bars:?}");
+            }
+        }
+        // A pes keeps one below and one above, and separate neumes keep their own.
+        let pes = ink("(c4) a(f_g_)", Ink::Episema);
+        assert_ne!(pes[0].1, pes[1].1);
+        let apart = ink("(c4) a(g_ h_)", Ink::Episema);
+        assert_ne!(apart[0].1, apart[1].1);
+    }
+
+    #[test]
+    fn an_ictus_goes_below_unless_a_note_is_under_it() {
+        // GregorioTeX's defaults: the upper note of a pes, and of the pes ending a porrectus or
+        // a scandicus, takes its ictus above; every other note below, the first of a clivis
+        // and the middle of a torculus and a scandicus included.
+        let above = |src: &str| {
+            let t = ink(src, Ink::Ictus);
+            assert_eq!(t.len(), 1, "{src}");
+            let heads = crate::parse(src).score.engrave(&crate::ApproxMeasure, &StyleOptions::default());
+            let head = heads
+                .segments
+                .iter()
+                .flat_map(|s| s.body.heads.iter().map(move |h| (s.note_base + h.note, h)))
+                .find(|(n, _)| *n == t[0].0)
+                .map(|(_, h)| h.y)
+                .unwrap();
+            t[0].1 < head
+        };
+        for src in ["(c4) a(gh')", "(c4) a(hgh')", "(c4) a(fgh')", "(c4) a(ghgh')", "(c4) a(f!gh')"] {
+            assert!(above(src), "{src} above");
+        }
+        for src in [
+            "(c4) a(h'g)",
+            "(c4) a(gh'g)",
+            "(c4) a(h'gh)",
+            "(c4) a(fg'h)",
+            "(c4) a(g'h)",
+            "(c4) a(g')",
+        ] {
+            assert!(!above(src), "{src} below");
+        }
+        // A placement written in the source stands.
+        assert!(above("(c4) a(h'1g)"));
+    }
+
     #[test]
     fn dominican_bars_match_gregoriotex() {
         // Measured from GregorioTeX's output on a four-line staff (lines at -3, -1, 1, 3).

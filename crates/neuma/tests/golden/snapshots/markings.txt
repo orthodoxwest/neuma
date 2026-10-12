@@ -18,15 +18,15 @@ Lyric 75.60 68.69 14.70 s2 "pi"
 stem rect 98.90 24.89 0.77 14.83 n3
 note PunctumQuadratum 101.90 24.89 n3
 note PunctumQuadratum 107.90 30.89 n4
-episema rect 98.90 17.34 6.00 0.96 n3
-episema rect 104.90 20.41 6.00 0.96 n4
+episema rect 98.90 17.34 6.30 0.96 n3
+episema rect 104.90 17.34 6.00 0.96 n4
 Lyric 94.29 68.69 14.70 s3 "se"
 note PunctumQuadratum 124.78 36.89 n5
 note PunctumQuadratum 130.78 30.89 n6
 note PunctumQuadratum 136.78 36.89 n7
-episema rect 121.78 29.34 6.00 0.96 n5
-episema rect 127.78 20.41 6.00 0.96 n6
-episema rect 133.78 29.34 6.00 0.96 n7
+episema rect 121.78 20.41 6.30 0.96 n5
+episema rect 127.78 20.41 6.30 0.96 n6
+episema rect 133.78 20.41 6.00 0.96 n7
 Lyric 110.41 68.69 14.70 s4 "ma"
 note PunctumQuadratum 153.65 36.89 n8
 episema rect 150.65 43.54 6.00 0.96 n8
@@ -137,15 +137,15 @@ Lyric 74.75 68.69 14.70 s2 "pi"
 stem rect 97.20 24.89 0.77 14.83 n3
 note PunctumQuadratum 100.20 24.89 n3
 note PunctumQuadratum 106.20 30.89 n4
-episema rect 97.20 17.34 6.00 0.96 n3
-episema rect 103.20 20.41 6.00 0.96 n4
+episema rect 97.20 17.34 6.30 0.96 n3
+episema rect 103.20 17.34 6.00 0.96 n4
 Lyric 92.59 68.69 14.70 s3 "se"
 note PunctumQuadratum 122.22 36.89 n5
 note PunctumQuadratum 128.22 30.89 n6
 note PunctumQuadratum 134.22 36.89 n7
-episema rect 119.22 29.34 6.00 0.96 n5
-episema rect 125.22 20.41 6.00 0.96 n6
-episema rect 131.22 29.34 6.00 0.96 n7
+episema rect 119.22 20.41 6.30 0.96 n5
+episema rect 125.22 20.41 6.30 0.96 n6
+episema rect 131.22 20.41 6.00 0.96 n7
 Lyric 107.85 68.69 14.70 s4 "ma"
 note PunctumQuadratum 150.24 36.89 n8
 episema rect 147.24 43.54 6.00 0.96 n8
