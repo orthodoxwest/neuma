@@ -511,6 +511,23 @@ mod tests {
     }
 
     #[test]
+    fn british_spellings_take_their_stress() {
+        // The CMU dictionary spells it "offenses", so "offences" once fell back to stress on its
+        // first syllable: "do a·way mine óffences".
+        let i4 = Tone::parse("name: 1.4\nclef: c4\nmediant: f g hr 'g h.\ntermination: hr g f 'g h.").unwrap();
+        let p = point(
+            "Have mercy upon me, O God, after thy great goodness; * according to the multitude of thy mercies do away mine offences.",
+            &i4,
+        );
+        assert_eq!(
+            p.text.trim_end(),
+            "Have mercy upon me, O God, after thy great · góodness; * according to the multitude of thy mercies do away · mine offénces."
+        );
+        assert_eq!(stress("dishonour", 3), [0, 1, 0]);
+        assert_eq!(stress("ungodliness", 4), [0, 1, 0, 0]);
+    }
+
+    #[test]
     fn stress_is_char_safe() {
         // The last two bytes of ṹ are equal; the stem must still be cut by characters.
         let _ = point("maṹeth maṹeth * x", tone("8.G"));

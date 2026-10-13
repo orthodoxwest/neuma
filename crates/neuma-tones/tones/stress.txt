@@ -1,6 +1,9 @@
 # Lexical stress for words of the Book of Common Prayer's daily office and its Coverdale psalter, from the CMU
 # Pronouncing Dictionary (see NOTICE). One word per line with a digit per syllable: 1 primary,
-# 2 secondary, 0 none. Words stressed on the first syllable alone are left out.
+# 2 secondary, 0 none. Words stressed on the first syllable alone are left out. Psalter words the
+# dictionary lacks, such as British spellings ("offences", "dishonour") and older or derived forms
+# ("alway", "ungodliness"), were added by hand; without an entry they would be stressed on the first
+# syllable. (Archaic verb endings need no entry: "preserveth" takes the stress of "preserve".)
 abandon 010
 abandoned 010
 aberdeen 102
@@ -78,6 +81,7 @@ advantage 010
 advent 12
 adversaries 1020
 adversary 1020
+adversities 0100
 adversity 0102
 afar 01
 affection 010
@@ -87,6 +91,7 @@ afflicted 010
 affliction 010
 afflictions 010
 afford 01
+afore 01
 aforesaid 012
 afraid 01
 afresh 01
@@ -119,6 +124,7 @@ already 010
 alsace 01
 although 21
 altogether 2010
+alway 01
 always 12
 amazed 01
 ambassadors 0100
@@ -202,6 +208,7 @@ archangels 210
 archbishop 110
 archippus 210
 architect 102
+aright 01
 arise 01
 arisen 010
 arising 010
@@ -248,6 +255,7 @@ astonished 010
 astorga 010
 astray 01
 asunder 010
+athirst 01
 atrocious 010
 attachment 010
 attacked 01
@@ -281,6 +289,7 @@ avoid 01
 await 01
 awaited 010
 awake 01
+awaked 01
 awakening 0100
 awarded 010
 away 01
@@ -356,6 +365,7 @@ bestowed 01
 bestowing 010
 bethlehem 102
 betide 01
+betimes 01
 betrayed 01
 between 01
 betwixt 01
@@ -363,6 +373,10 @@ beware 01
 beyond 01
 birthday 12
 birthdays 12
+blaspheme 01
+blasphemed 01
+blasphemer 010
+blasphemers 010
 bohemia 0100
 bologna 010
 bordeaux 01
@@ -624,6 +638,7 @@ defender 010
 defending 010
 defense 01
 deferred 01
+defiled 01
 degenerated 01020
 degree 01
 delay 01
@@ -689,11 +704,14 @@ despise 01
 despised 01
 despising 010
 despite 01
+despitefully 0100
+despitefulness 0100
 destitute 102
 destroy 01
 destroyed 01
 destroyer 010
 destruction 010
+destructions 010
 detailed 01
 detained 01
 detected 010
@@ -737,15 +755,19 @@ discharged 01
 discharging 010
 disciple 010
 disciples 010
+discomfit 010
+discomfited 0100
 discomfort 010
 discourses 010
 discover 010
 discovered 010
 discovering 0100
 discretion 010
+disdainfully 0100
 disease 01
 diseases 010
 disguised 01
+dishonour 010
 disjointed 010
 dismayed 01
 dismissal 010
@@ -762,6 +784,7 @@ displeasure 010
 disposed 01
 disputing 010
 dissemble 010
+dissembled 010
 dissolves 01
 distended 010
 distil 01
@@ -970,6 +993,7 @@ extinguish 010
 extinguished 010
 extol 01
 extolled 01
+extortioner 0100
 extraordinary 201020
 extreme 01
 exult 01
@@ -1008,6 +1032,7 @@ foreshadows 010
 foretell 01
 foretold 01
 forever 010
+forgat 01
 forgave 01
 forget 01
 forgetful 010
@@ -1017,6 +1042,7 @@ forgiveness 010
 forgiving 010
 forgotten 010
 forlorn 01
+fornication 2010
 forsake 01
 forsaken 010
 forsaking 010
@@ -1065,6 +1091,7 @@ gratitude 102
 grenoble 010
 gridiron 120
 habitation 2010
+habitations 2010
 headlong 12
 heliopolis 20100
 henceforth 11
@@ -1146,6 +1173,7 @@ incensed 12
 incited 210
 incline 21
 inclined 21
+inclosed 01
 includes 21
 including 210
 incomparable 21000
@@ -1155,6 +1183,7 @@ increase 21
 increased 21
 indeed 21
 indignation 2010
+inditing 010
 induced 21
 indulgent 210
 inebriated 21020
@@ -1175,6 +1204,7 @@ informed 21
 inhabitant 0100
 inhabitants 0100
 inhabited 2100
+inhabiters 0100
 inhabiting 0100
 inherit 210
 inheritance 2100
@@ -1187,6 +1217,7 @@ inquisition 2010
 inscribed 21
 inseparable 21000
 insignia 2120
+insomuch 201
 inspiration 2010
 inspired 210
 installed 21
@@ -1220,6 +1251,7 @@ interred 21
 intervention 2010
 intestines 210
 intimidating 21020
+intreated 010
 intrepidity 21002
 intrigues 21
 introduction 2010
@@ -1257,6 +1289,7 @@ justina 010
 kiev 21
 lacerate 102
 lament 01
+lamentation 2010
 lascivious 0100
 leander 010
 lentini 010
@@ -1292,6 +1325,7 @@ majestic 010
 malicious 010
 maliciously 0100
 maltreated 010
+manasses 010
 manhood 12
 manifest 102
 manifestation 20010
@@ -1322,6 +1356,7 @@ mediation 2010
 mediator 1020
 meditating 1020
 meditation 2010
+melchisedech 0100
 memento 010
 memnon 12
 memorial 0100
@@ -1341,6 +1376,7 @@ military 1020
 millstone 12
 miraculous 0100
 miraculously 01000
+miscarry 010
 misdeeds 01
 misfortune 010
 misguided 010
@@ -1386,6 +1422,8 @@ obedient 0100
 obey 01
 obeyed 01
 objected 010
+oblation 010
+oblations 010
 obscures 01
 observance 010
 observances 0100
@@ -1402,6 +1440,8 @@ occurred 01
 occurs 01
 octavius 0100
 october 010
+offence 01
+offences 010
 offend 01
 offended 010
 officials 010
@@ -1448,6 +1488,7 @@ overcame 101
 overcome 102
 overcoming 1020
 overflowing 1020
+overflowings 2010
 overflows 102
 overshadow 1010
 overshadowed 2010
@@ -1466,6 +1507,7 @@ pantheon 102
 paradise 102
 paralytic 2010
 partake 01
+partaker 010
 particularly 21000
 passover 120
 pastime 12
@@ -1485,6 +1527,7 @@ pelagians 0100
 pelino 010
 penetrated 1020
 pentecost 102
+peradventure 2010
 perceive 01
 perfect 01
 perfection 010
@@ -1540,6 +1583,7 @@ possess 01
 possessed 01
 possessing 010
 possession 010
+posterities 0100
 posterity 0100
 potenza 010
 praiseworthy 120
@@ -1667,6 +1711,7 @@ recovered 010
 recovery 010
 redeem 01
 redeemed 01
+redeemer 010
 redemption 010
 reduced 01
 refer 01
@@ -1761,6 +1806,10 @@ repressed 01
 repressing 010
 reprieve 01
 reproach 01
+reproof 01
+reproofs 01
+reprove 01
+reproved 01
 repudiated 01020
 reputation 2010
 request 01
@@ -1883,6 +1932,7 @@ shadow 12
 shadows 12
 signify 102
 silvester 010
+similitude 0100
 simplicity 0100
 sinai 12
 sincere 01
@@ -1915,6 +1965,7 @@ subdued 01
 subject 01
 subjected 010
 subjecting 010
+subjection 010
 sublime 01
 submerged 01
 submit 01
@@ -1932,6 +1983,7 @@ sundays 12
 superior 0100
 superstitious 2010
 supervising 1020
+supplication 2010
 supplies 01
 supply 01
 supplying 010
@@ -2021,6 +2073,7 @@ transfixed 01
 transgress 01
 transgression 010
 transgressions 010
+transgressors 010
 transitory 1020
 translate 01
 translated 010
@@ -2039,6 +2092,7 @@ triumphantly 0100
 twilight 12
 twofold 11
 unable 010
+unadvisedly 20100
 unafraid 201
 unalloyed 012
 unawares 201
@@ -2051,7 +2105,9 @@ unceasing 010
 uncertain 010
 unchanged 01
 unclean 01
+uncorrupt 001
 undaunted 010
+undefiled 2010
 undergo 201
 undergoing 2010
 undergone 201
@@ -2068,8 +2124,11 @@ undone 01
 unending 010
 unexpectedly 20100
 unfailing 010
+unfaithfulness 0100
+unfeigned 01
 unfettered 010
 unfold 01
+ungodliness 0100
 ungodly 010
 unhappiness 0100
 unharmed 01
@@ -2087,6 +2146,12 @@ unjust 01
 unknown 01
 unless 01
 unmoved 01
+unpatient 010
+unperfect 010
+unquiet 010
+unrighteous 010
+unrighteously 0100
+unrighteousness 0100
 unruly 010
 unscathed 01
 unshaken 010
@@ -2096,11 +2161,14 @@ until 01
 untimely 010
 untouched 01
 untroubled 010
+untruly 010
 unwise 01
 unworthy 010
 unwound 01
 upheld 01
 uphold 01
+upholden 010
+upholder 010
 upholding 010
 upon 01
 upright 01
@@ -2134,10 +2202,12 @@ westphalia 1200
 whatever 210
 whatsoever 2010
 whenever 010
+whensoever 2010
 whereas 01
 whereby 01
 wherefore 01
 wherein 01
+whereof 01
 whereupon 101
 wherewithal 102
 whirlwind 12
@@ -2145,6 +2215,7 @@ whoever 010
 whomsoever 2010
 whosoever 2010
 winchester 120
+withal 01
 withdraw 01
 withdrawn 01
 withdrew 01
