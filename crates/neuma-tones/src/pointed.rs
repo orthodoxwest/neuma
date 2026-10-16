@@ -595,7 +595,7 @@ impl Pointed {
         for v in &mut out.verses {
             for p in &mut v.parts {
                 let mut syls = Vec::with_capacity(p.syllables.len() * 2);
-                let marked: Vec<Syllable> = p.syllables.drain(..).collect();
+                let marked = std::mem::take(&mut p.syllables);
                 for (i, s) in marked.iter().enumerate() {
                     // A piece before a `·` inside its word is split as the whole word from it
                     // on would be ("ope·rátion": "o-pe", as in "o-pe-ra-tion"), not as a word
