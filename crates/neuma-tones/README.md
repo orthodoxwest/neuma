@@ -50,12 +50,13 @@ half with marks is kept as written, so correcting one half and pointing again ke
 The pointer chooses among the ways to place the cadence's accents on the last syllables with
 a linear model over the syllables' lexical stress (from a stress table drawn from the CMU
 Pronouncing Dictionary, `tones/stress.txt`), the small words involved, how many syllables
-follow the last accent, and the gap between accents. Its weights (`tones/pointing.weights`)
-were fitted to a hand-pointed English psalter. On psalms held out from fitting (split into
-syllables as the hand split them) it agrees with the hand pointing on about 81% of
+follow the last accent, the gap between accents, the stressed syllables passed over, and the
+shape of the tone's cadence. Its weights (`tones/pointing.weights`) were fitted to a
+hand-pointed English psalter with `scripts/fit_pointing.py`. On psalms held out from fitting
+(split into syllables as the hand split them) it agrees with the hand pointing on about 85% of
 half-verses, where the same hand agrees with itself across settings of a psalm about 89% of
-the time. It is 80% sure or more of about 70% of half-verses, and those agree about 92% of
-the time.
+the time. It is 80% sure or more of about two thirds of half-verses, and those agree about 92%
+of the time.
 
 ## A pointed psalter's display
 

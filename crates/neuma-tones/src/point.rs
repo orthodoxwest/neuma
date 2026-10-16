@@ -5,11 +5,12 @@
 //! half-verse, but not always on the last one ("cleanse me · fróm my sin", "bless · yé the
 //! Lord"), keeping a rhythm of strong and weak syllables into the ending. The pointer scores
 //! every way to place the accents among the last syllables with a linear model over the
-//! syllables' lexical stress (from a stress dictionary), the words involved, how many syllables
-//! follow the last accent, and the gap between accents. The weights were fitted to a hand-pointed
-//! English psalter. On psalms held out from fitting (with the hand's own syllable splits) they
-//! agree with it on about 81% of the half-verses; the hand agrees with itself across different
-//! settings of a psalm about 89% of the time.
+//! syllables' lexical stress (from a stress dictionary), the small words involved, how many
+//! syllables follow the last accent, the gap between accents, the stressed syllables passed over,
+//! and the shape of the tone's cadence. The weights were fitted to a hand-pointed English psalter
+//! (`scripts/fit_pointing.py`). On psalms held out from fitting (with the hand's own syllable
+//! splits) they agree with it on about 85% of the half-verses; the hand agrees with itself
+//! across different settings of a psalm about 89% of the time.
 //!
 //! Each half-verse comes with a confidence (the model's probability for its choice), so an
 //! editor can flag the doubtful ones. Halves that already carry a mark (an accent, `·` or `–`)
@@ -121,13 +122,14 @@ fn point_part(part: &mut Part, cadence: &Cadence, zero: bool) -> f32 {
     }
     let ctx = Context::new(part);
     let tag = tag(part.kind, accents, zero);
+    let shape = shape(&tag, cadence);
     let ok = accentable(part);
     let w = weights();
     let mut scored: Vec<(f32, Vec<usize>)> = candidates(&ok, accents)
         .into_iter()
         .map(|c| {
             (
-                features(&ctx, &c, &tag)
+                features(&ctx, &c, &tag, &shape)
                     .iter()
                     .map(|f| w.get(f.as_str()).copied().unwrap_or(0.0))
                     .sum(),
@@ -175,6 +177,55 @@ fn point_part(part: &mut Part, cadence: &Cadence, zero: bool) -> f32 {
         s.joint = Joint::Dot;
     }
     confidence
+}
+
+/// A hand-pointed half-verse as the pointer sees it, for fitting its weights
+/// (`examples/pointing_data.rs`): each way it could place the accents, as the features scored,
+/// and which of them the hand chose.
+#[doc(hidden)]
+#[derive(Clone, Debug)]
+pub struct FitHalf {
+    /// The verse's index in the text.
+    pub verse: usize,
+    pub part: VersePart,
+    pub candidates: Vec<Vec<String>>,
+    /// The hand's choice among `candidates`; `None` when the pointer could not make it.
+    pub chosen: Option<usize>,
+}
+
+/// Each half-verse of hand-pointed `text` whose accents the pointer would place for `tone`:
+/// one with as many accents marked as the cadence has, and no dashes.
+#[doc(hidden)]
+#[must_use]
+pub fn fit_halves(text: &str, tone: &Tone) -> Vec<FitHalf> {
+    let text = Pointed::parse(text).syllabified();
+    let mut out = Vec::new();
+    for (vi, verse) in text.verses.iter().enumerate() {
+        for part in &verse.parts {
+            let cadence = match part.kind {
+                VersePart::Flex => continue,
+                VersePart::Mediant => &tone.mediant,
+                VersePart::Termination => &tone.termination,
+            };
+            let accents = cadence.accents();
+            let hand: Vec<usize> = (0..part.syllables.len()).filter(|&i| part.syllables[i].accent).collect();
+            let dashes = part.omitted > 0 || part.held_end > 0 || part.syllables.iter().any(|s| s.held);
+            if accents == 0 || hand.len() != accents || dashes {
+                continue;
+            }
+            let ctx = Context::new(part);
+            let tag = tag(part.kind, accents, may_end_on_accent(part.kind, tone));
+            let shape = shape(&tag, cadence);
+            let all = candidates(&accentable(part), accents);
+            out.push(FitHalf {
+                verse: vi,
+                part: part.kind,
+                chosen: all.iter().position(|c| *c == hand),
+                candidates: all.iter().map(|c| features(&ctx, c, &tag, &shape)).collect(),
+            });
+        }
+    }
+    out
 }
 
 /// The softmax temperature that turns score margins into probabilities, fitted with the
@@ -226,6 +277,21 @@ fn tag(kind: VersePart, accents: usize, zero: bool) -> String {
     format!("{k}{accents}:z{}", u8::from(zero))
 }
 
+/// The tag with the cadence's slots, `A` an accent, `F` one syllable, `O` any number: tones
+/// with more preparatory syllables, or room between their accents, are pointed differently.
+fn shape(tag: &str, cadence: &Cadence) -> String {
+    let slots: String = cadence
+        .slots
+        .iter()
+        .map(|s| match s {
+            Slot::Accent(_) => 'A',
+            Slot::Fixed(_) => 'F',
+            Slot::Open(_) => 'O',
+        })
+        .collect();
+    format!("{tag}:{slots}")
+}
+
 /// Ways to place `accents` accents on the accentable (`ok`) syllables among the last of them:
 /// the last accent at most four syllables from the end, all within the last nine.
 fn candidates(ok: &[bool], accents: usize) -> Vec<Vec<usize>> {
@@ -260,8 +326,6 @@ fn candidates(ok: &[bool], accents: usize) -> Vec<Vec<usize>> {
 /// Each syllable's word and its place in it.
 struct Context {
     classes: Vec<String>,
-    /// Each syllable's word, for monosyllables; empty otherwise.
-    words: Vec<String>,
     /// Whether punctuation follows the syllable.
     pauses: Vec<bool>,
     /// Which word each syllable belongs to.
@@ -271,7 +335,6 @@ struct Context {
 impl Context {
     fn new(part: &Part) -> Context {
         let mut classes = Vec::with_capacity(part.syllables.len());
-        let mut words = Vec::with_capacity(part.syllables.len());
         let syl = &part.syllables;
         let pauses = syl
             .iter()
@@ -293,21 +356,14 @@ impl Context {
             let n = j - i;
             if n == 1 {
                 classes.push(if is_function(&word) { format!("f:{word}") } else { "M".to_string() });
-                words.push(word);
             } else {
                 let st = stress(&word, n);
                 classes.extend(st.iter().map(|d| format!("P{d}")));
-                words.extend(std::iter::repeat_n(String::new(), n));
             }
             word_of.extend(std::iter::repeat_n(i, j - i));
             i = j;
         }
-        Context {
-            classes,
-            words,
-            pauses,
-            word_of,
-        }
+        Context { classes, pauses, word_of }
     }
 
     fn class(&self, i: Option<usize>, edge: &str) -> String {
@@ -318,27 +374,27 @@ impl Context {
     }
 }
 
-fn features(ctx: &Context, acc: &[usize], tag: &str) -> Vec<String> {
+fn features(ctx: &Context, acc: &[usize], tag: &str, shape: &str) -> Vec<String> {
     let n = ctx.classes.len();
     let last = acc[acc.len() - 1];
     let after = (n - 1 - last).min(4);
+    // Stressed syllables passed over: after the last accent, and between two accents.
+    let strong = |r: Range<usize>| ctx.classes[r].iter().filter(|c| *c == "M" || *c == "P1").count().min(2);
     let mut f = vec![
         format!("after|{tag}|{after}"),
         format!("fin|{tag}|{}|{after}", ctx.class(Some(n - 1), "END")),
+        format!("skip|{tag}|{}", strong(last + 1..n)),
+        // The cadence's own shape: how many preparatory syllables, where its accents fall.
+        format!("safter|{shape}|{after}"),
+        format!("scls|{shape}|{}", ctx.class(Some(last), "END")),
     ];
     for (j, &a) in acc.iter().enumerate() {
         let role = if j + 1 == acc.len() { 'L' } else { 'F' };
         let c = ctx.class(Some(a), "END");
-        let next = ctx.class(Some(a + 1), "END");
         f.push(format!("cls|{role}|{c}"));
-        f.push(format!("nxt|{role}|{next}"));
+        f.push(format!("nxt|{role}|{}", ctx.class(Some(a + 1), "END")));
         f.push(format!("prv|{role}|{}", ctx.class(a.checked_sub(1), "BEG")));
-        f.push(format!("pair|{role}|{c}|{next}"));
         f.push(format!("tag|{role}|{tag}|{c}"));
-        f.push(format!("tri|{role}|{}|{c}|{next}", ctx.class(a.checked_sub(1), "BEG")));
-        if !ctx.words[a].is_empty() {
-            f.push(format!("word|{role}|{}", ctx.words[a]));
-        }
         f.push(format!("pause|{role}|{}", u8::from(ctx.pauses[a])));
         f.push(format!(
             "lastword|{role}|{}|{}",
@@ -347,7 +403,10 @@ fn features(ctx: &Context, acc: &[usize], tag: &str) -> Vec<String> {
         ));
     }
     for pair in acc.windows(2) {
-        f.push(format!("gap|{tag}|{}", (pair[1] - pair[0] - 1).min(4)));
+        let gap = (pair[1] - pair[0] - 1).min(4);
+        f.push(format!("gap|{tag}|{gap}"));
+        f.push(format!("sgap|{shape}|{gap}"));
+        f.push(format!("skipmid|{tag}|{}", strong(pair[0] + 1..pair[1])));
     }
     f
 }

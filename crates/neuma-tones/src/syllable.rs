@@ -397,7 +397,8 @@ fn exception(word: &str) -> Option<&'static [usize]> {
         "cassia" => &[3, 4],
         "business" => &[4],
         "marriage" => &[3],
-        "create" | "created" | "creator" => &[2, 4],
+        "create" => &[3],
+        "created" | "creator" | "creation" => &[3, 4],
         "hereafter" => &[4, 6],
         "herein" | "hereof" | "hereby" => &[4],
         "beyond" => &[2],
@@ -530,6 +531,9 @@ mod tests {
             ("aßtra", "a-ßtra"),
             ("oþra", "o-þra"),
             ("Cæsar", "Cæ-sar"),
+            ("create", "cre-ate"),
+            ("created", "cre-a-ted"),
+            ("creation", "cre-a-tion"),
         ] {
             if split(w) != want {
                 bad.push(format!("{w}: {} (want {want})", split(w)));

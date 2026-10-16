@@ -8,7 +8,7 @@ use std::ops::Range;
 
 use neuma::{Diagnostic, Severity};
 
-use crate::syllable::split_points;
+use crate::syllable::{fold, split_points};
 
 /// A parsed pointed text.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -604,7 +604,23 @@ impl Pointed {
                     for next in marked[i + 1..].iter().take_while(|n| n.joint == Joint::Dot) {
                         word.push_str(&next.text);
                     }
-                    let points: Vec<usize> = split_points(&word).into_iter().filter(|&p| p < s.text.len()).collect();
+                    let mut points: Vec<usize> = split_points(&word).into_iter().filter(|&p| p < s.text.len()).collect();
+                    // Unless that leaves a piece with no vowel: "burnt·offerings" is "burnt",
+                    // not "burn-t".
+                    let vowel = |piece: &str| {
+                        piece
+                            .chars()
+                            .any(|c| matches!(fold(c), 'a' | 'e' | 'i' | 'o' | 'u' | 'y' | 'æ' | 'œ'))
+                    };
+                    let mut prev = 0;
+                    let mut vowelless = false;
+                    for &p in points.iter().chain([&s.text.len()]) {
+                        vowelless |= !vowel(&s.text[prev..p]);
+                        prev = p;
+                    }
+                    if word.len() > s.text.len() && vowelless {
+                        points = split_points(&s.text);
+                    }
                     split_syllable(s.clone(), &points, &mut syls);
                 }
                 p.syllables = syls;
@@ -839,5 +855,9 @@ mod tests {
             .map(|s| s.text.as_str())
             .collect();
         assert_eq!(cadence, ["rá", "thér"]);
+        // A piece that would leave a consonant on its own is split as a word.
+        let p = parse("x * in burnt·offérings.").syllabified();
+        let texts: Vec<&str> = p.verses[0].parts[1].syllables.iter().map(|s| s.text.as_str()).collect();
+        assert_eq!(texts, ["in", "burnt", "of", "fér", "ings."]);
     }
 }
