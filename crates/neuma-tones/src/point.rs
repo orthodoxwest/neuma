@@ -277,19 +277,21 @@ fn tag(kind: VersePart, accents: usize, zero: bool) -> String {
     format!("{k}{accents}:z{}", u8::from(zero))
 }
 
-/// The tag with the cadence's slots, `A` an accent, `F` one syllable, `O` any number: tones
-/// with more preparatory syllables, or room between their accents, are pointed differently.
+/// The tag with the cadence's shape: its preparatory syllables, and for two accents what comes
+/// between them (`F` one syllable, `O` any number). Tones with more preparatory syllables, or
+/// room between their accents, are pointed differently.
 fn shape(tag: &str, cadence: &Cadence) -> String {
-    let slots: String = cadence
-        .slots
-        .iter()
-        .map(|s| match s {
-            Slot::Accent(_) => 'A',
-            Slot::Fixed(_) => 'F',
-            Slot::Open(_) => 'O',
-        })
+    let accents: Vec<usize> = (0..cadence.slots.len())
+        .filter(|&i| matches!(cadence.slots[i], Slot::Accent(_)))
         .collect();
-    format!("{tag}:{slots}")
+    let between: String = match accents[..] {
+        [a, b, ..] => cadence.slots[a + 1..b]
+            .iter()
+            .map(|s| if matches!(s, Slot::Open(_)) { 'O' } else { 'F' })
+            .collect(),
+        _ => String::new(),
+    };
+    format!("{tag}:p{}:{between}", cadence.preparatory())
 }
 
 /// Ways to place `accents` accents on the accentable (`ok`) syllables among the last of them:

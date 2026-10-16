@@ -15,8 +15,11 @@ from scipy.optimize import minimize
 
 
 def load(path):
+    """The halves with a choice to make, and how many the pointer gets right and wrong without one."""
     halves = [json.loads(l) for l in open(path, encoding='utf-8')]
-    return [h for h in halves if h['chosen'] is not None and len(h['candidates']) > 1]
+    unreachable = sum(h['chosen'] is None for h in halves)
+    only = sum(h['chosen'] is not None and len(h['candidates']) == 1 for h in halves)
+    return [h for h in halves if h['chosen'] is not None and len(h['candidates']) > 1], only, unreachable
 
 
 def index(halves):
@@ -81,12 +84,14 @@ def held_out(halves, l2, folds):
     return results
 
 
-def report(results, t):
+def report(results, t, only=0, unreachable=0):
     agree = [int(np.argmax(s)) == h['chosen'] for h, s in results]
+    total = len(agree) + only + unreachable
+    print(f'held out, of all {total} halves: {(sum(agree) + only) / total:.1%}')
     conf = [1.0 / np.exp((s - s.max()) / t).sum() for _, s in results]
     sure = [a for a, c in zip(agree, conf) if c >= 0.8]
     builtin = [a for (h, _), a in zip(results, agree) if h['id'].endswith('|1')]
-    print(f'held out: {np.mean(agree):.1%} of {len(agree)} halves; built-in tones {np.mean(builtin):.1%}; '
+    print(f'  of the {len(agree)} with a choice: {np.mean(agree):.1%}; built-in tones (ids ending |1) {np.mean(builtin):.1%}; '
           f'sure {len(sure) / len(agree):.1%}, agreeing {np.mean(sure):.1%}')
 
 
@@ -100,15 +105,15 @@ def main():
     a = argparse.ArgumentParser()
     a.add_argument('data')
     a.add_argument('--l2', type=float, default=0.3)
-    a.add_argument('--folds', type=int, default=0)
+    a.add_argument('--folds', type=int, default=10, help='0 skips the held-out report and leaves the temperature at 1')
     a.add_argument('--out')
     args = a.parse_args()
-    halves = load(args.data)
+    halves, only, unreachable = load(args.data)
     t = 1.0
     if args.folds:
         results = held_out(halves, args.l2, args.folds)
         t = float(temperature(results))
-        report(results, t)
+        report(results, t, only, unreachable)
         print(f'temperature {t:.1f}')
     if args.out:
         w = fit(halves, args.l2)

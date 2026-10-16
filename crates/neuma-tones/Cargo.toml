@@ -16,6 +16,10 @@ default = ["pointing"]
 # about 50 KB. Without it, half-verses with no marks are set as `auto_point` off sets them.
 pointing = []
 
+[[example]]
+name = "pointing_data"
+required-features = ["pointing"]
+
 [dependencies]
 neuma.workspace = true
 
