@@ -311,8 +311,8 @@ assert_eq!(&text[first.span.clone()], "O");
 Hand-pointed text is kept as written, so a correction survives pointing again. The pointer is
 a small linear model over lexical stress (from the CMU Pronouncing Dictionary) and the shape of
 the cadence, fitted to a hand-pointed English psalter. On psalms held out from fitting it
-agrees with the hand pointing on about 81% of half-verses; it is 80% sure or more of about 70%
-of them, and those agree about 92% of the time. The ones below 80% come back as `point::unsure`
+agrees with the hand pointing on about 85% of half-verses; it is 80% sure or more of about two
+thirds of them, and those agree about 92% of the time. The ones below 80% come back as `point::unsure`
 diagnostics to check. The Solesmes tones and their usual endings are built in, and a tone of
 your own is a few lines of text. See [crates/neuma-tones](crates/neuma-tones/README.md).
 

@@ -85,6 +85,9 @@ pub use apply::{Accents, Intone, PsalmNote, PsalmOptions, PsalmSetting, ToneRole
 pub use chant::{AnyChant, PsalmChant};
 pub use display::{PsalmDisplay, PsalmRun, PsalmRunKind, PsalmSyllable, PsalmVerse};
 #[cfg(feature = "pointing")]
+#[doc(hidden)]
+pub use point::{FitHalf, fit_halves};
+#[cfg(feature = "pointing")]
 pub use point::{HalfPointing, Pointing, point};
 pub use pointed::VersePart;
 pub use tone::{Cadence, Slot, Tone, ToneError};
