@@ -595,8 +595,17 @@ impl Pointed {
         for v in &mut out.verses {
             for p in &mut v.parts {
                 let mut syls = Vec::with_capacity(p.syllables.len() * 2);
-                for s in p.syllables.drain(..) {
-                    split_syllable(s, &mut syls);
+                let marked: Vec<Syllable> = p.syllables.drain(..).collect();
+                for (i, s) in marked.iter().enumerate() {
+                    // A piece before a `·` inside its word is split as the whole word from it
+                    // on would be ("ope·rátion": "o-pe", as in "o-pe-ra-tion"), not as a word
+                    // of its own ("ope", like "hope").
+                    let mut word = s.text.clone();
+                    for next in marked[i + 1..].iter().take_while(|n| n.joint == Joint::Dot) {
+                        word.push_str(&next.text);
+                    }
+                    let points: Vec<usize> = split_points(&word).into_iter().filter(|&p| p < s.text.len()).collect();
+                    split_syllable(s.clone(), &points, &mut syls);
                 }
                 p.syllables = syls;
             }
@@ -605,13 +614,13 @@ impl Pointed {
     }
 }
 
-/// Splits one marked syllable further by the syllabifier. A hyphen left in its text is
-/// only text ("\-dashes\-"), kept as it is.
-fn split_syllable(s: Syllable, out: &mut Vec<Syllable>) {
+/// Splits one marked syllable further at `points`, byte offsets in its text from the
+/// syllabifier. A hyphen left in its text is only text ("\-dashes\-"), kept as it is.
+fn split_syllable(s: Syllable, points: &[usize], out: &mut Vec<Syllable>) {
     // Pieces as (text, byte offset of the text within s.text).
     let mut pieces: Vec<(String, usize)> = Vec::new();
     let mut prev = 0;
-    for p in split_points(&s.text) {
+    for &p in points {
         pieces.push((s.text[prev..p].to_string(), prev));
         prev = p;
     }
@@ -810,5 +819,25 @@ mod tests {
         assert!(t.iter().all(|s| s.span.len() == s.text.len()), "{t:?}");
         assert!(t[10].accent && !t[9].accent);
         assert!(p.to_text().contains("blood\\-guiltiness"));
+    }
+
+    #[test]
+    fn splits_a_piece_before_a_dot_as_part_of_its_word() {
+        let p = parse("in ope·rátion, toge·thér * them that perse·cúte me, thine ene·my.").syllabified();
+        let texts: Vec<Vec<&str>> = p.verses[0]
+            .parts
+            .iter()
+            .map(|p| p.syllables.iter().map(|s| s.text.as_str()).collect())
+            .collect();
+        assert_eq!(texts[0], ["in", "o", "pe", "rá", "tion,", "to", "ge", "thér"]);
+        assert_eq!(texts[1], ["them", "that", "per", "se", "cúte", "me,", "thine", "e", "ne", "my."]);
+        // The `·` still starts the cadence on the piece after it.
+        let cadence: Vec<&str> = p.verses[0].parts[0]
+            .syllables
+            .iter()
+            .filter(|s| s.cadence)
+            .map(|s| s.text.as_str())
+            .collect();
+        assert_eq!(cadence, ["rá", "thér"]);
     }
 }
