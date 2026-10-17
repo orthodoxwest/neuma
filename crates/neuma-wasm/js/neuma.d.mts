@@ -281,6 +281,7 @@ export type OfficePartKind =
   | "credo"
   | "sanctus"
   | "agnus"
+  | "dismissal"
   | "other";
 
 /** A score's library entry (see the README). */
