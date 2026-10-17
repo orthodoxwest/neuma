@@ -484,8 +484,6 @@ impl Parser<'_, '_> {
                         Some(d @ b'1'..=b'8') => {
                             self.i += 1;
                             note.above_sign = Some(d - b'0');
-                            self.sink
-                                .info(self.span(start), "gabc::above-sign", "signs above the staff aren't drawn yet");
                         }
                         Some(b'0') => {
                             self.i += 1;

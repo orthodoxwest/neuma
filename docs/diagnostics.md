@@ -54,7 +54,6 @@ engine renders what it can and says what it did.
 | `gabc::zero-width` | info | the `{…}` | | Notes in `{…}` take their own width. Reported once per score. |
 | `gabc::lined-note` | warning | the note | | Notes surrounded by lines are drawn without the lines. |
 | `gabc::linea` | warning | the note | | The linea is drawn as a punctum. |
-| `gabc::above-sign` | info | the sign | | Signs above the staff (`r1`–`r8`) aren't drawn yet. |
 | `gabc::tuning-ignored` | info | the tag | | A placement fine-tuning tag; the default placement is used. |
 | `gabc::unsupported-tag` | warning | the tag | | A `[name:…]` tag that isn't supported is skipped. |
 

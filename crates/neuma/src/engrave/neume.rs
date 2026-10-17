@@ -57,6 +57,11 @@ const ICTUS_IN_SPACE: f32 = -0.2;
 const ICTUS_PAST_INCLINATUM: f32 = 0.3;
 /// How much farther an ictus goes to clear an episema on the same side.
 const ICTUS_PAST_EPISEMA: f32 = 0.4;
+/// The lowest staff position a sign above the staff (`r1`–`r8`) takes: the space above the
+/// top line, GregorioTeX's `\gre@pitch@raresign` on a four-line staff.
+const ABOVE_SIGN: i8 = 4;
+/// The least gap between a sign above the staff and the ink under it, in staff spaces.
+const ABOVE_SIGN_GAP: f32 = 0.4;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Kind {
@@ -1356,6 +1361,44 @@ pub(crate) fn add_markings(built: &mut Built, kind: Kind, notes: &[Note], note_b
                     y: -(sp as f32) + off,
                 },
                 role: Ink::Ictus,
+                note: id,
+                through: None,
+            });
+        }
+        // A sign above the staff (`r1`–`r8`), centered on the note: in the space above the
+        // staff, as GregorioTeX sets them, or clear above a note or mark that is that high.
+        if let Some(s) = note.above_sign {
+            let (glyph, role) = match s {
+                1 => (G::AcuteAccent, Ink::Accent),
+                2 => (G::GraveAccent, Ink::Accent),
+                3 => (G::Circle, Ink::Accent),
+                4 => (G::Semicircle, Ink::Accent),
+                5 => (G::ReversedSemicircle, Ink::Accent),
+                6 => (G::Flat, Ink::Accidental),
+                7 => (G::Natural, Ink::Accidental),
+                _ => (G::Sharp, Ink::Accidental),
+            };
+            let (a, _, c, d) = glyph.ink();
+            let x = h.center() - (a + c) / 2.0;
+            let (left, right) = (x + a, x + c);
+            // The highest ink under the sign: noteheads, then marks already placed.
+            let under = heads
+                .iter()
+                .filter(|o| o.x < right && o.right() > left)
+                .map(|o| o.top)
+                .chain(
+                    built
+                        .pieces
+                        .iter()
+                        .map(Piece::ink_box)
+                        .filter(|b| b[0] < right && b[2] > left)
+                        .map(|b| b[1]),
+                )
+                .fold(f32::INFINITY, f32::min);
+            let y = (-f32::from(ABOVE_SIGN)).min(under - ABOVE_SIGN_GAP - d);
+            built.pieces.push(Piece {
+                mark: Mark::Glyph { glyph, x, y },
+                role,
                 note: id,
                 through: None,
             });

@@ -44,6 +44,8 @@ pub enum Ink {
     Mora,
     /// An ictus mark.
     Ictus,
+    /// An accent, circle or semicircle above the staff (`r1`–`r5`).
+    Accent,
     /// A flat, natural or sharp.
     Accidental,
     /// A clef, and a `cb` clef's flat.
@@ -65,6 +67,7 @@ impl Ink {
             Ink::Episema => "episema",
             Ink::Mora => "mora",
             Ink::Ictus => "ictus",
+            Ink::Accent => "accent",
             Ink::Accidental => "accidental",
             Ink::Clef => "clef",
             Ink::Custos => "custos",
@@ -1663,6 +1666,42 @@ mod tests {
         let lone = clearance("(c4) a(g'1_)");
         for src in ["(c4) a(h_g'1_)", "(c4) a(f_h_g'1_)"] {
             assert!((clearance(src) - lone).abs() < 1e-4, "{src}: {} vs {lone}", clearance(src));
+        }
+    }
+
+    #[test]
+    fn signs_above_the_staff_sit_over_it_or_clear_of_a_high_note() {
+        // GregorioTeX sets `r1`–`r8` in the space above the staff (k in c4), whatever the
+        // note's pitch below it; a note that high pushes its sign up clear of it.
+        let low: Vec<_> = ["(c4) a(dr1)", "(c4) a(gr2)", "(c4) a(jr3)"]
+            .iter()
+            .map(|src| {
+                let t = ink(src, Ink::Accent);
+                assert_eq!(t.len(), 1, "{src}");
+                t[0].1
+            })
+            .collect();
+        assert!(low.windows(2).all(|w| (w[0] - w[1]).abs() < 0.3), "{low:?}");
+        assert!(low[0] < -3.0, "above the top line: {low:?}");
+        for src in ["(c4) a(kr1)", "(c4) a(lr4)", "(c4) a(gkr1)"] {
+            let sign = ink(src, Ink::Accent);
+            let note = ink(src, Ink::Note);
+            let top = note.iter().map(|n| n.1).fold(f32::INFINITY, f32::min);
+            assert_eq!(sign.len(), 1, "{src}");
+            let eng = crate::parse(src).score.engrave(&crate::ApproxMeasure, &StyleOptions::default());
+            let bottom = eng.segments[0]
+                .body
+                .pieces
+                .iter()
+                .find(|p| p.role == Ink::Accent)
+                .map(|p| p.ink_box()[3])
+                .unwrap();
+            assert!(bottom < top, "{src}: sign {bottom} into the note at {top}");
+        }
+        // Musica ficta draws an accidental above the note.
+        for src in ["(c4) a(gr6)", "(c4) a(gr7)", "(c4) a(gr8)"] {
+            assert_eq!(ink(src, Ink::Accidental).len(), 1, "{src}");
+            assert!(ink(src, Ink::Accent).is_empty(), "{src}");
         }
     }
 

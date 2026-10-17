@@ -227,8 +227,9 @@ treatments:
 Everything else in the format is drawn: headers (with neuma's recovery for a missing `;`),
 styled lyrics and special characters, centering overrides, `<eu>` and `<nlba>`, every note
 shape, liquescents, initio debilis, cavum, quadratum, alterations (soft and parenthesized),
-morae, episemata, ictus marks, custodes, every space and bar (Dominican bars included), clef
-changes and written line breaks with their custos suffixes.
+morae, episemata, ictus marks, signs above the staff (accents, circles and musica ficta),
+custodes, every space and bar (Dominican bars included), clef changes and written line
+breaks with their custos suffixes.
 
 **Line breaking.** Breaks fall between syllables and at spaces inside the notes. As in
 GregorioTeX (`\gresetunbreakablesyllablenotes{10}{4}{4}`), a syllable of ten or more notes
@@ -303,7 +304,7 @@ A `DisplayList` holds the layout's size, each line's box (top, bottom, staff cen
 baseline), the items to draw and the lyrics as plain text for an accessibility label. An
 item is a glyph (id, position, scale), a rectangle, or text (position, baseline, size and
 styled runs). Every item has a role (`Ink` for notation: staff, ledger, note, stem, bar,
-episema, mora, ictus, accidental, clef, custos; `TextRole` for text: lyric, hyphen, initial,
+episema, mora, ictus, accent, accidental, clef, custos; `TextRole` for text: lyric, hyphen, initial,
 annotation, rubric), and notation names the note or notes it draws.
 
 The SVG writer maps roles to CSS classes (`neuma-note`, `neuma-staff`, `neuma-rubric`, …)
