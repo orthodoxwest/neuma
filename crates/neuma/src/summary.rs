@@ -16,7 +16,8 @@ pub struct Summary {
     pub name: Option<String>,
     /// The `office-part` header as written, and what it names.
     pub office_part: Option<String>,
-    /// What `office_part` names, if it names a kind neuma knows.
+    /// What `office_part` names, if it names a kind neuma knows; for a Kyriale piece, its
+    /// movement, read from `name` or the opening words.
     pub kind: Option<OfficePart>,
     /// The mode headers.
     pub mode: Option<Mode>,
@@ -110,7 +111,9 @@ pub enum OfficePart {
     Sanctus,
     /// The Agnus Dei.
     Agnus,
-    /// The dismissal and its response: Ite, missa est, or Benedicamus Domino in its place.
+    /// The dismissal of the Mass and its response: Ite, missa est, or Benedicamus Domino in
+    /// its place. A Kyriale piece is read as one by its words; the `office-part` header
+    /// `Dismissal` names it too, but an Office's `V. Benedicamus Domino` stays a versicle.
     Dismissal,
     /// Something else, such as `Varia`; the header itself is in `office_part`.
     Other,
@@ -167,7 +170,7 @@ impl OfficePart {
             "credo" | "cr" => P::Credo,
             "sanctus" | "sa" => P::Sanctus,
             "agnus" | "ag" => P::Agnus,
-            "ite" | "benedicamus" | "dismissal" => P::Dismissal,
+            "dismissal" => P::Dismissal,
             _ => P::Other,
         }
     }
@@ -176,13 +179,15 @@ impl OfficePart {
     /// book, not the movement, so the movement is read from the `name` header (`Kyrie VIII`)
     /// or, failing that, from the opening words, Latin or English (`Lord, have mercy`).
     fn of_score(office_part: &str, name: Option<&str>, text: &str) -> OfficePart {
+        use OfficePart as P;
         let part = OfficePart::parse(office_part);
         let book = office_part.to_lowercase();
-        if part != OfficePart::Other || !(book.starts_with("kyriale") || book.starts_with("ordinari")) {
+        if part != OfficePart::Other || !(book.starts_with("kyriale") || book.starts_with("ordinar")) {
             return part;
         }
+        // Only a movement of the Ordinary counts from the name: "In paradisum" is no introit.
         match name.map(OfficePart::parse) {
-            Some(named) if named != OfficePart::Other => named,
+            Some(named @ (P::Kyrie | P::Gloria | P::Credo | P::Sanctus | P::Agnus)) => named,
             _ => OfficePart::of_words(text),
         }
     }
@@ -193,7 +198,7 @@ impl OfficePart {
         let words: String = text
             .chars()
             .flat_map(char::to_lowercase)
-            .map(|c| if c.is_alphabetic() { c } else { ' ' })
+            .map(|c| if c.is_alphabetic() { unaccented(c) } else { ' ' })
             .collect();
         let words = words.split_whitespace().take(4).collect::<Vec<_>>().join(" ");
         let opens = |phrases: &[&str]| phrases.iter().any(|p| words == *p || words.starts_with(&format!("{p} ")));
@@ -207,11 +212,24 @@ impl OfficePart {
             P::Sanctus
         } else if opens(&["agnus", "lamb of god", "o lamb of god"]) {
             P::Agnus
-        } else if opens(&["ite", "benedicamus", "go forth", "go in peace"]) {
+        } else if opens(&["ite", "benedicamus", "go forth", "go in peace", "let us bless the lord"]) {
             P::Dismissal
         } else {
             P::Other
         }
+    }
+}
+
+/// A lower-case vowel without the accent Solesmes books mark stress with (`ý`, `é`, `á`).
+fn unaccented(c: char) -> char {
+    match c {
+        'á' | 'à' | 'â' | 'ä' => 'a',
+        'é' | 'è' | 'ê' | 'ë' => 'e',
+        'í' | 'ì' | 'î' | 'ï' => 'i',
+        'ó' | 'ò' | 'ô' | 'ö' => 'o',
+        'ú' | 'ù' | 'û' | 'ü' => 'u',
+        'ý' | 'ÿ' => 'y',
+        c => c,
     }
 }
 
@@ -514,8 +532,9 @@ mod tests {
             ("℣. ℟.", OfficePart::Versicle),
             ("V. In omnem terram", OfficePart::Versicle),
             ("V. Resp.", OfficePart::Versicle),
-            ("Ite missa est", OfficePart::Dismissal),
-            ("Benedicamus Domino", OfficePart::Dismissal),
+            ("Dismissal", OfficePart::Dismissal),
+            ("V. Benedicamus Domino", OfficePart::Versicle),
+            ("Benedicamus Domino", OfficePart::Other),
             ("Kyriale", OfficePart::Other),
         ] {
             assert_eq!(OfficePart::parse(v), k, "{v}");
