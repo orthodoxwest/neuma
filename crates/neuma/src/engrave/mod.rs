@@ -455,6 +455,9 @@ pub struct Engraving {
 /// `interSyllabicMultiplier`). Layout sets the gaps between syllables.
 pub(crate) const SYLLABLE_GAP: f32 = INTRA * 2.5;
 const ACCIDENTAL_GAP: f32 = INTRA * 2.0;
+/// Least room between a mora and a notehead of the next neume level with it: the room the
+/// mora leaves after its own note.
+const MORA_CLEARANCE: f32 = 0.26;
 /// GregorioTeX's default `\gresetunbreakablesyllablenotes{10}{4}{4}`: a syllable of at least
 /// this many notes may break between its note groups, but not within this many of either end.
 const MELISMA_NOTES: usize = 10;
@@ -736,6 +739,9 @@ impl Engraver<'_> {
             }
         }
         let mut x = open.advance(SYLLABLE_GAP);
+        // The ink boxes (right, top, bottom) of the last neume's morae, which hang past its
+        // last note into the gap after it.
+        let mut morae: Vec<(f32, f32, f32)> = Vec::new();
         for (k, s) in splits.iter().enumerate() {
             let notes = &run.notes[s.start..s.end];
             let next = run.notes.get(s.end).map(|n| n.position).or(next_note);
@@ -752,7 +758,28 @@ impl Engraver<'_> {
             }
             let mut built = neume::build(s.kind, notes, next, base);
             neume::add_markings(&mut built, s.kind, notes, base);
+            // A neume that follows a dotted note with no space, or only the narrow space within
+            // a syllable, can cover the dot (`h.iv` with the `h` on a line, its dot raised into
+            // the space the `i` sits in): push it on until its noteheads clear the dot.
+            let push = built
+                .heads
+                .iter()
+                .flat_map(|h| {
+                    morae
+                        .iter()
+                        .filter(|&&(_, top, bottom)| top < h.bottom && bottom > h.top)
+                        .map(move |&(right, _, _)| right + MORA_CLEARANCE - (x + h.x))
+                })
+                .fold(0.0f32, f32::max);
+            x += push;
+            morae.clear();
             for p in &built.pieces {
+                if p.role == Ink::Mora
+                    && let Mark::Glyph { glyph, x: mx, y } = p.mark
+                {
+                    let (_, top, right, bottom) = glyph.ink();
+                    morae.push((x + mx + right, y + top, y + bottom));
+                }
                 open.pieces.push(p.shifted(x));
             }
             for h in &built.heads {
