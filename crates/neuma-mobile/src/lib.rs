@@ -843,6 +843,7 @@ pub enum OfficePart {
     Credo,
     Sanctus,
     Agnus,
+    Dismissal,
     /// Something else; the header itself is in `office_part`.
     Other,
 }
@@ -1400,6 +1401,7 @@ fn office_part(k: neuma::OfficePart) -> OfficePart {
         P::Credo => OfficePart::Credo,
         P::Sanctus => OfficePart::Sanctus,
         P::Agnus => OfficePart::Agnus,
+        P::Dismissal => OfficePart::Dismissal,
         P::Other | _ => OfficePart::Other,
     }
 }

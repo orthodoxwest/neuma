@@ -29,7 +29,7 @@ in the browser and on iOS and Android.
   - `Chant`, which keeps a score and redoes only what an edit changed, with the same result
     as starting afresh;
   - library entries (`summarize`): headers, mode, incipit, range and length, without
-    engraving;
+    engraving; a Kyriale piece's kind is its movement, the dismissal included;
   - metrics tables for EB Garamond (Google Fonts and the EB Garamond 12 release).
 - `neuma-tones`: pointed psalm text, the Solesmes psalm tones and their endings, settings of
   text to a tone, automatic pointing of English, and a pointed psalter's display.

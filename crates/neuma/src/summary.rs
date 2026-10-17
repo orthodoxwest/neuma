@@ -110,6 +110,8 @@ pub enum OfficePart {
     Sanctus,
     /// The Agnus Dei.
     Agnus,
+    /// The dismissal and its response: Ite, missa est, or Benedicamus Domino in its place.
+    Dismissal,
     /// Something else, such as `Varia`; the header itself is in `office_part`.
     Other,
 }
@@ -165,7 +167,50 @@ impl OfficePart {
             "credo" | "cr" => P::Credo,
             "sanctus" | "sa" => P::Sanctus,
             "agnus" | "ag" => P::Agnus,
+            "ite" | "benedicamus" | "dismissal" => P::Dismissal,
             _ => P::Other,
+        }
+    }
+
+    /// What a score's `office-part` header names. A Kyriale or Ordinary of the Mass names the
+    /// book, not the movement, so the movement is read from the `name` header (`Kyrie VIII`)
+    /// or, failing that, from the opening words, Latin or English (`Lord, have mercy`).
+    fn of_score(office_part: &str, name: Option<&str>, text: &str) -> OfficePart {
+        let part = OfficePart::parse(office_part);
+        let book = office_part.to_lowercase();
+        if part != OfficePart::Other || !(book.starts_with("kyriale") || book.starts_with("ordinari")) {
+            return part;
+        }
+        match name.map(OfficePart::parse) {
+            Some(named) if named != OfficePart::Other => named,
+            _ => OfficePart::of_words(text),
+        }
+    }
+
+    /// The movement of the Ordinary that opens with these words.
+    fn of_words(text: &str) -> OfficePart {
+        use OfficePart as P;
+        let words: String = text
+            .chars()
+            .flat_map(char::to_lowercase)
+            .map(|c| if c.is_alphabetic() { c } else { ' ' })
+            .collect();
+        let words = words.split_whitespace().take(4).collect::<Vec<_>>().join(" ");
+        let opens = |phrases: &[&str]| phrases.iter().any(|p| words == *p || words.starts_with(&format!("{p} ")));
+        if opens(&["kyrie", "lord have mercy"]) {
+            P::Kyrie
+        } else if opens(&["gloria in excelsis", "glory be to god", "glory to god"]) {
+            P::Gloria
+        } else if opens(&["credo", "i believe", "we believe"]) {
+            P::Credo
+        } else if opens(&["sanctus", "holy holy"]) {
+            P::Sanctus
+        } else if opens(&["agnus", "lamb of god", "o lamb of god"]) {
+            P::Agnus
+        } else if opens(&["ite", "benedicamus", "go forth", "go in peace"]) {
+            P::Dismissal
+        } else {
+            P::Other
         }
     }
 }
@@ -321,9 +366,12 @@ impl Engraving {
             + timed_pauses(&self.pauses, &weights).iter().map(|p| p.duration).sum::<f32>();
 
         let office_part = field(header, "office-part");
+        let name = field(header, "name");
         Summary {
-            name: field(header, "name"),
-            kind: office_part.as_deref().map(OfficePart::parse),
+            kind: office_part
+                .as_deref()
+                .map(|part| OfficePart::of_score(part, name.as_deref(), &text)),
+            name,
             office_part,
             mode: Mode::read(header),
             occasion: field(header, "occasion"),
@@ -466,6 +514,9 @@ mod tests {
             ("℣. ℟.", OfficePart::Versicle),
             ("V. In omnem terram", OfficePart::Versicle),
             ("V. Resp.", OfficePart::Versicle),
+            ("Ite missa est", OfficePart::Dismissal),
+            ("Benedicamus Domino", OfficePart::Dismissal),
+            ("Kyriale", OfficePart::Other),
         ] {
             assert_eq!(OfficePart::parse(v), k, "{v}");
         }
@@ -473,6 +524,55 @@ mod tests {
         for v in ["v ".repeat(50_000), "V. ".repeat(50_000) + "Ant."] {
             assert_eq!(OfficePart::parse(&v), OfficePart::Versicle);
         }
+    }
+
+    #[test]
+    fn kyriale_movements() {
+        let kind = |head: &str, notes: &str| summarize(&format!("{head}\n%%\n(c4) {notes}")).kind;
+        // The name says which movement.
+        assert_eq!(
+            kind("name:Kyrie VIII;\noffice-part:Kyriale;", "KY(d)ri(g)e(h) e(g)lé(e)i(e)son.(d) (::)"),
+            Some(OfficePart::Kyrie)
+        );
+        assert_eq!(
+            kind("name:Agnus Dei XI;\noffice-part:Kyriale;", "Lamb(f) of(g) God(h)"),
+            Some(OfficePart::Agnus)
+        );
+        assert_eq!(
+            kind("name:Ite VIII;\noffice-part:Kyriale;", "I(g)te,(h) mis(e)sa(e) est.(d) (::)"),
+            Some(OfficePart::Dismissal)
+        );
+        assert_eq!(
+            kind("name:Benedicamus XI;\noffice-part:Kyriale;", "BE(h)ne(g)di(h)cá(h)mus(d)"),
+            Some(OfficePart::Dismissal)
+        );
+        // A name that does not, so the opening words do, in English or Latin.
+        assert_eq!(
+            kind(
+                "name:Mass of St Ambrose;\noffice-part:Kyriale;",
+                "GLo(g)ry(f) be(e) to(f) God(g) on(f) high.(e)"
+            ),
+            Some(OfficePart::Gloria)
+        );
+        assert_eq!(
+            kind("office-part:Ordinarium;", "Ho(g)ly,(f) Ho(e)ly,(f) Ho(g)ly(f)"),
+            Some(OfficePart::Sanctus)
+        );
+        assert_eq!(
+            kind("office-part:Kyriale;", "O(f) Lamb(g) of(h) God,(g) that(f)"),
+            Some(OfficePart::Agnus)
+        );
+        assert_eq!(
+            kind("office-part:Kyriale;", "Go(g) forth,(h) the(j) Mass(i) is(h) end(h)ed.(i)"),
+            Some(OfficePart::Dismissal)
+        );
+        assert_eq!(
+            kind("name:Requiescant;\noffice-part:Kyriale;", "Re(g)qui(h)es(g)cant(f)"),
+            Some(OfficePart::Other)
+        );
+        // Only a Kyriale is read this way: an antiphon that opens like a Sanctus stays one.
+        assert_eq!(kind("office-part:Antiphona;", "Ho(g)ly,(f) ho(e)ly(f)"), Some(OfficePart::Antiphon));
+        assert_eq!(kind("name:Sanctus;", "Ho(g)ly(f)"), None);
     }
 
     #[test]

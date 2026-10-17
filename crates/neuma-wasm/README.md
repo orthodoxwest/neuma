@@ -442,7 +442,9 @@ markup is removed.
 - `kind`: what `officePart` names, in Latin or English, spelled out or abbreviated:
   `antiphon`, `introit`, `gradual`, `alleluia`, `tract`, `sequence`, `offertory`,
   `communion`, `hymn`, `responsory`, `short-responsory`, `versicle`, `chapter`, `collect`,
-  `psalm`, `canticle`, `kyrie`, `gloria`, `credo`, `sanctus`, `agnus` or `other`.
+  `psalm`, `canticle`, `kyrie`, `gloria`, `credo`, `sanctus`, `agnus`, `dismissal` (Ite,
+  missa est or Benedicamus Domino) or `other`. A `Kyriale` header names the book, so the
+  movement is read from `name` (`Kyrie VIII`) or else the opening words (`Lord, have mercy`).
 - `mode`: `{ number, name, modifier, differentia }`. `number` is 1 to 8 when the header
   starts with one (`8`, `VIII`, `1g`), else `null` (`per`).
 - `incipit`: the opening words, up to the first bar (not a virgula) at or after the end of

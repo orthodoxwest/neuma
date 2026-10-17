@@ -330,6 +330,7 @@ fn office_part_name(k: OfficePart) -> &'static str {
         OfficePart::Credo => "credo",
         OfficePart::Sanctus => "sanctus",
         OfficePart::Agnus => "agnus",
+        OfficePart::Dismissal => "dismissal",
         OfficePart::Other => "other",
     }
 }
