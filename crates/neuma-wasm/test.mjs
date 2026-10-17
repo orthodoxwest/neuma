@@ -186,7 +186,7 @@ assert.ok(psalm(plain, "8.G", { autoPoint: false }).diagnostics.some((d) => d.co
 // A pointed psalter's display: the tone once, as a line of notes, and the verses as styled
 // runs of text, with each syllable's place in the text (both units) and in the tone.
 const tone = Chant.fromTone("8.G");
-assert.equal(tone.source, "(c4) (g) (h) (j) (k) (j) (j) *(:) (j) (i) (j) (h) (g) (g) (::)");
+assert.equal(tone.source, "(c4) (g) (h) (j) (kr1) (j) (j) *(:) (j) (i) (j) (hr1) (g) (g) (::)");
 assert.equal(tone.layout(400).timeline().notes.length, 12);
 assert.throws(() => Chant.fromTone("9.z"), /no built-in tone/);
 assert.ok(Chant.fromTone("name: mine\nclef: c4\nmediant: f g hr 'g hr h\ntermination: hr g f 'g hr h").source.startsWith("(c4) (f) (g) (h)"));
