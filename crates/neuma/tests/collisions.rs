@@ -182,7 +182,14 @@ fn a_mora_clears_the_notes_beside_it() {
                 list.items
                     .iter()
                     .filter_map(|i| match i {
-                        Item::Glyph { glyph, x, y, scale, role: r, .. } if *r == role => {
+                        Item::Glyph {
+                            glyph,
+                            x,
+                            y,
+                            scale,
+                            role: r,
+                            ..
+                        } if *r == role => {
                             let (a, b, c, d) = GlyphId::from_id(*glyph).unwrap().ink();
                             let k = scale * UNITS_PER_SPACE;
                             Some([x + a * k, y + b * k, x + c * k, y + d * k])
