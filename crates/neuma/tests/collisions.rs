@@ -31,6 +31,12 @@ fn scores() -> Vec<(String, String)> {
         "j tail".into(),
         "%%\n(c2) Jo(cfe)seph,(f) (::) fi(g)li(f) Da(df)vid,(f) (;) no(f)li(f) ti(e)mé(c!dfd)re(efe) (;1) ac(ef)cí(gh)pe(g)re(ghg) Ma(f)rí(d)am(c) cón(d)ju(f)gem(e) tu(c)am:(c) (::)".into(),
     ));
+    // Dotted notes before a neighbour on the next pitch up, the same pitch and two up, each
+    // from a line and from a space (Ite VIII, `h.iv`, put the dot under the `i`).
+    out.push((
+        "dotted neighbours".into(),
+        "(c3) I(gxd!fgh)te,(h.ivHGh.kvIH'Ghih.) (,) mis(e')sa(e) est.(d.) (::) a(g.hv)b(h.iv)c(g.gv)d(h.hv)e(g.iv)f(h.jv)g(fv.ff)h(g.h)i(h.i) (::)".into(),
+    ));
     out.sort();
     out
 }
@@ -159,6 +165,45 @@ fn the_initial_clears_the_staves_and_notes_below_it() {
                 };
                 let pen = (cap[2].min(b[2]) - cap[0].max(b[0])).min(cap[3].min(b[3]) - cap[1].max(b[1]));
                 assert!(pen <= 0.05 * sp, "{name} at {width}: the initial {cap:?} over ink at {b:?}");
+            }
+        }
+    }
+}
+
+#[test]
+fn a_mora_clears_the_notes_beside_it() {
+    let metrics = LyricFont::Google.metrics();
+    for (name, src) in scores() {
+        let eng = parse(&src).score.engrave(metrics, &StyleOptions::default());
+        for width in [300.0, 800.0] {
+            let list = eng.layout(width).display();
+            let sp = list.staff_space;
+            let boxes = |role: Ink| -> Vec<[f32; 4]> {
+                list.items
+                    .iter()
+                    .filter_map(|i| match i {
+                        Item::Glyph {
+                            glyph,
+                            x,
+                            y,
+                            scale,
+                            role: r,
+                            ..
+                        } if *r == role => {
+                            let (a, b, c, d) = GlyphId::from_id(*glyph).unwrap().ink();
+                            let k = scale * UNITS_PER_SPACE;
+                            Some([x + a * k, y + b * k, x + c * k, y + d * k])
+                        }
+                        _ => None,
+                    })
+                    .collect()
+            };
+            let notes = boxes(Ink::Note);
+            for m in boxes(Ink::Mora) {
+                for n in &notes {
+                    let pen = (m[2].min(n[2]) - m[0].max(n[0])).min(m[3].min(n[3]) - m[1].max(n[1]));
+                    assert!(pen <= 0.05 * sp, "{name} at {width}: mora {m:?} under the note at {n:?}");
+                }
             }
         }
     }

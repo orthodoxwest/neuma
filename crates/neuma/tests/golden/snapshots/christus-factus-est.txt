@@ -155,17 +155,17 @@ Lyric 63.70 229.85 14.70 s25 "tem"
 note PunctumQuadratum 146.88 197.34 n66
 stem rect 149.11 197.34 0.77 16.20 n66
 mora Mora 150.00 192.84 n66
-note PunctumQuadratum 155.88 197.34 n67
-note PunctumQuadratum 164.88 197.34 n68
+note PunctumQuadratum 158.88 197.34 n67
+note PunctumQuadratum 167.88 197.34 n68
 Lyric 132.34 229.85 14.70 s26 "cru"
-stem rect 177.90 197.34 0.77 20.83 n69
-note PunctumQuadratum 180.90 197.34 n69
-stem rect 183.13 197.34 0.77 18.00 n70
-note PunctumQuadratum 186.13 215.34 n70
-episema rect 177.90 189.78 6.00 0.96 n69
-Lyric 173.12 229.85 14.70 s27 "cis."
-bar rect 198.79 173.34 0.77 36.00
-bar rect 204.12 173.34 0.77 36.00
+stem rect 180.90 197.34 0.77 20.83 n69
+note PunctumQuadratum 183.90 197.34 n69
+stem rect 186.13 197.34 0.77 18.00 n70
+note PunctumQuadratum 189.13 215.34 n70
+episema rect 180.90 189.78 6.00 0.96 n69
+Lyric 176.12 229.85 14.70 s27 "cis."
+bar rect 201.79 173.34 0.77 36.00
+bar rect 207.12 173.34 0.77 36.00
 Hyphen 52.97 229.85 14.70 "-"
 Hyphen 150.75 229.85 14.70 "-"
 Initial 8.34 68.69 85.85 s1 "C"
@@ -319,17 +319,17 @@ Lyric 44.41 149.27 14.70 s25 "tem"
 note PunctumQuadratum 127.59 116.76 n66
 stem rect 129.82 116.76 0.77 16.20 n66
 mora Mora 130.71 112.26 n66
-note PunctumQuadratum 136.59 116.76 n67
-note PunctumQuadratum 145.59 116.76 n68
+note PunctumQuadratum 139.59 116.76 n67
+note PunctumQuadratum 148.59 116.76 n68
 Lyric 113.05 149.27 14.70 s26 "cru"
-stem rect 158.61 116.76 0.77 20.83 n69
-note PunctumQuadratum 161.61 116.76 n69
-stem rect 163.84 116.76 0.77 18.00 n70
-note PunctumQuadratum 166.84 134.76 n70
-episema rect 158.61 109.20 6.00 0.96 n69
-Lyric 153.83 149.27 14.70 s27 "cis."
-bar rect 179.50 92.76 0.77 36.00
-bar rect 184.83 92.76 0.77 36.00
+stem rect 161.61 116.76 0.77 20.83 n69
+note PunctumQuadratum 164.61 116.76 n69
+stem rect 166.84 116.76 0.77 18.00 n70
+note PunctumQuadratum 169.84 134.76 n70
+episema rect 161.61 109.20 6.00 0.96 n69
+Lyric 156.83 149.27 14.70 s27 "cis."
+bar rect 182.50 92.76 0.77 36.00
+bar rect 187.83 92.76 0.77 36.00
 Hyphen 33.68 149.27 14.70 "-"
 Hyphen 131.46 149.27 14.70 "-"
 Initial 8.34 68.69 85.85 s1 "C"
