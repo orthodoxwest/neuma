@@ -286,7 +286,7 @@ pub enum Ink {
     Accidental,
     Clef,
     Custos,
-    /// An accent, circle or semicircle above the staff.
+    /// A sign above the staff: an accent, circle, semicircle or musica ficta accidental.
     Accent,
 }
 

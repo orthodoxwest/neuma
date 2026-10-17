@@ -304,8 +304,9 @@ A `DisplayList` holds the layout's size, each line's box (top, bottom, staff cen
 baseline), the items to draw and the lyrics as plain text for an accessibility label. An
 item is a glyph (id, position, scale), a rectangle, or text (position, baseline, size and
 styled runs). Every item has a role (`Ink` for notation: staff, ledger, note, stem, bar,
-episema, mora, ictus, accent, accidental, clef, custos; `TextRole` for text: lyric, hyphen, initial,
-annotation, rubric), and notation names the note or notes it draws.
+episema, mora, ictus, accent (any sign above the staff, musica ficta included),
+accidental, clef, custos; `TextRole` for text: lyric, hyphen, initial, annotation,
+rubric), and notation names the note or notes it draws.
 
 The SVG writer maps roles to CSS classes (`neuma-note`, `neuma-staff`, `neuma-rubric`, …)
 and fills with `currentColor`, so a page themes it with CSS, dark mode included, and lists
