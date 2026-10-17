@@ -889,14 +889,14 @@ fn first_glyph(n: &Note) -> G {
 pub(crate) struct Built {
     pub pieces: Vec<Piece>,
     pub heads: Vec<Head>,
-    /// Signs above the staff, placed once the syllable's other ink is known.
+    /// Signs above the staff, placed once the segment's other ink is known.
     pub signs: Vec<Sign>,
     /// Extent of the noteheads and stems, not counting markings.
     pub width: f32,
 }
 
 /// A sign above the staff (`r1`–`r8`) waiting to be placed: [`place_signs`] sets it once
-/// every other piece of its syllable is known, so it clears them all.
+/// every other piece of its segment is known, so it clears them all.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct Sign {
     pub glyph: G,
@@ -1421,7 +1421,7 @@ pub(crate) fn add_markings(built: &mut Built, kind: Kind, notes: &[Note], note_b
                 through: None,
             });
         }
-        // A sign above the staff, placed with the syllable's other ink by `place_signs`.
+        // A sign above the staff, placed with the segment's other ink by `place_signs`.
         if let Some(sign) = note.above_sign {
             built.signs.push(Sign {
                 glyph: match sign {
