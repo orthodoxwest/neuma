@@ -44,6 +44,9 @@ pub enum Ink {
     Mora,
     /// An ictus mark.
     Ictus,
+    /// A sign above the staff: an accent, circle or semicircle (`r1`–`r5`), or a musica
+    /// ficta flat, natural or sharp (`r6`–`r8`).
+    Accent,
     /// A flat, natural or sharp.
     Accidental,
     /// A clef, and a `cb` clef's flat.
@@ -65,6 +68,7 @@ impl Ink {
             Ink::Episema => "episema",
             Ink::Mora => "mora",
             Ink::Ictus => "ictus",
+            Ink::Accent => "accent",
             Ink::Accidental => "accidental",
             Ink::Clef => "clef",
             Ink::Custos => "custos",
@@ -676,6 +680,7 @@ struct Engraver<'a> {
 /// The segment being built.
 struct Open {
     pieces: Vec<Piece>,
+    signs: Vec<neume::Sign>,
     heads: Vec<HeadBox>,
     bars: Vec<BarBox>,
     x: f32,
@@ -691,6 +696,7 @@ impl Open {
     fn new() -> Open {
         Open {
             pieces: Vec::new(),
+            signs: Vec::new(),
             heads: Vec::new(),
             bars: Vec::new(),
             x: 0.0,
@@ -782,6 +788,7 @@ impl Engraver<'_> {
                 }
                 open.pieces.push(p.shifted(x));
             }
+            open.signs.extend(built.signs.iter().map(|s| s.shifted(x)));
             for h in &built.heads {
                 let (cx, y, w, height) = h.hit_box();
                 let [l, t, r, b] = h.hit_rect();
@@ -828,6 +835,13 @@ impl Engraver<'_> {
         } else {
             neume::extent(open.pieces.iter().filter(|p| p.role != Ink::Ledger))
         };
+        // Signs above the staff go in last, clear of everything else and out of the spacing.
+        let heads: Vec<[f32; 4]> = open
+            .heads
+            .iter()
+            .map(|h| [h.x - h.w / 2.0, h.y - h.h / 2.0, h.x + h.w / 2.0, h.y + h.h / 2.0])
+            .collect();
+        neume::place_signs(&open.signs, &heads, &mut open.pieces);
         // Numbers count from the segment's first note and bar, so the body reads the same
         // wherever the segment stands.
         let note_base = open
@@ -1664,6 +1678,88 @@ mod tests {
         for src in ["(c4) a(h_g'1_)", "(c4) a(f_h_g'1_)"] {
             assert!((clearance(src) - lone).abs() < 1e-4, "{src}: {} vs {lone}", clearance(src));
         }
+    }
+
+    #[test]
+    fn signs_above_the_staff_sit_over_it_or_clear_of_a_high_note() {
+        // GregorioTeX sets `r1`–`r8` in the space above the staff (k in c4), whatever the
+        // note's pitch below it; a note that high pushes its sign up clear of it.
+        let low: Vec<_> = ["(c4) a(dr1)", "(c4) a(gr2)", "(c4) a(jr3)"]
+            .iter()
+            .map(|src| {
+                let t = ink(src, Ink::Accent);
+                assert_eq!(t.len(), 1, "{src}");
+                t[0].1
+            })
+            .collect();
+        assert!(low.windows(2).all(|w| (w[0] - w[1]).abs() < 0.3), "{low:?}");
+        assert!(low[0] < -3.0, "above the top line: {low:?}");
+        for src in ["(c4) a(kr1)", "(c4) a(lr4)", "(c4) a(gkr1)"] {
+            let sign = ink(src, Ink::Accent);
+            let note = ink(src, Ink::Note);
+            let top = note.iter().map(|n| n.1).fold(f32::INFINITY, f32::min);
+            assert_eq!(sign.len(), 1, "{src}");
+            let eng = crate::parse(src).score.engrave(&crate::ApproxMeasure, &StyleOptions::default());
+            let bottom = eng.segments[0]
+                .body
+                .pieces
+                .iter()
+                .find(|p| p.role == Ink::Accent)
+                .map(|p| p.ink_box()[3])
+                .unwrap();
+            assert!(bottom < top, "{src}: sign {bottom} into the note at {top}");
+        }
+        // Musica ficta draws its accidental above the note as a sign, not as an alteration.
+        for src in ["(c4) a(gr6)", "(c4) a(gr7)", "(c4) a(gr8)"] {
+            assert_eq!(ink(src, Ink::Accent).len(), 1, "{src}");
+            assert!(ink(src, Ink::Accidental).is_empty(), "{src}");
+        }
+    }
+
+    #[test]
+    fn a_sign_clears_the_episema_and_the_notes_beside_it() {
+        let bottom_of = |src: &str, role: Ink| -> Vec<(f32, f32, f32, f32)> {
+            let eng = crate::parse(src).score.engrave(&crate::ApproxMeasure, &StyleOptions::default());
+            eng.segments
+                .iter()
+                .flat_map(|s| s.body.pieces.iter())
+                .filter(|p| p.role == role)
+                .map(|p| {
+                    let [l, t, r, b] = p.ink_box();
+                    (l, t, r, b)
+                })
+                .collect()
+        };
+        // Its own note's episema, and a high note of the next neume in the syllable.
+        for src in ["(c4) a(j_r1)", "(c4) a(k_r1)", "(c4) a(gr1!l)", "(c4) a(gr1/l)", "(c4) a(hr1!kr1)"] {
+            let signs = bottom_of(src, Ink::Accent);
+            let others: Vec<_> = [Ink::Note, Ink::Episema, Ink::Ledger, Ink::Stem]
+                .into_iter()
+                .flat_map(|r| bottom_of(src, r))
+                .collect();
+            for s in &signs {
+                for o in &others {
+                    let overlaps = s.0 < o.2 && s.2 > o.0 && s.1 < o.3 && s.3 > o.1;
+                    assert!(!overlaps, "{src}: sign {s:?} runs into {o:?}");
+                }
+            }
+        }
+        // Signs on the notes of one neume don't push each other up: below k they stay level.
+        for src in ["(c4) a(fr1gr1hr1ir1)", "(c4) a(gr1hr1)", "(c4) a(hr1gr1)"] {
+            let signs = bottom_of(src, Ink::Accent);
+            assert!(signs.len() >= 2, "{src}");
+            assert!(signs.iter().all(|s| (s.3 - signs[0].3).abs() < 1e-4), "{src}: {signs:?}");
+        }
+    }
+
+    #[test]
+    fn a_sign_takes_no_part_in_spacing() {
+        // GregorioTeX's rare signs take no width: the notes stand where they would without.
+        let xs = |src: &str| -> Vec<f32> { crate::Chant::new(src).layout(700.0).timeline().notes.iter().map(|n| n.cx).collect() };
+        let plain = xs("(c4) (g) (h) (j) (k) (j) (j) *(:) (j) (i) (j) (h) (g) (g) (::)");
+        let signed = xs("(c4) (g) (h) (j) (kr1) (j) (j) *(:) (j) (i) (j) (hr1) (g) (g) (::)");
+        assert_eq!(plain, signed);
+        assert_eq!(xs("(c4) a(gh) b(g)"), xs("(c4) a(gr1hr3) b(gr6)"));
     }
 
     #[test]

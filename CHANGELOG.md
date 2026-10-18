@@ -15,7 +15,8 @@ in the browser and on iOS and Android.
 - `neuma`, the engine, with no dependencies:
   - a GABC reader that never fails: problems come back as diagnostics with stable codes,
     source spans and, where one edit makes sense, a fix;
-  - engraving in Gregorio's style: every neume shape GABC writes, with exsurge's glyphs;
+  - engraving in Gregorio's style: every neume shape GABC writes, with exsurge's glyphs,
+    and the signs above the staff (`r1`–`r8`: accents, circles and musica ficta);
     lyrics centered on their vowels; GregorioTeX's spacing, bars included; drop-cap
     initials and their annotations;
   - optimal-fit line breaking at any width, cheap enough to redo on every resize. A bar ends
@@ -32,7 +33,8 @@ in the browser and on iOS and Android.
     engraving; a Kyriale piece's kind is its movement, the dismissal included;
   - metrics tables for EB Garamond (Google Fonts and the EB Garamond 12 release).
 - `neuma-tones`: pointed psalm text, the Solesmes psalm tones and their endings, settings of
-  text to a tone, automatic pointing of English, and a pointed psalter's display.
+  text to a tone, automatic pointing of English, and a pointed psalter's display, its tone
+  line marking each accent with an acute above the note.
 - `neuma-book`: booklets from a `.book` file, as PDF (with the text font subset) or SVG pages.
 - `neuma-metrics`: builds a metrics table for any font, checks a corpus for collisions, and
   counts lines that start with a bar.

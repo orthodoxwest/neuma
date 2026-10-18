@@ -292,11 +292,12 @@ impl Tone {
     /// The tone as one line of notes with no words, as a pointed psalter prints it above the
     /// psalm: the intonation, the tenor and the mediant's cadence, a bar at the mediant `*`,
     /// then the tenor and the termination's cadence. Each slot of a formula is one note (or
-    /// neume), an open slot sung once. `neuma::Chant::new(&tone.gabc())` engraves it.
+    /// neume), an open slot sung once, and an accent slot marked with an acute accent above
+    /// its first note (`r1`). `neuma::Chant::new(&tone.gabc())` engraves it.
     ///
     /// ```
     /// let tone = neuma_tones::Tone::named("8.G")?;
-    /// assert_eq!(tone.gabc(), "(c4) (g) (h) (j) (k) (j) (j) *(:) (j) (i) (j) (h) (g) (g) (::)");
+    /// assert_eq!(tone.gabc(), "(c4) (g) (h) (j) (kr1) (j) (j) *(:) (j) (i) (j) (hr1) (g) (g) (::)");
     /// # Ok::<(), neuma_tones::ToneError>(())
     /// ```
     #[must_use]
@@ -310,8 +311,10 @@ impl Tone {
             }
             g.push_str(&format!("({}) ", c.tenor));
             for s in &c.slots {
-                let (Slot::Fixed(n) | Slot::Open(n) | Slot::Accent(n)) = s;
-                g.push_str(&format!("({n}) "));
+                match s {
+                    Slot::Fixed(n) | Slot::Open(n) => g.push_str(&format!("({n}) ")),
+                    Slot::Accent(n) => g.push_str(&format!("({}) ", accented(n))),
+                }
             }
         };
         half(&self.mediant, true, &mut g);
@@ -346,6 +349,21 @@ impl Tone {
         } else {
             format!("Tone {mode} {ending}")
         }
+    }
+}
+
+/// A slot's notes with an acute accent (`r1`) over the first of them, as a pointed psalter
+/// marks the accent in the tone: after its pitch, past any alteration (`ixi` is `ixir1`).
+fn accented(notes: &str) -> String {
+    let b = notes.as_bytes();
+    let pitch = (0..b.len()).find(|&i| {
+        b[i].to_ascii_lowercase().is_ascii_lowercase()
+            && b[i].to_ascii_lowercase() <= b'm'
+            && !matches!(b.get(i + 1), Some(b'x' | b'y' | b'#'))
+    });
+    match pitch {
+        Some(i) => format!("{}r1{}", &notes[..=i], &notes[i + 1..]),
+        None => notes.to_string(),
     }
 }
 
@@ -474,7 +492,25 @@ mod tests {
                 "{}",
                 t.name
             );
+            // One acute accent above each accent slot, and nothing else carries one.
+            let accents = parsed
+                .score
+                .syllables
+                .iter()
+                .flat_map(|s| &s.notation)
+                .filter(|f| matches!(f, neuma::score::Figure::Note(n) if n.above_sign == Some(1)))
+                .count();
+            assert_eq!(accents, t.mediant.accents() + t.termination.accents(), "{}", t.name);
         }
+    }
+
+    #[test]
+    fn an_accent_marks_the_first_note_past_any_alteration() {
+        assert_eq!(accented("g"), "gr1");
+        assert_eq!(accented("gh"), "gr1h");
+        assert_eq!(accented("ixi"), "ixir1");
+        assert_eq!(accented("gvFED"), "gr1vFED");
+        assert_eq!(accented(""), "");
     }
 
     #[test]

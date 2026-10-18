@@ -286,6 +286,8 @@ pub enum Ink {
     Accidental,
     Clef,
     Custos,
+    /// A sign above the staff: an accent, circle, semicircle or musica ficta accidental.
+    Accent,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
@@ -1459,6 +1461,7 @@ fn ink(i: neuma::Ink) -> Ink {
         neuma::Ink::Episema => Ink::Episema,
         neuma::Ink::Mora => Ink::Mora,
         neuma::Ink::Ictus => Ink::Ictus,
+        neuma::Ink::Accent => Ink::Accent,
         neuma::Ink::Accidental => Ink::Accidental,
         neuma::Ink::Clef => Ink::Clef,
         neuma::Ink::Custos => Ink::Custos,

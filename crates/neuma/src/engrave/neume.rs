@@ -57,6 +57,11 @@ const ICTUS_IN_SPACE: f32 = -0.2;
 const ICTUS_PAST_INCLINATUM: f32 = 0.3;
 /// How much farther an ictus goes to clear an episema on the same side.
 const ICTUS_PAST_EPISEMA: f32 = 0.4;
+/// The lowest staff position a sign above the staff (`r1`–`r8`) takes: the space above the
+/// top line, GregorioTeX's `\gre@pitch@raresign` on a four-line staff.
+const ABOVE_SIGN: i8 = 4;
+/// The least gap between a sign above the staff and the ink under it, in staff spaces.
+const ABOVE_SIGN_GAP: f32 = 0.4;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Kind {
@@ -884,8 +889,63 @@ fn first_glyph(n: &Note) -> G {
 pub(crate) struct Built {
     pub pieces: Vec<Piece>,
     pub heads: Vec<Head>,
+    /// Signs above the staff, placed once the segment's other ink is known.
+    pub signs: Vec<Sign>,
     /// Extent of the noteheads and stems, not counting markings.
     pub width: f32,
+}
+
+/// A sign above the staff (`r1`–`r8`) waiting to be placed: [`place_signs`] sets it once
+/// every other piece of its segment is known, so it clears them all.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct Sign {
+    pub glyph: G,
+    /// The x of the note it is centered on.
+    pub x: f32,
+    pub position: i8,
+    /// Score-wide index of its note.
+    pub note: u32,
+}
+
+impl Sign {
+    pub(crate) fn shifted(mut self, dx: f32) -> Sign {
+        self.x += dx;
+        self
+    }
+}
+
+/// Sets each sign above the staff as GregorioTeX does, in the space above the staff or a
+/// step above a note already that high, then higher if need be to clear the noteheads
+/// (`heads`, as left, top, right, bottom) and the other ink under it. Signs don't clear one
+/// another, so a row of them stays level, and take no part in spacing.
+pub(crate) fn place_signs(signs: &[Sign], heads: &[[f32; 4]], pieces: &mut Vec<Piece>) {
+    let placed: Vec<Piece> = signs
+        .iter()
+        .map(|s| {
+            let (a, _, c, d) = s.glyph.ink();
+            let x = s.x - (a + c) / 2.0;
+            let (left, right) = (x + a, x + c);
+            let under = heads
+                .iter()
+                .copied()
+                .chain(pieces.iter().map(Piece::ink_box))
+                .filter(|b| b[0] < right && b[2] > left)
+                .map(|b| b[1])
+                .fold(f32::INFINITY, f32::min);
+            let floor = -f32::from((s.position + 1).max(ABOVE_SIGN));
+            Piece {
+                mark: Mark::Glyph {
+                    glyph: s.glyph,
+                    x,
+                    y: floor.min(under - ABOVE_SIGN_GAP - d),
+                },
+                role: Ink::Accent,
+                note: Some(s.note),
+                through: None,
+            }
+        })
+        .collect();
+    pieces.extend(placed);
 }
 
 /// Builds one neume. `next_position` is the first note after this neume, for an oriscus that
@@ -1100,6 +1160,7 @@ pub(crate) fn build(kind: Kind, notes: &[Note], next_position: Option<i8>, note_
     Built {
         pieces: b.pieces,
         heads: b.heads,
+        signs: Vec::new(),
         width,
     }
 }
@@ -1358,6 +1419,24 @@ pub(crate) fn add_markings(built: &mut Built, kind: Kind, notes: &[Note], note_b
                 role: Ink::Ictus,
                 note: id,
                 through: None,
+            });
+        }
+        // A sign above the staff, placed with the segment's other ink by `place_signs`.
+        if let Some(sign) = note.above_sign {
+            built.signs.push(Sign {
+                glyph: match sign {
+                    1 => G::AcuteAccent,
+                    2 => G::GraveAccent,
+                    3 => G::Circle,
+                    4 => G::Semicircle,
+                    5 => G::ReversedSemicircle,
+                    6 => G::Flat,
+                    7 => G::Natural,
+                    _ => G::Sharp,
+                },
+                x: h.center(),
+                position: h.position,
+                note: note_base + h.index as u32,
             });
         }
         // Morae.

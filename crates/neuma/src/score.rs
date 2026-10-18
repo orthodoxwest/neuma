@@ -410,8 +410,9 @@ pub struct Note {
     pub episema: Option<Episema>,
     /// A vertical episema, the ictus (`'`), and where it goes.
     pub ictus: Option<Placement>,
-    /// Signs above the staff (`r1`–`r8`): read, and reported with `gabc::above-sign`, but not
-    /// drawn.
+    /// A sign above the staff: `r1` an acute accent, `r2` a grave accent, `r3` a circle, `r4`
+    /// a semicircle, `r5` a reversed semicircle, and `r6`–`r8` a musica ficta flat, natural or
+    /// sharp. Drawn only; a musica ficta sign doesn't change the note's pitch.
     pub above_sign: Option<u8>,
     /// Where it is in the source.
     pub span: Range<usize>,

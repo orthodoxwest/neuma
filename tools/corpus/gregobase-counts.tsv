@@ -1,7 +1,6 @@
 # severity	code	diagnostics	files
 info	engrave::wide-porrectus	2	2
 info	gabc::above-lines-text	343	127
-info	gabc::above-sign	205	63
 warning	gabc::bad-space	4	3
 warning	gabc::bar-sign	4	4
 info	gabc::fusion	1241	442
