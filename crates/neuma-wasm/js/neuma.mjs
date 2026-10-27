@@ -361,13 +361,31 @@ export function noteAtTime(timeline, t) {
   return note && t < note.start + note.duration ? note : null;
 }
 
-const CHANT_DEFAULTS = { initial: 1, annotation: true, lyricSize: 2.45, font: "google" };
+const CHANT_DEFAULTS = {
+  initial: 1,
+  annotation: true,
+  lyricSize: 2.45,
+  font: "google",
+  everyHyphen: false,
+  initialScale: 1,
+  initialMargin: 1.39,
+  shortLastStaff: false,
+};
 const FONTS = ["google", "eb-garamond-12"];
 
 /** The engine's chant options from the glue's, read as `what` takes them. */
 function chantArgs(given, what) {
-  const { initial, annotation, lyricSize, font } = options(given, CHANT_DEFAULTS, what);
-  return [Math.min(Math.max(Math.trunc(Number(initial)) || 0, 0), 255), annotation ? 1 : 0, lyricSize, oneOf("font", font, FONTS)];
+  const { initial, annotation, lyricSize, font, everyHyphen, initialScale, initialMargin, shortLastStaff } =
+    options(given, CHANT_DEFAULTS, what);
+  return [
+    Math.min(Math.max(Math.trunc(Number(initial)) || 0, 0), 255),
+    annotation ? 1 : 0,
+    lyricSize,
+    oneOf("font", font, FONTS),
+    (everyHyphen ? 1 : 0) | (shortLastStaff ? 2 : 0),
+    Number(initialScale),
+    Number(initialMargin),
+  ];
 }
 
 /** Chant versions: counted here, so they keep growing across engine restarts. */
@@ -386,10 +404,10 @@ let relayOut;
 /** A chant's current version. */
 let versionOf;
 
-const VIEW_DEFAULTS = { scale: 6, lastLine: "ragged", maxLines: 0, prefix: "", svg: "whole", ids: true };
+const VIEW_DEFAULTS = { scale: 6, lastLine: "ragged", maxLines: 0, prefix: "", svg: "whole", ids: true, style: true };
 
 /** The engine's layout arguments for a view's options. */
-function viewArgs({ scale, lastLine, maxLines, prefix, svg, ids }) {
+function viewArgs({ scale, lastLine, maxLines, prefix, svg, ids, style }) {
   const lines = oneOf("svg", svg, ["whole", "lines"]) === 1;
   return {
     scale: Number(scale),
@@ -397,7 +415,7 @@ function viewArgs({ scale, lastLine, maxLines, prefix, svg, ids }) {
     maxLines: maxLines >>> 0,
     prefix: String(prefix),
     lines,
-    flags: (lines ? 2 | 8 : 0) | (ids ? 0 : 4),
+    flags: (lines ? 2 | 8 : 0) | (ids ? 0 : 4) | (style ? 0 : 32),
   };
 }
 
@@ -430,11 +448,19 @@ export class Chant {
   /**
    * Engraves `gabc` once.
    * @param {string} gabc
-   * @param {{ initial?: number, annotation?: boolean, lyricSize?: number, font?: string }} [options]
+   * @param {{ initial?: number, annotation?: boolean, lyricSize?: number, font?: string,
+   *   everyHyphen?: boolean, initialScale?: number, initialMargin?: number,
+   *   shortLastStaff?: boolean }} [options]
    *   initial: drop-cap height in staves (0 for none, default 1). annotation: show the
    *   annotation or mode above it (default true). lyricSize: in staff spaces (default 2.45).
    *   font: which EB Garamond the page loads, "google" (Google Fonts, default) or
    *   "eb-garamond-12" (the EB Garamond 12 files), so lyrics are spaced for it.
+   *   everyHyphen: a hyphen between every two syllables of a word, as English chant books
+   *   set them (default false, GregorioTeX's: only where the notes hold them apart).
+   *   initialScale: the initial's size as a share of the height it spans, 0.25 to 1
+   *   (default 1). initialMargin: space before the initial in staff spaces (default 1.39,
+   *   GregorioTeX's; 0 for flush). shortLastStaff: end the last staff at the final bar
+   *   instead of the column's edge (default false).
    */
   constructor(gabc, options) {
     if (gabc === PSALM) return;
@@ -608,7 +634,7 @@ export class Chant {
    * with these options at whatever width it has. `view.layout(width)` gives the same page
    * while nothing changed, and a new one, reusing the last one's lines, when something has.
    * @param {{ scale?: number, lastLine?: "ragged"|"justified", maxLines?: number,
-   *   prefix?: string, svg?: "whole"|"lines", ids?: boolean }} [options] as `layout` takes.
+   *   prefix?: string, svg?: "whole"|"lines", ids?: boolean, style?: boolean }} [options] as `layout` takes.
    * @returns {View}
    */
   view(viewOptions) {
@@ -621,7 +647,7 @@ export class Chant {
    * `view`, which gives the same page while nothing changed and reuses lines when it has.
    * @param {number} width
    * @param {{ scale?: number, lastLine?: "ragged"|"justified", maxLines?: number, weights?: object, prefix?: string,
-   *   svg?: "whole"|"lines", ids?: boolean }} [options]
+   *   svg?: "whole"|"lines", ids?: boolean, style?: boolean }} [options]
    *   scale: output units per staff space (default 6; any other value that isn't a
    *   positive number is 6 too). maxLines: keep only the first lines, as
    *   broken for the whole score, for a preview such as an incipit (default 0, all).
@@ -629,7 +655,8 @@ export class Chant {
    *   non-numeric value keeps the default. prefix: class and id prefix for the SVG
    *   (default "neuma"). svg: "lines" gives `svgParts` instead of `svg` (see the README), to
    *   patch a page line by line. ids: false leaves out `data-note` and `data-syllable`, so a
-   *   line's SVG doesn't change when notes are added or removed above it.
+   *   line's SVG doesn't change when notes are added or removed above it. style: false leaves
+   *   out the SVG's `<style>`, for a page whose stylesheet styles the classes itself.
    * @returns {Page}
    */
   layout(width, layoutOptions) {

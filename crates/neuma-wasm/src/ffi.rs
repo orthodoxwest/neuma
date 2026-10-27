@@ -4,7 +4,7 @@
 
 use std::cell::{Cell, RefCell};
 
-use neuma::{LastLine, LayoutOptions, SvgOptions, Weights};
+use neuma::{Hyphens, LastLine, LayoutOptions, SvgOptions, Weights};
 
 use crate::slab::{NONE, Slab};
 use crate::{Chant, ChantOptions, Initial, Page, SvgOutput};
@@ -47,11 +47,31 @@ fn with_chant<R>(handle: f64, f: impl FnOnce(&mut Chant) -> R) -> Option<R> {
     CHANTS.with(|c| c.borrow_mut().get_mut(handle).map(f))
 }
 
-fn chant_options(initial: i32, annotation: u32, lyric_size: f32, font: u32) -> ChantOptions {
+/// The chant's options: `style` 1 for a hyphen between every two syllables, 2 for a last
+/// staff ending at the final bar; `initial_scale` and `initial_margin` as
+/// [`ChantOptions::with_initial_scale`] and [`ChantOptions::with_initial_margin`] take them.
+#[allow(clippy::too_many_arguments)]
+fn chant_options(
+    initial: i32,
+    annotation: u32,
+    lyric_size: f32,
+    font: u32,
+    style: u32,
+    initial_scale: f32,
+    initial_margin: f32,
+) -> ChantOptions {
     let options = ChantOptions::default()
         .with_initial(Initial::from_staves(initial.into()))
         .with_annotation(annotation != 0)
-        .with_lyric_size(lyric_size);
+        .with_lyric_size(lyric_size)
+        .with_hyphens(if style & 1 != 0 {
+            Hyphens::EverySyllable
+        } else {
+            Hyphens::GregorioTeX
+        })
+        .with_short_last_staff(style & 2 != 0)
+        .with_initial_scale(initial_scale)
+        .with_initial_margin(initial_margin);
     #[cfg(any(feature = "font-google", feature = "font-garamond12"))]
     let options = options.with_font(if font == 1 {
         crate::LyricFont::Garamond12
@@ -143,8 +163,18 @@ pub extern "C" fn neuma_output_len() -> u32 {
 /// in the output buffer.
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
-pub extern "C" fn chant_new(initial: i32, annotation: u32, lyric_size: f32, font: u32) -> f64 {
-    let chant = Chant::new(&input(), chant_options(initial, annotation, lyric_size, font));
+#[allow(clippy::too_many_arguments)]
+pub extern "C" fn chant_new(
+    initial: i32,
+    annotation: u32,
+    lyric_size: f32,
+    font: u32,
+    style: u32,
+    initial_scale: f32,
+    initial_margin: f32,
+) -> f64 {
+    let options = chant_options(initial, annotation, lyric_size, font, style, initial_scale, initial_margin);
+    let chant = Chant::new(&input(), options);
     output(chant.diagnostics_json());
     keep(chant)
 }
@@ -164,10 +194,13 @@ pub extern "C" fn chant_from_psalm(
     annotation: u32,
     lyric_size: f32,
     font: u32,
+    style: u32,
+    initial_scale: f32,
+    initial_margin: f32,
 ) -> f64 {
     match psalm_input(custom, psalm_flags, auto_point) {
         Ok((tone, text, psalm)) => {
-            let opts = chant_options(initial, annotation, lyric_size, font);
+            let opts = chant_options(initial, annotation, lyric_size, font, style, initial_scale, initial_margin);
             let chant = Chant::from_psalm(&text, &tone, &psalm, opts);
             diagnostics_and_psalm(&chant);
             keep(chant)
@@ -204,8 +237,19 @@ fn changed(handle: f64, f: impl FnOnce(&mut Chant) -> bool) -> u32 {
 /// Engraves the chant again with new options; returns as [`changed`] says.
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
-pub extern "C" fn chant_set_options(handle: f64, initial: i32, annotation: u32, lyric_size: f32, font: u32) -> u32 {
-    changed(handle, |c| c.set_options(chant_options(initial, annotation, lyric_size, font)))
+#[allow(clippy::too_many_arguments)]
+pub extern "C" fn chant_set_options(
+    handle: f64,
+    initial: i32,
+    annotation: u32,
+    lyric_size: f32,
+    font: u32,
+    style: u32,
+    initial_scale: f32,
+    initial_margin: f32,
+) -> u32 {
+    let options = chant_options(initial, annotation, lyric_size, font, style, initial_scale, initial_margin);
+    changed(handle, |c| c.set_options(options))
 }
 
 #[allow(unsafe_code)]
@@ -219,7 +263,8 @@ pub extern "C" fn chant_free(handle: f64) {
 /// SVG in parts (see `SvgOutput`), 4 leaves out `data-note` and `data-syllable`, 8 (with 2)
 /// gives a line that `previous` (a page, or -1 for none) also had by its index there
 /// (`SvgOutput::ChangedLines`), 16 makes no SVG at all (`SvgOutput::None`, to lay a page out
-/// again for its hit tests). Leaves `{ width, height }`, a NUL and the SVG in the output
+/// again for its hit tests), 32 leaves out the `<style>` for a page that styles the classes
+/// itself. Leaves `{ width, height }`, a NUL and the SVG in the output
 /// buffer, and returns the new page's handle, or -1 for an unknown chant.
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
@@ -227,7 +272,7 @@ pub extern "C" fn chant_free(handle: f64) {
 pub extern "C" fn chant_layout(handle: f64, width: f32, scale: f32, last: u32, max_lines: u32, flags: u32, previous: f64) -> f64 {
     let prefix = input();
     let opts = layout_options(scale, last, max_lines);
-    let mut svg = SvgOptions::default().with_ids(flags & 4 == 0);
+    let mut svg = SvgOptions::default().with_ids(flags & 4 == 0).with_style(flags & 32 == 0);
     if !prefix.is_empty() {
         svg = svg.with_prefix(prefix);
     }
@@ -271,12 +316,15 @@ pub extern "C" fn page_rebuild(
     annotation: u32,
     lyric_size: f32,
     font: u32,
+    style: u32,
+    initial_scale: f32,
+    initial_margin: f32,
     width: f32,
     scale: f32,
     last: u32,
     max_lines: u32,
 ) -> f64 {
-    let options = chant_options(initial, annotation, lyric_size, font);
+    let options = chant_options(initial, annotation, lyric_size, font, style, initial_scale, initial_margin);
     let chant = if psalm == 1 {
         #[cfg(feature = "tones")]
         match psalm_input(custom, psalm_flags, auto_point) {

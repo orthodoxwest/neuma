@@ -45,7 +45,9 @@ in the browser and on iOS and Android.
 - `neuma-cli`: the `neuma` command: `render`, `check`, `notes`, `info`, `tones`, `point`,
   `psalm` and `book`.
 - The browser package (`neuma-wasm`): one self-contained ES module with the engine inlined,
-  and TypeScript types.
+  and TypeScript types. It takes the page style options too (`everyHyphen`, `initialScale`,
+  `initialMargin`, `shortLastStaff`), and `style: false` leaves out the SVG's `<style>` for a
+  page that styles its classes itself.
 - Bindings for Swift and Kotlin (`neuma-mobile`), through UniFFI.
 - Documentation: rustdoc for every public item of `neuma` and `neuma-tones`,
   `docs/DESIGN.md` on the architecture, and `docs/diagnostics.md`, which lists every

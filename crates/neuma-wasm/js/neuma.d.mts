@@ -84,6 +84,17 @@ export interface ChantOptions {
   lyricSize?: Opt<number>;
   /** Default "google". */
   font?: Opt<LyricFont>;
+  /**
+   * A hyphen between every two syllables of a word, as English chant books set them; default
+   * false (GregorioTeX's way: only where the notes hold the syllables apart).
+   */
+  everyHyphen?: Opt<boolean>;
+  /** The initial's size as a share of the height it spans, 0.25 to 1; default 1. */
+  initialScale?: Opt<number>;
+  /** Space before the initial in staff spaces; default 1.39 (GregorioTeX's), 0 for flush. */
+  initialMargin?: Opt<number>;
+  /** End the last staff at the final bar instead of the column's edge; default false. */
+  shortLastStaff?: Opt<boolean>;
 }
 
 /** How a psalm is set to its tone. */
@@ -127,6 +138,8 @@ export interface ViewOptions {
   svg?: Opt<"whole" | "lines">;
   /** false leaves out `data-note` and `data-syllable`; default true. */
   ids?: Opt<boolean>;
+  /** false leaves out the SVG's `<style>`, for a page that styles the classes; default true. */
+  style?: Opt<boolean>;
 }
 
 export interface LayoutOptions extends ViewOptions {
