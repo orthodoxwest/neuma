@@ -106,6 +106,7 @@ fn bad_options_keep_defaults() {
             annotation: false,
             lyric_size: f32::NAN,
             font: Some(LyricFont::Garamond12),
+            ..ChantOptions::default()
         },
     );
     let mut opts = options();

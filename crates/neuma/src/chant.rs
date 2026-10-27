@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, TryLockError};
 
 use crate::diag::Diagnostic;
-use crate::engrave::{AlterationScope, CustosPolicy, EngraveCache, Engraving, Initial, StyleOptions};
+use crate::engrave::{AlterationScope, CustosPolicy, EngraveCache, Engraving, Hyphens, Initial, StyleOptions};
 #[cfg(any(feature = "font-google", feature = "font-garamond12"))]
 use crate::fonts::LyricFont;
 use crate::gabc::{Diff, ParseMarks};
@@ -52,6 +52,34 @@ impl ChantOptions {
     #[must_use]
     pub fn with_initial(mut self, initial: Initial) -> ChantOptions {
         self.style.initial = initial;
+        self
+    }
+
+    /// Sets the style's [`hyphens`](StyleOptions::hyphens).
+    #[must_use]
+    pub fn with_hyphens(mut self, hyphens: Hyphens) -> ChantOptions {
+        self.style.hyphens = hyphens;
+        self
+    }
+
+    /// Sets the style's [`initial_scale`](StyleOptions::initial_scale).
+    #[must_use]
+    pub fn with_initial_scale(mut self, scale: f32) -> ChantOptions {
+        self.style.initial_scale = scale;
+        self
+    }
+
+    /// Sets the style's [`initial_margin`](StyleOptions::initial_margin).
+    #[must_use]
+    pub fn with_initial_margin(mut self, margin: f32) -> ChantOptions {
+        self.style.initial_margin = margin;
+        self
+    }
+
+    /// Sets the style's [`short_last_staff`](StyleOptions::short_last_staff).
+    #[must_use]
+    pub fn with_short_last_staff(mut self, short: bool) -> ChantOptions {
+        self.style.short_last_staff = short;
         self
     }
 
@@ -497,7 +525,7 @@ impl fmt::Debug for Chant {
 mod tests {
     use super::*;
     use crate::svg::{SvgOptions, SvgParts};
-    use crate::{ApproxMeasure, ElementKind};
+    use crate::{ApproxMeasure, DisplayList, ElementKind, Ink, Item, TextRole};
 
     fn assert_send_sync<T: Send + Sync>() {}
 
@@ -510,6 +538,99 @@ mod tests {
 
     fn pipeline(src: &str, style: &StyleOptions) -> Arc<Engraving> {
         crate::parse(src).score.engrave(LyricFont::Google.metrics(), style)
+    }
+
+    fn items(src: &str, options: ChantOptions, width: f32) -> DisplayList {
+        Chant::with_options(src, options).layout(width).display()
+    }
+
+    fn texts(list: &DisplayList, want: TextRole) -> Vec<(f32, f32, String)> {
+        list.items
+            .iter()
+            .filter_map(|i| match i {
+                Item::Text { x, size, runs, role, .. } if *role == want => {
+                    Some((*x, *size, runs.iter().map(|r| r.text.as_str()).collect()))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn every_syllable_takes_a_hyphen_centred_between_the_texts() {
+        // The notes set close, so GregorioTeX runs some of the syllables on.
+        let src = "(c4) strength(g)en(g)ing(g)ly(g) (::)";
+        let gregorio = items(src, ChantOptions::default().with_initial(Initial::None), 600.0);
+        assert!(texts(&gregorio, TextRole::Hyphen).len() < 3);
+        let every = items(
+            src,
+            ChantOptions::default()
+                .with_initial(Initial::None)
+                .with_hyphens(Hyphens::EverySyllable),
+            600.0,
+        );
+        let hyphens = texts(&every, TextRole::Hyphen);
+        assert_eq!(hyphens.len(), 3);
+        // Each lies between the syllables it parts.
+        let lyrics = texts(&every, TextRole::Lyric);
+        for (h, pair) in hyphens.iter().zip(lyrics.windows(2)) {
+            assert!(pair[0].0 < h.0 && h.0 < pair[1].0, "{h:?} between {pair:?}");
+        }
+    }
+
+    #[test]
+    fn an_initial_may_be_smaller_and_flush_with_the_margin() {
+        let src = "(c4) Ma(g)ry(h) we(g) hail(h) thee.(g) (::)";
+        let solesmes = texts(&items(src, ChantOptions::default(), 600.0), TextRole::Initial);
+        let page = texts(
+            &items(
+                src,
+                ChantOptions::default().with_initial_scale(0.75).with_initial_margin(0.0),
+                600.0,
+            ),
+            TextRole::Initial,
+        );
+        let ((x0, size0, _), (x1, size1, _)) = (&solesmes[0], &page[0]);
+        assert!((size1 / size0 - 0.75).abs() < 0.01, "{size0} {size1}");
+        assert!(*x1 < *x0 && *x1 >= 0.0, "{x0} {x1}");
+        // Out-of-range values keep to the range and the default.
+        let wild = texts(
+            &items(
+                src,
+                ChantOptions::default().with_initial_scale(f32::NAN).with_initial_margin(-3.0),
+                600.0,
+            ),
+            TextRole::Initial,
+        );
+        assert_eq!(wild, solesmes);
+    }
+
+    #[test]
+    fn the_last_staff_may_end_at_the_final_bar() {
+        let src = "(c4) A(g)men.(g) (::)";
+        let staff_ends = |short| {
+            let list = items(
+                src,
+                ChantOptions::default().with_initial(Initial::None).with_short_last_staff(short),
+                600.0,
+            );
+            let ends: Vec<f32> = list
+                .items
+                .iter()
+                .filter_map(|i| match i {
+                    Item::Rect {
+                        x, w, role: Ink::Staff, ..
+                    } => Some(x + w),
+                    _ => None,
+                })
+                .collect();
+            (list.width, ends)
+        };
+        let (width, full) = staff_ends(false);
+        assert!(full.iter().all(|e| (e - width).abs() < 1e-3));
+        let (_, short) = staff_ends(true);
+        assert_eq!(short.len(), 4);
+        assert!(short.iter().all(|e| *e < width / 2.0), "{short:?}");
     }
 
     #[test]

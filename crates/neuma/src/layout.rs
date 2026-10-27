@@ -236,6 +236,9 @@ pub(crate) struct LineShape {
     pub hyphens: Vec<f32>,
     /// The line has text and no ink, so it draws no staff (and `staff` is its top).
     pub staffless: bool,
+    /// Where the staff ends, when not at the column's edge: the score's last, ragged line
+    /// with [`StyleOptions::short_last_staff`](crate::StyleOptions::short_last_staff).
+    pub staff_end: Option<f32>,
     /// How far a gap between words stretched to fill the column, in staff spaces.
     pub stretch: f32,
     /// Ledger lines drawn across the gap between neighbouring notes' own, as `(y, left,
@@ -475,7 +478,7 @@ struct Spot {
 }
 
 #[inline(always)]
-fn place(cur: &Cursor, seg: &Space, hyphen: f32, word_space: f32, line_start: f32) -> Spot {
+fn place(cur: &Cursor, seg: &Space, hyphen: f32, every_hyphen: bool, word_space: f32, line_start: f32) -> Spot {
     let mut x = cur.x;
     match (cur.ink_right, seg.ink()) {
         (Some(r), Some((l, _))) => {
@@ -528,11 +531,12 @@ fn place(cur: &Cursor, seg: &Space, hyphen: f32, word_space: f32, line_start: f3
                 touching = x + t.left - r <= HYPHEN_MIN_GAP;
             }
             Some(r) if word_continues => {
-                // Within a word the texts may touch. If the notes hold them apart, a hyphen
-                // follows the first text's ink, and the second's ink must clear it.
+                // Within a word the texts may touch. If the notes hold them apart, or every
+                // syllable is marked, a hyphen follows the first text's ink, and the second's
+                // ink must clear it.
                 text_need = Some(r - t.left);
                 x = x.max(r - t.left);
-                if x + t.left - r > HYPHEN_MIN_GAP {
+                if every_hyphen || x + t.left - r > HYPHEN_MIN_GAP {
                     let need = r + cur.lyric_tail + hyphen - t.ink_left();
                     text_need = Some((r - t.left).max(need));
                     x = x.max(need);
@@ -1076,7 +1080,7 @@ impl Engraving {
         let mut ink_end_shrunk = start;
         for fit in &fits[first..=last] {
             let seg = &fit.space;
-            let spot = place(&cur, seg, self.hyphen, self.word_space, start);
+            let spot = place(&cur, seg, self.hyphen, self.every_hyphen, self.word_space, start);
             let x = spot.x;
             xs.push(x);
             touching.push(spot.touching);
@@ -1347,7 +1351,7 @@ impl Engraving {
     /// its lyric baseline, `baseline` below the staff's center, narrowed if need be to the
     /// column the breaker left for it. Also its size before narrowing.
     fn one_staff_initial(&self, init: &InitialBox, baseline: f32, column: f32) -> (f32, f32) {
-        let natural = (baseline + HALF_STAFF) / CAP_HEIGHT;
+        let natural = (baseline + HALF_STAFF) / CAP_HEIGHT * init.scale;
         let size = if init.advance_em > 0.0 {
             natural.min((column + INITIAL_SLACK) / init.advance_em)
         } else {
@@ -1413,7 +1417,7 @@ impl Engraving {
             let end_of_score = last + 1 == n;
             let forced = matches!(fit.after, Break::Forced { .. });
             let breakable = end_of_score || forced || matches!(fit.after, Break::Allowed | Break::InMelisma);
-            let spot = place(&cur, seg, self.hyphen, self.word_space, start);
+            let spot = place(&cur, seg, self.hyphen, self.every_hyphen, self.word_space, start);
             let x = spot.x;
             if spot.touching {
                 stretch_weight -= since_text;
@@ -1583,7 +1587,7 @@ impl Engraving {
         for (i, s) in self.segments[first..=last].iter().enumerate() {
             if let Some(t) = &s.lyric {
                 // Wherever a word's syllables are apart, right after the first text, as
-                // GregorioTeX sets it. Placing them decided that, unless an even spread
+                // GregorioTeX sets it, or centred between them with a hyphen in every gap. Placing them decided that, unless an even spread
                 // parted touching ones, which leaves room for it between their advances
                 // (so it keeps off the next text's ink); the final positions' floats
                 // aren't tested again.
@@ -1591,7 +1595,13 @@ impl Engraving {
                     && !s.word_start
                     && (!trial.touching[i] || spread)
                 {
-                    hyphens.push((r + self.hyphen / 2.0).min(xs[i] + t.ink_left() - self.hyphen / 2.0));
+                    let next = xs[i] + t.ink_left();
+                    hyphens.push(if self.every_hyphen {
+                        // Centred between the two texts' inks.
+                        f32::midpoint(r, next)
+                    } else {
+                        (r + self.hyphen / 2.0).min(next - self.hyphen / 2.0)
+                    });
                 }
                 prev_lyric = Some((xs[i] + t.ink_right(), !t.word_end && !t.hyphenated));
             }
@@ -1644,6 +1654,7 @@ impl Engraving {
             natural
         };
         let right = line_indent + if ragged { natural } else { target.max(natural) };
+        let staff_end = (self.short_last_staff && ragged && last + 1 == self.segments.len()).then_some(line_indent + ink_end);
         LineShape {
             xs,
             indent: line_indent,
@@ -1651,6 +1662,7 @@ impl Engraving {
             hyphen,
             hyphens,
             staffless,
+            staff_end,
             stretch: word_gap_stretch,
             bridges,
             ink_top,
@@ -1790,7 +1802,7 @@ impl Engraving {
             // From the first staff's top line to the bottom line of the last staff it spans.
             let last = &lines[init.lines.min(lines.len()) - 1];
             let cap = (last.staff + HALF_STAFF) - (first.staff - HALF_STAFF);
-            let natural = cap / CAP_HEIGHT;
+            let natural = cap / CAP_HEIGHT * init.scale;
             let mut size = natural;
             if init.advance_em > 0.0 {
                 size = size.min(column / init.advance_em);
@@ -1799,7 +1811,8 @@ impl Engraving {
         };
         let width = init.advance_em * size;
         let placed = PlacedInitial {
-            x: INITIAL_BEFORE + (column - width) / 2.0,
+            // Centred in its column, but never out past the margin.
+            x: init.before + ((column - width) / 2.0).max(-init.before),
             baseline,
             size,
             column,
@@ -1820,7 +1833,8 @@ impl Engraving {
         // The first `indented` lines make room for the initial.
         let indented = self.initial.as_ref().map_or(0, |i| i.lines);
         let column = self.initial.as_ref().map_or(0.0, |i| column.unwrap_or(0.0).max(i.column()));
-        let indent = if indented > 0 { INITIAL_BEFORE + column + INITIAL_GAP } else { 0.0 };
+        let before = self.initial.as_ref().map_or(0.0, |i| i.before);
+        let indent = if indented > 0 { before + column + INITIAL_GAP } else { 0.0 };
         // Each line's candidate breaks depend only on its own segments, so they come from the
         // cache when those are unchanged (see `BreakTable`).
         let key = BreakKey {
@@ -1922,7 +1936,7 @@ impl Engraving {
                 && let Some(init) = self.initial.as_ref().filter(|i| i.lines == 1)
                 && let Some(line0) = lines.first()
             {
-                let reach = INITIAL_BEFORE + column + INITIAL_GAP;
+                let reach = init.before + column + INITIAL_GAP;
                 let clef_ink = clef.as_ref().map(|c| clef_pieces(c, 0.0).0).unwrap_or_default();
                 let seg_ink = self.segments[first..=last]
                     .iter()

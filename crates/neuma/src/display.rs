@@ -2,7 +2,7 @@
 
 use crate::engrave::{Ink, Mark, Piece, clef_pieces, custos_piece};
 use crate::glyphs::UNITS_PER_SPACE;
-use crate::layout::{INITIAL_BEFORE, Layout, PlacedLine};
+use crate::layout::{Layout, PlacedLine};
 use crate::score::{LyricRun, TextStyle};
 
 /// The note a piece of ink belongs to, by score-wide note index.
@@ -212,7 +212,7 @@ impl Layout {
             for (i, (text, w)) in init.annotations.iter().enumerate() {
                 let above = (count - 1 - i) as f32 * init.annotation_size * 1.1;
                 items.push(Item::Text {
-                    x: (INITIAL_BEFORE + (column - w) / 2.0) * s,
+                    x: (init.before + ((column - w) / 2.0).max(-init.before)) * s,
                     baseline: (placed.annotation_baseline - above) * s,
                     size: init.annotation_size * s,
                     runs: vec![TextRun {
@@ -240,7 +240,7 @@ impl Layout {
             items.push(Item::Rect {
                 x: line.indent * s,
                 y: y * s,
-                w: (self.width - line.indent) * s,
+                w: (line.staff_end.map_or(self.width, |e| e.min(self.width)) - line.indent) * s,
                 h: staff_weight * s,
                 role: Ink::Staff,
                 note: None,
