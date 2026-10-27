@@ -59,6 +59,20 @@ pub struct ChantOptions {
     /// Fonts' EB Garamond; an enum field can't have another default in the bindings.
     #[uniffi(default)]
     pub font: Option<LyricFont>,
+    /// A hyphen between every two syllables of a word, centred in the gap, as English chant
+    /// books set them; false (the default) sets them as GregorioTeX does, only where the notes
+    /// hold the syllables apart.
+    #[uniffi(default = false)]
+    pub every_hyphen: bool,
+    /// The initial's size as a share of the height it spans, 0.25 to 1 (the default).
+    #[uniffi(default = 1.0)]
+    pub initial_scale: f32,
+    /// Space before the initial in staff spaces; 1.39 (GregorioTeX's) by default, 0 for flush.
+    #[uniffi(default = 1.39)]
+    pub initial_margin: f32,
+    /// End the last staff at the final bar instead of the column's edge.
+    #[uniffi(default = false)]
+    pub short_last_staff: bool,
 }
 
 impl Default for ChantOptions {
@@ -68,6 +82,10 @@ impl Default for ChantOptions {
             annotation: true,
             lyric_size: 2.45,
             font: None,
+            every_hyphen: false,
+            initial_scale: 1.0,
+            initial_margin: 1.39,
+            short_last_staff: false,
         }
     }
 }
@@ -79,6 +97,14 @@ impl From<ChantOptions> for neuma::ChantOptions {
             .with_annotation(o.annotation)
             .with_lyric_size(o.lyric_size)
             .with_font(o.font.unwrap_or_default().into())
+            .with_initial_scale(o.initial_scale)
+            .with_initial_margin(o.initial_margin)
+            .with_short_last_staff(o.short_last_staff)
+            .with_hyphens(if o.every_hyphen {
+                neuma::Hyphens::EverySyllable
+            } else {
+                neuma::Hyphens::GregorioTeX
+            })
     }
 }
 

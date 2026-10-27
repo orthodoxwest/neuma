@@ -19,6 +19,10 @@ in the browser and on iOS and Android.
     and the signs above the staff (`r1`–`r8`: accents, circles and musica ficta);
     lyrics centered on their vowels; GregorioTeX's spacing, bars included; drop-cap
     initials and their annotations;
+  - style options for a page that isn't a Solesmes book's: a hyphen between every two
+    syllables, centred (`Hyphens::EverySyllable`), as English chant books set them; a smaller
+    initial set flush with the margin (`initial_scale`, `initial_margin`); and a last staff
+    that ends at the final bar (`short_last_staff`). GregorioTeX's ways stay the default;
   - optimal-fit line breaking at any width, cheap enough to redo on every resize. A bar ends
     the line before it, as in GregorioTeX, unless every other way sets a line far too
     loose, and a ℣ or ℟ under a bar stays with its verse;

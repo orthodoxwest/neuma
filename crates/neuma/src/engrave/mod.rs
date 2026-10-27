@@ -163,6 +163,19 @@ pub enum CustosPolicy {
     Never,
 }
 
+/// Where a hyphen goes between two syllables of a word.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum Hyphens {
+    /// As GregorioTeX sets them: wherever the notes hold two syllables' texts apart, right
+    /// after the first; syllables whose texts touch run on as one word.
+    #[default]
+    GregorioTeX,
+    /// Between every two syllables, the texts held apart for it if need be, and centred in
+    /// the gap, as English chant books mark each syllable a reader follows.
+    EverySyllable,
+}
+
 /// How to engrave a score: everything that doesn't depend on the width. Build it with the
 /// `with_*` setters: `StyleOptions::default().with_initial(Initial::Lines(2))`.
 #[derive(Clone, Debug, PartialEq)]
@@ -181,6 +194,20 @@ pub struct StyleOptions {
     pub alterations: AlterationScope,
     /// Whether lines end with a custos.
     pub custos: CustosPolicy,
+    /// Where hyphens go between a word's syllables.
+    pub hyphens: Hyphens,
+    /// The initial's size as a share of the height it spans: 1 (the default) runs a one-staff
+    /// initial from the staff's top line down to the lyrics, as Solesmes books set it; less
+    /// keeps it standing on the same baseline, smaller, as a page whose other initials are
+    /// smaller may want. Values outside 0.25 to 1 are clamped; one that isn't finite keeps 1.
+    pub initial_scale: f32,
+    /// Space before the initial, in staff spaces: GregorioTeX's `beforeinitialshift`, 1.39
+    /// (0.2 cm), by default; 0 sets it flush with the margin, as text initials are. Negative or
+    /// non-finite values keep the default.
+    pub initial_margin: f32,
+    /// End the last line's staff at its last ink (the final bar), where the line is set
+    /// ragged, rather than running it on to the column's edge as GregorioTeX does.
+    pub short_last_staff: bool,
 }
 
 crate::setters!(StyleOptions {
@@ -190,6 +217,10 @@ crate::setters!(StyleOptions {
     vowels: Option<VowelRules> => with_vowels,
     alterations: AlterationScope => with_alterations,
     custos: CustosPolicy => with_custos,
+    hyphens: Hyphens => with_hyphens,
+    initial_scale: f32 => with_initial_scale,
+    initial_margin: f32 => with_initial_margin,
+    short_last_staff: bool => with_short_last_staff,
 });
 
 impl Default for StyleOptions {
@@ -201,6 +232,10 @@ impl Default for StyleOptions {
             vowels: None,
             alterations: AlterationScope::default(),
             custos: CustosPolicy::default(),
+            hyphens: Hyphens::default(),
+            initial_scale: 1.0,
+            initial_margin: crate::layout::INITIAL_BEFORE,
+            short_last_staff: false,
         }
     }
 }
@@ -413,6 +448,10 @@ pub(crate) struct InitialBox {
     pub annotations: Vec<(String, f32)>,
     pub annotation_size: f32,
     pub annotation_ascent: f32,
+    /// Its size as a share of the height it spans ([`StyleOptions::initial_scale`]).
+    pub scale: f32,
+    /// Space before its column ([`StyleOptions::initial_margin`]).
+    pub before: f32,
 }
 
 impl InitialBox {
@@ -436,6 +475,10 @@ pub struct Engraving {
     pub(crate) bar_spans: Vec<std::ops::Range<usize>>,
     pub(crate) lyric_size: f32,
     pub(crate) hyphen: f32,
+    /// A hyphen between every two syllables of a word ([`Hyphens::EverySyllable`]).
+    pub(crate) every_hyphen: bool,
+    /// The last line's staff ends at its ink ([`StyleOptions::short_last_staff`]).
+    pub(crate) short_last_staff: bool,
     pub(crate) word_space: f32,
     pub(crate) ascent: f32,
     pub(crate) descent: f32,
@@ -1004,7 +1047,12 @@ impl Score {
             } else {
                 STAFF_HEIGHT + line_pitch * (lines - 1) as f32
             };
-            let initial_size = cap / CAP_HEIGHT;
+            let scale = if style.initial_scale.is_finite() {
+                style.initial_scale.clamp(0.25, 1.0)
+            } else {
+                1.0
+            };
+            let initial_size = cap / CAP_HEIGHT * scale;
             let annotation_size = size * ANNOTATION_RATIO;
             let annotations = if style.annotation {
                 initial::annotations(&self.header)
@@ -1034,6 +1082,12 @@ impl Score {
                 annotations,
                 annotation_size,
                 annotation_ascent: ascent * annotation_size,
+                scale,
+                before: if style.initial_margin >= 0.0 && style.initial_margin.is_finite() {
+                    style.initial_margin
+                } else {
+                    crate::layout::INITIAL_BEFORE
+                },
             });
             first_lyric = Some((si, rest));
         }
@@ -1579,6 +1633,8 @@ impl Pass<'_> {
             syllable_word: self.syllable_word,
             lyric_size: self.size,
             hyphen: self.hyphen,
+            every_hyphen: e.style.hyphens == Hyphens::EverySyllable,
+            short_last_staff: e.style.short_last_staff,
             word_space: self.word_space,
             ascent: self.ascent,
             descent: self.descent,

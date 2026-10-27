@@ -3,12 +3,12 @@
 use std::io::{Read as _, Write as _};
 use std::process::ExitCode;
 
-use neuma::{Chant, ChantOptions, Diagnostic, Initial, LayoutOptions, LyricFont, Severity};
+use neuma::{Chant, ChantOptions, Diagnostic, Hyphens, Initial, LayoutOptions, LyricFont, Severity};
 
-const USAGE: &str = "usage: neuma render [--width PX] [--scale PX] [--initial LINES] [--font FONT] [--max-lines N]
-                    [FILE|-]
-       neuma notes  [--width PX] [--scale PX] [--initial LINES] [--font FONT] [--max-lines N]
-                    [FILE|-]
+const USAGE: &str = "usage: neuma render [--width PX] [--scale PX] [--initial LINES] [--font FONT]
+                    [--hyphens WHERE] [--max-lines N] [FILE|-]
+       neuma notes  [--width PX] [--scale PX] [--initial LINES] [--font FONT]
+                    [--hyphens WHERE] [--max-lines N] [FILE|-]
        neuma check  [--initial LINES] [--font FONT] [FILE...]
        neuma info   [FILE...]
        neuma psalm  --tone TONE [--tone-file FILE] [--intone first|every|never] [--name NAME]
@@ -41,6 +41,8 @@ const USAGE: &str = "usage: neuma render [--width PX] [--scale PX] [--initial LI
                     0 keeps them all; a taller initial keeps its full size
   --font FONT       the EB Garamond the lyrics are measured for: google (Google Fonts,
                     the default) or eb-garamond-12
+  --hyphens WHERE   gregoriotex (the default): a hyphen only where the notes hold two
+                    syllables apart; every: one between every two syllables, centred
   --                end the options: what follows is a file, even if it starts with -
 
   A FILE of - is stdin, which is also read when no FILE is given (but not by book).
@@ -72,6 +74,7 @@ fn flags(cmd: &str) -> &'static [(&'static str, bool)] {
         ("--scale", true),
         ("--initial", true),
         ("--font", true),
+        ("--hyphens", true),
         ("--max-lines", true),
     ];
     match cmd {
@@ -255,6 +258,11 @@ fn run(cmd: &str, args: &[String]) -> Result<ExitCode, ExitCode> {
                 "google" => options = options.with_font(LyricFont::Google),
                 "eb-garamond-12" => options = options.with_font(LyricFont::Garamond12),
                 v => return Err(usage_error(&format!("--font takes google or eb-garamond-12, not `{v}`"))),
+            },
+            "--hyphens" => match value(&mut it, a)? {
+                "gregoriotex" => options = options.with_hyphens(Hyphens::GregorioTeX),
+                "every" => options = options.with_hyphens(Hyphens::EverySyllable),
+                v => return Err(usage_error(&format!("--hyphens takes gregoriotex or every, not `{v}`"))),
             },
             "--max-lines" => {
                 let v = value(&mut it, a)?;

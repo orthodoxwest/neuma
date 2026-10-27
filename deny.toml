@@ -14,6 +14,9 @@ ignore = [
     # (harfrust, skrifa) is its own change.
     { id = "RUSTSEC-2026-0206", reason = "rustybuzz unmaintained; no known vulnerability" },
     { id = "RUSTSEC-2026-0192", reason = "ttf-parser unmaintained; no known vulnerability" },
+    # basic-toml is unmaintained; UniFFI's bindgen reads its config with it (through askama),
+    # in neuma-mobile only, and no UniFFI release has moved off it yet.
+    { id = "RUSTSEC-2026-0374", reason = "basic-toml unmaintained; no known vulnerability" },
 ]
 
 # Every dependency's license must be one of these (an `OR` needs only one of them).

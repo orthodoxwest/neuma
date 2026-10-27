@@ -205,7 +205,7 @@ pub use diag::{Diagnostic, Fix, Severity};
 #[doc(inline)]
 pub use display::{DisplayList, Item, LineBox, NoteRef, TextRole, TextRun};
 #[doc(inline)]
-pub use engrave::{AlterationScope, CustosPolicy, Engraving, Initial, Ink, StyleOptions};
+pub use engrave::{AlterationScope, CustosPolicy, Engraving, Hyphens, Initial, Ink, StyleOptions};
 #[doc(inline)]
 #[cfg(any(feature = "font-google", feature = "font-garamond12"))]
 pub use fonts::LyricFont;
