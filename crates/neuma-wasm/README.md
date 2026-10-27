@@ -71,6 +71,13 @@ page that serves the EB Garamond 12 files instead passes `{ font: "eb-garamond-1
 the SVG text's size, weight and letter-spacing alone: CSS that changes them changes the
 widths the layout planned for.
 
+A page in a book's style takes the options the Rust `ChantOptions` and the mobile bindings
+take: `everyHyphen` (a hyphen between every two syllables, as English chant books set them),
+`initialScale` (the initial's size as a share of the height it spans), `initialMargin` (the
+space before it, in staff spaces; 0 for flush) and `shortLastStaff` (the last staff ending at
+the final bar). A page whose stylesheet styles the SVG's classes lays out with
+`{ style: false }`, which leaves out the SVG's own `<style>`.
+
 `page` is a `Page`: `{ width, height, svg }`, its `timeline()`, made on the first call, and
 its hit tests (below). Every position is in output units (staff spaces times `scale`, the
 SVG's user units) from the layout's top left, with y down. A box is `x`, `y`, `w`, `h` from
