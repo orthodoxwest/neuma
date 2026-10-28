@@ -4,10 +4,10 @@ info[gabc::fusion] at 153..154: neume fusion isn't drawn yet; the notes are draw
 size 360.00 x 153.65, staff space 6.00
 line top 0.00 bottom 73.07 staff 30.89 baseline 68.69
 line top 80.58 bottom 153.65 staff 111.47 baseline 149.27
-staff rect 54.28 12.51 305.72 0.77
-staff rect 54.28 24.51 305.72 0.77
-staff rect 54.28 36.51 305.72 0.77
-staff rect 54.28 48.51 305.72 0.77
+staff rect 54.28 12.59 305.72 0.60
+staff rect 54.28 24.59 305.72 0.60
+staff rect 54.28 36.59 305.72 0.60
+staff rect 54.28 48.59 305.72 0.60
 clef DoClef 54.28 12.89
 note PunctumQuadratum 72.28 30.89 n0
 Lyric 70.48 68.69 14.70 s1 "ir"
@@ -46,10 +46,10 @@ Hyphen 262.11 68.69 14.70 "-"
 Hyphen 328.06 68.69 14.70 "-"
 Hyphen 346.58 68.69 14.70 "-"
 custos CustosShort 357.38 30.89
-staff rect 0.00 93.09 360.00 0.77
-staff rect 0.00 105.09 360.00 0.77
-staff rect 0.00 117.09 360.00 0.77
-staff rect 0.00 129.09 360.00 0.77
+staff rect 0.00 93.17 360.00 0.60
+staff rect 0.00 105.17 360.00 0.60
+staff rect 0.00 117.17 360.00 0.60
+staff rect 0.00 129.17 360.00 0.60
 clef DoClef 0.00 93.47
 note PunctumQuadratum 18.00 111.47 n13
 Lyric 9.19 149.27 14.70 s18 "can"
@@ -87,10 +87,10 @@ Initial 8.34 68.69 85.85 s1 "v"
 # width 720
 size 720.00 x 94.27, staff space 6.00
 line top 0.00 bottom 73.07 staff 30.89 baseline 68.69
-staff rect 54.28 12.51 665.72 0.77
-staff rect 54.28 24.51 665.72 0.77
-staff rect 54.28 36.51 665.72 0.77
-staff rect 54.28 48.51 665.72 0.77
+staff rect 54.28 12.59 665.72 0.60
+staff rect 54.28 24.59 665.72 0.60
+staff rect 54.28 36.59 665.72 0.60
+staff rect 54.28 48.59 665.72 0.60
 clef DoClef 54.28 12.89
 note PunctumQuadratum 72.28 30.89 n0
 Lyric 70.48 68.69 14.70 s1 "ir"

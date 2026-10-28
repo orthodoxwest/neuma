@@ -74,8 +74,11 @@ widths the layout planned for.
 A page in a book's style takes the options the Rust `ChantOptions` and the mobile bindings
 take: `everyHyphen` (a hyphen between every two syllables, as English chant books set them),
 `initialScale` (the initial's size as a share of the height it spans), `initialMargin` (the
-space before it, in staff spaces; 0 for flush) and `shortLastStaff` (the last staff ending at
-the final bar). A page whose stylesheet styles the SVG's classes lays out with
+space before it, in staff spaces; 0 for flush), `shortLastStaff` (the last staff ending at
+the final bar) and `phraseLines` (each phrase on a line of its own, as hymnals set each line
+of a verse). A page that draws lyrics in its own font passes `{ font: "custom" }` after
+handing that font's `neuma-metrics` table to `setLyricMetrics(bytes)`, so the lyrics are
+spaced as drawn. A page whose stylesheet styles the SVG's classes lays out with
 `{ style: false }`, which leaves out the SVG's own `<style>`.
 
 `page` is a `Page`: `{ width, height, svg }`, its `timeline()`, made on the first call, and

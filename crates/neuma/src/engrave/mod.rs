@@ -208,6 +208,11 @@ pub struct StyleOptions {
     /// End the last line's staff at its last ink (the final bar), where the line is set
     /// ragged, rather than running it on to the column's edge as GregorioTeX does.
     pub short_last_staff: bool,
+    /// Set each phrase on a line of its own, as hymnals set each line of a verse: a line ends
+    /// at every half, full or double bar where it can; every line is set ragged, its staff
+    /// ending at its ink; a phrase too long for the column is parted evenly over two lines;
+    /// and a word is broken only when nothing else fits.
+    pub phrase_lines: bool,
 }
 
 crate::setters!(StyleOptions {
@@ -221,6 +226,7 @@ crate::setters!(StyleOptions {
     initial_scale: f32 => with_initial_scale,
     initial_margin: f32 => with_initial_margin,
     short_last_staff: bool => with_short_last_staff,
+    phrase_lines: bool => with_phrase_lines,
 });
 
 impl Default for StyleOptions {
@@ -236,6 +242,7 @@ impl Default for StyleOptions {
             initial_scale: 1.0,
             initial_margin: crate::layout::INITIAL_BEFORE,
             short_last_staff: false,
+            phrase_lines: false,
         }
     }
 }
@@ -479,6 +486,8 @@ pub struct Engraving {
     pub(crate) every_hyphen: bool,
     /// The last line's staff ends at its ink ([`StyleOptions::short_last_staff`]).
     pub(crate) short_last_staff: bool,
+    /// Each phrase on a line of its own ([`StyleOptions::phrase_lines`]).
+    pub(crate) phrase_lines: bool,
     pub(crate) word_space: f32,
     pub(crate) ascent: f32,
     pub(crate) descent: f32,
@@ -1635,6 +1644,7 @@ impl Pass<'_> {
             hyphen: self.hyphen,
             every_hyphen: e.style.hyphens == Hyphens::EverySyllable,
             short_last_staff: e.style.short_last_staff,
+            phrase_lines: e.style.phrase_lines,
             word_space: self.word_space,
             ascent: self.ascent,
             descent: self.descent,

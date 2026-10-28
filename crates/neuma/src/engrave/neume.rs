@@ -10,8 +10,11 @@ use super::{Ink, Mark, Piece};
 use crate::glyphs::{Align, GlyphId as G};
 use crate::score::{Liquescent, Note, NoteShape, Placement, StaffPosition};
 
-/// Weight of stems, connecting lines and staff lines.
+/// Weight of stems, connecting lines and bars.
 pub(crate) const STEM: f32 = 0.128;
+/// Weight of staff and ledger lines: lighter than the stems, as GregorioTeX's are (0.096 of a
+/// staff space), so the notes stand out from the ruling.
+pub(crate) const STAFF_LINE: f32 = 0.1;
 /// Thickness of a horizontal episema.
 pub(crate) const EPISEMA: f32 = STEM * 1.25;
 /// exsurge's `intraNeumeSpacing`: half a staff space.
@@ -1583,9 +1586,9 @@ pub(crate) fn add_markings(built: &mut Built, kind: Kind, notes: &[Note], note_b
         built.pieces.push(Piece {
             mark: Mark::Rect {
                 x: l - LEDGER_OVERHANG,
-                y: -(lp as f32) - STEM / 2.0,
+                y: -(lp as f32) - STAFF_LINE / 2.0,
                 w: r - l + 2.0 * LEDGER_OVERHANG,
-                h: STEM,
+                h: STAFF_LINE,
             },
             role: Ink::Ledger,
             note: Some(id),

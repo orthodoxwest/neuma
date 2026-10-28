@@ -1,6 +1,6 @@
 // Checks neuma.d.mts against how the README uses the package: `tsc -p crates/neuma-wasm/js`.
 // Nothing here runs.
-import { Chant, engineStats, init, psalm, setLayoutBudget, type NeumaError, type SvgParts } from "./neuma.mjs";
+import { Chant, engineStats, init, psalm, setLayoutBudget, setLyricMetrics, type NeumaError, type SvgParts } from "./neuma.mjs";
 import * as neuma from "./neuma.mjs";
 
 await init();
@@ -24,6 +24,8 @@ console.log(shownNow.svgParts?.head ?? shownNow.svg);
 setLayoutBudget({ current: 10 });
 setLayoutBudget();
 setLayoutBudget(5);
+setLyricMetrics(new Uint8Array(0));
+setLyricMetrics(new ArrayBuffer(0));
 console.log(engineStats().budget.stale, chant.version > page.version, page.timeline().notes[0]?.cx);
 const bar = page.timeline().pauses[0]?.bar;
 if (bar) console.log(bar.line, bar.x + bar.w, bar.cx, bar.index);

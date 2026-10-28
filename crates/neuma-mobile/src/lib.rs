@@ -31,14 +31,35 @@ pub enum LyricFont {
     Google,
     /// The EB Garamond 12 release.
     Garamond12,
+    /// The table `set_lyric_metrics` set, for the font the app draws lyrics with; Google
+    /// Fonts' until one is set.
+    Custom,
 }
 
 impl From<LyricFont> for neuma::LyricFont {
     fn from(f: LyricFont) -> neuma::LyricFont {
         match f {
-            LyricFont::Google => neuma::LyricFont::Google,
+            LyricFont::Google | LyricFont::Custom => neuma::LyricFont::Google,
             LyricFont::Garamond12 => neuma::LyricFont::Garamond12,
         }
+    }
+}
+
+/// The table `LyricFont::Custom` measures with.
+static LYRIC_METRICS: RwLock<Option<Arc<neuma::MetricsTable>>> = RwLock::new(None);
+
+/// Measures the lyrics of chants engraved with `LyricFont::Custom` by a metrics table for the
+/// font the app draws them in (as `neuma-metrics` writes it), so they are spaced as drawn.
+/// Chants engraved before keep their spacing until engraved again. Returns false, keeping the
+/// last table, when `bytes` can't be read.
+#[uniffi::export]
+pub fn set_lyric_metrics(bytes: Vec<u8>) -> bool {
+    match neuma::MetricsTable::from_bytes(&bytes) {
+        Ok(t) => {
+            *LYRIC_METRICS.write().unwrap_or_else(PoisonError::into_inner) = Some(Arc::new(t));
+            true
+        }
+        Err(_) => false,
     }
 }
 
@@ -73,6 +94,11 @@ pub struct ChantOptions {
     /// End the last staff at the final bar instead of the column's edge.
     #[uniffi(default = false)]
     pub short_last_staff: bool,
+    /// Set each phrase on a line of its own, as hymnals set each line of a verse: lines end at
+    /// half, full and double bars where they can, every line ragged with its staff ending at its
+    /// ink, a phrase too long for the column parted evenly.
+    #[uniffi(default = false)]
+    pub phrase_lines: bool,
 }
 
 impl Default for ChantOptions {
@@ -86,13 +112,14 @@ impl Default for ChantOptions {
             initial_scale: 1.0,
             initial_margin: 1.39,
             short_last_staff: false,
+            phrase_lines: false,
         }
     }
 }
 
 impl From<ChantOptions> for neuma::ChantOptions {
     fn from(o: ChantOptions) -> neuma::ChantOptions {
-        neuma::ChantOptions::default()
+        let options = neuma::ChantOptions::default()
             .with_initial(neuma::Initial::from_staves(o.initial.into()))
             .with_annotation(o.annotation)
             .with_lyric_size(o.lyric_size)
@@ -100,11 +127,19 @@ impl From<ChantOptions> for neuma::ChantOptions {
             .with_initial_scale(o.initial_scale)
             .with_initial_margin(o.initial_margin)
             .with_short_last_staff(o.short_last_staff)
+            .with_phrase_lines(o.phrase_lines)
             .with_hyphens(if o.every_hyphen {
                 neuma::Hyphens::EverySyllable
             } else {
                 neuma::Hyphens::GregorioTeX
-            })
+            });
+        let custom = (o.font == Some(LyricFont::Custom))
+            .then(|| LYRIC_METRICS.read().unwrap_or_else(PoisonError::into_inner).clone())
+            .flatten();
+        match custom {
+            Some(table) => options.with_measure(table),
+            None => options,
+        }
     }
 }
 

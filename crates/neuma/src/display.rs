@@ -231,7 +231,7 @@ impl Layout {
         let s = self.scale;
         let eng = &*self.eng;
         let size = eng.lyric_size * s;
-        let staff_weight = crate::engrave::neume::STEM;
+        let staff_weight = crate::engrave::neume::STAFF_LINE;
         let staff = line.staff - top;
         let baseline = line.baseline - top;
         let staff_lines: &[f32] = if line.staffless { &[] } else { &[-3.0, -1.0, 1.0, 3.0] };

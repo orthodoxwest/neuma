@@ -3,10 +3,10 @@
 size 360.00 x 153.65, staff space 6.00
 line top 0.00 bottom 73.07 staff 30.89 baseline 68.69
 line top 80.58 bottom 153.65 staff 111.47 baseline 149.27
-staff rect 50.16 12.51 309.84 0.77
-staff rect 50.16 24.51 309.84 0.77
-staff rect 50.16 36.51 309.84 0.77
-staff rect 50.16 48.51 309.84 0.77
+staff rect 50.16 12.59 309.84 0.60
+staff rect 50.16 24.59 309.84 0.60
+staff rect 50.16 36.59 309.84 0.60
+staff rect 50.16 48.59 309.84 0.60
 clef DoClef 50.16 12.89
 note PunctumQuadratum 68.16 36.89 n0
 episema rect 65.16 29.34 6.00 0.96 n0
@@ -70,10 +70,10 @@ Hyphen 247.27 68.69 14.70 "-"
 Hyphen 289.76 68.69 14.70 "-"
 Hyphen 335.69 68.69 14.70 "-"
 custos CustosLong 357.22 36.89
-staff rect 0.00 93.09 360.00 0.77
-staff rect 0.00 105.09 360.00 0.77
-staff rect 0.00 117.09 360.00 0.77
-staff rect 0.00 129.09 360.00 0.77
+staff rect 0.00 93.17 360.00 0.60
+staff rect 0.00 105.17 360.00 0.60
+staff rect 0.00 117.17 360.00 0.60
+staff rect 0.00 129.17 360.00 0.60
 clef DoClef 0.00 93.47
 note PunctumQuadratum 18.00 117.47 n23
 mora Mora 21.12 112.97 n23
@@ -122,10 +122,10 @@ Initial 8.34 68.69 85.85 s1 "e"
 # width 720
 size 720.00 x 94.27, staff space 6.00
 line top 0.00 bottom 73.07 staff 30.89 baseline 68.69
-staff rect 50.16 12.51 669.84 0.77
-staff rect 50.16 24.51 669.84 0.77
-staff rect 50.16 36.51 669.84 0.77
-staff rect 50.16 48.51 669.84 0.77
+staff rect 50.16 12.59 669.84 0.60
+staff rect 50.16 24.59 669.84 0.60
+staff rect 50.16 36.59 669.84 0.60
+staff rect 50.16 48.59 669.84 0.60
 clef DoClef 50.16 12.89
 note PunctumQuadratum 68.16 36.89 n0
 episema rect 65.16 29.34 6.00 0.96 n0
