@@ -61,9 +61,11 @@ jobs:
   browser:
     runs-on: ubuntu-latest
     env:
-      # dist/neuma.mjs with every default feature was 466,959 bytes (456 KB) in October 2026.
-      # The budget leaves about 3% for growth; raise it in a change that says why it grew.
-      NEUMA_MJS_BUDGET: 481280 # 470 KiB
+      # dist/neuma.mjs with every default feature was 466,959 bytes (456 KB) in October 2026,
+      # and 482,472 once it could read a page's own lyric metrics table (`setLyricMetrics`)
+      # and set phrase lines. The budget leaves about 3% for growth; raise it in a change that
+      # says why it grew.
+      NEUMA_MJS_BUDGET: 496640 # 485 KiB
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
