@@ -122,6 +122,10 @@ const CUSTOS_GAP: f32 = 1.6;
 /// them; any wider gap gets one, set right after the first syllable's text (GregorioTeX's
 /// `maximumspacewithoutdash` is zero).
 const HYPHEN_MIN_GAP: f32 = 0.01;
+/// With a hyphen between every two syllables, the least space either side of it, as a share
+/// of its advance: centred between texts that would otherwise touch it, it reads as a mark
+/// between syllables rather than a join, and every hyphen of a line looks alike.
+const HYPHEN_CLEAR: f32 = 0.4;
 /// How much a gap stretches when a line is justified, relative to a gap between words: a gap
 /// inside a syllable (between note groups of a melisma) barely stretches, and syllables whose
 /// texts touch stay together, as in GregorioTeX, where only those gaps lack stretchable glue.
@@ -192,6 +196,13 @@ const MELISMA_DEMERITS: f64 = 2500.0;
 /// at [`BREAK_WEIGHT`] a point.
 const WORD_END_DEMERITS: f64 = -BREAK_WEIGHT * 100.0;
 const AFTER_BAR_DEMERITS: f64 = -BREAK_WEIGHT * 200.0;
+/// With [`StyleOptions::phrase_lines`](crate::StyleOptions::phrase_lines), a break at a
+/// phrase's end (after a half, full or double bar) earns a little more than a line costs, so a
+/// line ends at every one where the lines either side of it can be set.
+const PHRASE_END_DEMERITS: f64 = -1.05 * LINE_PENALTY;
+/// With phrase lines, the extra demerits for a break inside a word: about a loose line's
+/// worth, so a phrase too long for the column runs on at a word's end where it can.
+const IN_WORD_DEMERITS: f64 = 20000.0;
 /// TeX weighs those penalties against badness in the thousands; badness here is about a
 /// 79th of TeX's for the same line (see [`TOLERANCE`]). Against GregorioTeX 6.0's own breaks
 /// on 240 GregoBase scores at two widths, half a demerit a point matches best: more often a
@@ -537,7 +548,12 @@ fn place(cur: &Cursor, seg: &Space, hyphen: f32, every_hyphen: bool, word_space:
                 text_need = Some(r - t.left);
                 x = x.max(r - t.left);
                 if every_hyphen || x + t.left - r > HYPHEN_MIN_GAP {
-                    let need = r + cur.lyric_tail + hyphen - t.ink_left();
+                    let gap = if every_hyphen {
+                        hyphen * (1.0 + 2.0 * HYPHEN_CLEAR)
+                    } else {
+                        hyphen
+                    };
+                    let need = r + cur.lyric_tail + gap - t.ink_left();
                     text_need = Some((r - t.left).max(need));
                     x = x.max(need);
                 } else {
@@ -1371,6 +1387,14 @@ impl Engraving {
     fn ragged(&self, end: usize, opts: &LayoutOptions) -> bool {
         end + 1 == self.segments.len() && opts.last_line == LastLine::Ragged
             || matches!(self.segments[end].after, Break::Forced { justify: false, .. })
+            || self.phrase_end(end)
+    }
+
+    /// Whether, with phrase lines, a line may end a phrase after segment `end`: after a half,
+    /// full or double bar whose text doesn't lead into what follows.
+    fn phrase_end(&self, end: usize) -> bool {
+        let seg = &self.segments[end];
+        self.phrase_lines && seg.after == Break::Allowed && !seg.bars.is_empty() && !seg.light_bars && !text_leads(seg)
     }
 
     /// The extra demerits for a line break after segment `end`.
@@ -1380,11 +1404,14 @@ impl Engraving {
         // better still, and a bar best, unless its text leads into what follows (a ℣ before
         // its verse), which a line ending there would leave behind.
         let seg = &self.segments[end];
+        let in_word = if self.phrase_lines { IN_WORD_DEMERITS } else { 0.0 };
         match after {
-            Break::InMelisma => MELISMA_DEMERITS,
+            Break::Allowed if self.phrase_end(end) => PHRASE_END_DEMERITS,
+            Break::InMelisma => MELISMA_DEMERITS + in_word,
             Break::Allowed if seg.is_bar() && text_leads(seg) && end + 1 < self.segments.len() => BAR_SIDE_DEMERITS,
             Break::Allowed if seg.is_bar() => AFTER_BAR_DEMERITS,
             Break::Allowed if self.segments.get(end + 1).is_none_or(|s| s.word_start) => WORD_END_DEMERITS,
+            Break::Allowed => in_word,
             _ => 0.0,
         }
     }
@@ -1506,7 +1533,7 @@ impl Engraving {
         words.extend([
             f(set.indent),
             f(set.target),
-            u32::from(set.ragged),
+            u32::from(set.ragged) | u32::from(self.phrase_lines) << 1 | u32::from(self.short_last_staff) << 2,
             f(set.start),
             set.custos.map_or(u32::MAX, |p| p as u8 as u32),
             u32::from(set.first >= self.inkless_from),
@@ -1654,7 +1681,14 @@ impl Engraving {
             natural
         };
         let right = line_indent + if ragged { natural } else { target.max(natural) };
-        let staff_end = (self.short_last_staff && ragged && last + 1 == self.segments.len()).then_some(line_indent + ink_end);
+        // A ragged line's staff ends at its ink, the custos's counted: the score's last line
+        // with a short last staff, and with phrase lines every ragged line.
+        let short = if last + 1 == self.segments.len() {
+            self.short_last_staff || self.phrase_lines
+        } else {
+            self.phrase_lines
+        };
+        let staff_end = (short && ragged).then(|| custos.map_or(line_indent + ink_end, |(p, x)| x + custos_piece(p, 0.0).1));
         LineShape {
             xs,
             indent: line_indent,
@@ -2379,6 +2413,39 @@ mod tests {
         }
         assert!(starts > 0);
         assert_eq!(ends, [132, 134, 136, 138, 140]);
+    }
+
+    #[test]
+    fn phrase_lines_end_each_line_at_a_phrase_with_a_short_staff() {
+        let src = "(c4) Al(g)le(h)lu(g) (;) prai(g)ses(h) ring(g) (:) a(g)men(h) (::)";
+        let lines = |phrase: bool| {
+            let style = StyleOptions::default().with_initial(Initial::None).with_phrase_lines(phrase);
+            let eng = Arc::new(parse(src).score.engrave(&ApproxMeasure, &style));
+            let layout = eng.layout_with(800.0, &LayoutOptions::default());
+            let lines: Vec<_> = layout.lines.iter().map(|l| (l.last, l.staff_end)).collect();
+            (eng, lines)
+        };
+        assert_eq!(lines(false).1.len(), 1);
+        let (eng, phrased) = lines(true);
+        assert_eq!(phrased.len(), 3);
+        for &(last, staff_end) in &phrased {
+            assert!(eng.segments[last].is_bar(), "a line ends at its phrase's bar");
+            let end = staff_end.expect("a ragged phrase line's staff ends at its ink");
+            assert!(end * 6.0 < 400.0, "{end}");
+        }
+    }
+
+    #[test]
+    fn a_phrase_too_long_for_its_line_runs_on_at_a_words_end() {
+        let style = StyleOptions::default().with_initial(Initial::None).with_phrase_lines(true);
+        let src = "(c4) Ex(g)ul(h)tant(g) prai(h)ses(g) ring(h) and(g) ev(h)er(g)more(h) re(g)joice(h) (;) a(g)men(h) (::)";
+        let eng = Arc::new(parse(src).score.engrave(&ApproxMeasure, &style));
+        let layout = eng.layout_with(150.0, &LayoutOptions::default());
+        assert!(layout.lines.len() > 2);
+        for l in layout.lines.iter() {
+            let next = eng.segments.get(l.last + 1);
+            assert!(next.is_none_or(|s| s.word_start), "line ending at {} splits a word", l.last);
+        }
     }
 
     #[test]

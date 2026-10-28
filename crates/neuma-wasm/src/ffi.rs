@@ -3,8 +3,9 @@
 //! reads it; results are left in the output buffer for the glue to copy out.
 
 use std::cell::{Cell, RefCell};
+use std::sync::Arc;
 
-use neuma::{Hyphens, LastLine, LayoutOptions, SvgOptions, Weights};
+use neuma::{Hyphens, LastLine, LayoutOptions, MetricsTable, SvgOptions, Weights};
 
 use crate::slab::{NONE, Slab};
 use crate::{Chant, ChantOptions, Initial, Page, SvgOutput};
@@ -17,6 +18,8 @@ thread_local! {
     /// How many pages' layouts the engine keeps, current and stale; see
     /// [`neuma_set_layout_budget`].
     static BUDGET: Cell<[usize; 2]> = const { Cell::new(DEFAULT_BUDGET) };
+    /// The metrics table `font` 2 measures lyrics with; see [`neuma_set_metrics`].
+    static METRICS: RefCell<Option<Arc<MetricsTable>>> = const { RefCell::new(None) };
 }
 
 /// Layouts kept by default: of chants as they are now, enough for a page of many chants and
@@ -48,8 +51,10 @@ fn with_chant<R>(handle: f64, f: impl FnOnce(&mut Chant) -> R) -> Option<R> {
 }
 
 /// The chant's options: `style` 1 for a hyphen between every two syllables, 2 for a last
-/// staff ending at the final bar; `initial_scale` and `initial_margin` as
-/// [`ChantOptions::with_initial_scale`] and [`ChantOptions::with_initial_margin`] take them.
+/// staff ending at the final bar, 4 for phrase lines; `font` 2 for the table
+/// [`neuma_set_metrics`] set (the built-in one while none is); `initial_scale` and
+/// `initial_margin` as [`ChantOptions::with_initial_scale`] and
+/// [`ChantOptions::with_initial_margin`] take them.
 #[allow(clippy::too_many_arguments)]
 fn chant_options(
     initial: i32,
@@ -70,8 +75,14 @@ fn chant_options(
             Hyphens::GregorioTeX
         })
         .with_short_last_staff(style & 2 != 0)
+        .with_phrase_lines(style & 4 != 0)
         .with_initial_scale(initial_scale)
         .with_initial_margin(initial_margin);
+    if font == 2
+        && let Some(table) = METRICS.with(|m| m.borrow().clone())
+    {
+        return options.with_measure(table);
+    }
     #[cfg(any(feature = "font-google", feature = "font-garamond12"))]
     let options = options.with_font(if font == 1 {
         crate::LyricFont::Garamond12
@@ -157,6 +168,25 @@ pub extern "C" fn neuma_output_ptr() -> *const u8 {
 #[unsafe(no_mangle)]
 pub extern "C" fn neuma_output_len() -> u32 {
     OUTPUT.with(|b| b.borrow().len() as u32)
+}
+
+/// Reads the metrics table in the input buffer (as `neuma-metrics` writes it) for chants
+/// engraved with `font` 2 to measure their lyrics with. Returns 0, or -1 and leaves the error
+/// in the output buffer.
+#[allow(unsafe_code)]
+#[unsafe(no_mangle)]
+pub extern "C" fn neuma_set_metrics() -> i32 {
+    let table = INPUT.with(|b| MetricsTable::from_bytes(&b.borrow()));
+    match table {
+        Ok(t) => {
+            METRICS.with(|m| *m.borrow_mut() = Some(Arc::new(t)));
+            0
+        }
+        Err(e) => {
+            output(&e.to_string());
+            -1
+        }
+    }
 }
 
 /// Engraves the GABC in the input buffer. Returns a handle and leaves the diagnostics JSON

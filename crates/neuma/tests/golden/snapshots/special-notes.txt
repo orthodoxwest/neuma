@@ -6,10 +6,10 @@ size 360.00 x 296.44, staff space 6.00
 line top 0.00 bottom 85.07 staff 30.89 baseline 80.69
 line top 91.07 bottom 187.91 staff 133.73 baseline 183.53
 line top 193.91 bottom 296.44 staff 242.26 baseline 292.06
-staff rect 68.31 12.51 291.69 0.77
-staff rect 68.31 24.51 291.69 0.77
-staff rect 68.31 36.51 291.69 0.77
-staff rect 68.31 48.51 291.69 0.77
+staff rect 68.31 12.59 291.69 0.60
+staff rect 68.31 24.59 291.69 0.60
+staff rect 68.31 36.59 291.69 0.60
+staff rect 68.31 48.59 291.69 0.60
 clef DoClef 68.31 12.89
 note OriscusAsc 86.31 36.89 n0
 Hyphen 84.30 80.69 14.70 "-"
@@ -49,10 +49,10 @@ Hyphen 161.22 80.69 14.70 "-"
 Hyphen 191.87 80.69 14.70 "-"
 Hyphen 254.07 80.69 14.70 "-"
 custos CustosLong 357.22 24.89
-staff rect 0.00 115.34 360.00 0.77
-staff rect 0.00 127.34 360.00 0.77
-staff rect 0.00 139.34 360.00 0.77
-staff rect 0.00 151.34 360.00 0.77
+staff rect 0.00 115.43 360.00 0.60
+staff rect 0.00 127.43 360.00 0.60
+staff rect 0.00 139.43 360.00 0.60
+staff rect 0.00 151.43 360.00 0.60
 clef DoClef 0.00 115.73
 note Stropha 17.88 127.73 n21
 note Stropha 25.24 127.73 n22
@@ -101,7 +101,7 @@ Lyric 302.57 183.53 14.70 s23 "ga"
 note PunctumQuadratum 331.28 103.73 n44
 note PunctumQuadratum 337.28 97.73 n45
 note PunctumQuadratum 343.28 103.73 n46
-ledger rect 322.58 103.34 29.40 0.77 n44
+ledger rect 322.58 103.43 29.40 0.60 n44
 Lyric 324.88 183.53 14.70 s24 "led"
 Hyphen 24.48 183.53 14.70 "-"
 Hyphen 108.65 183.53 14.70 "-"
@@ -110,28 +110,28 @@ Hyphen 203.31 183.53 14.70 "-"
 Hyphen 246.77 183.53 14.70 "-"
 Hyphen 341.43 183.53 14.70 "-"
 custos CustosDescShort 357.38 109.73
-staff rect 0.00 223.87 360.00 0.77
-staff rect 0.00 235.87 360.00 0.77
-staff rect 0.00 247.87 360.00 0.77
-staff rect 0.00 259.87 360.00 0.77
+staff rect 0.00 223.96 360.00 0.60
+staff rect 0.00 235.96 360.00 0.60
+staff rect 0.00 247.96 360.00 0.60
+staff rect 0.00 259.96 360.00 0.60
 clef DoClef 0.00 224.26
 note PunctumQuadratum 18.00 218.26 n47
 note PodatusLower 24.00 212.26 n48
 stem rect 26.23 200.26 0.77 12.00 n49
 note PodatusUpper 27.00 200.26 n49
-ledger rect 15.30 211.87 17.40 0.77 n48
-ledger rect 15.82 199.87 16.88 0.77 n49
+ledger rect 15.30 211.96 17.40 0.60 n48
+ledger rect 15.82 199.96 16.88 0.60 n49
 Lyric 8.74 292.06 14.70 s25 "ger"
 note PodatusLowerShort 42.00 272.26 n50
 note PodatusUpperShort 45.00 266.26 n51
-ledger rect 33.30 271.87 17.40 0.77 n50
+ledger rect 33.30 271.96 17.40 0.60 n50
 Lyric 34.83 292.06 14.70 s26 "lo"
 stem rect 55.39 266.26 0.77 8.83 n52
 note PunctumQuadratum 58.39 266.26 n52
 note PunctumQuadratum 64.39 272.26 n53
-ledger rect 55.69 271.87 17.40 0.77 n53
+ledger rect 55.69 271.96 17.40 0.60 n53
 note PunctumQuadratum 73.39 278.26 n54
-ledger rect 64.69 271.87 17.40 0.77 n54
+ledger rect 64.69 271.96 17.40 0.60 n54
 Lyric 45.64 292.06 14.70 s27 "wer"
 note BeginningAscLiquescent 91.39 248.26 n55
 note TerminatingAscLiquescent 94.39 242.26 n56
@@ -165,10 +165,10 @@ Initial 8.34 80.69 104.31 s1 "o"
 size 720.00 x 193.60, staff space 6.00
 line top 0.00 bottom 102.53 staff 48.35 baseline 98.15
 line top 108.53 bottom 193.60 staff 139.42 baseline 189.22
-staff rect 68.31 29.96 651.69 0.77
-staff rect 68.31 41.96 651.69 0.77
-staff rect 68.31 53.96 651.69 0.77
-staff rect 68.31 65.96 651.69 0.77
+staff rect 68.31 30.05 651.69 0.60
+staff rect 68.31 42.05 651.69 0.60
+staff rect 68.31 54.05 651.69 0.60
+staff rect 68.31 66.05 651.69 0.60
 clef DoClef 68.31 30.35
 note OriscusAsc 86.31 54.35 n0
 Hyphen 84.30 98.15 14.70 "-"
@@ -251,14 +251,14 @@ Lyric 638.21 98.15 14.70 s23 "ga"
 note PunctumQuadratum 667.32 18.35 n44
 note PunctumQuadratum 673.32 12.35 n45
 note PunctumQuadratum 679.32 18.35 n46
-ledger rect 658.62 17.96 29.40 0.77 n44
+ledger rect 658.62 18.05 29.40 0.60 n44
 Lyric 660.92 98.15 14.70 s24 "led"
 note PunctumQuadratum 697.12 24.35 n47
 note PodatusLower 703.12 18.35 n48
 stem rect 705.35 6.35 0.77 12.00 n49
 note PodatusUpper 706.12 6.35 n49
-ledger rect 694.42 17.96 17.40 0.77 n48
-ledger rect 694.93 5.96 16.88 0.77 n49
+ledger rect 694.42 18.05 17.40 0.60 n48
+ledger rect 694.93 6.05 16.88 0.60 n49
 Lyric 687.86 98.15 14.70 s25 "ger"
 Hyphen 157.00 98.15 14.70 "-"
 Hyphen 185.55 98.15 14.70 "-"
@@ -270,21 +270,21 @@ Hyphen 536.95 98.15 14.70 "-"
 Hyphen 581.21 98.15 14.70 "-"
 Hyphen 677.48 98.15 14.70 "-"
 custos CustosLong 717.22 78.35
-staff rect 0.00 121.04 720.00 0.77
-staff rect 0.00 133.04 720.00 0.77
-staff rect 0.00 145.04 720.00 0.77
-staff rect 0.00 157.04 720.00 0.77
+staff rect 0.00 121.12 720.00 0.60
+staff rect 0.00 133.12 720.00 0.60
+staff rect 0.00 145.12 720.00 0.60
+staff rect 0.00 157.12 720.00 0.60
 clef DoClef 0.00 121.42
 note PodatusLowerShort 19.50 169.42 n50
 note PodatusUpperShort 22.50 163.42 n51
-ledger rect 10.80 169.04 17.40 0.77 n50
+ledger rect 10.80 169.12 17.40 0.60 n50
 Lyric 12.33 189.22 14.70 s26 "lo"
 stem rect 32.89 163.42 0.77 8.83 n52
 note PunctumQuadratum 35.89 163.42 n52
 note PunctumQuadratum 41.89 169.42 n53
-ledger rect 33.19 169.04 17.40 0.77 n53
+ledger rect 33.19 169.12 17.40 0.60 n53
 note PunctumQuadratum 50.89 175.42 n54
-ledger rect 42.19 169.04 17.40 0.77 n54
+ledger rect 42.19 169.12 17.40 0.60 n54
 Lyric 23.14 189.22 14.70 s27 "wer"
 note BeginningAscLiquescent 68.89 145.42 n55
 note TerminatingAscLiquescent 71.89 139.42 n56

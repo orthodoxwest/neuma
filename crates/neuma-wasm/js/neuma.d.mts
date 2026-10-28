@@ -72,7 +72,8 @@ export interface Diagnostic extends Span {
 }
 
 /** Which EB Garamond the page draws lyrics with, so they are spaced for it. */
-export type LyricFont = "google" | "eb-garamond-12";
+/** "custom" measures with the table `setLyricMetrics` set. */
+export type LyricFont = "google" | "eb-garamond-12" | "custom";
 
 /** How a chant is engraved. */
 export interface ChantOptions {
@@ -95,6 +96,12 @@ export interface ChantOptions {
   initialMargin?: Opt<number>;
   /** End the last staff at the final bar instead of the column's edge; default false. */
   shortLastStaff?: Opt<boolean>;
+  /**
+   * Set each phrase on a line of its own, as hymnals set each line of a verse: lines end at
+   * half, full and double bars where they can, ragged, their staves ending at their ink;
+   * default false.
+   */
+  phraseLines?: Opt<boolean>;
 }
 
 /** How a psalm is set to its tone. */
@@ -421,6 +428,8 @@ export function noteAtTime(timeline: { notes: TimelineNote[] }, t: number): Time
  * keeps 2^32 − 1. Anything else throws (code "invalid-option"). Set `current` above the
  * number of pages shown at once, or hovering across them lays each out again.
  */
+/** Measures `font: "custom"` lyrics with a `neuma-metrics` table for the page's font. */
+export function setLyricMetrics(bytes: Uint8Array | ArrayBuffer): void;
 export function setLayoutBudget(budget?: number | Opt<Partial<LayoutBudget>>): void;
 export function engineStats(): EngineStats;
 

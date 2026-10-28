@@ -22,7 +22,15 @@ in the browser and on iOS and Android.
   - style options for a page that isn't a Solesmes book's: a hyphen between every two
     syllables, centred (`Hyphens::EverySyllable`), as English chant books set them; a smaller
     initial set flush with the margin (`initial_scale`, `initial_margin`); and a last staff
-    that ends at the final bar (`short_last_staff`). GregorioTeX's ways stay the default;
+    that ends at the final bar (`short_last_staff`). Phrase lines (`phrase_lines`) set each
+    phrase on a line of its own, as hymnals set each line of a verse: a line ends at every
+    half, full or double bar where it can, ragged, with its staff ending at its ink, and is
+    broken inside a word only when nothing else fits. With a hyphen between every two
+    syllables, the hyphen keeps clear of both. GregorioTeX's ways stay the default;
+  - staff and ledger lines lighter than stems and bars (0.1 of a staff space), as
+    GregorioTeX's are;
+  - lyrics measured by an app's own metrics table in the browser and the native apps
+    (`setLyricMetrics` with `font: "custom"`, `set_lyric_metrics` with `LyricFont::Custom`);
   - optimal-fit line breaking at any width, cheap enough to redo on every resize. A bar ends
     the line before it, as in GregorioTeX, unless every other way sets a line far too
     loose, and a ℣ or ℟ under a bar stays with its verse;

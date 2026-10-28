@@ -4,10 +4,10 @@ size 360.00 x 254.86, staff space 6.00
 line top 0.00 bottom 93.70 staff 51.52 baseline 89.32
 line top 101.20 bottom 174.28 staff 132.10 baseline 169.90
 line top 181.78 bottom 254.86 staff 212.68 baseline 250.48
-staff rect 77.89 33.13 282.11 0.77
-staff rect 77.89 45.13 282.11 0.77
-staff rect 77.89 57.13 282.11 0.77
-staff rect 77.89 69.13 282.11 0.77
+staff rect 77.89 33.22 282.11 0.60
+staff rect 77.89 45.22 282.11 0.60
+staff rect 77.89 57.22 282.11 0.60
+staff rect 77.89 69.22 282.11 0.60
 clef DoClef 77.89 33.52
 note PunctumQuadratum 95.89 57.52 n0
 Lyric 91.74 89.32 14.70 s1 "E"
@@ -54,10 +54,10 @@ Hyphen 279.37 89.32 14.70 "-"
 Hyphen 293.14 89.32 14.70 "-"
 Hyphen 310.65 89.32 14.70 "-"
 custos CustosLong 357.22 45.52
-staff rect 0.00 113.71 360.00 0.77
-staff rect 0.00 125.71 360.00 0.77
-staff rect 0.00 137.71 360.00 0.77
-staff rect 0.00 149.71 360.00 0.77
+staff rect 0.00 113.80 360.00 0.60
+staff rect 0.00 125.80 360.00 0.60
+staff rect 0.00 137.80 360.00 0.60
+staff rect 0.00 149.80 360.00 0.60
 clef DoClef 0.00 114.10
 note PunctumQuadratum 20.76 126.10 n17
 Lyric 0.00 169.90 14.70 s15 "Qui"
@@ -104,10 +104,10 @@ Hyphen 270.92 169.90 14.70 "-"
 Hyphen 286.80 169.90 14.70 "-"
 Hyphen 306.42 169.90 14.70 "-"
 custos CustosLong 357.22 126.10
-staff rect 0.00 194.29 360.00 0.77
-staff rect 0.00 206.29 360.00 0.77
-staff rect 0.00 218.29 360.00 0.77
-staff rect 0.00 230.29 360.00 0.77
+staff rect 0.00 194.38 360.00 0.60
+staff rect 0.00 206.38 360.00 0.60
+staff rect 0.00 218.38 360.00 0.60
+staff rect 0.00 230.38 360.00 0.60
 clef DoClef 0.00 194.68
 note PunctumQuadratum 18.00 206.68 n33
 Lyric 4.65 250.48 14.70 s31 "Re"
@@ -157,10 +157,10 @@ Annotation 36.30 26.23 11.03 "6"
 size 720.00 x 174.28, staff space 6.00
 line top 0.00 bottom 93.70 staff 51.52 baseline 89.32
 line top 101.20 bottom 174.28 staff 132.10 baseline 169.90
-staff rect 77.89 33.13 642.11 0.77
-staff rect 77.89 45.13 642.11 0.77
-staff rect 77.89 57.13 642.11 0.77
-staff rect 77.89 69.13 642.11 0.77
+staff rect 77.89 33.22 642.11 0.60
+staff rect 77.89 45.22 642.11 0.60
+staff rect 77.89 57.22 642.11 0.60
+staff rect 77.89 69.22 642.11 0.60
 clef DoClef 77.89 33.52
 note PunctumQuadratum 95.89 57.52 n0
 Lyric 91.74 89.32 14.70 s1 "E"
@@ -251,10 +251,10 @@ Hyphen 632.80 89.32 14.70 "-"
 Hyphen 648.21 89.32 14.70 "-"
 Hyphen 667.36 89.32 14.70 "-"
 custos CustosLong 717.22 45.52
-staff rect 0.00 113.71 720.00 0.77
-staff rect 0.00 125.71 720.00 0.77
-staff rect 0.00 137.71 720.00 0.77
-staff rect 0.00 149.71 720.00 0.77
+staff rect 0.00 113.80 720.00 0.60
+staff rect 0.00 125.80 720.00 0.60
+staff rect 0.00 137.80 720.00 0.60
+staff rect 0.00 149.80 720.00 0.60
 clef DoClef 0.00 114.10
 note PunctumQuadratum 18.00 126.10 n33
 Lyric 4.65 169.90 14.70 s31 "Re"

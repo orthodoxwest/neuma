@@ -83,6 +83,13 @@ impl ChantOptions {
         self
     }
 
+    /// Sets the style's [`phrase_lines`](StyleOptions::phrase_lines).
+    #[must_use]
+    pub fn with_phrase_lines(mut self, phrase_lines: bool) -> ChantOptions {
+        self.style.phrase_lines = phrase_lines;
+        self
+    }
+
     /// Sets the style's [`annotation`](StyleOptions::annotation).
     #[must_use]
     pub fn with_annotation(mut self, annotation: bool) -> ChantOptions {

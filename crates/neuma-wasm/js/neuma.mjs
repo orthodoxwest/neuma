@@ -77,6 +77,7 @@ function instantiate() {
   if (layoutBudget.current !== DEFAULT_LAYOUT_BUDGET.current || layoutBudget.stale !== DEFAULT_LAYOUT_BUDGET.stale) {
     wasm.neuma_set_layout_budget(layoutBudget.current, layoutBudget.stale);
   }
+  if (lyricMetrics) sendMetrics(lyricMetrics);
 }
 
 /**
@@ -370,19 +371,20 @@ const CHANT_DEFAULTS = {
   initialScale: 1,
   initialMargin: 1.39,
   shortLastStaff: false,
+  phraseLines: false,
 };
-const FONTS = ["google", "eb-garamond-12"];
+const FONTS = ["google", "eb-garamond-12", "custom"];
 
 /** The engine's chant options from the glue's, read as `what` takes them. */
 function chantArgs(given, what) {
-  const { initial, annotation, lyricSize, font, everyHyphen, initialScale, initialMargin, shortLastStaff } =
+  const { initial, annotation, lyricSize, font, everyHyphen, initialScale, initialMargin, shortLastStaff, phraseLines } =
     options(given, CHANT_DEFAULTS, what);
   return [
     Math.min(Math.max(Math.trunc(Number(initial)) || 0, 0), 255),
     annotation ? 1 : 0,
     lyricSize,
     oneOf("font", font, FONTS),
-    (everyHyphen ? 1 : 0) | (shortLastStaff ? 2 : 0),
+    (everyHyphen ? 1 : 0) | (shortLastStaff ? 2 : 0) | (phraseLines ? 4 : 0),
     Number(initialScale),
     Number(initialMargin),
   ];
@@ -450,17 +452,20 @@ export class Chant {
    * @param {string} gabc
    * @param {{ initial?: number, annotation?: boolean, lyricSize?: number, font?: string,
    *   everyHyphen?: boolean, initialScale?: number, initialMargin?: number,
-   *   shortLastStaff?: boolean }} [options]
+   *   shortLastStaff?: boolean, phraseLines?: boolean }} [options]
    *   initial: drop-cap height in staves (0 for none, default 1). annotation: show the
    *   annotation or mode above it (default true). lyricSize: in staff spaces (default 2.45).
    *   font: which EB Garamond the page loads, "google" (Google Fonts, default) or
-   *   "eb-garamond-12" (the EB Garamond 12 files), so lyrics are spaced for it.
+   *   "eb-garamond-12" (the EB Garamond 12 files), so lyrics are spaced for it; or "custom",
+   *   the table `setLyricMetrics` set (until one is set, as "google").
    *   everyHyphen: a hyphen between every two syllables of a word, as English chant books
    *   set them (default false, GregorioTeX's: only where the notes hold them apart).
    *   initialScale: the initial's size as a share of the height it spans, 0.25 to 1
    *   (default 1). initialMargin: space before the initial in staff spaces (default 1.39,
    *   GregorioTeX's; 0 for flush). shortLastStaff: end the last staff at the final bar
-   *   instead of the column's edge (default false).
+   *   instead of the column's edge (default false). phraseLines: set each phrase on a line of
+   *   its own, as hymnals set each line of a verse: lines end at half, full and double bars
+   *   where they can, ragged, their staves ending at their ink (default false).
    */
   constructor(gabc, options) {
     if (gabc === PSALM) return;
@@ -1002,6 +1007,29 @@ export function setLayoutBudget(budget) {
   const { current, stale } = options(given, DEFAULT_LAYOUT_BUDGET, "setLayoutBudget");
   layoutBudget = Object.freeze({ current: poolBudget("current", current), stale: poolBudget("stale", stale) });
   if (wasm) wasm.neuma_set_layout_budget(layoutBudget.current, layoutBudget.stale);
+}
+
+/** The table `setLyricMetrics` set, sent again to an engine started after a crash. */
+let lyricMetrics = null;
+
+function sendMetrics(bytes) {
+  const w = wasm;
+  const ptr = w.neuma_input(bytes.length) >>> 0;
+  new Uint8Array(w.memory.buffer, ptr, bytes.length).set(bytes);
+  if (w.neuma_set_metrics() !== 0) throw fail(Error, "metrics", takeOutput());
+}
+
+/**
+ * Measures the lyrics of chants engraved with `font: "custom"` by a metrics table for the font
+ * the page draws them in (as `neuma-metrics` writes it), so they are spaced as drawn. Chants
+ * engraved before keep their spacing until engraved again. A table that can't be read throws
+ * (code "metrics") and keeps the last one.
+ * @param {Uint8Array | ArrayBuffer} bytes
+ */
+export function setLyricMetrics(bytes) {
+  const copy = new Uint8Array(bytes instanceof ArrayBuffer ? bytes : bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+  guarded(() => sendMetrics(copy));
+  lyricMetrics = copy;
 }
 
 /**

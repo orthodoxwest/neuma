@@ -3,10 +3,10 @@
 size 360.00 x 162.15, staff space 6.00
 line top 0.00 bottom 81.57 staff 39.39 baseline 77.19
 line top 89.08 bottom 162.15 staff 119.97 baseline 157.77
-staff rect 75.14 21.01 284.86 0.77
-staff rect 75.14 33.01 284.86 0.77
-staff rect 75.14 45.01 284.86 0.77
-staff rect 75.14 57.01 284.86 0.77
+staff rect 75.14 21.09 284.86 0.60
+staff rect 75.14 33.09 284.86 0.60
+staff rect 75.14 45.09 284.86 0.60
+staff rect 75.14 57.09 284.86 0.60
 clef DoClef 75.14 21.39
 note PunctumQuadratum 93.14 39.39 n0
 Lyric 88.89 77.19 14.70 s1 "Y"
@@ -50,10 +50,10 @@ Hyphen 310.73 77.19 14.70 "-"
 Hyphen 329.11 77.19 14.70 "-"
 Hyphen 346.42 77.19 14.70 "-"
 custos CustosLong 357.22 33.39
-staff rect 0.00 101.59 360.00 0.77
-staff rect 0.00 113.59 360.00 0.77
-staff rect 0.00 125.59 360.00 0.77
-staff rect 0.00 137.59 360.00 0.77
+staff rect 0.00 101.67 360.00 0.60
+staff rect 0.00 113.67 360.00 0.60
+staff rect 0.00 125.67 360.00 0.60
+staff rect 0.00 137.67 360.00 0.60
 clef DoClef 0.00 101.97
 note PunctumQuadratum 18.00 113.97 n14
 mora Mora 21.12 109.47 n14
@@ -102,10 +102,10 @@ Annotation 28.09 14.10 11.03 "XVI"
 # width 720
 size 720.00 x 102.77, staff space 6.00
 line top 0.00 bottom 81.57 staff 39.39 baseline 77.19
-staff rect 75.14 21.01 644.86 0.77
-staff rect 75.14 33.01 644.86 0.77
-staff rect 75.14 45.01 644.86 0.77
-staff rect 75.14 57.01 644.86 0.77
+staff rect 75.14 21.09 644.86 0.60
+staff rect 75.14 33.09 644.86 0.60
+staff rect 75.14 45.09 644.86 0.60
+staff rect 75.14 57.09 644.86 0.60
 clef DoClef 75.14 21.39
 note PunctumQuadratum 93.14 39.39 n0
 Lyric 88.89 77.19 14.70 s1 "Y"
