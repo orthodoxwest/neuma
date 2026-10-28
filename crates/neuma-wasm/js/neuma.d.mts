@@ -428,9 +428,13 @@ export function noteAtTime(timeline: { notes: TimelineNote[] }, t: number): Time
  * keeps 2^32 − 1. Anything else throws (code "invalid-option"). Set `current` above the
  * number of pages shown at once, or hovering across them lays each out again.
  */
-/** Measures `font: "custom"` lyrics with a `neuma-metrics` table for the page's font. */
-export function setLyricMetrics(bytes: Uint8Array | ArrayBuffer): void;
 export function setLayoutBudget(budget?: number | Opt<Partial<LayoutBudget>>): void;
+/**
+ * Measures `font: "custom"` lyrics with a `neuma-metrics` table for the page's font. Chants
+ * engraved before keep their spacing until engraved again; a table that can't be read throws
+ * (code "metrics") and keeps the last one. One set before `init` is read when the engine starts.
+ */
+export function setLyricMetrics(bytes: Uint8Array | ArrayBuffer): void;
 export function engineStats(): EngineStats;
 
 /** One score, engraved once and laid out at any width. */

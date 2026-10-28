@@ -129,7 +129,9 @@ fun Score(chant: Chant, width: Float, version: Long) { // version: chant.version
   and without the app's own tracking. `ChantOptions.font` (a `LyricFont`) says which EB
   Garamond the app bundles, so lyrics are measured the way they will be drawn. The default
   (null) is the Google Fonts build, as in the browser; use `GARAMOND12` (`.garamond12`) for
-  the EB Garamond 12 release.
+  the EB Garamond 12 release. An app that draws lyrics in a face of its own passes that
+  face's `neuma-metrics` table to `setLyricMetrics(bytes)` once and engraves with `CUSTOM`
+  (`.custom`); it returns false, keeping the last table, when the table can't be read.
 - **Highlighting.** `notes` lists the notes a piece of ink draws. A porrectus swash draws
   two. Every role (`Ink`, `TextRole`) can take its own color.
 - **Accessibility.** `page.altText` is the plain lyric text.

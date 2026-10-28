@@ -77,7 +77,15 @@ function instantiate() {
   if (layoutBudget.current !== DEFAULT_LAYOUT_BUDGET.current || layoutBudget.stale !== DEFAULT_LAYOUT_BUDGET.stale) {
     wasm.neuma_set_layout_budget(layoutBudget.current, layoutBudget.stale);
   }
-  if (lyricMetrics) sendMetrics(lyricMetrics);
+  if (lyricMetrics) {
+    try {
+      sendMetrics(lyricMetrics);
+    } catch (error) {
+      // Dropped, so the engine still starts next time without it.
+      lyricMetrics = null;
+      throw error;
+    }
+  }
 }
 
 /**
@@ -1024,12 +1032,15 @@ function sendMetrics(bytes) {
  * Measures the lyrics of chants engraved with `font: "custom"` by a metrics table for the font
  * the page draws them in (as `neuma-metrics` writes it), so they are spaced as drawn. Chants
  * engraved before keep their spacing until engraved again. A table that can't be read throws
- * (code "metrics") and keeps the last one.
+ * (code "metrics") and keeps the last one. One set before `init` is kept and read when the
+ * engine starts, where an unreadable table throws once and is dropped.
  * @param {Uint8Array | ArrayBuffer} bytes
  */
 export function setLyricMetrics(bytes) {
-  const copy = new Uint8Array(bytes instanceof ArrayBuffer ? bytes : bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
-  guarded(() => sendMetrics(copy));
+  const copy = ArrayBuffer.isView(bytes)
+    ? new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength).slice()
+    : new Uint8Array(bytes).slice();
+  if (wasm) guarded(() => sendMetrics(copy));
   lyricMetrics = copy;
 }
 

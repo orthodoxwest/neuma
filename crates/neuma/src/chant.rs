@@ -536,6 +536,31 @@ mod tests {
 
     fn assert_send_sync<T: Send + Sync>() {}
 
+    /// Switching every-syllable hyphens on a live chant lays it out as a chant made with them:
+    /// the hyphens' spacing is part of the breaks a layout keeps.
+    #[test]
+    fn every_syllable_hyphens_switched_on_lay_out_as_a_fresh_chant() {
+        let src = "(c4) Te(g) lu(h)cis(g) an(h)te(g) ter(h)mi(g)num(h) (;) re(g)rum(h) cre(g)a(h)tor(g) pos(h)ci(g)mus(h) (:) \
+                   ut(g) pro(h) tu(g)a(h) cle(g)men(h)ti(g)a(h) (;) sis(g) prae(h)sul(g) et(h) cus(g)to(h)di(g)a(h) (::)";
+        let plain = ChantOptions::default()
+            .with_initial(Initial::None)
+            .with_measure(Arc::new(ApproxMeasure));
+        let every = plain.clone().with_hyphens(Hyphens::EverySyllable);
+        let lines = |c: &Chant, w: f32| -> Vec<(usize, usize, Vec<f32>)> {
+            c.layout(w).lines.iter().map(|l| (l.first, l.last, l.xs.clone())).collect()
+        };
+        for width in [300.0, 500.0, 900.0] {
+            let mut live = Chant::with_options(src, plain.clone());
+            let _ = lines(&live, width);
+            live.set_options(every.clone());
+            assert_eq!(
+                lines(&live, width),
+                lines(&Chant::with_options(src, every.clone()), width),
+                "at {width}"
+            );
+        }
+    }
+
     #[test]
     fn is_send_and_sync() {
         assert_send_sync::<Chant>();

@@ -859,6 +859,7 @@ struct BreakKey {
     indent: u32,
     hyphen: u32,
     word_space: u32,
+    every_hyphen: bool,
     last_line: LastLine,
 }
 
@@ -1493,9 +1494,10 @@ impl Engraving {
                 } else if squeezed {
                     let r = (natural - target) / shrink;
                     (100.0 * r * r * r).min(10000.0)
-                } else if ragged && self.phrase_lines && !end_of_score {
+                } else if ragged && self.phrase_lines && (!end_of_score || first > 0 && !self.phrase_end(first - 1)) {
                     // A phrase too long for the column is parted evenly, rather than leaving
-                    // a word or two on a staff of their own.
+                    // a word or two on a staff of their own: the score's last line too, when
+                    // it ends a phrase begun on the line before.
                     let r = (target - natural).max(0.0) / target;
                     100.0 * r * r
                 } else if ragged {
@@ -1546,6 +1548,7 @@ impl Engraving {
             u32::from(set.first >= self.inkless_from),
             u32::from(self.continues_past(set.last)),
             f(self.hyphen),
+            u32::from(self.every_hyphen),
             f(self.word_space),
             f(self.lyric_size),
             self.lowest as u32,
@@ -1641,7 +1644,10 @@ impl Engraving {
             }
         }
         let hyphen = match prev_lyric {
-            Some((r, true)) if self.continues_past(last) => Some(r + self.hyphen / 2.0),
+            // Clear of its syllable as a hyphen within the line is, with one in every gap.
+            Some((r, true)) if self.continues_past(last) => {
+                Some(r + self.hyphen * if self.every_hyphen { 0.5 + HYPHEN_CLEAR } else { 0.5 })
+            }
             _ => None,
         };
         for x in xs.iter_mut().chain(hyphens.iter_mut()) {
@@ -1883,6 +1889,7 @@ impl Engraving {
             indent: indent.to_bits(),
             hyphen: self.hyphen.to_bits(),
             word_space: self.word_space.to_bits(),
+            every_hyphen: self.every_hyphen,
             last_line: opts.last_line,
         };
         let mut table = cache.take(&key);
@@ -2470,6 +2477,19 @@ mod tests {
             a / b < 1.6 && b / a < 1.6,
             "{a} against {b}: a word or two left on a line of their own"
         );
+    }
+
+    #[test]
+    fn a_scores_last_phrase_is_parted_evenly_too() {
+        let style = StyleOptions::default().with_initial(Initial::None).with_phrase_lines(true);
+        let src = "(c4) Let(g) all(h) the(g) earth(h) with(g) joy(h) re(g)ply(h) and(g) sing(h) (::)";
+        let eng = Arc::new(parse(src).score.engrave(&ApproxMeasure, &style));
+        let whole = eng.layout_with(2000.0, &LayoutOptions::default());
+        let width = whole.lines[0].staff_end.expect("a phrase line's staff ends at its ink");
+        let layout = eng.layout_with(width * 6.0 * 0.9, &LayoutOptions::default());
+        assert_eq!(layout.lines.len(), 2);
+        let (a, b) = (layout.lines[0].staff_end.unwrap(), layout.lines[1].staff_end.unwrap());
+        assert!(a / b < 1.6 && b / a < 1.6, "{a} against {b}: a word or two left on the last line");
     }
 
     #[test]

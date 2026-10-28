@@ -1,7 +1,7 @@
 // Smoke test for dist/neuma.mjs under Node: `node crates/neuma-wasm/test.mjs`.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { init, Chant, DEFAULT_WEIGHTS, Page, engineStats, noteAtTime, point, psalm, psalmDisplay, setLayoutBudget, summarize, toneLabel, toneNames } from "./dist/neuma.mjs";
+import { init, Chant, DEFAULT_WEIGHTS, Page, engineStats, noteAtTime, point, psalm, psalmDisplay, setLayoutBudget, setLyricMetrics, summarize, toneLabel, toneNames } from "./dist/neuma.mjs";
 
 await init();
 const gabc = readFileSync(new URL("../neuma/tests/corpus/psalm-134.gabc", import.meta.url), "utf8");
@@ -636,3 +636,15 @@ assert.deepEqual(engineStats().budget, { current: 64, stale: 2 });
 
 assert.equal(DEFAULT_WEIGHTS.note, 1);
 console.log(`ok: ${notes.length} notes, ${wide.timeline().lines.length} lines at 900, ${narrow.timeline().lines.length} at 360`);
+
+// Custom lyric metrics: the EB Garamond 12 table set as the app's own spaces lyrics as that font
+// does, and a table that can't be read throws and keeps the last.
+{
+  const src = "(c4) Te(f) lu(g)cis(h) an(g)te(f) ter(g)mi(h)num(g) (::)";
+  const at = (font) => new Chant(src, { initial: null, font }).layout(300).timeline().notes.map((n) => n.cx);
+  const twelve = readFileSync(new URL("../neuma/fonts/eb-garamond-12.bin", import.meta.url));
+  setLyricMetrics(twelve);
+  assert.deepEqual(at("custom"), at("eb-garamond-12"));
+  assert.throws(() => setLyricMetrics(new Uint8Array([1, 2, 3])), { code: "metrics" });
+  assert.deepEqual(at("custom"), at("eb-garamond-12"));
+}
