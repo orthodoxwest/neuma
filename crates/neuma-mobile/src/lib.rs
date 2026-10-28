@@ -95,7 +95,8 @@ pub struct ChantOptions {
     #[uniffi(default = false)]
     pub short_last_staff: bool,
     /// Set each phrase on a line of its own, as hymnals set each line of a verse: lines end at
-    /// half, full and double bars where they can, ragged, their staves ending at their ink.
+    /// half, full and double bars where they can, every line ragged with its staff ending at its
+    /// ink, a phrase too long for the column parted evenly.
     #[uniffi(default = false)]
     pub phrase_lines: bool,
 }

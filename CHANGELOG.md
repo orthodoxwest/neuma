@@ -24,8 +24,9 @@ in the browser and on iOS and Android.
     initial set flush with the margin (`initial_scale`, `initial_margin`); and a last staff
     that ends at the final bar (`short_last_staff`). Phrase lines (`phrase_lines`) set each
     phrase on a line of its own, as hymnals set each line of a verse: a line ends at every
-    half, full or double bar where it can, ragged, with its staff ending at its ink, and is
-    broken inside a word only when nothing else fits. With a hyphen between every two
+    half, full or double bar where it can, every line is ragged with its staff ending at its
+    ink, a phrase too long for the column is parted evenly, and a word is broken only when
+    nothing else fits. With a hyphen between every two
     syllables, the hyphen keeps clear of both. GregorioTeX's ways stay the default;
   - staff and ledger lines lighter than stems and bars (0.1 of a staff space), as
     GregorioTeX's are;

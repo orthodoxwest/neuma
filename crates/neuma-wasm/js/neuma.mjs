@@ -465,7 +465,8 @@ export class Chant {
    *   GregorioTeX's; 0 for flush). shortLastStaff: end the last staff at the final bar
    *   instead of the column's edge (default false). phraseLines: set each phrase on a line of
    *   its own, as hymnals set each line of a verse: lines end at half, full and double bars
-   *   where they can, ragged, their staves ending at their ink (default false).
+   *   where they can, every line ragged with its staff ending at its ink, a phrase too long
+   *   for the column parted evenly (default false).
    */
   constructor(gabc, options) {
     if (gabc === PSALM) return;

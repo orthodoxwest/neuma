@@ -200,8 +200,9 @@ const AFTER_BAR_DEMERITS: f64 = -BREAK_WEIGHT * 200.0;
 /// phrase's end (after a half, full or double bar) earns a little more than a line costs, so a
 /// line ends at every one where the lines either side of it can be set.
 const PHRASE_END_DEMERITS: f64 = -1.05 * LINE_PENALTY;
-/// With phrase lines, the extra demerits for a break inside a word: about a loose line's
-/// worth, so a phrase too long for the column runs on at a word's end where it can.
+/// With phrase lines, the extra demerits for a break inside a word: more than an uneven
+/// parting of a phrase costs, so a phrase too long for the column runs on at a word's end
+/// where it can.
 const IN_WORD_DEMERITS: f64 = 20000.0;
 /// TeX weighs those penalties against badness in the thousands; badness here is about a
 /// 79th of TeX's for the same line (see [`TOLERANCE`]). Against GregorioTeX 6.0's own breaks
@@ -1383,11 +1384,12 @@ impl Engraving {
         (self.ragged(end, opts), self.break_cost(end))
     }
 
-    /// Whether a line ending after segment `end` is set ragged.
+    /// Whether a line ending after segment `end` is set ragged: with phrase lines, every line,
+    /// as a hymnal sets its verse.
     fn ragged(&self, end: usize, opts: &LayoutOptions) -> bool {
         end + 1 == self.segments.len() && opts.last_line == LastLine::Ragged
             || matches!(self.segments[end].after, Break::Forced { justify: false, .. })
-            || self.phrase_end(end)
+            || self.phrase_lines
     }
 
     /// Whether, with phrase lines, a line may end a phrase after segment `end`: after a half,
@@ -1491,6 +1493,11 @@ impl Engraving {
                 } else if squeezed {
                     let r = (natural - target) / shrink;
                     (100.0 * r * r * r).min(10000.0)
+                } else if ragged && self.phrase_lines && !end_of_score {
+                    // A phrase too long for the column is parted evenly, rather than leaving
+                    // a word or two on a staff of their own.
+                    let r = (target - natural).max(0.0) / target;
+                    100.0 * r * r
                 } else if ragged {
                     0.0
                 } else if gaps == 0.0 {
@@ -2446,6 +2453,23 @@ mod tests {
             let next = eng.segments.get(l.last + 1);
             assert!(next.is_none_or(|s| s.word_start), "line ending at {} splits a word", l.last);
         }
+    }
+
+    #[test]
+    fn a_phrase_a_little_too_long_for_its_line_is_parted_evenly() {
+        let style = StyleOptions::default().with_initial(Initial::None).with_phrase_lines(true);
+        let src = "(c4) Let(g) all(h) the(g) earth(h) with(g) joy(h) re(g)ply(h) and(g) sing(h) (;) a(g)men(h) (::)";
+        let eng = Arc::new(parse(src).score.engrave(&ApproxMeasure, &style));
+        let whole = eng.layout_with(2000.0, &LayoutOptions::default());
+        let width = whole.lines[0].staff_end.expect("a phrase line's staff ends at its ink");
+        // Staff ends are in staff spaces, the column in units of the default scale, six to a space.
+        let layout = eng.layout_with(width * 6.0 * 0.9, &LayoutOptions::default());
+        assert_eq!(layout.lines.len(), 3, "the phrase on two lines, then the amen");
+        let (a, b) = (layout.lines[0].staff_end.unwrap(), layout.lines[1].staff_end.unwrap());
+        assert!(
+            a / b < 1.6 && b / a < 1.6,
+            "{a} against {b}: a word or two left on a line of their own"
+        );
     }
 
     #[test]

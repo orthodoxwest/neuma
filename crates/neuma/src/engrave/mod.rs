@@ -209,9 +209,9 @@ pub struct StyleOptions {
     /// ragged, rather than running it on to the column's edge as GregorioTeX does.
     pub short_last_staff: bool,
     /// Set each phrase on a line of its own, as hymnals set each line of a verse: a line ends
-    /// at every half, full or double bar where it can, is set ragged there with its staff
-    /// ending at its ink, and is broken inside a word only when nothing else fits. A phrase too
-    /// long for the column still runs on to a justified line.
+    /// at every half, full or double bar where it can; every line is set ragged, its staff
+    /// ending at its ink; a phrase too long for the column is parted evenly over two lines;
+    /// and a word is broken only when nothing else fits.
     pub phrase_lines: bool,
 }
 
