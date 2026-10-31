@@ -380,12 +380,13 @@ const CHANT_DEFAULTS = {
   initialMargin: 1.39,
   shortLastStaff: false,
   phraseLines: false,
+  lyricDrop: 3.3,
 };
 const FONTS = ["google", "eb-garamond-12", "custom"];
 
 /** The engine's chant options from the glue's, read as `what` takes them. */
 function chantArgs(given, what) {
-  const { initial, annotation, lyricSize, font, everyHyphen, initialScale, initialMargin, shortLastStaff, phraseLines } =
+  const { initial, annotation, lyricSize, font, everyHyphen, initialScale, initialMargin, shortLastStaff, phraseLines, lyricDrop } =
     options(given, CHANT_DEFAULTS, what);
   return [
     Math.min(Math.max(Math.trunc(Number(initial)) || 0, 0), 255),
@@ -395,6 +396,7 @@ function chantArgs(given, what) {
     (everyHyphen ? 1 : 0) | (shortLastStaff ? 2 : 0) | (phraseLines ? 4 : 0),
     Number(initialScale),
     Number(initialMargin),
+    Number(lyricDrop),
   ];
 }
 
@@ -460,7 +462,7 @@ export class Chant {
    * @param {string} gabc
    * @param {{ initial?: number, annotation?: boolean, lyricSize?: number, font?: string,
    *   everyHyphen?: boolean, initialScale?: number, initialMargin?: number,
-   *   shortLastStaff?: boolean, phraseLines?: boolean }} [options]
+   *   shortLastStaff?: boolean, phraseLines?: boolean, lyricDrop?: number }} [options]
    *   initial: drop-cap height in staves (0 for none, default 1). annotation: show the
    *   annotation or mode above it (default true). lyricSize: in staff spaces (default 2.45).
    *   font: which EB Garamond the page loads, "google" (Google Fonts, default) or
@@ -474,7 +476,10 @@ export class Chant {
    *   instead of the column's edge (default false). phraseLines: set each phrase on a line of
    *   its own, as hymnals set each line of a verse: lines end at half, full and double bars
    *   where they can, every line ragged with its staff ending at its ink, a phrase too long
-   *   for the column parted evenly (default false).
+   *   for the column parted evenly, each stretched toward the column's edge by at most a
+   *   quarter of its width (default false). lyricDrop: the lyric baseline's drop below the
+   *   staff in staff spaces (default 3.3, GregorioTeX's; less sets the lyrics nearer their
+   *   staff).
    */
   constructor(gabc, options) {
     if (gabc === PSALM) return;

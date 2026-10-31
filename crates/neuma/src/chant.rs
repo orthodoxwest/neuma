@@ -90,6 +90,13 @@ impl ChantOptions {
         self
     }
 
+    /// Sets the style's [`lyric_drop`](StyleOptions::lyric_drop).
+    #[must_use]
+    pub fn with_lyric_drop(mut self, drop: f32) -> ChantOptions {
+        self.style.lyric_drop = drop;
+        self
+    }
+
     /// Sets the style's [`annotation`](StyleOptions::annotation).
     #[must_use]
     pub fn with_annotation(mut self, annotation: bool) -> ChantOptions {

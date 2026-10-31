@@ -209,10 +209,19 @@ pub struct StyleOptions {
     /// ragged, rather than running it on to the column's edge as GregorioTeX does.
     pub short_last_staff: bool,
     /// Set each phrase on a line of its own, as hymnals set each line of a verse: a line ends
-    /// at every half, full or double bar where it can; every line is set ragged, its staff
-    /// ending at its ink; a phrase too long for the column is parted evenly over two lines;
-    /// and a word is broken only when nothing else fits.
+    /// at every half, full or double bar where it can; every line is set ragged, stretched
+    /// toward the column's edge by at most a quarter of its width, its staff ending at its
+    /// ink; a phrase too long for the column is parted evenly over two lines; a word is
+    /// broken only when nothing else fits; and a first phrase that a one-staff initial's
+    /// column alone would part is kept whole with that column a little narrower.
     pub phrase_lines: bool,
+    /// How far the lyric baseline drops below the staff's bottom line, in staff spaces:
+    /// GregorioTeX's `spacelinestext`, 3.3, by default. Less sets the lyrics nearer their
+    /// staff and leaves the room between one line's lyrics and the next staff, as a page
+    /// that wants each staff read with its words may; the lines stay as far apart. A score
+    /// that goes below the staff drops its lyrics farther still. Negative or non-finite
+    /// values keep the default.
+    pub lyric_drop: f32,
 }
 
 crate::setters!(StyleOptions {
@@ -227,6 +236,7 @@ crate::setters!(StyleOptions {
     initial_margin: f32 => with_initial_margin,
     short_last_staff: bool => with_short_last_staff,
     phrase_lines: bool => with_phrase_lines,
+    lyric_drop: f32 => with_lyric_drop,
 });
 
 impl Default for StyleOptions {
@@ -243,6 +253,18 @@ impl Default for StyleOptions {
             initial_margin: crate::layout::INITIAL_BEFORE,
             short_last_staff: false,
             phrase_lines: false,
+            lyric_drop: crate::layout::TEXT_DROP,
+        }
+    }
+}
+
+impl StyleOptions {
+    /// The lyric drop as laid out: the default for a negative or non-finite one.
+    pub(crate) fn sanitized_lyric_drop(&self) -> f32 {
+        if self.lyric_drop.is_finite() && self.lyric_drop >= 0.0 {
+            self.lyric_drop
+        } else {
+            crate::layout::TEXT_DROP
         }
     }
 }
@@ -466,6 +488,12 @@ impl InitialBox {
     pub fn column(&self) -> f32 {
         self.annotations.iter().map(|a| a.1).fold(self.width, f32::max)
     }
+
+    /// A one-staff initial smaller than the staff and its lyrics ([`StyleOptions::initial_scale`]
+    /// below 1): its top stands below the staff's top line, and its annotations just above it.
+    pub fn lowered(&self) -> bool {
+        self.lines == 1 && self.scale < 1.0
+    }
 }
 
 /// A score engraved independently of width. Lay it out with [`Engraving::layout`].
@@ -488,6 +516,8 @@ pub struct Engraving {
     pub(crate) short_last_staff: bool,
     /// Each phrase on a line of its own ([`StyleOptions::phrase_lines`]).
     pub(crate) phrase_lines: bool,
+    /// The lyric baseline's drop below the staff ([`StyleOptions::lyric_drop`]).
+    pub(crate) lyric_drop: f32,
     pub(crate) word_space: f32,
     pub(crate) ascent: f32,
     pub(crate) descent: f32,
@@ -1052,7 +1082,7 @@ impl Score {
             let lines = n.min(initial::MAX_LINES) as usize;
             let cap = if lines == 1 {
                 let lowest = e.note_positions.iter().copied().min().unwrap_or(0);
-                STAFF_HEIGHT + crate::layout::text_drop(lowest)
+                STAFF_HEIGHT + crate::layout::text_drop(style.sanitized_lyric_drop(), lowest)
             } else {
                 STAFF_HEIGHT + line_pitch * (lines - 1) as f32
             };
@@ -1645,6 +1675,7 @@ impl Pass<'_> {
             every_hyphen: e.style.hyphens == Hyphens::EverySyllable,
             short_last_staff: e.style.short_last_staff,
             phrase_lines: e.style.phrase_lines,
+            lyric_drop: e.style.sanitized_lyric_drop(),
             word_space: self.word_space,
             ascent: self.ascent,
             descent: self.descent,

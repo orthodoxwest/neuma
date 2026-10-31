@@ -96,9 +96,14 @@ pub struct ChantOptions {
     pub short_last_staff: bool,
     /// Set each phrase on a line of its own, as hymnals set each line of a verse: lines end at
     /// half, full and double bars where they can, every line ragged with its staff ending at its
-    /// ink, a phrase too long for the column parted evenly.
+    /// ink, a phrase too long for the column parted evenly, each line stretched toward the
+    /// column's edge by at most a quarter of its width.
     #[uniffi(default = false)]
     pub phrase_lines: bool,
+    /// The lyric baseline's drop below the staff's bottom line, in staff spaces; 3.3
+    /// (GregorioTeX's) by default. Less sets the lyrics nearer their staff.
+    #[uniffi(default = 3.3)]
+    pub lyric_drop: f32,
 }
 
 impl Default for ChantOptions {
@@ -113,6 +118,7 @@ impl Default for ChantOptions {
             initial_margin: 1.39,
             short_last_staff: false,
             phrase_lines: false,
+            lyric_drop: 3.3,
         }
     }
 }
@@ -128,6 +134,7 @@ impl From<ChantOptions> for neuma::ChantOptions {
             .with_initial_margin(o.initial_margin)
             .with_short_last_staff(o.short_last_staff)
             .with_phrase_lines(o.phrase_lines)
+            .with_lyric_drop(o.lyric_drop)
             .with_hyphens(if o.every_hyphen {
                 neuma::Hyphens::EverySyllable
             } else {

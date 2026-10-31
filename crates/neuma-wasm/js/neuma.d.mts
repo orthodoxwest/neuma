@@ -99,9 +99,15 @@ export interface ChantOptions {
   /**
    * Set each phrase on a line of its own, as hymnals set each line of a verse: lines end at
    * half, full and double bars where they can, every line ragged with its staff ending at its
-   * ink, a phrase too long for the column parted evenly; default false.
+   * ink, a phrase too long for the column parted evenly, each line stretched toward the
+   * column's edge by at most a quarter of its width; default false.
    */
   phraseLines?: Opt<boolean>;
+  /**
+   * The lyric baseline's drop below the staff's bottom line, in staff spaces; default 3.3
+   * (GregorioTeX's). Less sets the lyrics nearer their staff; the lines stay as far apart.
+   */
+  lyricDrop?: Opt<number>;
 }
 
 /** How a psalm is set to its tone. */
