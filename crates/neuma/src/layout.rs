@@ -1793,20 +1793,35 @@ impl Engraving {
         }
         // With phrase lines, a first phrase parted only because the initial's column narrows
         // its line is kept whole with a smaller one-staff initial, down to MIN_FIT_COLUMN of
-        // its column: a phrase is sung as a line.
+        // its column but never narrower than its annotations: a phrase is sung as a line.
         if self.phrase_lines
             && let Some(placed) = layout.initial
-            && self.initial.as_ref().is_some_and(|i| i.lines == 1)
+            && let Some(init) = self.initial.as_ref().filter(|i| i.lines == 1)
             && layout
                 .lines
                 .first()
                 .is_some_and(|l| l.last + 1 < self.segments.len() && !self.phrase_end(l.last))
         {
-            for share in [0.9, 0.8, 0.7, MIN_FIT_COLUMN] {
-                let tried = self.lay_out(width, opts, Some(-placed.column * share), cache);
-                if tried.lines.first().is_some_and(|l| self.phrase_end(l.last)) {
-                    return tried;
-                }
+            let floor = init.annotations.iter().map(|a| a.1).fold(0.0f32, f32::max);
+            let columns: Vec<f32> = [0.9, 0.8, 0.7, MIN_FIT_COLUMN]
+                .iter()
+                .map(|share| placed.column * share)
+                .filter(|&c| c >= floor && c < placed.column)
+                .collect();
+            // The tries are set apart from `cache`, which keeps the score's own breaks for the
+            // next layout; the narrowest goes first, so a phrase that fits at none costs one.
+            let fits = |column: f32| {
+                let mut once = LayoutCache {
+                    once: true,
+                    ..LayoutCache::default()
+                };
+                let tried = self.lay_out(width, opts, Some(-column), &mut once);
+                tried.lines.first().is_some_and(|l| self.phrase_end(l.last)).then_some(tried)
+            };
+            if let Some(&narrowest) = columns.last()
+                && let Some(narrow) = fits(narrowest)
+            {
+                return columns[..columns.len() - 1].iter().find_map(|&c| fits(c)).unwrap_or(narrow);
             }
         }
         layout
@@ -2615,6 +2630,21 @@ mod tests {
             prose.layout_with(width, &LayoutOptions::default()).initial.unwrap().column,
             full.initial.unwrap().column
         );
+    }
+
+    #[test]
+    fn a_narrowed_initial_keeps_room_for_its_annotation() {
+        let src = "name: t;\nannotation: Hymn VIII;\n%%\n(c4) O(g) Christ(h) Re(g)deem(h)er(g) of(h) us(g) all,(h) (;) Pro(g)tect(h) thy(g) ser(h)vants(g) (::)";
+        let style = StyleOptions::default()
+            .with_initial_scale(0.5)
+            .with_initial_margin(0.0)
+            .with_phrase_lines(true);
+        let eng = Arc::new(parse(src).score.engrave(&ApproxMeasure, &style));
+        let widest = eng.initial.as_ref().unwrap().annotations.iter().map(|a| a.1).fold(0.0f32, f32::max);
+        for width in (150..500).step_by(10) {
+            let layout = eng.layout_with(width as f32 * 6.0 / 2.0, &LayoutOptions::default());
+            assert!(layout.initial.unwrap().column >= widest - 1e-4, "at {width}");
+        }
     }
 
     #[test]
