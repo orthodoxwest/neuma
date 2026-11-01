@@ -53,8 +53,8 @@ fn with_chant<R>(handle: f64, f: impl FnOnce(&mut Chant) -> R) -> Option<R> {
 /// The chant's options: `style` 1 for a hyphen between every two syllables, 2 for a last
 /// staff ending at the final bar, 4 for phrase lines; `font` 2 for the table
 /// [`neuma_set_metrics`] set (the built-in one while none is); `initial_scale` and
-/// `initial_margin` as [`ChantOptions::with_initial_scale`] and
-/// [`ChantOptions::with_initial_margin`] take them.
+/// `initial_margin` and `lyric_drop` as [`ChantOptions::with_initial_scale`],
+/// [`ChantOptions::with_initial_margin`] and [`ChantOptions::with_lyric_drop`] take them.
 #[allow(clippy::too_many_arguments)]
 fn chant_options(
     initial: i32,
@@ -64,6 +64,7 @@ fn chant_options(
     style: u32,
     initial_scale: f32,
     initial_margin: f32,
+    lyric_drop: f32,
 ) -> ChantOptions {
     let options = ChantOptions::default()
         .with_initial(Initial::from_staves(initial.into()))
@@ -77,7 +78,8 @@ fn chant_options(
         .with_short_last_staff(style & 2 != 0)
         .with_phrase_lines(style & 4 != 0)
         .with_initial_scale(initial_scale)
-        .with_initial_margin(initial_margin);
+        .with_initial_margin(initial_margin)
+        .with_lyric_drop(lyric_drop);
     if font == 2
         && let Some(table) = METRICS.with(|m| m.borrow().clone())
     {
@@ -202,8 +204,18 @@ pub extern "C" fn chant_new(
     style: u32,
     initial_scale: f32,
     initial_margin: f32,
+    lyric_drop: f32,
 ) -> f64 {
-    let options = chant_options(initial, annotation, lyric_size, font, style, initial_scale, initial_margin);
+    let options = chant_options(
+        initial,
+        annotation,
+        lyric_size,
+        font,
+        style,
+        initial_scale,
+        initial_margin,
+        lyric_drop,
+    );
     let chant = Chant::new(&input(), options);
     output(chant.diagnostics_json());
     keep(chant)
@@ -227,10 +239,20 @@ pub extern "C" fn chant_from_psalm(
     style: u32,
     initial_scale: f32,
     initial_margin: f32,
+    lyric_drop: f32,
 ) -> f64 {
     match psalm_input(custom, psalm_flags, auto_point) {
         Ok((tone, text, psalm)) => {
-            let opts = chant_options(initial, annotation, lyric_size, font, style, initial_scale, initial_margin);
+            let opts = chant_options(
+                initial,
+                annotation,
+                lyric_size,
+                font,
+                style,
+                initial_scale,
+                initial_margin,
+                lyric_drop,
+            );
             let chant = Chant::from_psalm(&text, &tone, &psalm, opts);
             diagnostics_and_psalm(&chant);
             keep(chant)
@@ -277,8 +299,18 @@ pub extern "C" fn chant_set_options(
     style: u32,
     initial_scale: f32,
     initial_margin: f32,
+    lyric_drop: f32,
 ) -> u32 {
-    let options = chant_options(initial, annotation, lyric_size, font, style, initial_scale, initial_margin);
+    let options = chant_options(
+        initial,
+        annotation,
+        lyric_size,
+        font,
+        style,
+        initial_scale,
+        initial_margin,
+        lyric_drop,
+    );
     changed(handle, |c| c.set_options(options))
 }
 
@@ -349,12 +381,22 @@ pub extern "C" fn page_rebuild(
     style: u32,
     initial_scale: f32,
     initial_margin: f32,
+    lyric_drop: f32,
     width: f32,
     scale: f32,
     last: u32,
     max_lines: u32,
 ) -> f64 {
-    let options = chant_options(initial, annotation, lyric_size, font, style, initial_scale, initial_margin);
+    let options = chant_options(
+        initial,
+        annotation,
+        lyric_size,
+        font,
+        style,
+        initial_scale,
+        initial_margin,
+        lyric_drop,
+    );
     let chant = if psalm == 1 {
         #[cfg(feature = "tones")]
         match psalm_input(custom, psalm_flags, auto_point) {

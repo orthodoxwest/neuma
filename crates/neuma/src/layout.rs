@@ -145,8 +145,8 @@ const STRETCH: f32 = 1.5;
 const LEDGER_NEAR: f32 = 0.25;
 /// The lyric baseline's drop below the staff's bottom line, for a score whose lowest note is
 /// at `lowest`.
-pub(crate) fn text_drop(lowest: crate::score::StaffPosition) -> f32 {
-    TEXT_DROP + LOW_NOTE_DROP * (BELOW_STAFF - lowest).max(0) as f32
+pub(crate) fn text_drop(drop: f32, lowest: crate::score::StaffPosition) -> f32 {
+    drop + LOW_NOTE_DROP * (BELOW_STAFF - lowest).max(0) as f32
 }
 
 /// The widest column laid out, in output units and in staff spaces; wider requests are
@@ -154,7 +154,7 @@ pub(crate) fn text_drop(lowest: crate::score::StaffPosition) -> f32 {
 const MAX_WIDTH: f32 = 1.0e6;
 /// The lyric baseline's drop below the staff's bottom line: GregorioTeX's `spacelinestext`
 /// (3.48 ex of its lyrics), as measured from its output.
-const TEXT_DROP: f32 = 3.3;
+pub(crate) const TEXT_DROP: f32 = 3.3;
 /// GregorioTeX lowers the lyrics by `noteadditionalspacelinestext` (0.144 cm, about a staff
 /// space) for each step the score's lowest note lies below this position (`c` on a four-line
 /// staff).
@@ -163,6 +163,10 @@ const LOW_NOTE_DROP: f32 = 1.0;
 /// The least gap between ink hanging below the staff and the tops of the letters under it
 /// (an accent, a capital, an ascender), in staff spaces.
 const LYRIC_CLEARANCE: f32 = 0.25;
+/// The same gap where the lyrics are set nearer the staff than GregorioTeX sets them
+/// ([`StyleOptions::lyric_drop`](crate::StyleOptions::lyric_drop)): a note hanging below the
+/// staff then stands close over its letters, and a little more air keeps the two apart.
+const RAISED_LYRIC_CLEARANCE: f32 = 0.6;
 /// How far to either side of ink a letter still counts as under it.
 const LYRIC_SIDE: f32 = 0.2;
 /// Distance between the lyric baselines of consecutive lines: GregorioTeX's `baselineskip`
@@ -204,6 +208,13 @@ const PHRASE_END_DEMERITS: f64 = -1.05 * LINE_PENALTY;
 /// parting of a phrase costs, so a phrase too long for the column runs on at a word's end
 /// where it can.
 const IN_WORD_DEMERITS: f64 = 20000.0;
+/// With phrase lines, how far a line is stretched toward the column's edge, as a share of
+/// its natural width: enough to bring most of a hymn's lines to the edge, never so far that a
+/// short one ("of us all,") falls apart.
+const PHRASE_STRETCH: f32 = 0.25;
+/// With phrase lines, the narrowest a one-staff initial's column may be made, as a share of
+/// its own, to keep the first phrase on the first line.
+const MIN_FIT_COLUMN: f32 = 0.6;
 /// TeX weighs those penalties against badness in the thousands; badness here is about a
 /// 79th of TeX's for the same line (see [`TOLERANCE`]). Against GregorioTeX 6.0's own breaks
 /// on 240 GregoBase scores at two widths, half a demerit a point matches best: more often a
@@ -1258,7 +1269,7 @@ impl Engraving {
     }
 
     /// How far below the staff's center a line's lyric baseline must lie for every letter
-    /// (and hyphen) to clear the ink over it by [`LYRIC_CLEARANCE`], where that is lower than
+    /// (and hyphen) to clear the ink over it by [`LYRIC_CLEARANCE`] (or [`RAISED_LYRIC_CLEARANCE`]), where that is lower than
     /// its usual drop; 0 if no ink hangs low enough to matter. `xs` and the hyphens are the
     /// line's, as set; `others` is the ink not in its segments (the clef and the custos),
     /// placed on the line.
@@ -1274,7 +1285,12 @@ impl Engraving {
             .map(|e| e.2)
             .chain((!hyphens.is_empty() || hyphen.is_some()).then_some(hyphen_top))
             .fold(0.0f32, f32::max);
-        let low = HALF_STAFF + self.text_drop() - LYRIC_CLEARANCE - tallest;
+        let clearance = if self.lyric_drop < TEXT_DROP {
+            RAISED_LYRIC_CLEARANCE
+        } else {
+            LYRIC_CLEARANCE
+        };
+        let low = HALF_STAFF + self.text_drop() - clearance - tallest;
         let segment_ink = segments.iter().zip(xs).flat_map(|(seg, &x)| seg.pieces.iter().map(move |p| (p, x)));
         let inks: Vec<(f32, f32, f32)> = segment_ink
             .chain(others.iter().map(|p| (p, 0.0)))
@@ -1302,7 +1318,7 @@ impl Engraving {
         for (l, r, bottom) in inks {
             let from = boxes.partition_point(|e| e.0 < l - widest - 1.0);
             for &(_, _, top) in boxes[from..].iter().take_while(|e| e.0 < r).filter(|e| e.1 > l) {
-                need = need.max(bottom + LYRIC_CLEARANCE + top);
+                need = need.max(bottom + clearance + top);
             }
         }
         need
@@ -1353,7 +1369,7 @@ impl Engraving {
 
     /// How far the lyric baseline lies below the staff's bottom line.
     fn text_drop(&self) -> f32 {
-        text_drop(self.lowest)
+        text_drop(self.lyric_drop, self.lowest)
     }
 
     /// How much wider than its column the initial may be drawn (see [`INITIAL_SLACK`]).
@@ -1587,7 +1603,18 @@ impl Engraving {
         let mut word_gap_stretch = 0.0;
         // Whether the slack went evenly into every gap, touching ones included.
         let mut spread = false;
-        if !ragged && gaps > 0 && trial.natural < target {
+        // A phrase line is set toward the column's edge as far as its gaps may stretch
+        // without looking sparse, so the right edge reads as a page's and not a staircase;
+        // what is left over stays at the line's end, where its staff ends.
+        let fill = if !ragged {
+            target
+        } else if self.phrase_lines {
+            target.min(trial.natural * (1.0 + PHRASE_STRETCH))
+        } else {
+            0.0
+        };
+        if gaps > 0 && trial.natural < fill {
+            let target = fill;
             // Each gap takes its share of the slack. A line whose gaps can't stretch (one
             // word, its syllables touching) spreads it evenly when that leaves room for a
             // hyphen in every gap; less slack stays at the line's end, as in GregorioTeX,
@@ -1764,6 +1791,39 @@ impl Engraving {
                 _ => break,
             }
         }
+        // With phrase lines, a first phrase parted only because the initial's column narrows
+        // its line is kept whole with a smaller one-staff initial, down to MIN_FIT_COLUMN of
+        // its column but never narrower than its annotations: a phrase is sung as a line.
+        if self.phrase_lines
+            && let Some(placed) = layout.initial
+            && let Some(init) = self.initial.as_ref().filter(|i| i.lines == 1)
+            && layout
+                .lines
+                .first()
+                .is_some_and(|l| l.last + 1 < self.segments.len() && !self.phrase_end(l.last))
+        {
+            let floor = init.annotations.iter().map(|a| a.1).fold(0.0f32, f32::max);
+            let columns: Vec<f32> = [0.9, 0.8, 0.7, MIN_FIT_COLUMN]
+                .iter()
+                .map(|share| placed.column * share)
+                .filter(|&c| c >= floor && c < placed.column)
+                .collect();
+            // The tries are set apart from `cache`, which keeps the score's own breaks for the
+            // next layout; the narrowest goes first, so a phrase that fits at none costs one.
+            let fits = |column: f32| {
+                let mut once = LayoutCache {
+                    once: true,
+                    ..LayoutCache::default()
+                };
+                let tried = self.lay_out(width, opts, Some(-column), &mut once);
+                tried.lines.first().is_some_and(|l| self.phrase_end(l.last)).then_some(tried)
+            };
+            if let Some(&narrowest) = columns.last()
+                && let Some(narrow) = fits(narrowest)
+            {
+                return columns[..columns.len() - 1].iter().find_map(|&c| fits(c)).unwrap_or(narrow);
+            }
+        }
         layout
     }
 
@@ -1864,7 +1924,12 @@ impl Engraving {
             size,
             column,
             natural_width: init.advance_em * natural,
-            annotation_baseline: first.staff - HALF_STAFF - init.above - ANNOTATION_GAP,
+            annotation_baseline: if init.lowered() {
+                // Over the capital's own top, which stands below the staff's top line.
+                baseline - size * CAP_HEIGHT - init.above * size / init.size - ANNOTATION_GAP
+            } else {
+                first.staff - HALF_STAFF - init.above - ANNOTATION_GAP
+            },
         };
         Some((placed, baseline + init.descent * size))
     }
@@ -1879,7 +1944,12 @@ impl Engraving {
         }
         // The first `indented` lines make room for the initial.
         let indented = self.initial.as_ref().map_or(0, |i| i.lines);
-        let column = self.initial.as_ref().map_or(0.0, |i| column.unwrap_or(0.0).max(i.column()));
+        // A negative `column` is a column narrower than the initial's own, which narrows the
+        // capital to it (see `layout_cached`); a positive one, a wider column.
+        let column = self.initial.as_ref().map_or(0.0, |i| match column {
+            Some(c) if c < 0.0 => -c,
+            _ => column.unwrap_or(0.0).max(i.column()),
+        });
         let before = self.initial.as_ref().map_or(0.0, |i| i.before);
         let indent = if indented > 0 { before + column + INITIAL_GAP } else { 0.0 };
         // Each line's candidate breaks depend only on its own segments, so they come from the
@@ -1943,17 +2013,22 @@ impl Engraving {
             let staffless = shape.staffless;
             let ink_bottom = shape.ink_bottom;
             let mut ink_top = shape.ink_top;
-            // The annotations sit above the first staff, over the initial and any accent on it:
-            // the capital's top is the first staff's top line.
+            // The annotations sit over the initial and any accent on it: above the first
+            // staff, where the capital's top is its top line, or, over a smaller capital
+            // standing on the lyrics, as high as its top can be (a lower baseline lowers it).
             if li == 0
                 && let Some(init) = &self.initial
             {
                 ink_top = ink_top.min(-HALF_STAFF - init.above);
                 if !init.annotations.is_empty() {
                     let lines = init.annotations.len() as f32;
-                    ink_top = ink_top.min(
-                        -HALF_STAFF - init.above - ANNOTATION_GAP - init.annotation_ascent - (lines - 1.0) * init.annotation_size * 1.1,
-                    );
+                    let cap_top = if init.lowered() {
+                        HALF_STAFF + self.text_drop() - init.size * CAP_HEIGHT
+                    } else {
+                        -HALF_STAFF
+                    };
+                    ink_top = ink_top
+                        .min(cap_top - init.above - ANNOTATION_GAP - init.annotation_ascent - (lines - 1.0) * init.annotation_size * 1.1);
                 }
             }
             let mut top = y;
@@ -2468,7 +2543,9 @@ mod tests {
         let src = "(c4) Let(g) all(h) the(g) earth(h) with(g) joy(h) re(g)ply(h) and(g) sing(h) (;) a(g)men(h) (::)";
         let eng = Arc::new(parse(src).score.engrave(&ApproxMeasure, &style));
         let whole = eng.layout_with(2000.0, &LayoutOptions::default());
-        let width = whole.lines[0].staff_end.expect("a phrase line's staff ends at its ink");
+        // On so wide a column the line stretches as far as a phrase line may: its natural
+        // width is the rest.
+        let width = whole.lines[0].staff_end.expect("a phrase line's staff ends at its ink") / (1.0 + PHRASE_STRETCH);
         // Staff ends are in staff spaces, the column in units of the default scale, six to a space.
         let layout = eng.layout_with(width * 6.0 * 0.9, &LayoutOptions::default());
         assert_eq!(layout.lines.len(), 3, "the phrase on two lines, then the amen");
@@ -2485,11 +2562,127 @@ mod tests {
         let src = "(c4) Let(g) all(h) the(g) earth(h) with(g) joy(h) re(g)ply(h) and(g) sing(h) (::)";
         let eng = Arc::new(parse(src).score.engrave(&ApproxMeasure, &style));
         let whole = eng.layout_with(2000.0, &LayoutOptions::default());
-        let width = whole.lines[0].staff_end.expect("a phrase line's staff ends at its ink");
+        let width = whole.lines[0].staff_end.expect("a phrase line's staff ends at its ink") / (1.0 + PHRASE_STRETCH);
         let layout = eng.layout_with(width * 6.0 * 0.9, &LayoutOptions::default());
         assert_eq!(layout.lines.len(), 2);
         let (a, b) = (layout.lines[0].staff_end.unwrap(), layout.lines[1].staff_end.unwrap());
         assert!(a / b < 1.6 && b / a < 1.6, "{a} against {b}: a word or two left on the last line");
+    }
+
+    #[test]
+    fn a_phrase_line_stretches_toward_the_edge_by_at_most_a_quarter() {
+        let src = "(c4) Al(g)le(h)lu(g)ia(h) (;) a(g)men(h) and(g) a(h)men(g) a(h)gain(g) (::)";
+        let lay = |phrase: bool, width: f32| {
+            let style = StyleOptions::default().with_initial(Initial::None).with_phrase_lines(phrase);
+            let eng = Arc::new(parse(src).score.engrave(&ApproxMeasure, &style));
+            eng.layout_with(width, &LayoutOptions::default())
+        };
+        // Natural widths, on a column too narrow for both phrases on one line without phrase
+        // lines' stretch: the score as prose sets each line at its ink on a ragged last line.
+        let wide = lay(true, 6000.0);
+        assert_eq!(wide.lines.len(), 2);
+        let ends = |l: &Layout| l.lines.iter().map(|l| l.staff_end.unwrap()).collect::<Vec<_>>();
+        let stretched = ends(&wide);
+        // On a column a little wider than the longer line's natural width, that line reaches
+        // the edge and the shorter one stretches by a quarter, or to the edge if that is less.
+        let natural = |s: f32| s / (1.0 + PHRASE_STRETCH);
+        let column = natural(stretched[1]) * 1.1;
+        let fitted = ends(&lay(true, column * 6.0));
+        assert!((fitted[1] - column).abs() < 0.3, "{fitted:?} against a column of {column}");
+        assert!(
+            (fitted[0] - stretched[0].min(column)).abs() < 0.3,
+            "{fitted:?} against {stretched:?}"
+        );
+        assert!(fitted[0] > natural(stretched[0]) + 0.5, "the short line is stretched too");
+    }
+
+    #[test]
+    fn a_first_phrase_parted_only_by_the_initial_is_kept_whole() {
+        let src = "(c4) O(g) Christ(h) Re(g)deem(h)er(g) of(h) us(g) all,(h) (;) Pro(g)tect(h) thy(g) ser(h)vants(g) (::)";
+        let style = StyleOptions::default()
+            .with_initial_scale(0.5)
+            .with_initial_margin(0.0)
+            .with_phrase_lines(true);
+        let eng = Arc::new(parse(src).score.engrave(&ApproxMeasure, &style));
+        // The first phrase's natural width beside the initial, and so a column it fits only with
+        // a narrower initial: wider than the phrase, narrower than the phrase and the initial's column.
+        let full = eng.layout_with(6000.0, &LayoutOptions::default());
+        let indent = full.lines[0].indent;
+        let phrase = (full.lines[0].staff_end.unwrap() - indent) / (1.0 + PHRASE_STRETCH);
+        let width = (phrase + indent * 0.7) * 6.0;
+        assert!(
+            !eng.phrase_end(
+                eng.lay_out(width, &LayoutOptions::default(), None, &mut LayoutCache::default())
+                    .lines[0]
+                    .last
+            )
+        );
+        let layout = eng.layout_with(width, &LayoutOptions::default());
+        assert!(
+            eng.phrase_end(layout.lines[0].last),
+            "the first line ends at the first phrase's bar"
+        );
+        let placed = layout.initial.unwrap();
+        assert!(placed.column < full.initial.unwrap().column, "with a narrower initial");
+        // Prose, or a column the phrase can't fit at all, sets as before.
+        let prose = Arc::new(parse(src).score.engrave(&ApproxMeasure, &style.clone().with_phrase_lines(false)));
+        assert_eq!(
+            prose.layout_with(width, &LayoutOptions::default()).initial.unwrap().column,
+            full.initial.unwrap().column
+        );
+    }
+
+    #[test]
+    fn a_narrowed_initial_keeps_room_for_its_annotation() {
+        let src = "name: t;\nannotation: Hymn VIII;\n%%\n(c4) O(g) Christ(h) Re(g)deem(h)er(g) of(h) us(g) all,(h) (;) Pro(g)tect(h) thy(g) ser(h)vants(g) (::)";
+        let style = StyleOptions::default()
+            .with_initial_scale(0.5)
+            .with_initial_margin(0.0)
+            .with_phrase_lines(true);
+        let eng = Arc::new(parse(src).score.engrave(&ApproxMeasure, &style));
+        let widest = eng.initial.as_ref().unwrap().annotations.iter().map(|a| a.1).fold(0.0f32, f32::max);
+        for width in (150..500).step_by(10) {
+            let layout = eng.layout_with(width as f32 * 6.0 / 2.0, &LayoutOptions::default());
+            assert!(layout.initial.unwrap().column >= widest - 1e-4, "at {width}");
+        }
+    }
+
+    #[test]
+    fn a_smaller_initials_annotation_stands_just_over_it() {
+        let src = "name: t;\nannotation: VIII;\n%%\n(c4) Ma(g)ry(h) we(g) hail(h) thee.(g) (::)";
+        let place = |scale: f32| {
+            let style = StyleOptions::default().with_initial_scale(scale);
+            let eng = Arc::new(parse(src).score.engrave(&ApproxMeasure, &style));
+            let layout = eng.layout_with(1200.0, &LayoutOptions::default());
+            let placed = layout.initial.unwrap();
+            (placed, layout.lines[0].staff)
+        };
+        // A full initial's annotation stands over the staff, as before.
+        let (full, staff) = place(1.0);
+        assert!(full.annotation_baseline < staff - HALF_STAFF, "{full:?}");
+        // A half-size one's stands over its own top, below the staff's top line.
+        let (half, staff) = place(0.5);
+        let cap_top = half.baseline - half.size * CAP_HEIGHT;
+        assert!(
+            half.annotation_baseline < cap_top && half.annotation_baseline > staff - HALF_STAFF,
+            "{half:?} {staff}"
+        );
+        assert!(cap_top - half.annotation_baseline < ANNOTATION_GAP + 0.5, "close over it");
+    }
+
+    #[test]
+    fn the_lyrics_may_sit_nearer_their_staff() {
+        let src = "(c4) A(g)men(h) (::)";
+        let baseline = |drop: f32| {
+            let style = StyleOptions::default().with_initial(Initial::None).with_lyric_drop(drop);
+            let eng = Arc::new(parse(src).score.engrave(&ApproxMeasure, &style));
+            let l = &eng.layout_with(1200.0, &LayoutOptions::default()).lines[0];
+            l.baseline - l.staff
+        };
+        assert!((baseline(3.3) - baseline(2.6) - 0.7).abs() < 1e-4);
+        // Values it can't use keep GregorioTeX's.
+        assert_eq!(baseline(f32::NAN), baseline(TEXT_DROP));
+        assert_eq!(baseline(-1.0), baseline(TEXT_DROP));
     }
 
     #[test]

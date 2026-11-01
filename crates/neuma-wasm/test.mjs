@@ -269,6 +269,8 @@ assert.throws(() => Chant.fromTone("8.G", { annotaton: false }), invalid);
   const initialX = (o) => Number(new Chant(word, o).layout(900).svg.match(/<text x="([\d.-]+)"[^>]*class="neuma-initial"/)[1]);
   assert.ok(initialX({ initialMargin: 0 }) < initialX(), "the initial flush with the margin");
   assert.notEqual(new Chant(word, { initialScale: 0.75 }).layout(900).svg, new Chant(word).layout(900).svg);
+  assert.notEqual(new Chant(word, { lyricDrop: 2.6 }).layout(900).svg, new Chant(word).layout(900).svg, "lyrics nearer the staff");
+  assert.equal(new Chant(word, { lyricDrop: 3.3 }).layout(900).svg, new Chant(word).layout(900).svg, "GregorioTeX's drop by default");
   assert.equal(new Chant(word, { everyHyphen: false, initialScale: 1, initialMargin: 1.39, shortLastStaff: false }).layout(900).svg, new Chant(word).layout(900).svg, "the defaults");
   const styled = new Chant(word);
   assert.equal(styled.setOptions({ everyHyphen: true }), true);
